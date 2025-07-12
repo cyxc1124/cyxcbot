@@ -63,9 +63,7 @@ EXPOSE 8080
 # 设置默认 shell 为 bash
 SHELL ["/bin/bash", "-c"]
 
-
-
 # 使用 bash 启动脚本
-COPY docker-entrypoint.sh /
-RUN chmod +x /docker-entrypoint.sh
-ENTRYPOINT ["./docker-entrypoint.sh"] 
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["docker-entrypoint.sh"] 
