@@ -13,6 +13,7 @@ LABEL org.opencontainers.image.source=https://github.com/cyxc1124/cyxcbot
 LABEL org.opencontainers.image.description="NoneBot2机器人 - B站直播通知插件"
 LABEL org.opencontainers.image.title="CyxcBot - Bilibili Live Notification Bot"
 LABEL org.opencontainers.image.vendor="cyxc1124"
+LABEL org.opencontainers.image.authors="cyxc1124"
 LABEL org.opencontainers.image.version=${GIT_TAG}
 LABEL org.opencontainers.image.revision=${GIT_COMMIT}
 
@@ -52,10 +53,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 复制项目文件
 COPY . .
-
-# 创建非root用户
-RUN useradd -m -u 1000 bot && chown -R bot:bot /app
-USER bot
 
 # 暴露端口
 EXPOSE 8080
