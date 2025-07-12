@@ -12,6 +12,13 @@ from .config import Config
 # 获取插件配置
 config = get_plugin_config(Config)
 
+# 添加配置调试信息
+logger.info("=== 插件配置加载调试信息 ===")
+logger.info(f"配置对象类型: {type(config)}")
+logger.info(f"notify_groups: {config.notify_groups}")
+logger.info(f"include_room_info: {config.include_room_info}")
+logger.info("=== 配置加载调试信息结束 ===")
+
 # 创建API路由处理器
 @get_driver().on_startup
 async def setup_api():
