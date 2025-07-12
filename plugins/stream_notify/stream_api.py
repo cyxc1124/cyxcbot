@@ -30,17 +30,6 @@ async def setup_api():
             logger.info(f"请求路径: {request.url.path}")
             logger.info(f"请求数据: {data}")
             
-            # 验证API密钥
-            if data.get("secret") != config.api_secret:
-                logger.warning("API密钥验证失败")
-                logger.warning(f"提供的密钥: {data.get('secret', 'None')}")
-                logger.warning(f"期望的密钥: {config.api_secret}")
-                logger.warning(f"请求来源IP: {request.client.host if hasattr(request, 'client') else 'Unknown'}")
-                return Response(
-                    status_code=401,
-                    content=json.dumps({"success": False, "error": "Invalid API secret"})
-                )
-            
             # 解析B站事件数据
             event_type = data.get("type")
             event_data = data.get("data", {})
