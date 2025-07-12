@@ -4,10 +4,32 @@ from nonebot import get_plugin_config
 from nonebot.drivers import Request, Response, HTTPServerSetup
 from nonebot.log import logger
 import json
+import time
 from typing import Dict
 from yarl import URL
 
 from .config import Config
+
+# 全局字典，用于存储房间的开播时间戳
+# 格式: {room_id: start_timestamp}
+room_start_times = {}
+
+def cleanup_expired_start_times():
+    """清理超过24小时的开播时间戳记录"""
+    current_time = int(time.time())
+    expired_rooms = []
+    
+    for room_id, start_time in room_start_times.items():
+        # 如果记录超过24小时（86400秒），则清理
+        if current_time - start_time > 86400:
+            expired_rooms.append(room_id)
+    
+    for room_id in expired_rooms:
+        del room_start_times[room_id]
+        logger.info(f"清理过期的开播时间戳记录: 房间 {room_id}")
+    
+    if expired_rooms:
+        logger.info(f"清理了 {len(expired_rooms)} 个过期的开播时间戳记录")
 
 # 创建API路由处理器
 @get_driver().on_startup
@@ -47,6 +69,25 @@ async def setup_api():
                 room_id = room_info.get("room_id", "")
                 area_name = room_info.get("area_name", "")
                 
+                # 记录开播时间戳
+                current_time = int(time.time())
+                api_live_start_time = room_info.get("live_start_time", 0)  # API返回的开播时间戳
+                
+                logger.info(f"房间 {room_id} API返回的开播时间戳: {api_live_start_time}")
+                logger.info(f"房间 {room_id} 当前时间戳: {current_time}")
+                
+                # 如果API返回的开播时间戳为0，使用当前时间戳作为备用方案
+                if api_live_start_time == 0:
+                    room_start_times[room_id] = current_time
+                    logger.info(f"API返回开播时间戳为0，使用当前时间戳作为备用方案: {current_time}")
+                else:
+                    room_start_times[room_id] = api_live_start_time
+                    logger.info(f"使用API返回的开播时间戳: {api_live_start_time}")
+                
+                logger.info(f"记录房间 {room_id} 开播时间戳: {room_start_times[room_id]}")
+                logger.info(f"当前存储的开播时间戳数量: {len(room_start_times)}")
+                logger.info(f"存储的房间列表: {list(room_start_times.keys())}")
+                
                 logger.info(f"主播信息: {user_info}")
                 logger.info(f"房间信息: {room_info}")
                 logger.info(f"处理B站开播事件: {streamer_name} - {title} (房间号: {room_id}, 分区: {area_name})")
@@ -58,12 +99,45 @@ async def setup_api():
                 room_info = event_data.get("room_info", {})
                 
                 streamer_name = user_info.get("name", "主播")
-                online = room_info.get("online", 0)
                 title = room_info.get("title", "")
+                room_id = room_info.get("room_id", "")
+                
+                # 计算实际直播时长
+                current_time = int(time.time())
+                start_time = room_start_times.get(room_id, 0)
+                api_online = room_info.get("online", 0)  # API返回的直播时长
+                
+                logger.info(f"房间 {room_id} API返回的直播时长: {api_online}秒")
+                logger.info(f"房间 {room_id} 记录的开播时间戳: {start_time}")
+                
+                # 如果API返回的online为0，优先使用记录的开播时间戳计算
+                if api_online == 0 and start_time > 0:
+                    actual_duration = current_time - start_time
+                    # 更新room_info中的online字段
+                    room_info["online"] = actual_duration
+                    logger.info(f"API返回时长为0，使用备用方案计算实际直播时长: {actual_duration}秒 (开播时间: {start_time}, 下播时间: {current_time})")
+                    # 清理记录的开播时间戳
+                    del room_start_times[room_id]
+                elif start_time > 0:
+                    # 如果有记录的开播时间戳，也使用计算出的时长（更准确）
+                    actual_duration = current_time - start_time
+                    room_info["online"] = actual_duration
+                    logger.info(f"使用记录的开播时间戳计算实际直播时长: {actual_duration}秒 (开播时间: {start_time}, 下播时间: {current_time})")
+                    # 清理记录的开播时间戳
+                    del room_start_times[room_id]
+                else:
+                    # 如果没有记录的开播时间戳，使用API返回的online字段
+                    logger.warning(f"房间 {room_id} 未找到开播时间戳记录，使用API返回的时长: {api_online}秒")
+                    if api_online == 0:
+                        logger.warning(f"房间 {room_id} API返回时长为0且无开播记录，将显示未知时长")
+                
+                # 清理过期的开播时间戳记录
+                cleanup_expired_start_times()
                 
                 logger.info(f"主播信息: {user_info}")
                 logger.info(f"房间信息: {room_info}")
-                logger.info(f"处理B站下播事件: {streamer_name} - {title} (直播时长: {online}秒)")
+                logger.info(f"处理B站下播事件: {streamer_name} - {title} (房间号: {room_id})")
+                logger.info(f"传递给消息函数的online值: {room_info.get('online', 0)}秒")
                 await send_bilibili_notification("end", streamer_name, room_info, user_info, config)
                 
             else:
@@ -128,14 +202,16 @@ async def send_bilibili_notification(status: str, streamer_name: str, room_info:
                             title = room_info.get("title", "")
                             room_id = room_info.get("room_id", "")
                             area_name = room_info.get("area_name", "")
-                            live_start_time = room_info.get("live_start_time", 0)  # 开播时间戳
                             
-                            logger.info(f"构建开播消息 - 标题: {title}, 房间号: {room_id}, 分区: {area_name}, 开播时间戳: {live_start_time}")
+                            # 使用记录的开播时间戳（可能来自API或备用方案）
+                            recorded_start_time = room_start_times.get(room_id, 0)
+                            
+                            logger.info(f"构建开播消息 - 标题: {title}, 房间号: {room_id}, 分区: {area_name}, 记录的开播时间戳: {recorded_start_time}")
                             
                             # 转换时间戳为可读格式
-                            if live_start_time > 0:
+                            if recorded_start_time > 0:
                                 import datetime
-                                start_time = datetime.datetime.fromtimestamp(live_start_time)
+                                start_time = datetime.datetime.fromtimestamp(recorded_start_time)
                                 time_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
                                 logger.info(f"开播时间转换结果: {time_str}")
                             else:
@@ -159,27 +235,34 @@ async def send_bilibili_notification(status: str, streamer_name: str, room_info:
                             
                         else:
                             # 下播消息
+                            # 注意：这里的online可能已经在事件处理中被更新为计算出的实际时长
                             online = room_info.get("online", 0)  # 直播时长（秒）
                             
-                            logger.info(f"构建下播消息 - 直播时长: {online}秒")
+                            logger.info(f"构建下播消息 - 直播时长: {online}秒 (可能已通过备用方案计算)")
                             
-                            # 将秒数转换为时分秒格式
-                            hours = online // 3600
-                            minutes = (online % 3600) // 60
-                            seconds = online % 60
-                            
-                            if hours > 0:
-                                duration_str = f"{hours}小时{minutes}分钟{seconds}秒"
-                            elif minutes > 0:
-                                duration_str = f"{minutes}分钟{seconds}秒"
+                            if online > 0:
+                                # 将秒数转换为时分秒格式
+                                hours = online // 3600
+                                minutes = (online % 3600) // 60
+                                seconds = online % 60
+                                
+                                if hours > 0:
+                                    duration_str = f"{hours}小时{minutes}分钟{seconds}秒"
+                                elif minutes > 0:
+                                    duration_str = f"{minutes}分钟{seconds}秒"
+                                else:
+                                    duration_str = f"{seconds}秒"
+                                
+                                logger.info(f"时长转换结果: {duration_str}")
+                                
+                                message = f"【下播提醒】\n"
+                                message += f"{streamer_name}下播啦！\n"
+                                message += f"直播时长：{duration_str}"
                             else:
-                                duration_str = f"{seconds}秒"
-                            
-                            logger.info(f"时长转换结果: {duration_str}")
-                            
-                            message = f"【下播提醒】\n"
-                            message += f"{streamer_name}下播啦！\n"
-                            message += f"直播时长：{duration_str}"
+                                # 如果时长为0，不显示时长
+                                logger.warning("直播时长为0，不显示时长")
+                                message = f"【下播提醒】\n"
+                                message += f"{streamer_name}下播啦！"
                         
                         # 发送消息到群组
                         logger.info(f"准备发送消息到群组 {group_id}")
