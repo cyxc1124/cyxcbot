@@ -7,7 +7,8 @@ class Config(BaseModel):
     
     # 需要发送通知的群组ID列表（可通过环境变量 NOTIFY_GROUPS 配置）
     notify_groups: List[str] = Field(
-        default=["123456789"],
+        # default=["591116063", "993692376", "364477847"],
+        default=["364477847"],
         description="需要发送通知的群组ID列表"
     )
     
@@ -17,7 +18,8 @@ class Config(BaseModel):
         description="是否包含房间信息（标题、链接等）"
     )
 
-    class Config:
-        env_prefix = ""  # 无前缀，直接读取环境变量
-        env_file = ".env"  # 从.env文件读取
-        env_file_encoding = "utf-8" 
+    model_config = {
+        "env_prefix": "",  # 无前缀，直接读取环境变量
+        "env_file": ".env",  # 从.env文件读取
+        "env_file_encoding": "utf-8"
+    } 
