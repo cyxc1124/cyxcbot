@@ -8,7 +8,7 @@ class Config(BaseModel):
     # 需要发送通知的群组ID列表（可通过环境变量 NOTIFY_GROUPS 配置）
     notify_groups: List[str] = Field(
         # default=["591116063", "993692376", "364477847"],
-        default=["123456789"],
+        default=["364477847"],
         description="需要发送通知的群组ID列表"
     )
     
