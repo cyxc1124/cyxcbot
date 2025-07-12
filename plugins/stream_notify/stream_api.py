@@ -119,6 +119,10 @@ async def send_bilibili_notification(status: str, streamer_name: str, room_info:
                 logger.info(f"配置的通知群组: {config.notify_groups}")
                 for group_id in config.notify_groups:
                     try:
+                        # 检查机器人是否有管理员权限
+                        can_at_all = await check_bot_admin_permission(bot, group_id)
+                        logger.info(f"机器人 {bot_id} 在群组 {group_id} 中是否有管理员权限: {can_at_all}")
+                        
                         if status == "start":
                             # 开播消息
                             title = room_info.get("title", "")
@@ -144,8 +148,14 @@ async def send_bilibili_notification(status: str, streamer_name: str, room_info:
                                 message += f"房间号：{room_id}\n"
                                 message += f"开播时间：{time_str}\n"
                                 message += f"点我直达：https://live.bilibili.com/{room_id}\n"
-                                
-                            message += str(MessageSegment.at("all"))
+                            
+                            # 根据权限决定是否@全体成员
+                            if can_at_all:
+                                message += str(MessageSegment.at("all"))
+                                logger.info("使用@全体成员")
+                            else:
+                                message += "\n📢 请关注直播动态！"
+                                logger.info("机器人无管理员权限，使用普通提醒消息")
                             
                         else:
                             # 下播消息
@@ -200,4 +210,27 @@ async def send_bilibili_notification(status: str, streamer_name: str, room_info:
         import traceback
         logger.error(f"详细错误堆栈: {traceback.format_exc()}")
     else:
-        logger.info(f"B站直播通知发送流程完成 - 状态: {status}, 主播: {streamer_name}") 
+        logger.info(f"B站直播通知发送流程完成 - 状态: {status}, 主播: {streamer_name}")
+
+async def check_bot_admin_permission(bot: Bot, group_id: str) -> bool:
+    """检查机器人在群组中是否有管理员权限"""
+    try:
+        # 获取机器人自己的群成员信息
+        bot_info = await bot.get_group_member_info(
+            group_id=int(group_id),
+            user_id=int(bot.self_id),
+            no_cache=False
+        )
+        
+        # 检查角色是否为管理员或群主
+        role = bot_info.get("role", "member")
+        logger.info(f"机器人在群组 {group_id} 中的角色: {role}")
+        
+        # 只有管理员(admin)和群主(owner)可以@全体成员
+        return role in ["admin", "owner"]
+        
+    except Exception as e:
+        logger.warning(f"检查机器人管理员权限失败: {e}")
+        logger.warning(f"群组ID: {group_id}, 机器人ID: {bot.self_id}")
+        # 如果检查失败，默认返回False（不使用@全体成员）
+        return False 
