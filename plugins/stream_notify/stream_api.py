@@ -9,14 +9,15 @@ from yarl import URL
 
 from .config import Config
 
-# 获取插件配置
-config = get_plugin_config(Config)
-
 # 创建API路由处理器
 @get_driver().on_startup
 async def setup_api():
     """设置B站直播事件API路由"""
     driver = get_driver()
+    
+    # 获取插件配置
+    config = get_plugin_config(Config)
+    logger.info(f"插件配置加载完成: notify_groups={config.notify_groups}, include_room_info={config.include_room_info}")
     
     # 注册HTTP路由 - B站直播事件API
     async def bilibili_live_api(request: Request) -> Response:
@@ -49,7 +50,7 @@ async def setup_api():
                 logger.info(f"主播信息: {user_info}")
                 logger.info(f"房间信息: {room_info}")
                 logger.info(f"处理B站开播事件: {streamer_name} - {title} (房间号: {room_id}, 分区: {area_name})")
-                await send_bilibili_notification("start", streamer_name, room_info, user_info)
+                await send_bilibili_notification("start", streamer_name, room_info, user_info, config)
                 
             elif event_type == "LiveEndedEvent":
                 # 下播事件
@@ -63,7 +64,7 @@ async def setup_api():
                 logger.info(f"主播信息: {user_info}")
                 logger.info(f"房间信息: {room_info}")
                 logger.info(f"处理B站下播事件: {streamer_name} - {title} (直播时长: {online}秒)")
-                await send_bilibili_notification("end", streamer_name, room_info, user_info)
+                await send_bilibili_notification("end", streamer_name, room_info, user_info, config)
                 
             else:
                 logger.warning(f"不支持的事件类型: {event_type}")
@@ -102,7 +103,7 @@ async def setup_api():
     )
     logger.info("B站直播事件API路由已注册: /api/bilibili/live")
 
-async def send_bilibili_notification(status: str, streamer_name: str, room_info: Dict, user_info: Dict):
+async def send_bilibili_notification(status: str, streamer_name: str, room_info: Dict, user_info: Dict, config: Config):
     """发送B站直播通知"""
     logger.info(f"开始发送B站直播通知 - 状态: {status}, 主播: {streamer_name}")
     try:
