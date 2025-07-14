@@ -19,6 +19,8 @@ def cleanup_expired_start_times():
     current_time = int(time.time())
     expired_rooms = []
     
+    logger.info(f"开始清理过期的开播时间戳记录，当前存储数量: {len(room_start_times)}")
+    
     for room_id, start_time in room_start_times.items():
         # 如果记录超过24小时（86400秒），则清理
         if current_time - start_time > 86400:
@@ -30,6 +32,8 @@ def cleanup_expired_start_times():
     
     if expired_rooms:
         logger.info(f"清理了 {len(expired_rooms)} 个过期的开播时间戳记录")
+    else:
+        logger.info("没有需要清理的过期记录")
 
 # 创建API路由处理器
 @get_driver().on_startup
@@ -91,6 +95,7 @@ async def setup_api():
                 logger.info(f"主播信息: {user_info}")
                 logger.info(f"房间信息: {room_info}")
                 logger.info(f"处理B站开播事件: {streamer_name} - {title} (房间号: {room_id}, 分区: {area_name})")
+                logger.info(f"开播事件处理完成 - 记录开播时间戳: {room_start_times[room_id]}, 来源: {'API' if api_live_start_time > 0 else '当前时间'}")
                 await send_bilibili_notification("start", streamer_name, room_info, user_info, config)
                 
             elif event_type == "LiveEndedEvent":
@@ -110,7 +115,7 @@ async def setup_api():
                 logger.info(f"房间 {room_id} API返回的直播时长: {api_online}秒")
                 logger.info(f"房间 {room_id} 记录的开播时间戳: {start_time}")
                 
-                # 如果API返回的online为0，优先使用记录的开播时间戳计算
+                # 情况1: API返回的online为0，优先使用记录的开播时间戳计算
                 if api_online == 0 and start_time > 0:
                     actual_duration = current_time - start_time
                     # 更新room_info中的online字段
@@ -118,18 +123,41 @@ async def setup_api():
                     logger.info(f"API返回时长为0，使用备用方案计算实际直播时长: {actual_duration}秒 (开播时间: {start_time}, 下播时间: {current_time})")
                     # 清理记录的开播时间戳
                     del room_start_times[room_id]
-                elif start_time > 0:
-                    # 如果有记录的开播时间戳，也使用计算出的时长（更准确）
-                    actual_duration = current_time - start_time
-                    room_info["online"] = actual_duration
-                    logger.info(f"使用记录的开播时间戳计算实际直播时长: {actual_duration}秒 (开播时间: {start_time}, 下播时间: {current_time})")
+                    duration_source = "本地计算"
+                    logger.info(f"情况1处理完成 - 使用本地计算时长: {actual_duration}秒")
+                # 情况2: API返回的online有数值，且有记录的开播时间戳，进行校验
+                elif api_online > 0 and start_time > 0:
+                    # 如果有记录的开播时间戳，进行校验
+                    calculated_duration = current_time - start_time
+                    duration_diff = abs(calculated_duration - api_online)
+                    
+                    logger.info(f"API返回时长: {api_online}秒, 计算时长: {calculated_duration}秒, 差异: {duration_diff}秒")
+                    
+                    # 如果差异在3秒以内，信任API返回的时长
+                    if duration_diff <= 3:
+                        logger.info(f"时长差异在3秒以内，信任API返回的时长: {api_online}秒")
+                        room_info["online"] = api_online
+                        duration_source = "API"
+                    else:
+                        # 如果差异超过3秒，使用计算出的时长并记录警告
+                        logger.warning(f"时长差异超过3秒，使用计算出的时长: {calculated_duration}秒 (API: {api_online}秒, 差异: {duration_diff}秒)")
+                        room_info["online"] = calculated_duration
+                        duration_source = "本地计算"
+                    
                     # 清理记录的开播时间戳
                     del room_start_times[room_id]
+                    logger.info(f"情况2处理完成 - 最终使用时长: {room_info['online']}秒，来源: {duration_source}")
+                # 情况3&4: 没有记录的开播时间戳，使用API返回的online字段
                 else:
                     # 如果没有记录的开播时间戳，使用API返回的online字段
                     logger.warning(f"房间 {room_id} 未找到开播时间戳记录，使用API返回的时长: {api_online}秒")
+                    if api_online > 0:
+                        duration_source = "API"
+                    else:
+                        duration_source = ""
                     if api_online == 0:
-                        logger.warning(f"房间 {room_id} API返回时长为0且无开播记录，将显示未知时长")
+                        logger.warning(f"房间 {room_id} API返回时长为0且无开播记录")
+                    logger.info(f"情况3&4处理完成 - API返回时长: {api_online}秒，来源: {duration_source}")
                 
                 # 清理过期的开播时间戳记录
                 cleanup_expired_start_times()
@@ -137,8 +165,8 @@ async def setup_api():
                 logger.info(f"主播信息: {user_info}")
                 logger.info(f"房间信息: {room_info}")
                 logger.info(f"处理B站下播事件: {streamer_name} - {title} (房间号: {room_id})")
-                logger.info(f"传递给消息函数的online值: {room_info.get('online', 0)}秒")
-                await send_bilibili_notification("end", streamer_name, room_info, user_info, config)
+                logger.info(f"传递给消息函数的online值: {room_info.get('online', 0)}秒，来源: {duration_source}")
+                await send_bilibili_notification("end", streamer_name, room_info, user_info, config, duration_source)
                 
             else:
                 logger.warning(f"不支持的事件类型: {event_type}")
@@ -177,7 +205,7 @@ async def setup_api():
     )
     logger.info("B站直播事件API路由已注册: /api/bilibili/live")
 
-async def send_bilibili_notification(status: str, streamer_name: str, room_info: Dict, user_info: Dict, config: Config):
+async def send_bilibili_notification(status: str, streamer_name: str, room_info: Dict, user_info: Dict, config: Config, duration_source: str = ""):
     """发送B站直播通知"""
     logger.info(f"开始发送B站直播通知 - 状态: {status}, 主播: {streamer_name}")
     try:
@@ -237,8 +265,7 @@ async def send_bilibili_notification(status: str, streamer_name: str, room_info:
                             # 下播消息
                             # 注意：这里的online可能已经在事件处理中被更新为计算出的实际时长
                             online = room_info.get("online", 0)  # 直播时长（秒）
-                            
-                            logger.info(f"构建下播消息 - 直播时长: {online}秒 (可能已通过备用方案计算)")
+                            logger.info(f"构建下播消息 - 直播时长: {online}秒 ，来源: {duration_source}")
                             
                             if online > 0:
                                 # 将秒数转换为时分秒格式
