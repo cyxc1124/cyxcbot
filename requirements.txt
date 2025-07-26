@@ -1,6 +1,7 @@
 nonebot2[fastapi]==2.4.2
 nonebot-adapter-console==0.7.1
 nonebot-adapter-onebot==2.4.6
+psutil==5.9.6
 pytest==7.4.3
 pytest-asyncio==0.21.1
 flake8==6.1.0 
