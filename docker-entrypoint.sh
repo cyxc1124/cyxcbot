@@ -37,6 +37,8 @@ echo "- HOST: $HOST"
 echo "- PORT: $PORT"
 echo "- SUPERUSERS: ${SUPERUSERS:-Not set}"
 echo "- NOTIFY_GROUPS: ${NOTIFY_GROUPS:-Not set}"
+echo "- STATUS_CHECK_ALLOWED_QQ: ${STATUS_CHECK_ALLOWED_QQ:-Use SUPERUSERS}"
+echo "- STATUS_CHECK_SHOW_DETAILED: ${STATUS_CHECK_SHOW_DETAILED:-true}"
 echo "=========================================="
 
 # 启动应用
