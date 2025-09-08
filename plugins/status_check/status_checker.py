@@ -8,6 +8,7 @@ from nonebot.permission import SUPERUSER
 from nonebot.rule import to_me
 from nonebot.log import logger
 from nonebot import get_plugin_config
+from nonebot.internal.permission import Permission
 from .config import Config
 
 # 获取插件配置
@@ -16,12 +17,35 @@ config = get_plugin_config(Config)
 # 记录机器人启动时间
 start_time = time.time()
 
+# 自定义权限检查：允许超级用户或配置中的QQ号
+async def status_permission(bot: Bot, event: GroupMessageEvent | PrivateMessageEvent) -> bool:
+    """检查用户是否有查询状态的权限"""
+    user_id = event.user_id
+    
+    # 检查是否为超级用户
+    if await SUPERUSER(bot, event):
+        logger.info(f"超级用户 {user_id} 尝试查询机器人状态")
+        return True
+    
+    # 检查是否在允许的QQ号列表中
+    if user_id in config.allowed_qq_numbers:
+        logger.info(f"允许的用户 {user_id} 尝试查询机器人状态")
+        return True
+    
+    # 无权限访问时记录日志但不回复任何消息
+    logger.warning(f"用户 {user_id} 尝试查询机器人状态，但无权限（将被忽略）")
+    return False
+
+# 创建权限对象
+STATUS_PERMISSION = Permission(status_permission)
+
 # 创建状态查询命令处理器
 status_cmd = on_command(
     "status",
     aliases={"状态", "运行状态"},
     priority=5,
-    block=True
+    block=True,
+    permission=STATUS_PERMISSION
 )
 
 @status_cmd.handle()
@@ -29,12 +53,7 @@ async def handle_status_command(bot: Bot, event: GroupMessageEvent | PrivateMess
     """处理状态查询命令"""
     user_id = event.user_id
     
-    # 检查用户是否有权限查询状态
-    if user_id not in config.allowed_qq_numbers:
-        logger.warning(f"用户 {user_id} 尝试查询机器人状态，但无权限")
-        await status_cmd.finish("❌ 您没有权限查询机器人状态")
-        return
-    
+    # 权限检查已在permission层面完成，这里直接处理请求
     logger.info(f"用户 {user_id} 查询机器人状态")
     
     try:
