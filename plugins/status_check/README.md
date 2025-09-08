@@ -6,7 +6,8 @@
 
 ## 权限控制
 
-- 只有配置文件中指定的QQ号才能使用 `/status` 命令
+- 优先使用系统 `SUPERUSERS` 配置中的QQ号
+- 可通过环境变量 `STATUS_CHECK_ALLOWED_QQ` 单独配置允许的QQ号
 - 默认只允许QQ号 `120674547` 查询状态
 - 其他用户尝试查询时会收到权限不足的提示
 
@@ -34,21 +35,38 @@
 
 ## 配置选项
 
-在 `config.py` 中可以配置以下选项：
+### 环境变量配置（推荐）
+
+可以通过以下环境变量配置插件：
+
+```bash
+# 权限配置（优先使用SUPERUSERS）
+SUPERUSERS='["120674547"]'                    # 系统超级用户（推荐）
+STATUS_CHECK_ALLOWED_QQ='["120674547"]'      # 专用状态查询权限
+
+# 显示选项配置
+STATUS_CHECK_SHOW_DETAILED=true              # 显示详细状态信息
+STATUS_CHECK_SHOW_UPTIME=true                # 显示运行时间
+STATUS_CHECK_SHOW_MEMORY=true                # 显示内存使用情况
+```
+
+### 配置类定义
+
+插件会自动从环境变量读取配置：
 
 ```python
 class Config(BaseModel):
-    # 允许查询状态的QQ号列表
-    allowed_qq_numbers: List[int] = [120674547]
+    # 允许查询状态的QQ号列表（优先使用SUPERUSERS）
+    allowed_qq_numbers: List[int] = Field(default_factory=lambda: Config._get_allowed_qq_numbers())
     
     # 是否显示详细状态信息
-    show_detailed_status: bool = True
+    show_detailed_status: bool = Field(default_factory=lambda: Config._get_show_detailed_status())
     
     # 是否显示机器人运行时间
-    show_uptime: bool = True
+    show_uptime: bool = Field(default_factory=lambda: Config._get_show_uptime())
     
     # 是否显示内存使用情况
-    show_memory_usage: bool = True
+    show_memory_usage: bool = Field(default_factory=lambda: Config._get_show_memory_usage())
 ```
 
 ## 依赖
