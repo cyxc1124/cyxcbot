@@ -47,10 +47,11 @@ class Config(BaseModel):
             if allowed_qq_str:
                 return json.loads(allowed_qq_str)
                 
-            # 默认值
-            return [120674547]
+            # 如果都没有配置，返回空列表（只允许SUPERUSER权限访问）
+            return []
         except (json.JSONDecodeError, TypeError, ValueError):
-            return [120674547]
+            # 配置解析失败时返回空列表
+            return []
     
     @staticmethod
     def _get_show_detailed_status() -> bool:
