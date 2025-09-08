@@ -36,7 +36,7 @@ echo "Configuration:"
 echo "- HOST: $HOST"
 echo "- PORT: $PORT"
 echo "- SUPERUSERS: ${SUPERUSERS:-Not set}"
-echo "- STREAM_NOTIFY_NOTIFY_GROUPS: ${STREAM_NOTIFY_NOTIFY_GROUPS:-Not set}"
+echo "- NOTIFY_GROUPS: ${NOTIFY_GROUPS:-Not set}"
 echo "=========================================="
 
 # 启动应用
