@@ -83,6 +83,7 @@ async def get_bot_status() -> str:
         # 构建状态消息
         status_msg = "机器草 运行状态\n"
         status_msg += "=" * 35 + "\n"
+        status_msg += f"当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
         
         # 基础运行信息
         if config.show_uptime:
@@ -99,10 +100,19 @@ async def get_bot_status() -> str:
         cpu_info = get_cpu_info()
         status_msg += f"CPU使用率: {cpu_info}\n"
         
+        # 获取进程内存信息
+        try:
+            import psutil
+            process = psutil.Process()
+            process_memory = process.memory_info().rss / (1024 ** 2)
+            status_msg += f"进程内存: {process_memory:.1f}MB\n"
+        except Exception as e:
+            logger.debug(f"获取进程内存失败: {e}")
+            status_msg += f"进程内存: 无法获取\n"
+        
         if config.show_detailed_status:
             status_msg += "\n" + "详细技术信息" + "\n"
             status_msg += "-" * 20 + "\n"
-            status_msg += f"当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
             status_msg += f"Python版本: {platform.python_version()}\n"
             status_msg += f"NoneBot版本: {get_nonebot_version()}\n"
             
@@ -516,21 +526,6 @@ def get_technical_info() -> str:
         tech_info = ""
         env = detect_container_environment()
         
-        # 磁盘使用情况
-        try:
-            import os
-            # 在容器中，通常显示根文件系统的使用情况更有意义
-            disk_path = '/' if os.name != 'nt' else 'C:\\'
-            disk = psutil.disk_usage(disk_path)
-            disk_used_gb = disk.used / (1024 ** 3)
-            disk_total_gb = disk.total / (1024 ** 3)
-            disk_percent = (disk.used / disk.total) * 100
-            
-            suffix = " [容器文件系统]" if env['is_container'] else ""
-            tech_info += f"磁盘使用: {disk_used_gb:.1f}GB/{disk_total_gb:.1f}GB ({disk_percent:.1f}%){suffix}\n"
-        except:
-            pass
-        
         # 网络连接数（仅在非容器环境或连接数异常时显示）
         try:
             connections = len(psutil.net_connections())
@@ -538,15 +533,6 @@ def get_technical_info() -> str:
             if not env['is_container'] or connections > 10:
                 suffix = " [容器内可见]" if env['is_container'] else ""
                 tech_info += f"网络连接数: {connections}{suffix}\n"
-        except:
-            pass
-        
-        # 进程信息
-        try:
-            process = psutil.Process()
-            process_memory = process.memory_info().rss / (1024 ** 2)
-            tech_info += f"进程内存: {process_memory:.1f}MB\n"
-            tech_info += f"进程PID: {process.pid}\n"
         except:
             pass
         
