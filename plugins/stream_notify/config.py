@@ -27,10 +27,11 @@ class Config(BaseModel):
             notify_groups_str = os.getenv('NOTIFY_GROUPS')
             if notify_groups_str:
                 return json.loads(notify_groups_str)
-            # 默认值
-            return ["123456789"]
+            # 如果没有配置，返回空列表（需要在环境变量中明确配置）
+            return []
         except (json.JSONDecodeError, TypeError):
-            return ["123456789"]
+            # 配置解析失败时返回空列表
+            return []
     
     @staticmethod
     def _get_include_room_info() -> bool:
