@@ -141,12 +141,26 @@ def format_uptime(seconds: int) -> str:
         return f"{seconds}秒"
 
 def get_system_info() -> str:
-    """获取系统信息"""
+    """获取系统信息（容器感知）"""
     try:
         system = platform.system()
         release = platform.release()
         machine = platform.machine()
-        return f"{system} {release} ({machine})"
+        
+        # 检测容器环境
+        env = detect_container_environment()
+        
+        base_info = f"{system} {release} ({machine})"
+        
+        if env['is_container']:
+            if env['is_kubernetes']:
+                return f"{base_info} [Kubernetes Pod]"
+            elif env['is_docker']:
+                return f"{base_info} [Docker Container]"
+            else:
+                return f"{base_info} [Container]"
+        
+        return base_info
     except Exception as e:
         logger.error(f"获取系统信息失败: {e}")
         return "未知"
@@ -179,29 +193,136 @@ def get_bot_connection_status() -> str:
         logger.error(f"获取机器人连接状态失败: {e}")
         return "未知"
 
-def get_detailed_memory_info() -> str:
-    """获取详细内存使用情况"""
+def detect_container_environment():
+    """检测容器环境"""
+    import os
+    
+    # 检查是否在Docker容器中
+    is_docker = (
+        os.path.exists('/.dockerenv') or
+        os.getenv('DOCKER_CONTAINER', '').lower() == 'true'
+    )
+    
+    # 检查是否在Kubernetes中
+    is_kubernetes = any(key.startswith(('KUBERNETES_', 'KUBE_')) for key in os.environ)
+    
+    # 检查cgroup信息
     try:
+        if os.path.exists('/proc/1/cgroup'):
+            with open('/proc/1/cgroup', 'r') as f:
+                cgroup_info = f.read()
+                if 'docker' in cgroup_info or 'kubepods' in cgroup_info:
+                    is_docker = True
+    except:
+        pass
+    
+    return {
+        'is_container': is_docker or is_kubernetes,
+        'is_docker': is_docker,
+        'is_kubernetes': is_kubernetes,
+        'container_type': 'Kubernetes Pod' if is_kubernetes else ('Docker Container' if is_docker else 'Physical/VM')
+    }
+
+def get_container_memory_info():
+    """获取容器内存信息（cgroup限制）"""
+    import os
+    try:
+        # 尝试cgroup v1
+        memory_limit_files = [
+            '/sys/fs/cgroup/memory/memory.limit_in_bytes',
+            '/sys/fs/cgroup/memory.max'  # cgroup v2
+        ]
+        memory_usage_files = [
+            '/sys/fs/cgroup/memory/memory.usage_in_bytes',
+            '/sys/fs/cgroup/memory.current'  # cgroup v2
+        ]
+        
+        limit_bytes = None
+        usage_bytes = None
+        
+        # 查找可用的内存限制文件
+        for limit_file in memory_limit_files:
+            if os.path.exists(limit_file):
+                try:
+                    with open(limit_file, 'r') as f:
+                        content = f.read().strip()
+                        if content != 'max':  # cgroup v2中无限制时返回'max'
+                            limit_bytes = int(content)
+                            break
+                except:
+                    continue
+        
+        # 查找可用的内存使用文件
+        for usage_file in memory_usage_files:
+            if os.path.exists(usage_file):
+                try:
+                    with open(usage_file, 'r') as f:
+                        usage_bytes = int(f.read().strip())
+                        break
+                except:
+                    continue
+        
+        if limit_bytes and usage_bytes:
+            # 处理无限制的情况（通常是一个很大的数字）
+            if limit_bytes > 1024**4:  # 大于1TB，可能是无限制
+                return None
+                
+            limit_gb = limit_bytes / (1024 ** 3)
+            usage_gb = usage_bytes / (1024 ** 3)
+            available_gb = limit_gb - usage_gb
+            usage_percent = (usage_gb / limit_gb) * 100
+            
+            return {
+                'used_gb': usage_gb,
+                'total_gb': limit_gb,
+                'available_gb': available_gb,
+                'percent': usage_percent,
+                'is_container': True
+            }
+    except Exception as e:
+        logger.debug(f"读取容器内存信息失败: {e}")
+    
+    return None
+
+def get_detailed_memory_info() -> str:
+    """获取详细内存使用情况（优先显示容器信息）"""
+    try:
+        env = detect_container_environment()
+        
+        # 如果在容器中，尝试获取容器内存信息
+        if env['is_container']:
+            container_memory = get_container_memory_info()
+            if container_memory:
+                return f"{container_memory['used_gb']:.1f}GB/{container_memory['total_gb']:.1f}GB (使用率{container_memory['percent']:.1f}%, 可用{container_memory['available_gb']:.1f}GB) [容器]"
+        
+        # 使用系统内存信息
         memory = psutil.virtual_memory()
         used_gb = memory.used / (1024 ** 3)
         total_gb = memory.total / (1024 ** 3)
         available_gb = memory.available / (1024 ** 3)
         percent = memory.percent
-        return f"{used_gb:.1f}GB/{total_gb:.1f}GB (使用率{percent:.1f}%, 可用{available_gb:.1f}GB)"
+        
+        suffix = " [宿主机]" if env['is_container'] else ""
+        return f"{used_gb:.1f}GB/{total_gb:.1f}GB (使用率{percent:.1f}%, 可用{available_gb:.1f}GB){suffix}"
     except Exception as e:
         logger.error(f"获取详细内存信息失败: {e}")
         return get_memory_info()  # 降级到基础信息
 
 def get_cpu_info() -> str:
-    """获取CPU使用率和核心数"""
+    """获取CPU使用率和核心数（容器感知）"""
     try:
+        env = detect_container_environment()
         cpu_percent = psutil.cpu_percent(interval=1)
         cpu_count = psutil.cpu_count()
         cpu_freq = psutil.cpu_freq()
+        
+        # 在容器中，CPU信息通常反映的是宿主机信息
+        suffix = " [宿主机]" if env['is_container'] else ""
+        
         if cpu_freq:
-            return f"{cpu_percent:.1f}% ({cpu_count}核, {cpu_freq.current:.0f}MHz)"
+            return f"{cpu_percent:.1f}% ({cpu_count}核, {cpu_freq.current:.0f}MHz){suffix}"
         else:
-            return f"{cpu_percent:.1f}% ({cpu_count}核)"
+            return f"{cpu_percent:.1f}% ({cpu_count}核){suffix}"
     except Exception as e:
         logger.error(f"获取CPU信息失败: {e}")
         return "无法获取"
@@ -244,27 +365,31 @@ def get_plugin_status() -> str:
         return "无法获取插件状态"
 
 def get_technical_info() -> str:
-    """获取技术详细信息"""
+    """获取技术详细信息（容器优化）"""
     try:
         tech_info = ""
+        env = detect_container_environment()
         
         # 磁盘使用情况
         try:
             import os
-            # 根据操作系统选择磁盘路径
+            # 在容器中，通常显示根文件系统的使用情况更有意义
             disk_path = '/' if os.name != 'nt' else 'C:\\'
             disk = psutil.disk_usage(disk_path)
             disk_used_gb = disk.used / (1024 ** 3)
             disk_total_gb = disk.total / (1024 ** 3)
             disk_percent = (disk.used / disk.total) * 100
-            tech_info += f"磁盘使用: {disk_used_gb:.1f}GB/{disk_total_gb:.1f}GB ({disk_percent:.1f}%)\n"
+            
+            suffix = " [容器文件系统]" if env['is_container'] else ""
+            tech_info += f"磁盘使用: {disk_used_gb:.1f}GB/{disk_total_gb:.1f}GB ({disk_percent:.1f}%){suffix}\n"
         except:
             pass
         
         # 网络连接数
         try:
             connections = len(psutil.net_connections())
-            tech_info += f"网络连接数: {connections}\n"
+            suffix = " [容器内可见]" if env['is_container'] else ""
+            tech_info += f"网络连接数: {connections}{suffix}\n"
         except:
             pass
         
@@ -280,7 +405,10 @@ def get_technical_info() -> str:
         # 系统启动时间
         try:
             boot_time = datetime.fromtimestamp(psutil.boot_time())
-            tech_info += f"系统启动: {boot_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            if env['is_container']:
+                tech_info += f"容器宿主机启动: {boot_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            else:
+                tech_info += f"系统启动: {boot_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
         except:
             pass
             
