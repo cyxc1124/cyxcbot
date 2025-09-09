@@ -81,24 +81,42 @@ async def get_bot_status() -> str:
         bot_status = get_bot_connection_status()
         
         # 构建状态消息
-        status_msg = "🤖 机器人运行状态\n"
-        status_msg += "=" * 20 + "\n"
+        status_msg = "CyxcBot 运行状态报告\n"
+        status_msg += "=" * 35 + "\n"
         
+        # 基础运行信息
         if config.show_uptime:
-            status_msg += f"⏰ 运行时间: {uptime_str}\n"
+            status_msg += f"运行时长: {uptime_str}\n"
         
-        status_msg += f"🖥️ 系统: {system_info}\n"
+        status_msg += f"操作系统: {system_info}\n"
         
         if config.show_memory_usage:
-            status_msg += f"💾 内存使用: {memory_info}\n"
+            # 获取更详细的内存信息
+            memory_detail = get_detailed_memory_info()
+            status_msg += f"内存使用: {memory_detail}\n"
         
-        status_msg += f"🔗 连接状态: {bot_status}\n"
+        # 获取CPU使用率
+        cpu_info = get_cpu_info()
+        status_msg += f"CPU使用率: {cpu_info}\n"
+        
+        # 连接状态
+        connection_detail = get_detailed_connection_status()
+        status_msg += f"连接状态: {connection_detail}\n"
+        
+        # 插件状态
+        plugin_status = get_plugin_status()
+        status_msg += f"插件状态: {plugin_status}\n"
         
         if config.show_detailed_status:
-            status_msg += "=" * 20 + "\n"
-            status_msg += f"📅 当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            status_msg += f"🐍 Python版本: {platform.python_version()}\n"
-            status_msg += f"📦 NoneBot版本: {get_nonebot_version()}\n"
+            status_msg += "\n" + "详细技术信息" + "\n"
+            status_msg += "-" * 20 + "\n"
+            status_msg += f"当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            status_msg += f"Python版本: {platform.python_version()}\n"
+            status_msg += f"NoneBot版本: {get_nonebot_version()}\n"
+            
+            # 添加更多技术信息
+            tech_info = get_technical_info()
+            status_msg += tech_info
         
         return status_msg
         
@@ -154,12 +172,122 @@ def get_bot_connection_status() -> str:
         
         if bots:
             bot_count = len(bots)
-            return f"✅ 已连接 {bot_count} 个机器人"
+            return f"已连接 {bot_count} 个机器人"
         else:
-            return "❌ 未连接任何机器人"
+            return "未连接任何机器人"
     except Exception as e:
         logger.error(f"获取机器人连接状态失败: {e}")
         return "未知"
+
+def get_detailed_memory_info() -> str:
+    """获取详细内存使用情况"""
+    try:
+        memory = psutil.virtual_memory()
+        used_gb = memory.used / (1024 ** 3)
+        total_gb = memory.total / (1024 ** 3)
+        available_gb = memory.available / (1024 ** 3)
+        percent = memory.percent
+        return f"{used_gb:.1f}GB/{total_gb:.1f}GB (使用率{percent:.1f}%, 可用{available_gb:.1f}GB)"
+    except Exception as e:
+        logger.error(f"获取详细内存信息失败: {e}")
+        return get_memory_info()  # 降级到基础信息
+
+def get_cpu_info() -> str:
+    """获取CPU使用率和核心数"""
+    try:
+        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_count = psutil.cpu_count()
+        cpu_freq = psutil.cpu_freq()
+        if cpu_freq:
+            return f"{cpu_percent:.1f}% ({cpu_count}核, {cpu_freq.current:.0f}MHz)"
+        else:
+            return f"{cpu_percent:.1f}% ({cpu_count}核)"
+    except Exception as e:
+        logger.error(f"获取CPU信息失败: {e}")
+        return "无法获取"
+
+def get_detailed_connection_status() -> str:
+    """获取详细连接状态"""
+    try:
+        from nonebot import get_driver
+        driver = get_driver()
+        bots = driver.bots
+        
+        if not bots:
+            return "未连接"
+        
+        status_details = []
+        for bot_id, bot in bots.items():
+            bot_type = type(bot).__name__
+            status_details.append(f"{bot_id}({bot_type})")
+        
+        return f"{len(bots)}个连接: {', '.join(status_details)}"
+    except Exception as e:
+        logger.error(f"获取详细连接状态失败: {e}")
+        return get_bot_connection_status()
+
+def get_plugin_status() -> str:
+    """获取插件加载状态"""
+    try:
+        from nonebot import get_loaded_plugins
+        plugins = get_loaded_plugins()
+        plugin_names = []
+        
+        for plugin in plugins:
+            # 获取插件名称，优先使用模块名
+            name = getattr(plugin, 'name', plugin.module_name.split('.')[-1])
+            plugin_names.append(name)
+        
+        return f"{len(plugins)}个插件已加载: {', '.join(plugin_names[:3])}{'...' if len(plugin_names) > 3 else ''}"
+    except Exception as e:
+        logger.error(f"获取插件状态失败: {e}")
+        return "无法获取插件状态"
+
+def get_technical_info() -> str:
+    """获取技术详细信息"""
+    try:
+        tech_info = ""
+        
+        # 磁盘使用情况
+        try:
+            import os
+            # 根据操作系统选择磁盘路径
+            disk_path = '/' if os.name != 'nt' else 'C:\\'
+            disk = psutil.disk_usage(disk_path)
+            disk_used_gb = disk.used / (1024 ** 3)
+            disk_total_gb = disk.total / (1024 ** 3)
+            disk_percent = (disk.used / disk.total) * 100
+            tech_info += f"磁盘使用: {disk_used_gb:.1f}GB/{disk_total_gb:.1f}GB ({disk_percent:.1f}%)\n"
+        except:
+            pass
+        
+        # 网络连接数
+        try:
+            connections = len(psutil.net_connections())
+            tech_info += f"网络连接数: {connections}\n"
+        except:
+            pass
+        
+        # 进程信息
+        try:
+            process = psutil.Process()
+            process_memory = process.memory_info().rss / (1024 ** 2)
+            tech_info += f"进程内存: {process_memory:.1f}MB\n"
+            tech_info += f"进程PID: {process.pid}\n"
+        except:
+            pass
+        
+        # 系统启动时间
+        try:
+            boot_time = datetime.fromtimestamp(psutil.boot_time())
+            tech_info += f"系统启动: {boot_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        except:
+            pass
+            
+        return tech_info
+    except Exception as e:
+        logger.error(f"获取技术信息失败: {e}")
+        return ""
 
 def get_nonebot_version() -> str:
     """获取NoneBot版本"""
