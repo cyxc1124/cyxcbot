@@ -1,9 +1,103 @@
 import nonebot
+import os
+from nonebot.log import logger
 from nonebot.adapters.console import Adapter as ConsoleAdapter  # 避免重复命名
 from nonebot.adapters.onebot.v11 import Adapter as OneBotAdapter  # 添加OneBot适配器
 
+# 记录环境变量配置（用于调试）
+def log_environment_config():
+    """记录当前环境变量配置到日志"""
+    logger.info("🔧 Environment Variables Debug Info")
+    
+    # 检测运行环境
+    is_kubernetes = any(key.startswith(('KUBERNETES_', 'KUBE_')) for key in os.environ)
+    is_docker = os.getenv('DOCKER_CONTAINER', '').lower() == 'true' or os.path.exists('/.dockerenv')
+    
+    if is_kubernetes:
+        logger.info("🎯 Environment: Kubernetes")
+        logger.info("📄 Using ConfigMap/Environment Variables (K8s)")
+    elif is_docker:
+        logger.info("🐳 Environment: Docker Container")  
+        logger.info("📄 Using Docker Environment Variables")
+    else:
+        logger.info("🖥️ Environment: Local Development")
+        
+        # 在本地环境中尝试加载.env文件
+        try:
+            from pathlib import Path
+            env_file = Path(".env")
+            if env_file.exists():
+                logger.info(f"📄 Loading .env file: {env_file.absolute()}")
+                loaded_count = 0
+                # 手动读取.env文件
+                with open(env_file, 'r', encoding='utf-8') as f:
+                    for line_num, line in enumerate(f, 1):
+                        line = line.strip()
+                        if line and not line.startswith('#') and '=' in line:
+                            key, value = line.split('=', 1)
+                            key = key.strip()
+                            value = value.strip()
+                            # 设置到环境变量中（如果还没有设置的话）
+                            if key not in os.environ:
+                                os.environ[key] = value
+                                loaded_count += 1
+                logger.info(f"📥 Loaded {loaded_count} variables from .env file")
+            else:
+                logger.info("📄 No .env file found - using system environment variables")
+        except Exception as e:
+            logger.error(f"⚠️ Error loading .env file: {e}")
+    
+    # 统计环境变量
+    all_env_count = len(os.environ)
+    plugin_env_count = len([k for k in os.environ.keys() 
+                           if any(prefix in k for prefix in ['HOST', 'PORT', 'SUPERUSERS', 'NOTIFY_', 'STATUS_CHECK_', 'INCLUDE_ROOM', 'COMMAND_'])])
+    logger.info(f"📊 Total environment variables: {all_env_count}, Plugin-related: {plugin_env_count}")
+    
+    # 定义要检查的环境变量
+    plugin_vars = {
+        "Basic Config": [
+            "HOST", "PORT", "COMMAND_START", "COMMAND_SEP"
+        ],
+        "User & Groups": [
+            "SUPERUSERS", "NOTIFY_GROUPS"
+        ],
+        "Stream Notify": [
+            "INCLUDE_ROOM_INFO"
+        ],
+        "Status Check": [
+            "STATUS_CHECK_ALLOWED_QQ",
+            "STATUS_CHECK_SHOW_DETAILED",
+            "STATUS_CHECK_SHOW_UPTIME", 
+            "STATUS_CHECK_SHOW_MEMORY"
+        ]
+    }
+    
+    # 记录所有插件相关环境变量
+    for category, vars_list in plugin_vars.items():
+        config_items = []
+        for var in vars_list:
+            value = os.getenv(var)
+            if value is not None:
+                # 对敏感信息进行部分隐藏
+                if "SUPERUSERS" in var and value:
+                    display_value = value[:10] + "..." if len(value) > 10 else value
+                else:
+                    display_value = value
+                config_items.append(f"{var}={display_value}")
+            else:
+                config_items.append(f"{var}=(not set)")
+        
+        # 将同一类别的配置项合并成一条日志
+        if config_items:
+            logger.info(f"📂 {category}: {' | '.join(config_items)}")
+    
+    logger.info("🔧 Environment configuration loaded")
+
 # 初始化 NoneBot
 nonebot.init()
+
+# 调用环境变量记录函数（在NoneBot初始化之后）
+log_environment_config()
 
 # 配置控制台适配器为无头模式
 nonebot.get_driver().config.console_headless_mode = True
