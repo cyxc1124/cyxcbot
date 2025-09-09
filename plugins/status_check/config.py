@@ -57,27 +57,36 @@ class Config(BaseModel):
     def _get_show_detailed_status() -> bool:
         """从环境变量读取是否显示详细状态信息"""
         try:
-            detailed_str = os.getenv('STATUS_CHECK_SHOW_DETAILED', 'true')
-            return detailed_str.lower() in ['true', '1', 'yes']
-        except:
+            detailed_str = os.getenv('STATUS_CHECK_SHOW_DETAILED')
+            if detailed_str:
+                return json.loads(detailed_str.lower())
+            # 默认值
+            return True
+        except (json.JSONDecodeError, TypeError):
             return True
     
     @staticmethod
     def _get_show_uptime() -> bool:
         """从环境变量读取是否显示运行时间"""
         try:
-            uptime_str = os.getenv('STATUS_CHECK_SHOW_UPTIME', 'true')
-            return uptime_str.lower() in ['true', '1', 'yes']
-        except:
+            uptime_str = os.getenv('STATUS_CHECK_SHOW_UPTIME')
+            if uptime_str:
+                return json.loads(uptime_str.lower())
+            # 默认值
+            return True
+        except (json.JSONDecodeError, TypeError):
             return True
     
     @staticmethod
     def _get_show_memory_usage() -> bool:
         """从环境变量读取是否显示内存使用情况"""
         try:
-            memory_str = os.getenv('STATUS_CHECK_SHOW_MEMORY', 'true')
-            return memory_str.lower() in ['true', '1', 'yes']
-        except:
+            memory_str = os.getenv('STATUS_CHECK_SHOW_MEMORY')
+            if memory_str:
+                return json.loads(memory_str.lower())
+            # 默认值
+            return True
+        except (json.JSONDecodeError, TypeError):
             return True
 
     model_config = {
