@@ -43,7 +43,7 @@ async def setup_api():
     
     # 获取插件配置
     config = get_plugin_config(Config)
-    logger.info(f"插件配置加载完成: notify_groups={config.notify_groups}, include_room_info={config.include_room_info}")
+    logger.info(f"插件配置加载完成: streamer_group_mapping={config.streamer_group_mapping}, include_room_info={config.include_room_info}")
     
     # 注册HTTP路由 - B站直播事件API
     async def bilibili_live_api(request: Request) -> Response:
@@ -208,6 +208,24 @@ async def setup_api():
 async def send_bilibili_notification(status: str, streamer_name: str, room_info: Dict, user_info: Dict, config: Config, duration_source: str = ""):
     """发送B站直播通知"""
     logger.info(f"开始发送B站直播通知 - 状态: {status}, 主播: {streamer_name}")
+    
+    # 获取房间号
+    room_id = str(room_info.get("room_id", ""))
+    logger.info(f"房间号: {room_id}")
+    
+    # 检查房间号是否在映射配置中
+    if room_id not in config.streamer_group_mapping:
+        logger.warning(f"房间号 {room_id} ({streamer_name}) 未在 STREAMER_GROUP_MAPPING 中配置，跳过发送通知")
+        return
+    
+    # 获取该房间号对应的群组列表
+    target_groups = config.streamer_group_mapping[room_id]
+    logger.info(f"房间号 {room_id} ({streamer_name}) 的目标群组: {target_groups}")
+    
+    if not target_groups:
+        logger.warning(f"房间号 {room_id} ({streamer_name}) 配置的群组列表为空，跳过发送通知")
+        return
+    
     try:
         # 获取所有机器人实例
         bots = get_driver().bots
@@ -217,9 +235,9 @@ async def send_bilibili_notification(status: str, streamer_name: str, room_info:
             logger.info(f"检查机器人: {bot_id}, 类型: {type(bot).__name__}")
             if isinstance(bot, Bot):  # 确保是OneBot适配器
                 logger.info(f"找到OneBot适配器: {bot_id}")
-                # 发送到配置的群组
-                logger.info(f"配置的通知群组: {config.notify_groups}")
-                for group_id in config.notify_groups:
+                # 发送到该房间配置的群组
+                logger.info(f"准备发送到群组: {target_groups}")
+                for group_id in target_groups:
                     try:
                         # 检查机器人是否有管理员权限
                         can_at_all = await check_bot_admin_permission(bot, group_id)
