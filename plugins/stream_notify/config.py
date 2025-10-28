@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Dict
 import os
 import json
 
@@ -7,10 +7,10 @@ import json
 class Config(BaseModel):
     """B站直播通知插件配置"""
     
-    # 需要发送通知的群组ID列表（可通过环境变量 NOTIFY_GROUPS 配置）
-    notify_groups: List[str] = Field(
-        default_factory=lambda: Config._get_notify_groups(),
-        description="需要发送通知的群组ID列表"
+    # 房间号-群组映射配置（可通过环境变量 STREAMER_GROUP_MAPPING 配置）
+    streamer_group_mapping: Dict[str, List[str]] = Field(
+        default_factory=lambda: Config._get_streamer_group_mapping(),
+        description="房间号-群组ID映射配置"
     )
     
     # 是否包含房间信息（可通过环境变量 INCLUDE_ROOM_INFO 配置）
@@ -20,18 +20,23 @@ class Config(BaseModel):
     )
 
     @staticmethod
-    def _get_notify_groups() -> List[str]:
-        """从环境变量读取通知群组配置"""
+    def _get_streamer_group_mapping() -> Dict[str, List[str]]:
+        """从环境变量读取房间号-群组映射配置"""
         try:
-            # 优先从环境变量读取
-            notify_groups_str = os.getenv('NOTIFY_GROUPS')
-            if notify_groups_str:
-                return json.loads(notify_groups_str)
-            # 如果没有配置，返回空列表（需要在环境变量中明确配置）
-            return []
-        except (json.JSONDecodeError, TypeError):
-            # 配置解析失败时返回空列表
-            return []
+            # 从环境变量读取
+            mapping_str = os.getenv('STREAMER_GROUP_MAPPING')
+            if mapping_str:
+                mapping = json.loads(mapping_str)
+                # 确保所有键都是字符串，所有值都是字符串列表
+                if isinstance(mapping, dict):
+                    return {str(k): [str(gid) for gid in v] if isinstance(v, list) else [] 
+                            for k, v in mapping.items()}
+            # 如果没有配置，返回空字典
+            return {}
+        except (json.JSONDecodeError, TypeError) as e:
+            # 配置解析失败时返回空字典并记录错误
+            print(f"解析 STREAMER_GROUP_MAPPING 配置失败: {e}")
+            return {}
     
     @staticmethod
     def _get_include_room_info() -> bool:
