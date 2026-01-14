@@ -124,36 +124,81 @@ class DynamicScreenshot:
                 logger.warning(f"动态 {dynamic_id} 不存在，当前URL: {current_url}")
                 raise Notfound("动态不存在")
 
-            # 等待页面加载完成
+            # 等待页面完全加载
             await page.wait_for_load_state(state="domcontentloaded", timeout=10000)
 
-            # 等待关键元素出现，使用更宽松的选择器
-            try:
-                await page.wait_for_selector(
-                    ".b-img__inner, .dyn-header__author__face, .dyn-card, .opus-modules",
-                    state="visible",
-                    timeout=15000
-                )
-                logger.debug(f"动态 {dynamic_id} 关键元素加载完成")
-            except Exception as e:
-                logger.warning(f"等待元素超时，但继续执行: {e}, URL: {url}")
+            # 等待并检查动态内容区域 - PC端选择器
+            dynamic_selectors = [
+                ".card",  # PC端主要卡片
+                ".dynamic-card",  # 动态卡片
+                ".bili-dyn-item__card",  # 新版动态卡片
+                ".bili-dyn-list__item",  # 动态列表项
+                "[class*='card']",  # 包含card的元素
+                ".opus-modules",  # 兼容旧版
+                ".dyn-card"  # 通用动态卡片
+            ]
 
-            # PC端简化样式处理 - 只设置字体
+            dynamic_found = False
+            for selector in dynamic_selectors:
+                try:
+                    await page.wait_for_selector(selector, state="visible", timeout=8000)
+                    logger.debug(f"找到动态内容元素: {selector}")
+                    dynamic_found = True
+                    break
+                except Exception:
+                    continue
+
+            if not dynamic_found:
+                logger.warning(f"未找到动态内容元素，继续执行截图")
+
+            # 轻微滚动页面以触发懒加载内容
+            try:
+                await page.evaluate("window.scrollTo(0, 100)")
+                await page.wait_for_timeout(500)
+                await page.evaluate("window.scrollTo(0, 0)")
+                logger.debug("页面滚动完成，触发懒加载")
+            except Exception as e:
+                logger.warning(f"页面滚动失败: {e}")
+
+            # PC端样式处理
             try:
                 await page.add_script_tag(path=mobile_js)
-                await page.evaluate("setFont()")  # 只使用字体设置
-                logger.debug(f"动态 {dynamic_id} PC端样式设置完成")
+                await page.evaluate("setFont()")
+                logger.debug(f"动态 {dynamic_id} 样式设置完成")
             except Exception as e:
-                logger.warning(f"PC端样式设置失败: {e}")
+                logger.warning(f"样式设置失败: {e}")
 
-            # 等待加载完成
+            # 等待更长时间让内容完全渲染
             try:
-                await page.wait_for_load_state("networkidle", timeout=10000)
+                await page.wait_for_load_state("networkidle", timeout=8000)
             except Exception as e:
                 logger.warning(f"等待网络空闲超时: {e}")
 
-            # 等待字体和图片加载完成（缩短等待时间）
-            await page.wait_for_timeout(500)  # 等待0.5秒
+            # 等待动态内容可能的变化
+            await page.wait_for_timeout(1000)  # 等待1秒让内容稳定
+
+            # 再次检查是否有新内容加载
+            try:
+                await page.evaluate("""
+                    // 等待可能的异步内容加载
+                    return new Promise(resolve => {
+                        let checkCount = 0;
+                        const checkInterval = setInterval(() => {
+                            checkCount++;
+                            const cards = document.querySelectorAll('.card, .dynamic-card, .bili-dyn-item__card');
+                            if (cards.length > 0 || checkCount > 10) {
+                                clearInterval(checkInterval);
+                                resolve(true);
+                            }
+                        }, 200);
+                    });
+                """)
+                logger.debug("异步内容加载检查完成")
+            except Exception as e:
+                logger.warning(f"异步内容检查失败: {e}")
+
+            # 最终等待，确保页面稳定
+            await page.wait_for_timeout(500)
 
             # 获取动态卡片，PC端选择器
             card = None
@@ -272,6 +317,17 @@ class DynamicScreenshot:
 
             # 等待页面基本加载
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
+
+            # 简化版也添加滚动和等待逻辑
+            try:
+                await page.evaluate("window.scrollTo(0, 100)")
+                await page.wait_for_timeout(300)
+                await page.evaluate("window.scrollTo(0, 0)")
+            except Exception as e:
+                logger.warning(f"简化截图滚动失败: {e}")
+
+            # 等待内容稳定
+            await page.wait_for_timeout(800)
 
             # 直接截取整个可见区域（简化方案）
             logger.debug(f"简化截图: 正在截取可见区域")
