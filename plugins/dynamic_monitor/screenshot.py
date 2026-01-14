@@ -129,6 +129,7 @@ class DynamicScreenshot:
 
             # 等待并检查动态内容区域 - PC端选择器
             dynamic_selectors = [
+                ".bili-dyn-item",  # 完整动态卡片 - 优先级最高
                 ".card",  # PC端主要卡片
                 ".dynamic-card",  # 动态卡片
                 ".bili-dyn-item__card",  # 新版动态卡片
@@ -185,7 +186,7 @@ class DynamicScreenshot:
                         let checkCount = 0;
                         const checkInterval = setInterval(() => {
                             checkCount++;
-                            const cards = document.querySelectorAll('.card, .dynamic-card, .bili-dyn-item__card');
+                            const cards = document.querySelectorAll('.bili-dyn-item, .card, .dynamic-card, .bili-dyn-item__card');
                             if (cards.length > 0 || checkCount > 10) {
                                 clearInterval(checkInterval);
                                 resolve(true);
@@ -200,9 +201,10 @@ class DynamicScreenshot:
             # 最终等待，确保页面稳定
             await page.wait_for_timeout(500)
 
-            # 获取动态卡片，PC端选择器
+            # 获取动态卡片，PC端选择器 - 优先选择完整动态卡片
             card = None
             selectors = [
+                ".bili-dyn-item",  # 完整动态卡片 - 优先级最高
                 ".card",  # PC端主要卡片
                 ".dynamic-card",  # 动态卡片
                 ".bili-dyn-item__card",  # 新版动态卡片
