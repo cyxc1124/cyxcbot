@@ -180,20 +180,17 @@ class DynamicScreenshot:
 
             # 再次检查是否有新内容加载
             try:
-                await page.evaluate("""
-                    // 等待可能的异步内容加载
-                    return new Promise(resolve => {
-                        let checkCount = 0;
-                        const checkInterval = setInterval(() => {
-                            checkCount++;
-                            const cards = document.querySelectorAll('.bili-dyn-item, .card, .dynamic-card, .bili-dyn-item__card');
-                            if (cards.length > 0 || checkCount > 10) {
-                                clearInterval(checkInterval);
-                                resolve(true);
-                            }
-                        }, 200);
-                    });
-                """)
+                await page.evaluate("""return new Promise(resolve => {
+let checkCount = 0;
+const checkInterval = setInterval(() => {
+    checkCount++;
+    const cards = document.querySelectorAll('.bili-dyn-item, .card, .dynamic-card, .bili-dyn-item__card');
+    if (cards.length > 0 || checkCount > 10) {
+        clearInterval(checkInterval);
+        resolve(true);
+    }
+}, 200);
+});""")
                 logger.debug("异步内容加载检查完成")
             except Exception as e:
                 logger.warning(f"异步内容检查失败: {e}")
