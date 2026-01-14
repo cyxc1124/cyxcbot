@@ -81,20 +81,22 @@ async function getMobileStyle(useImageBig = false) {
 }
 
 function setFont(font = "", fontSource = "local") {
-    // 使用系统字体，确保兼容性
-    const fontFamily = font || "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Noto Sans CJK SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'SimSun', sans-serif";
+    // 使用支持emoji的字体栈
+    const fontFamily = font || "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Emoji', 'Segoe UI Symbol', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Noto Sans CJK SC', 'Noto Color Emoji', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'SimSun', 'Apple Color Emoji', sans-serif";
 
     // 设置全局字体
     document.body.style.fontFamily = fontFamily;
     document.documentElement.style.fontFamily = fontFamily;
 
     // 确保动态内容区域也使用正确字体
-    const dynElements = document.querySelectorAll('.dyn-card, .opus-modules, .dyn-header, .dyn-content, .opus-module-content');
+    const dynElements = document.querySelectorAll('.card, .dynamic-card, .bili-dyn-item__card, .dyn-card, .opus-modules, .dyn-header, .dyn-content, .opus-module-content');
     dynElements.forEach(el => {
         el.style.fontFamily = fontFamily;
         el.style.fontVariantLigatures = 'normal';
         el.style.textRendering = 'optimizeLegibility';
         el.style.fontFeatureSettings = '"liga" off';
+        // 确保emoji正确显示
+        el.style.fontVariantEmoji = 'emoji';
     });
 
     // 标记字体加载完成

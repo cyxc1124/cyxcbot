@@ -67,6 +67,10 @@ RUN apt-get update \
         fonts-arphic-ukai \
         fonts-arphic-uming \
         xfonts-scalable \
+        # Emoji字体支持
+        fonts-noto-color-emoji \
+        fonts-symbola \
+        fonts-emojione \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
