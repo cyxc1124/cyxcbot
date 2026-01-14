@@ -97,8 +97,8 @@ class DynamicScreenshot:
         logger.info(f"开始截图动态 {dynamic_id}, 请求URL: {url}")
 
         try:
-            # 设置视口
-            await page.set_viewport_size({"width": 460, "height": 780})
+            # 不设置固定视口大小，让浏览器自适应内容
+            # 使用默认视口设置确保最佳兼容性
 
             # 设置字体路由拦截
             await page.route(re.compile(r"^https://static\.graiax\.fonts/(.+)$"), fill_font)
@@ -187,10 +187,12 @@ class DynamicScreenshot:
             if not card:
                 raise Exception("未找到动态内容区域")
 
-            # 获取边界框
+            # 获取边界框 - 不限制分辨率，获取完整内容
             clip = await card.bounding_box()
             if not clip or clip["width"] == 0 or clip["height"] == 0:
                 raise Exception("无法获取动态区域边界")
+
+            logger.debug(f"动态 {dynamic_id} 内容区域大小: {clip['width']}x{clip['height']}")
 
             return page, clip
 
@@ -227,7 +229,7 @@ class DynamicScreenshot:
                 screenshot = await page.screenshot(
                     clip=clip,
                     type="jpeg",
-                    quality=85
+                    quality=100  # 最高JPEG质量
                 )
                 screenshot_size = len(screenshot) if screenshot else 0
                 logger.info(f"动态 {dynamic_id} 截图成功，大小: {screenshot_size} bytes")
@@ -265,8 +267,8 @@ class DynamicScreenshot:
             url = f"https://m.bilibili.com/dynamic/{dynamic_id}"
             logger.info(f"开始简化截图动态 {dynamic_id}, 请求URL: {url}")
 
-            # 简单的页面加载
-            await page.set_viewport_size({"width": 360, "height": 640})
+            # 简单的页面加载 - 使用默认视口设置
+            # 不设置固定视口大小，让浏览器自适应
             logger.debug(f"简化截图: 正在加载页面 {url}")
             await page.goto(url, wait_until="domcontentloaded", timeout=15000)
 
@@ -281,7 +283,7 @@ class DynamicScreenshot:
             logger.debug(f"简化截图: 正在截取可见区域")
             screenshot = await page.screenshot(
                 type="jpeg",
-                quality=80,
+                quality=100,  # 最高质量设置
                 full_page=False  # 只截取可见区域
             )
 
