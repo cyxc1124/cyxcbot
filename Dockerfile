@@ -53,6 +53,12 @@ RUN apt-get update \
         libgbm1 \
         libxss1 \
         libasound2 \
+        libcups2 \
+        libxfixes3 \
+        libpango-1.0-0 \
+        libcairo2 \
+        libgtk-3-0 \
+        libfontconfig1 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
