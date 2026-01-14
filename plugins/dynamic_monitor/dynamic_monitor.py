@@ -156,19 +156,6 @@ class DynamicMonitor:
         # 推送到每个群组
         await self.sender.send_to_groups(message, group_ids)
 
-    def get_monitored_users(self) -> List[str]:
-        """获取正在监控的UP主列表"""
-        return list(self.config.dynamic_monitor_mapping.keys())
-
-    def add_user(self, uid: str, groups: List[str]):
-        """添加监控用户"""
-        # TODO: 实现动态添加用户
-        pass
-
-    def remove_user(self, uid: str):
-        """移除监控用户"""
-        # TODO: 实现动态移除用户
-        pass
 
 
 # 插件启动和关闭函数

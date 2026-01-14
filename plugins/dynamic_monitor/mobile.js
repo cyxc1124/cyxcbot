@@ -104,31 +104,6 @@ function setFont(font = "", fontSource = "local") {
     console.log('字体设置完成:', fontFamily);
 }
 
-async function imageComplete() {
-    // 等待所有图片加载完成
-    const images = document.querySelectorAll("img");
-    const promises = Array.from(images).map(img => {
-        return new Promise((resolve) => {
-            if (img.complete) {
-                resolve();
-            } else {
-                img.addEventListener('load', resolve);
-                img.addEventListener('error', resolve);
-            }
-        });
-    });
-
-    await Promise.all(promises);
-    window.imageComplete = true;
-}
-
-async function fontsLoaded() {
-    // 等待字体加载完成
-    if (document.fonts && document.fonts.ready) {
-        await document.fonts.ready;
-    }
-    window.fontsLoaded = true;
-}
 
 // 默认执行一次样式处理
 getMobileStyle();

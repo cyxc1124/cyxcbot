@@ -23,10 +23,6 @@ class DynamicItem:
         self.images = images or []
         self.url = f"https://t.bilibili.com/{dynamic_id}"
 
-    @property
-    def datetime(self) -> datetime:
-        """获取动态发布时间"""
-        return datetime.fromtimestamp(self.timestamp)
 
     def get_beijing_time(self) -> str:
         """获取北京时间格式化的字符串"""
