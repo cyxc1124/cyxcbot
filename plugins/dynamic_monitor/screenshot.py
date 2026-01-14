@@ -144,6 +144,7 @@ class DynamicScreenshot:
             # 设置字体（使用默认设置）
             try:
                 await page.evaluate("setFont()")
+                logger.debug("字体设置完成")
             except Exception as e:
                 logger.warning(f"设置字体失败: {e}")
 
@@ -151,8 +152,16 @@ class DynamicScreenshot:
             try:
                 await page.wait_for_function("typeof getMobileStyle === 'function'", timeout=5000)
                 await page.evaluate("getMobileStyle(false)")
+                logger.debug("样式处理完成")
             except Exception as e:
                 logger.warning(f"样式处理失败: {e}")
+
+            # 额外等待字体渲染
+            try:
+                await page.wait_for_function("window.fontsLoaded === true", timeout=3000)
+                logger.debug("字体加载确认完成")
+            except Exception as e:
+                logger.warning(f"字体加载等待超时: {e}")
 
             # 等待加载完成
             try:

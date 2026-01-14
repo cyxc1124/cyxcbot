@@ -61,47 +61,45 @@ async function getMobileStyle(useImageBig = false) {
     // 修复字体和换行问题
     const dyn = document.querySelector(".dyn-card") || document.querySelector(".opus-modules");
     if (dyn) {
-        dyn.style.fontFamily = 'Noto Sans CJK SC, sans-serif';
+        dyn.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", "Noto Sans CJK SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "SimSun", sans-serif';
         dyn.style.overflowWrap = 'break-word';
+        dyn.style.wordBreak = 'break-word';
+        dyn.style.fontVariantLigatures = 'normal';
+        dyn.style.textRendering = 'optimizeLegibility';
     }
+
+    // 确保所有文本元素都有正确的字体
+    const textElements = document.querySelectorAll('p, span, div, h1, h2, h3, h4, h5, h6, em, strong, b, i');
+    textElements.forEach(el => {
+        if (getComputedStyle(el).fontFamily.includes('system-ui') === false) {
+            el.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", "Noto Sans CJK SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "SimSun", sans-serif';
+        }
+    });
 
     // 标记样式处理完成
     window.mobileStyleComplete = true;
 }
 
 function setFont(font = "", fontSource = "local") {
-    // 字体加载逻辑
-    const needLoadFontList = [
-        {
-            fontUrl: "https://cdn.jsdelivr.net/gh/irozhi/HarmonyOS-Sans/HarmonyOS_Sans_SC/HarmonyOS_Sans_SC_Medium.woff2",
-            fontName: "HarmonyOS Sans SC Medium",
-        },
-        {
-            fontUrl: "https://cdn.jsdelivr.net/gh/irozhi/HarmonyOS-Sans/HarmonyOS_Sans_SC/HarmonyOS_Sans_SC_Regular.woff2",
-            fontUrl: "https://cdn.jsdelivr.net/gh/irozhi/HarmonyOS-Sans/HarmonyOS_Sans_SC/HarmonyOS_Sans_SC_Regular.woff2",
-            fontName: "HarmonyOS Sans SC Regular",
-        },
-    ];
+    // 使用系统字体，确保兼容性
+    const fontFamily = font || "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Noto Sans CJK SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'SimSun', sans-serif";
 
-    if (fontSource === "remote") {
-        // 加载远程字体
-        needLoadFontList.forEach(async (fontInfo) => {
-            try {
-                const fontFace = new FontFace(fontInfo.fontName, `url(${fontInfo.fontUrl})`);
-                await fontFace.load();
-                document.fonts.add(fontFace);
-            } catch (e) {
-                console.warn(`Failed to load font ${fontInfo.fontName}:`, e);
-            }
-        });
-    }
-
-    // 设置字体
-    const fontFamily = font || "HarmonyOS Sans SC, Noto Sans CJK SC, sans-serif";
+    // 设置全局字体
     document.body.style.fontFamily = fontFamily;
+    document.documentElement.style.fontFamily = fontFamily;
+
+    // 确保动态内容区域也使用正确字体
+    const dynElements = document.querySelectorAll('.dyn-card, .opus-modules, .dyn-header, .dyn-content, .opus-module-content');
+    dynElements.forEach(el => {
+        el.style.fontFamily = fontFamily;
+        el.style.fontVariantLigatures = 'normal';
+        el.style.textRendering = 'optimizeLegibility';
+        el.style.fontFeatureSettings = '"liga" off';
+    });
 
     // 标记字体加载完成
     window.fontsLoaded = true;
+    console.log('字体设置完成:', fontFamily);
 }
 
 async function imageComplete() {

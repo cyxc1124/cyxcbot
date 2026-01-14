@@ -59,6 +59,14 @@ RUN apt-get update \
         libcairo2 \
         libgtk-3-0 \
         libfontconfig1 \
+        # 中文字体支持
+        fonts-noto-cjk \
+        fonts-noto-cjk-extra \
+        fonts-wqy-zenhei \
+        fonts-wqy-microhei \
+        fonts-arphic-ukai \
+        fonts-arphic-uming \
+        xfonts-scalable \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
