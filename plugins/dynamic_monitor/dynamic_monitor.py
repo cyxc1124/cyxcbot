@@ -34,7 +34,7 @@ class DynamicMonitor:
         self.is_running = True
         self.session = aiohttp.ClientSession()
         self.fetcher = DynamicFetcher(self.session, self.config.rsshub_base_url)
-        self.sender = DynamicSender(self.config.include_dynamic_details, self.config.enable_dynamic_screenshot)
+        self.sender = DynamicSender(self.config.enable_dynamic_screenshot)
 
         # 如果启用了截图功能，初始化截图服务
         if self.config.enable_dynamic_screenshot:

@@ -29,12 +29,6 @@
 DYNAMIC_MONITOR_INTERVAL=300
 ```
 
-#### DYNAMIC_INCLUDE_DETAILS
-是否包含动态详情，默认true
-```bash
-DYNAMIC_INCLUDE_DETAILS=true
-```
-
 #### DYNAMIC_ENABLE_SCREENSHOT
 是否启用动态截图功能，默认true
 ```bash

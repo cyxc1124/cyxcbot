@@ -20,11 +20,6 @@ class Config(BaseModel):
         description="监控间隔时间（秒）"
     )
 
-    # 是否包含动态详情
-    include_dynamic_details: bool = Field(
-        default_factory=lambda: Config._get_include_dynamic_details(),
-        description="是否包含动态详情（内容、图片等）"
-    )
 
     # RSSHub服务地址
     rsshub_base_url: str = Field(
@@ -71,18 +66,6 @@ class Config(BaseModel):
         except (ValueError, TypeError):
             return 300
 
-    @staticmethod
-    def _get_include_dynamic_details() -> bool:
-        """从环境变量读取是否包含动态详情配置"""
-        try:
-            # 优先从环境变量读取
-            include_details_str = os.getenv('DYNAMIC_INCLUDE_DETAILS')
-            if include_details_str:
-                return json.loads(include_details_str.lower())
-            # 默认值
-            return True
-        except (json.JSONDecodeError, TypeError):
-            return True
 
     @staticmethod
     def _get_rsshub_base_url() -> str:

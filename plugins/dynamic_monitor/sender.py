@@ -13,8 +13,7 @@ from .models import DynamicItem
 class DynamicSender:
     """动态消息发送器"""
 
-    def __init__(self, include_details: bool = True, enable_screenshot: bool = True):
-        self.include_details = include_details
+    def __init__(self, enable_screenshot: bool = True):
         self.enable_screenshot = enable_screenshot
 
     def build_dynamic_message(self, dynamic: DynamicItem, screenshot_image: Optional[bytes] = None) -> Message:
