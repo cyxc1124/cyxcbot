@@ -26,6 +26,12 @@ class Config(BaseModel):
         description="是否包含动态详情（内容、图片等）"
     )
 
+    # RSSHub服务地址
+    rsshub_base_url: str = Field(
+        default_factory=lambda: Config._get_rsshub_base_url(),
+        description="RSSHub服务的基础URL"
+    )
+
     @staticmethod
     def _get_dynamic_monitor_mapping() -> Dict[str, List[str]]:
         """从环境变量读取UP主UID-群组映射配置"""
@@ -71,6 +77,20 @@ class Config(BaseModel):
             return True
         except (json.JSONDecodeError, TypeError):
             return True
+
+    @staticmethod
+    def _get_rsshub_base_url() -> str:
+        """从环境变量读取RSSHub服务地址"""
+        try:
+            # 从环境变量读取
+            rsshub_url = os.getenv('DYNAMIC_RSSHUB_BASE_URL')
+            if rsshub_url:
+                # 确保URL格式正确，去除末尾的斜杠
+                return rsshub_url.rstrip('/')
+            # 默认值：官方RSSHub
+            return "https://rsshub.app"
+        except Exception:
+            return "https://rsshub.app"
 
     model_config = {
         "env_prefix": "",  # 无前缀，直接读取环境变量

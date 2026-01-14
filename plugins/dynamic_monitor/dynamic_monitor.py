@@ -31,9 +31,9 @@ class DynamicMonitor:
         """启动监控"""
         self.is_running = True
         self.session = aiohttp.ClientSession()
-        self.fetcher = DynamicFetcher(self.session)
+        self.fetcher = DynamicFetcher(self.session, self.config.rsshub_base_url)
         self.sender = DynamicSender(self.config.include_dynamic_details)
-        logger.info("UP主动态监控已启动")
+        logger.info(f"UP主动态监控已启动，使用RSSHub: {self.config.rsshub_base_url}")
 
         # 初始化最后动态ID
         for uid in self.config.dynamic_monitor_mapping.keys():

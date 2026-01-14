@@ -16,12 +16,13 @@ from .models import DynamicItem
 class DynamicFetcher:
     """动态数据获取器"""
 
-    def __init__(self, session: aiohttp.ClientSession):
+    def __init__(self, session: aiohttp.ClientSession, rsshub_base_url: str = "https://rsshub.app"):
         self.session = session
+        self.rsshub_base_url = rsshub_base_url
 
     async def fetch_user_dynamics(self, uid: str) -> Optional[List[DynamicItem]]:
         """从RSSHub获取用户动态feed"""
-        rsshub_url = f"https://rsshub.app/bilibili/user/dynamic/{uid}"
+        rsshub_url = f"{self.rsshub_base_url}/bilibili/user/dynamic/{uid}"
 
         try:
             async with self.session.get(rsshub_url, timeout=30) as response:
