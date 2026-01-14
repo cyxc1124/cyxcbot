@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import re
 from pathlib import Path
 from typing import Optional, Tuple
 from nonebot.log import logger
