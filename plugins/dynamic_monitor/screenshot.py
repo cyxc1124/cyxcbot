@@ -91,14 +91,18 @@ class DynamicScreenshot:
         except Exception as e:
             logger.warning(f"关闭浏览器时出错: {e}")
 
-    async def get_dynamic_screenshot_mobile(self, dynamic_id: int, page: Page):
-        """移动端动态截图 - 基于HarukaBot实现"""
-        url = f"https://m.bilibili.com/dynamic/{dynamic_id}"
-        logger.info(f"开始截图动态 {dynamic_id}, 请求URL: {url}")
+    async def get_dynamic_screenshot_pc(self, dynamic_id: int, page: Page):
+        """PC端动态截图 - 使用桌面版页面获得更好质量"""
+        url = f"https://t.bilibili.com/{dynamic_id}"
+        logger.info(f"开始PC端截图动态 {dynamic_id}, 请求URL: {url}")
 
         try:
-            # 不设置固定视口大小，让浏览器自适应内容
-            # 使用默认视口设置确保最佳兼容性
+            # 设置PC端视口 - 使用标准桌面分辨率
+            await page.set_viewport_size({
+                "width": 1920,
+                "height": 1080,
+                "device_scale_factor": 1  # PC端通常不需要高DPI缩放
+            })
 
             # 设置字体路由拦截
             await page.route(re.compile(r"^https://static\.graiax\.fonts/(.+)$"), fill_font)
@@ -134,34 +138,13 @@ class DynamicScreenshot:
             except Exception as e:
                 logger.warning(f"等待元素超时，但继续执行: {e}, URL: {url}")
 
-            # 注入移动端样式处理脚本
+            # PC端简化样式处理 - 只设置字体
             try:
                 await page.add_script_tag(path=mobile_js)
-                logger.debug(f"动态 {dynamic_id} 样式脚本注入完成")
+                await page.evaluate("setFont()")  # 只使用字体设置
+                logger.debug(f"动态 {dynamic_id} PC端样式设置完成")
             except Exception as e:
-                logger.warning(f"注入样式脚本失败: {e}, mobile.js路径: {mobile_js}")
-
-            # 设置字体（使用默认设置）
-            try:
-                await page.evaluate("setFont()")
-                logger.debug("字体设置完成")
-            except Exception as e:
-                logger.warning(f"设置字体失败: {e}")
-
-            # 等待样式处理完成
-            try:
-                await page.wait_for_function("typeof getMobileStyle === 'function'", timeout=5000)
-                await page.evaluate("getMobileStyle(false)")
-                logger.debug("样式处理完成")
-            except Exception as e:
-                logger.warning(f"样式处理失败: {e}")
-
-            # 额外等待字体渲染
-            try:
-                await page.wait_for_function("window.fontsLoaded === true", timeout=3000)
-                logger.debug("字体加载确认完成")
-            except Exception as e:
-                logger.warning(f"字体加载等待超时: {e}")
+                logger.warning(f"PC端样式设置失败: {e}")
 
             # 等待加载完成
             try:
@@ -172,9 +155,16 @@ class DynamicScreenshot:
             # 等待字体和图片加载完成（缩短等待时间）
             await page.wait_for_timeout(500)  # 等待0.5秒
 
-            # 获取动态卡片，尝试多种选择器
+            # 获取动态卡片，PC端选择器
             card = None
-            selectors = [".opus-modules", ".dyn-card", ".bili-dyn-item", "[class*='dyn']"]
+            selectors = [
+                ".card",  # PC端主要卡片
+                ".dynamic-card",  # 动态卡片
+                ".bili-dyn-item__card",  # 新版动态卡片
+                ".bili-dyn-list__item",  # 动态列表项
+                "[class*='card']",  # 包含card的元素
+                ".opus-modules"  # 兼容移动端
+            ]
 
             for selector in selectors:
                 try:
@@ -222,7 +212,7 @@ class DynamicScreenshot:
 
             # 首先尝试完整版截图
             try:
-                page, clip = await self.get_dynamic_screenshot_mobile(dynamic_id, page)
+                page, clip = await self.get_dynamic_screenshot_pc(dynamic_id, page)
 
                 # 截图
                 logger.debug(f"正在截图动态 {dynamic_id}, 区域大小: {clip['width']}x{clip['height']}")
@@ -264,11 +254,15 @@ class DynamicScreenshot:
     async def get_dynamic_screenshot_simple(self, dynamic_id: int, page: Page) -> Tuple[Optional[bytes], Optional[str]]:
         """简化版动态截图 - 当完整截图失败时的备选方案"""
         try:
-            url = f"https://m.bilibili.com/dynamic/{dynamic_id}"
-            logger.info(f"开始简化截图动态 {dynamic_id}, 请求URL: {url}")
+            url = f"https://t.bilibili.com/{dynamic_id}"
+            logger.info(f"开始PC端简化截图动态 {dynamic_id}, 请求URL: {url}")
 
-            # 简单的页面加载 - 使用默认视口设置
-            # 不设置固定视口大小，让浏览器自适应
+            # PC端页面加载 - 使用标准桌面视口
+            await page.set_viewport_size({
+                "width": 1920,
+                "height": 1080,
+                "device_scale_factor": 1
+            })
             logger.debug(f"简化截图: 正在加载页面 {url}")
             await page.goto(url, wait_until="domcontentloaded", timeout=15000)
 
