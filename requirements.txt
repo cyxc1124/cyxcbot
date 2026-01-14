@@ -4,4 +4,6 @@ nonebot-adapter-onebot==2.4.6
 psutil==5.9.6
 pytest==7.4.3
 pytest-asyncio==0.21.1
-flake8==6.1.0 
+flake8==6.1.0
+aiohttp==3.9.1
+feedparser==6.0.10 
