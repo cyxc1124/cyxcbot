@@ -42,6 +42,17 @@ RUN apt-get update \
         iputils-ping \
         telnet \
         gcc \
+        # Playwright 所需的系统依赖
+        libnss3 \
+        libatk-bridge2.0-0 \
+        libdrm2 \
+        libxkbcommon0 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxrandr2 \
+        libgbm1 \
+        libxss1 \
+        libasound2 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
