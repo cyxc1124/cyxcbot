@@ -25,7 +25,7 @@ fi
 
 # 安装Playwright浏览器（如果需要的话）
 echo "Installing Playwright browsers..."
-playwright install chromium --yes || echo "Playwright browsers already installed or installation failed"
+playwright install || echo "Playwright browsers already installed or installation failed"
 
 # 启动应用
 echo "Starting CyxcBot..."
