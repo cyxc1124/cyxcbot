@@ -11,6 +11,7 @@ from nonebot.log import logger
 from .config import Config
 from .fetcher import DynamicFetcher
 from .sender import DynamicSender
+from .screenshot import init_screenshot_service, close_screenshot_service, get_dynamic_screenshot
 
 # 全局监控实例
 dynamic_monitor_instance: Optional['DynamicMonitor'] = None
@@ -32,7 +33,13 @@ class DynamicMonitor:
         self.is_running = True
         self.session = aiohttp.ClientSession()
         self.fetcher = DynamicFetcher(self.session, self.config.rsshub_base_url)
-        self.sender = DynamicSender(self.config.include_dynamic_details)
+        self.sender = DynamicSender(self.config.include_dynamic_details, self.config.enable_dynamic_screenshot)
+
+        # 如果启用了截图功能，初始化截图服务
+        if self.config.enable_dynamic_screenshot:
+            await init_screenshot_service()
+            logger.info("动态截图服务已启动")
+
         logger.info(f"UP主动态监控已启动，使用RSSHub: {self.config.rsshub_base_url}")
 
         # 初始化最后动态ID
@@ -53,6 +60,11 @@ class DynamicMonitor:
         self.is_running = False
         if self.session:
             await self.session.close()
+
+        # 关闭截图服务
+        if self.config.enable_dynamic_screenshot:
+            await close_screenshot_service()
+
         logger.info("UP主动态监控已停止")
 
     async def _check_all_dynamics(self):
@@ -94,8 +106,18 @@ class DynamicMonitor:
         """发送动态通知"""
         logger.info(f"发现新动态: {dynamic.name} - {dynamic.get_type_description()}")
 
+        # 获取动态截图（如果启用了截图功能）
+        screenshot_image = None
+        if self.config.enable_dynamic_screenshot:
+            try:
+                screenshot_image, screenshot_error = await get_dynamic_screenshot(dynamic.id)
+                if screenshot_error:
+                    logger.warning(f"获取动态{dynamic.id}截图失败: {screenshot_error}")
+            except Exception as e:
+                logger.warning(f"截图服务异常: {e}")
+
         # 构建通知消息
-        message = self.sender.build_dynamic_message(dynamic)
+        message = self.sender.build_dynamic_message(dynamic, screenshot_image)
 
         # 获取需要推送的群组列表
         group_ids = self.config.dynamic_monitor_mapping.get(uid, [])

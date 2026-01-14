@@ -3,8 +3,9 @@
 负责构建和发送动态通知消息
 """
 
-from typing import List
+from typing import List, Optional
 from nonebot.log import logger
+from nonebot.adapters.onebot.v11.message import MessageSegment
 
 from .models import DynamicItem
 
@@ -12,30 +13,42 @@ from .models import DynamicItem
 class DynamicSender:
     """动态消息发送器"""
 
-    def __init__(self, include_details: bool = True):
+    def __init__(self, include_details: bool = True, enable_screenshot: bool = True):
         self.include_details = include_details
+        self.enable_screenshot = enable_screenshot
 
-    def build_dynamic_message(self, dynamic: DynamicItem) -> str:
+    def build_dynamic_message(self, dynamic: DynamicItem, screenshot_image: Optional[bytes] = None) -> str:
         """构建动态推送消息"""
-        message_parts = []
+        from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+
+        message = Message()
 
         # UP主名称和动态类型
-        message_parts.append(f"{dynamic.name} {dynamic.get_type_description()}")
+        message.append(f"{dynamic.name} {dynamic.get_type_description()}")
+
+        # 如果启用了截图且有截图数据，添加图片
+        if self.enable_screenshot and screenshot_image:
+            try:
+                message.append(MessageSegment.image(screenshot_image))
+                message.append("")  # 添加空行
+            except Exception as e:
+                logger.warning(f"添加动态截图失败: {e}")
 
         # 动态链接
-        message_parts.append(dynamic.url)
+        message.append(dynamic.url)
 
         # 如果包含详情且有内容
         if self.include_details:
             if dynamic.content:
                 # 限制内容长度
                 content = dynamic.content[:200] + "..." if len(dynamic.content) > 200 else dynamic.content
-                message_parts.append(f"内容: {content}")
+                message.append(f"内容: {content}")
 
-            if dynamic.images:
-                message_parts.append(f"包含 {len(dynamic.images)} 张图片")
+            if dynamic.images and not self.enable_screenshot:
+                # 如果没有启用截图但有图片信息，才显示图片数量
+                message.append(f"包含 {len(dynamic.images)} 张图片")
 
-        return "\n".join(message_parts)
+        return message
 
     async def send_to_groups(self, message: str, group_ids: List[str]):
         """发送消息到多个群组"""

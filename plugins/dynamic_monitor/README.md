@@ -35,6 +35,13 @@ DYNAMIC_MONITOR_INTERVAL=300
 DYNAMIC_INCLUDE_DETAILS=true
 ```
 
+#### DYNAMIC_ENABLE_SCREENSHOT
+是否启用动态截图功能，默认true
+```bash
+DYNAMIC_ENABLE_SCREENSHOT=true
+```
+启用后会在推送消息中包含动态的网页截图，提供更丰富的视觉体验
+
 #### DYNAMIC_RSSHUB_BASE_URL
 RSSHub服务的基础URL，可选配置，默认使用官方RSSHub
 ```bash
@@ -78,8 +85,11 @@ plugins/dynamic_monitor/
    - 支持配置自定义RSSHub实例，提高服务稳定性
    - 默认使用官方RSSHub服务
 2. **数据解析**：解析RSS feed中的动态ID、内容、发布时间等信息
-3. **状态管理**：记录每个UP主的最后动态ID，避免重复推送
-4. **消息推送**：发现新动态时推送到配置的群组
+3. **动态截图**：可选的动态网页截图功能，提供丰富的视觉体验
+   - 使用Playwright进行网页截图
+   - 支持移动端视图优化
+4. **状态管理**：记录每个UP主的最后动态ID，避免重复推送
+5. **消息推送**：发现新动态时推送到配置的群组
 
 ## RSSHub配置说明
 
@@ -121,6 +131,43 @@ docker run -d --name rsshub -p 1200:1200 diygod/rsshub
 ```bash
 DYNAMIC_RSSHUB_BASE_URL=http://localhost:1200
 ```
+
+## 动态截图功能
+
+插件提供了可选的动态网页截图功能，可以在推送消息中包含动态的视觉内容：
+
+### 功能特点
+
+- **网页截图**：使用Playwright获取动态页面的截图
+- **移动端优化**：使用移动端视图尺寸，适配移动设备
+- **智能裁剪**：自动识别动态卡片区域，避免截取无关内容
+- **容错处理**：截图失败时自动降级为文字消息
+
+### 配置选项
+
+```bash
+# 启用截图功能（默认）
+DYNAMIC_ENABLE_SCREENSHOT=true
+
+# 禁用截图功能
+DYNAMIC_ENABLE_SCREENSHOT=false
+```
+
+### 依赖要求
+
+启用截图功能需要安装Playwright：
+
+```bash
+pip install playwright==1.40.0
+playwright install chromium
+```
+
+### 注意事项
+
+- 截图功能需要额外的系统资源
+- 首次运行可能需要下载浏览器内核
+- 网络不稳定时可能影响截图质量
+- 可以随时通过配置开关启用/禁用
 
 ## 注意事项
 

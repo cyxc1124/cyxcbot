@@ -32,6 +32,12 @@ class Config(BaseModel):
         description="RSSHub服务的基础URL"
     )
 
+    # 是否启用动态截图
+    enable_dynamic_screenshot: bool = Field(
+        default_factory=lambda: Config._get_enable_dynamic_screenshot(),
+        description="是否在推送消息中包含动态截图"
+    )
+
     @staticmethod
     def _get_dynamic_monitor_mapping() -> Dict[str, List[str]]:
         """从环境变量读取UP主UID-群组映射配置"""
@@ -91,6 +97,19 @@ class Config(BaseModel):
             return "https://rsshub.app"
         except Exception:
             return "https://rsshub.app"
+
+    @staticmethod
+    def _get_enable_dynamic_screenshot() -> bool:
+        """从环境变量读取是否启用动态截图配置"""
+        try:
+            # 从环境变量读取
+            enable_screenshot_str = os.getenv('DYNAMIC_ENABLE_SCREENSHOT')
+            if enable_screenshot_str:
+                return json.loads(enable_screenshot_str.lower())
+            # 默认值：启用截图
+            return True
+        except (json.JSONDecodeError, TypeError):
+            return True
 
     model_config = {
         "env_prefix": "",  # 无前缀，直接读取环境变量
