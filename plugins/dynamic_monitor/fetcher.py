@@ -44,8 +44,12 @@ class DynamicFetcher:
                     if not dynamic_id:
                         continue
 
-                    # 从标题中提取UP主名称
-                    name = self._extract_name_from_title(entry.title)
+                    # 获取UP主名称 - 直接使用author字段
+                    if hasattr(entry, 'author') and entry.author:
+                        name = entry.author.strip()
+                    else:
+                        logger.error(f"RSS条目缺少author字段，跳过此条目: {entry.title}")
+                        continue  # 跳过这条动态
 
                     # 从published_parsed获取时间戳
                     timestamp = int(time.mktime(entry.published_parsed)) if hasattr(entry, 'published_parsed') else int(time.time())
@@ -95,12 +99,6 @@ class DynamicFetcher:
             pass
         return None
 
-    def _extract_name_from_title(self, title: str) -> str:
-        """从RSS标题中提取UP主名称"""
-        # RSS标题格式通常是 "UP主动态: 用户名"
-        if ": " in title:
-            return title.split(": ", 1)[1]
-        return title
 
     def _parse_dynamic_type(self, title: str) -> int:
         """根据标题解析动态类型"""

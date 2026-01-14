@@ -4,7 +4,7 @@
 """
 
 from typing import List
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 
 class DynamicItem:
@@ -27,6 +27,14 @@ class DynamicItem:
     def datetime(self) -> datetime:
         """获取动态发布时间"""
         return datetime.fromtimestamp(self.timestamp)
+
+    def get_beijing_time(self) -> str:
+        """获取北京时间格式化的字符串"""
+        # 北京时间 = GMT时间 + 8小时
+        beijing_timestamp = self.timestamp + (8 * 3600)  # 加8小时
+        beijing_time = datetime.fromtimestamp(beijing_timestamp)
+        # 格式化为易读的字符串
+        return beijing_time.strftime("%Y-%m-%d %H:%M:%S")
 
     def get_type_description(self) -> str:
         """获取动态类型描述"""
