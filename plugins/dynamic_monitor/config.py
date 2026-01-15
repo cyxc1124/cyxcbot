@@ -21,11 +21,6 @@ class Config(BaseModel):
     )
 
 
-    # RSSHub服务地址
-    rsshub_base_url: str = Field(
-        default_factory=lambda: Config._get_rsshub_base_url(),
-        description="RSSHub服务的基础URL"
-    )
 
     # 是否启用动态截图
     enable_dynamic_screenshot: bool = Field(
@@ -67,19 +62,6 @@ class Config(BaseModel):
             return 300
 
 
-    @staticmethod
-    def _get_rsshub_base_url() -> str:
-        """从环境变量读取RSSHub服务地址"""
-        try:
-            # 从环境变量读取
-            rsshub_url = os.getenv('DYNAMIC_RSSHUB_BASE_URL')
-            if rsshub_url:
-                # 确保URL格式正确，去除末尾的斜杠
-                return rsshub_url.rstrip('/')
-            # 默认值：官方RSSHub
-            return "https://rsshub.app"
-        except Exception:
-            return "https://rsshub.app"
 
     @staticmethod
     def _get_enable_dynamic_screenshot() -> bool:

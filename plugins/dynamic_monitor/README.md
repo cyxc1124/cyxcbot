@@ -8,7 +8,7 @@
 - 支持多UP主多群组配置
 - 可配置监控间隔时间
 - 支持动态详情展示
-- 使用RSSHub获取数据，无需B站API
+- 直接调用B站Web API获取动态数据
 
 ## 配置说明
 
@@ -36,12 +36,6 @@ DYNAMIC_ENABLE_SCREENSHOT=true
 ```
 启用后会在推送消息中包含动态的网页截图，提供更丰富的视觉体验
 
-#### DYNAMIC_RSSHUB_BASE_URL
-RSSHub服务的基础URL，可选配置，默认使用官方RSSHub
-```bash
-DYNAMIC_RSSHUB_BASE_URL=https://rsshub.app
-```
-如果官方RSSHub服务不稳定，可以配置自己的RSSHub实例或其他可用的RSSHub服务
 
 ## 使用方法
 
@@ -75,9 +69,9 @@ plugins/dynamic_monitor/
 
 ## 工作原理
 
-1. **数据获取**：通过RSSHub的B站动态RSS源获取UP主动态数据
-   - 支持配置自定义RSSHub实例，提高服务稳定性
-   - 默认使用官方RSSHub服务
+1. **数据获取**：直接调用B站Web API获取UP主动态数据
+   - 使用`https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space`接口
+   - 支持获取用户空间的最新动态列表
 2. **数据解析**：解析RSS feed中的动态ID、内容、发布时间等信息
    - 用户名提取：严格使用RSS标准的`<author>`字段，确保准确性
 3. **内容处理**：清理和格式化动态内容，移除HTML实体和多余格式
@@ -107,46 +101,27 @@ plugins/dynamic_monitor/
 - 🖼️ 可选的动态截图展示
 - 🔗 直接的动态链接跳转
 
-## RSSHub配置说明
+## B站API说明
 
-插件使用RSSHub服务获取B站动态数据，为应对官方API不稳定的情况，提供了灵活的RSSHub配置选项：
+插件直接调用B站官方Web API获取动态数据，具有以下优势：
 
-### 为什么需要RSSHub配置
+### API优势
 
-- **服务稳定性**：官方RSSHub可能存在访问限制或服务不稳定
-- **网络环境**：某些地区可能无法正常访问官方RSSHub
-- **私有部署**：企业或个人可以部署自己的RSSHub实例
+- **无需第三方服务**：直接调用B站API，不依赖RSSHub等中间服务
+- **数据实时性**：获取最新的动态数据，无缓存延迟
+- **功能完整性**：支持获取完整的动态信息和元数据
+- **稳定性高**：不受第三方服务波动影响
 
-### 配置选项
+### API接口
 
-#### 使用官方RSSHub（默认）
-无需额外配置，直接使用：
-```bash
-DYNAMIC_RSSHUB_BASE_URL=https://rsshub.app
-```
-
-#### 使用自建RSSHub实例
-```bash
-DYNAMIC_RSSHUB_BASE_URL=http://your-rsshub-instance.com
-```
-
-#### 使用其他RSSHub服务
-```bash
-DYNAMIC_RSSHUB_BASE_URL=https://rsshub.example.com
-```
-
-### RSSHub部署建议
-
-如果需要自建RSSHub实例，推荐使用Docker部署：
-
-```bash
-docker run -d --name rsshub -p 1200:1200 diygod/rsshub
-```
-
-然后配置：
-```bash
-DYNAMIC_RSSHUB_BASE_URL=http://localhost:1200
-```
+插件使用以下B站API接口：
+- **动态获取**: `https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space`
+- **参数说明**:
+  - `host_mid`: 用户UID
+  - `timezone_offset`: 时区偏移（东八区为-480）
+  - `platform`: 平台类型（web）
+  - `pn`: 页码
+  - `ps`: 每页数量
 
 ## 动态截图功能
 
@@ -188,7 +163,7 @@ playwright install chromium
 ## 注意事项
 
 - 请确保机器人有相应群组的发送权限
-- 监控间隔不建议设置过短，以避免对RSSHub造成过大压力
-- 建议间隔时间在30秒到1小时之间
-- RSSHub服务需要网络可访问
-- 如果使用自建RSSHub，请确保B站相关路由已启用
+- 监控间隔不建议设置过短，以避免对B站API造成过大压力
+- 建议间隔时间在30秒到5分钟之间
+- 需要网络可访问B站API服务
+- 插件会自动处理API响应和错误情况
