@@ -136,6 +136,13 @@ class DynamicMonitor:
             if dynamic.id > last_dynamic_id:
                 new_dynamics.append(dynamic)
 
+        # 如果是第一次检查该用户（last_dynamic_id为0），只记录最新动态ID，不推送
+        if last_dynamic_id == 0 and new_dynamics:
+            # 记录最新的动态ID作为基准点
+            self.last_dynamic_ids[uid] = max(d.id for d in new_dynamics)
+            logger.info(f"UP主 {uid} 首次监控，已记录最新动态ID: {self.last_dynamic_ids[uid]}")
+            return
+
         # 如果有新动态，处理推送
         if new_dynamics:
             # 更新最后动态ID为最新的动态ID
