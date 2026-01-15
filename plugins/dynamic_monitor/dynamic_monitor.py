@@ -24,6 +24,7 @@ class DynamicMonitor:
     def __init__(self, config: Config):
         self.config = config
         self.last_dynamic_ids: Dict[str, int] = {}  # UID -> 最后动态ID
+        self.pinned_dynamic_ids: Dict[str, str] = {}  # UID -> 当前置顶动态ID
         self.is_running = False
         self.session: Optional[aiohttp.ClientSession] = None
         self.fetcher: Optional[DynamicFetcher] = None
@@ -35,6 +36,11 @@ class DynamicMonitor:
         self.session = aiohttp.ClientSession()
         self.fetcher = DynamicFetcher(self.session)
         self.sender = DynamicSender(self.config.enable_dynamic_screenshot)
+
+        # 初始化置顶动态ID记录
+        for uid in self.config.dynamic_monitor_mapping.keys():
+            if uid not in self.pinned_dynamic_ids:
+                self.pinned_dynamic_ids[uid] = None
 
         # 如果启用了截图功能，初始化截图服务
         if self.config.enable_dynamic_screenshot:
@@ -107,11 +113,20 @@ class DynamicMonitor:
         """检查单个UP主的动态"""
         logger.debug(f"检查UP主 {uid} 的动态")
 
-        # 获取用户的动态列表
-        dynamics = await self.fetcher.fetch_user_dynamics(uid)
-        if not dynamics:
+        # 获取用户的动态列表，传递当前置顶动态ID用于比较
+        current_pinned_id = self.pinned_dynamic_ids.get(uid)
+        result = await self.fetcher.fetch_user_dynamics(uid, current_pinned_id)
+
+        if not result:
             logger.warning(f"获取UP主 {uid} 动态失败")
             return
+
+        dynamics, new_pinned_id = result
+
+        # 更新置顶动态ID
+        if new_pinned_id != current_pinned_id:
+            logger.info(f"UP主 {uid} 置顶动态已更新: {current_pinned_id} -> {new_pinned_id}")
+            self.pinned_dynamic_ids[uid] = new_pinned_id
 
         # 检查是否有新动态
         last_dynamic_id = self.last_dynamic_ids.get(uid, 0)

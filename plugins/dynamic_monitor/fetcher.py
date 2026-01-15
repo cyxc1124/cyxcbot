@@ -25,8 +25,16 @@ class DynamicFetcher:
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         }
 
-    async def fetch_user_dynamics(self, uid: str) -> Optional[List[DynamicItem]]:
-        """直接调用B站API获取用户动态"""
+    async def fetch_user_dynamics(self, uid: str, current_pinned_id: str = None) -> Optional[tuple[List[DynamicItem], str]]:
+        """直接调用B站API获取用户动态
+
+        Args:
+            uid: 用户ID
+            current_pinned_id: 当前记录的置顶动态ID
+
+        Returns:
+            (动态列表, 当前置顶动态ID)
+        """
         if not self.session:
             return None
 
@@ -77,14 +85,35 @@ class DynamicFetcher:
                 items = data.get('data', {}).get('items', [])
                 if not items:
                     logger.debug(f"用户 {uid} 没有动态数据")
-                    return []
+                    return [], None
 
                 dynamics = []
+                current_pinned_id = None
+
                 for item in items:
                     try:
-                        dynamic_item = self._parse_dynamic_item(item, uid)
-                        if dynamic_item:
-                            dynamics.append(dynamic_item)
+                        # 检测置顶动态
+                        modules = item.get('modules', {})
+                        module_tag = modules.get('module_tag')
+                        is_pinned = (module_tag and isinstance(module_tag, dict)
+                                   and module_tag.get('text') == '置顶')
+
+                        if is_pinned:
+                            pinned_id = item.get('id_str')
+                            current_pinned_id = pinned_id
+                            # 如果是新的置顶动态（或第一次检测到置顶），允许推送
+                            should_include = (pinned_id != current_pinned_id)
+                            if should_include:
+                                logger.info(f"检测到新的置顶动态: {pinned_id}")
+                        else:
+                            # 非置顶动态直接包含
+                            should_include = True
+
+                        if should_include:
+                            dynamic_item = self._parse_dynamic_item(item, uid, is_pinned)
+                            if dynamic_item:
+                                dynamics.append(dynamic_item)
+
                     except Exception as e:
                         logger.warning(f"解析动态项失败 {uid}: {e}")
                         continue
@@ -92,7 +121,7 @@ class DynamicFetcher:
                 # 按时间倒序排列（最新的在前面）
                 dynamics.sort(key=lambda x: x.timestamp, reverse=True)
                 logger.info(f"成功获取用户 {uid} 的 {len(dynamics)} 条动态")
-                return dynamics
+                return dynamics, current_pinned_id
 
         except asyncio.TimeoutError:
             logger.warning(f"B站API请求超时 {uid}")
@@ -101,9 +130,10 @@ class DynamicFetcher:
             logger.error(f"B站API请求异常 {uid}: {e}")
             return None
 
-    def _parse_dynamic_item(self, item: dict, uid: str) -> Optional[DynamicItem]:
+    def _parse_dynamic_item(self, item: dict, uid: str, is_pinned: bool = False) -> Optional[DynamicItem]:
         """解析单个动态项"""
         try:
+
             # 提取基本信息
             dynamic_id = item.get('id_str')
             if not dynamic_id:
