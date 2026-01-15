@@ -17,10 +17,10 @@ class DynamicFetcher:
 
     def __init__(self, session: aiohttp.ClientSession):
         self.session = session
-        # B站API请求头
+        # B站API请求头 - 参考RSSHub实现
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Referer': 'https://www.bilibili.com/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+            'Referer': f'https://space.bilibili.com/{uid}/',  # 动态设置Referer
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         }
@@ -42,23 +42,34 @@ class DynamicFetcher:
         api_url = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space"
 
         try:
-            # 构建请求参数
-            params = {
-                'host_mid': uid,
-                'timezone_offset': -480,  # 东八区 (UTC+8)
-                'platform': 'web',
-                'features': 'itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote',
-                'web_location': '333.33',
-                'pn': 1,  # 页码
-                'ps': 20  # 每页数量
-            }
+            # 构建请求参数 - 参考RSSHub实现
+            # 基础参数
+            base_params = f"host_mid={uid}&platform=web&features=itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote"
+
+            # 添加dm验证信息 (模拟RSSHub的addDmVerifyInfo)
+            dm_img_str = "bm8gd2ViZ2w"  # "no webgl" 的base64编码，去掉末尾的==
+            dm_cover_img_str = "bm8gd2ViZ2w"  # "no webgl" 的base64编码，去掉末尾的==
+            dm_img_list = '[{"x":1245,"y":1285,"z":1,"timestamp":1736169600000,"duration":0}]'  # 模拟dm图像列表
+
+            params_str = f"{base_params}&dm_img_list={dm_img_list}&dm_img_str={dm_img_str}&dm_cover_img_str={dm_cover_img_str}"
+
+            # 解析为字典格式供aiohttp使用
+            params = {}
+            for param in params_str.split('&'):
+                if '=' in param:
+                    key, value = param.split('=', 1)
+                    params[key] = value
 
             logger.debug(f"请求B站动态API: {api_url} 用户: {uid}")
+
+            # 动态设置Referer
+            request_headers = self.headers.copy()
+            request_headers['Referer'] = f'https://space.bilibili.com/{uid}/'
 
             async with self.session.get(
                 api_url,
                 params=params,
-                headers=self.headers,
+                headers=request_headers,
                 timeout=30
             ) as response:
 
