@@ -29,7 +29,7 @@
 #### DYNAMIC_ENABLE_SCREENSHOT
 是否启用动态截图功能，默认为true
 
-#### BILIBILI_COOKIE_{uid} (可选)
+#### BILIBILI_COOKIE (可选)
 B站用户Cookie配置，用于提高API请求成功率：
 
 - 变量格式：`BILIBILI_COOKIE`

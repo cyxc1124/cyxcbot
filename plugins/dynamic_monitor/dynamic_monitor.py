@@ -115,8 +115,8 @@ class DynamicMonitor:
 
         # 获取用户的动态列表，传递当前置顶动态ID用于比较
         current_pinned_id = self.pinned_dynamic_ids.get(uid)
-        # 获取对应UID的Cookie（如果配置了）
-        cookie = self.config.bilibili_cookies.get(uid)
+        # 获取Cookie（如果配置了）
+        cookie = self.config.bilibili_cookie if self.config.bilibili_cookie else None
         result = await self.fetcher.fetch_user_dynamics(uid, current_pinned_id, cookie)
 
         if not result:
