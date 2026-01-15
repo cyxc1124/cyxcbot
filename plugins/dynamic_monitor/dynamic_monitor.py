@@ -47,7 +47,7 @@ class DynamicMonitor:
             await init_screenshot_service()
             logger.info("动态截图服务已启动")
 
-        logger.info("UP主动态监控已启动，直接调用B站API")
+        logger.info(f"UP主动态监控已启动，直接调用B站API，监控间隔: {self.config.monitor_interval}秒")
 
         # 初始化最后动态ID
         for uid in self.config.dynamic_monitor_mapping.keys():
@@ -103,11 +103,13 @@ class DynamicMonitor:
 
     async def _check_all_dynamics(self):
         """检查所有UP主的动态"""
+        logger.debug(f"开始检查所有UP主动态，共 {len(self.config.dynamic_monitor_mapping)} 个用户")
         for uid in self.config.dynamic_monitor_mapping.keys():
             try:
                 await self._check_user_dynamic(uid)
             except Exception as e:
                 logger.error(f"检查UP主 {uid} 动态失败: {e}")
+        logger.debug(f"完成本次动态检查，将在 {self.config.monitor_interval} 秒后进行下次检查")
 
     async def _check_user_dynamic(self, uid: str):
         """检查单个UP主的动态"""
