@@ -224,15 +224,16 @@ class DynamicFetcher:
                     if major and isinstance(major, dict):
                         archive = major.get('archive')
                         if archive and isinstance(archive, dict):
-                            aid = archive.get('aid')
-                            if aid:
-                                # 构造视频链接：https://www.bilibili.com/video/av{aid} 或 https://www.bilibili.com/video/BV{bvid}
-                                bvid = archive.get('bvid')
-                                if bvid:
-                                    dynamic_item.url = f"https://www.bilibili.com/video/{bvid}"
-                                else:
+                            # 优先使用bvid构造链接，如果没有则使用aid
+                            bvid = archive.get('bvid')
+                            if bvid:
+                                dynamic_item.url = f"https://www.bilibili.com/video/{bvid}"
+                                logger.debug(f"视频动态 {dynamic_id} 使用BV号视频链接: {dynamic_item.url}")
+                            else:
+                                aid = archive.get('aid')
+                                if aid:
                                     dynamic_item.url = f"https://www.bilibili.com/video/av{aid}"
-                                logger.debug(f"视频动态 {dynamic_id} 使用视频链接: {dynamic_item.url}")
+                                    logger.debug(f"视频动态 {dynamic_id} 使用AV号视频链接: {dynamic_item.url}")
                 except Exception as e:
                     logger.debug(f"提取视频链接失败，使用默认动态链接: {e}")
                     # 失败时保持默认的动态链接
