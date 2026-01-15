@@ -12,7 +12,7 @@ class DynamicItem:
 
     def __init__(self, dynamic_id: int, uid: int, name: str, timestamp: int,
                  dynamic_type: int, title: str = "", content: str = "",
-                 images: List[str] = None):
+                 images: List[str] = None, author_type: str = ""):
         self.id = dynamic_id
         self.uid = uid
         self.name = name
@@ -21,6 +21,7 @@ class DynamicItem:
         self.title = title
         self.content = content
         self.images = images or []
+        self.author_type = author_type  # 作者类型
         self.url = f"https://t.bilibili.com/{dynamic_id}"
 
 
