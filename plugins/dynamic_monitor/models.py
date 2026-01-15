@@ -35,13 +35,17 @@ class DynamicItem:
 
     def get_type_description(self) -> str:
         """获取动态类型描述"""
+        # 如果是转发动态且内容已经包含转发信息，直接使用内容
+        if self.type == 1 and self.content and self.content.startswith('转发了'):
+            return self.content
+
         type_msg = {
             0: "发布了新动态",
-            1: "转发了一条动态",
+            1: "转发了动态",
             2: "发布了新图文动态",
             4: "发布了新文字动态",
-            8: "发布了新投稿",
-            16: "发布了短视频",
+            8: "发布了新投稿视频",
+            16: "发布了直播",
             32: "发布了新音频",
             64: "发布了新专栏",
             256: "发布了新音频",

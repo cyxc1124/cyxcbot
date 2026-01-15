@@ -161,6 +161,13 @@ class DynamicFetcher:
             dynamic_type = self._map_dynamic_type(bili_dynamic_type)
             content = self._extract_content_from_item(item)
 
+            # 特殊处理转发动态
+            if bili_dynamic_type == 'DYNAMIC_TYPE_FORWARD':
+                orig_info = self._extract_forward_orig_info(item)
+                if orig_info:
+                    # 更新内容描述为转发信息
+                    content = f"转发了{orig_info['author']}的{orig_info['type_desc']}"
+
             logger.debug(f"动态 {dynamic_id}: B站类型={bili_dynamic_type}, 映射类型={dynamic_type}, 作者={name}({author_type_desc})")
 
             # 提取图片
@@ -234,6 +241,50 @@ class DynamicFetcher:
             logger.debug(f"提取动态图片失败: {e}")
 
         return images
+
+    def _extract_forward_orig_info(self, item: dict) -> Optional[dict]:
+        """提取转发动态的原始信息"""
+        try:
+            modules = item.get('modules', {})
+            dynamic_module = modules.get('module_dynamic', {})
+            orig = dynamic_module.get('orig')
+
+            if not orig:
+                return None
+
+            # 提取原始动态的作者信息
+            orig_modules = orig.get('modules', {})
+            orig_author = orig_modules.get('module_author', {})
+            orig_author_info = orig_author.get('author', {})
+            orig_author_name = orig_author_info.get('name', '未知用户')
+
+            # 提取原始动态的类型
+            orig_type = orig.get('type', 'DYNAMIC_TYPE_UNKNOWN')
+            orig_type_desc = self._get_forward_type_description(orig_type)
+
+            return {
+                'author': orig_author_name,
+                'type_desc': orig_type_desc,
+                'orig_type': orig_type
+            }
+
+        except Exception as e:
+            logger.debug(f"解析转发原始信息失败: {e}")
+            return None
+
+    def _get_forward_type_description(self, bili_type: str) -> str:
+        """获取转发类型描述"""
+        type_descriptions = {
+            'DYNAMIC_TYPE_WORD': '动态',
+            'DYNAMIC_TYPE_DRAW': '图文动态',
+            'DYNAMIC_TYPE_FORWARD': '动态',
+            'DYNAMIC_TYPE_AV': '视频',
+            'DYNAMIC_TYPE_ARTICLE': '专栏',
+            'DYNAMIC_TYPE_MUSIC': '音频',
+            'DYNAMIC_TYPE_LIVE': '直播',
+            'DYNAMIC_TYPE_LIVE_RCMD': '直播',
+        }
+        return type_descriptions.get(bili_type, '动态')
 
     def _map_dynamic_type(self, bili_type: str) -> int:
         """将B站动态类型映射为内部类型编号
