@@ -158,6 +158,12 @@ class DynamicFetcher:
 
             # 提取动态类型 - 只需基本类型信息用于描述
             bili_dynamic_type = item.get('type', 'DYNAMIC_TYPE_WORD')
+
+            # 过滤直播动态，因为直播推送由其他插件负责
+            if bili_dynamic_type in ('DYNAMIC_TYPE_LIVE_RCMD', 'DYNAMIC_TYPE_LIVE'):
+                logger.debug(f"跳过直播动态: {dynamic_id}, 类型={bili_dynamic_type}, 作者={name}")
+                return None
+
             dynamic_type = self._map_dynamic_type(bili_dynamic_type)
 
             # 初始化内容为空，因为我们要截图，不需要解析详细内容
