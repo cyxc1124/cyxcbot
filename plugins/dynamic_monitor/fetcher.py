@@ -17,10 +17,10 @@ class DynamicFetcher:
 
     def __init__(self, session: aiohttp.ClientSession):
         self.session = session
-        # B站API请求头 - 参考RSSHub实现
+        # B站API请求头
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
-            'Referer': f'https://space.bilibili.com/{uid}/',  # 动态设置Referer
+            'Referer': f'https://space.bilibili.com/',
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         }
@@ -65,7 +65,6 @@ class DynamicFetcher:
 
             # 动态设置请求头
             request_headers = self.headers.copy()
-            request_headers['Referer'] = f'https://space.bilibili.com/{uid}/'
 
             # 添加Cookie（如果提供）
             if cookie:
