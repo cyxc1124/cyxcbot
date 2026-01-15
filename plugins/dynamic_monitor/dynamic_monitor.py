@@ -47,7 +47,7 @@ class DynamicMonitor:
             await init_screenshot_service()
             logger.info("动态截图服务已启动")
 
-        logger.info(f"UP主动态监控已启动，使用RSSHub: {self.config.rsshub_base_url}")
+        logger.info("UP主动态监控已启动，直接调用B站API")
 
         # 初始化最后动态ID
         for uid in self.config.dynamic_monitor_mapping.keys():
