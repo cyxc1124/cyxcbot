@@ -123,11 +123,6 @@ class DynamicMonitor:
 
         dynamics, new_pinned_id = result
 
-        # 更新置顶动态ID
-        if new_pinned_id != current_pinned_id:
-            logger.info(f"UP主 {uid} 置顶动态已更新: {current_pinned_id} -> {new_pinned_id}")
-            self.pinned_dynamic_ids[uid] = new_pinned_id
-
         # 检查是否有新动态
         last_dynamic_id = self.last_dynamic_ids.get(uid, 0)
         new_dynamics = []
@@ -136,12 +131,31 @@ class DynamicMonitor:
             if dynamic.id > last_dynamic_id:
                 new_dynamics.append(dynamic)
 
-        # 如果是第一次检查该用户（last_dynamic_id为0），只记录最新动态ID，不推送
-        if last_dynamic_id == 0 and new_dynamics:
+        # 如果是第一次检查该用户（last_dynamic_id为0），只记录状态，不推送
+        if last_dynamic_id == 0:
             # 记录最新的动态ID作为基准点
-            self.last_dynamic_ids[uid] = max(d.id for d in new_dynamics)
-            logger.info(f"UP主 {uid} 首次监控，已记录最新动态ID: {self.last_dynamic_ids[uid]}")
+            if new_dynamics:
+                self.last_dynamic_ids[uid] = max(d.id for d in new_dynamics)
+                logger.info(f"UP主 {uid} 首次监控，已记录最新动态ID: {self.last_dynamic_ids[uid]}")
+
+            # 记录当前的置顶动态ID作为基准点
+            self.pinned_dynamic_ids[uid] = new_pinned_id
+            if new_pinned_id:
+                logger.info(f"UP主 {uid} 首次监控，已记录置顶动态ID: {new_pinned_id}")
+
             return
+
+        # 处理置顶动态变化（只有在非首次启动时才推送置顶动态变化）
+        if new_pinned_id != current_pinned_id:
+            logger.info(f"UP主 {uid} 置顶动态已更新: {current_pinned_id} -> {new_pinned_id}")
+            self.pinned_dynamic_ids[uid] = new_pinned_id
+
+            # 只有当前置顶动态ID存在且有变化时，才推送置顶动态通知
+            if new_pinned_id and current_pinned_id is not None:
+                # 查找置顶动态并推送
+                pinned_dynamic = next((d for d in dynamics if str(d.id) == new_pinned_id), None)
+                if pinned_dynamic:
+                    await self._send_dynamic_notification(uid, pinned_dynamic)
 
         # 如果有新动态，处理推送
         if new_dynamics:
