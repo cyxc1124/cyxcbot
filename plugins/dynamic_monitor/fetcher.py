@@ -202,7 +202,8 @@ class DynamicFetcher:
             # 图片链接不需要，因为我们要截图
             images = []
 
-            return DynamicItem(
+            # 创建DynamicItem对象
+            dynamic_item = DynamicItem(
                 dynamic_id=dynamic_id,
                 uid=int(author_uid),
                 name=name,
@@ -212,6 +213,31 @@ class DynamicFetcher:
                 images=images,
                 author_type=author_type
             )
+
+            # 对于视频动态，尝试提取视频链接而不是动态链接
+            if bili_dynamic_type == 'DYNAMIC_TYPE_AV':
+                try:
+                    dynamic_module = modules.get('module_dynamic', {})
+                    major = dynamic_module.get('major', {})
+
+                    # 尝试从archive信息中提取视频链接
+                    if major and isinstance(major, dict):
+                        archive = major.get('archive')
+                        if archive and isinstance(archive, dict):
+                            aid = archive.get('aid')
+                            if aid:
+                                # 构造视频链接：https://www.bilibili.com/video/av{aid} 或 https://www.bilibili.com/video/BV{bvid}
+                                bvid = archive.get('bvid')
+                                if bvid:
+                                    dynamic_item.url = f"https://www.bilibili.com/video/{bvid}"
+                                else:
+                                    dynamic_item.url = f"https://www.bilibili.com/video/av{aid}"
+                                logger.debug(f"视频动态 {dynamic_id} 使用视频链接: {dynamic_item.url}")
+                except Exception as e:
+                    logger.debug(f"提取视频链接失败，使用默认动态链接: {e}")
+                    # 失败时保持默认的动态链接
+
+            return dynamic_item
 
         except Exception as e:
             logger.warning(f"解析动态项异常: {e}")
