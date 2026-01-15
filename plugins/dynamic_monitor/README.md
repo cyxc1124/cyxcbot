@@ -73,6 +73,7 @@ plugins/dynamic_monitor/
    - 使用`https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space`接口
    - 支持获取用户空间的最新动态列表
    - 智能处理置顶动态：只在置顶内容更换时推送，避免重复通知
+   - 支持识别多种动态类型和作者类型
 2. **数据解析**：解析RSS feed中的动态ID、内容、发布时间等信息
    - 用户名提取：严格使用RSS标准的`<author>`字段，确保准确性
 3. **内容处理**：清理和格式化动态内容，移除HTML实体和多余格式
@@ -123,6 +124,32 @@ plugins/dynamic_monitor/
   - `platform`: 平台类型（web）
   - `pn`: 页码
   - `ps`: 每页数量
+
+### 支持的动态类型
+
+插件支持识别以下B站动态类型：
+
+| B站类型 | 内部编号 | 说明 |
+|---------|----------|------|
+| `DYNAMIC_TYPE_WORD` | 4 | 纯文字动态 |
+| `DYNAMIC_TYPE_DRAW` | 2 | 图文动态 |
+| `DYNAMIC_TYPE_FORWARD` | 1 | 转发动态 |
+| `DYNAMIC_TYPE_AV` | 8 | 投稿视频动态 |
+| `DYNAMIC_TYPE_ARTICLE` | 64 | 投稿专栏动态 |
+| `DYNAMIC_TYPE_MUSIC` | 256 | 投稿音频动态 |
+| `DYNAMIC_TYPE_LIVE` | 16 | 直播动态 |
+| `DYNAMIC_TYPE_LIVE_RCMD` | 16 | 直播推荐动态 |
+
+### 支持的作者类型
+
+插件支持识别以下作者类型：
+
+| 作者类型 | 说明 |
+|----------|------|
+| `AUTHOR_TYPE_NORMAL` | 普通用户 |
+| `AUTHOR_TYPE_OFFICIAL` | 官方账号 |
+| `AUTHOR_TYPE_BIZ` | 商业账号 |
+| `AUTHOR_TYPE_BIG_VIP` | 大会员账号 |
 
 ## 动态截图功能
 

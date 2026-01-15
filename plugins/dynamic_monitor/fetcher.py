@@ -149,13 +149,19 @@ class DynamicFetcher:
 
             name = author_info.get('name', '未知用户')
             author_uid = author_info.get('mid', uid)
+            author_type = author_info.get('type', 'AUTHOR_TYPE_UNKNOWN')
+            author_type_desc = self._get_author_type_description(author_type)
+            author_type = author_info.get('type', 'AUTHOR_TYPE_NORMAL')
 
             # 提取时间戳
             timestamp = item.get('pub_ts', int(time.time()))
 
             # 提取动态类型和内容
-            dynamic_type = item.get('type', 0)
+            bili_dynamic_type = item.get('type', 'DYNAMIC_TYPE_WORD')
+            dynamic_type = self._map_dynamic_type(bili_dynamic_type)
             content = self._extract_content_from_item(item)
+
+            logger.debug(f"动态 {dynamic_id}: B站类型={bili_dynamic_type}, 映射类型={dynamic_type}, 作者={name}({author_type_desc})")
 
             # 提取图片
             images = self._extract_images_from_item(item)
@@ -167,7 +173,8 @@ class DynamicFetcher:
                 timestamp=timestamp,
                 dynamic_type=dynamic_type,
                 content=content,
-                images=images
+                images=images,
+                author_type=author_type
             )
 
         except Exception as e:
@@ -227,3 +234,37 @@ class DynamicFetcher:
             logger.debug(f"提取动态图片失败: {e}")
 
         return images
+
+    def _map_dynamic_type(self, bili_type: str) -> int:
+        """将B站动态类型映射为内部类型编号
+
+        B站动态类型映射：
+        - DYNAMIC_TYPE_WORD: 纯文字动态
+        - DYNAMIC_TYPE_DRAW: 图文动态
+        - DYNAMIC_TYPE_FORWARD: 转发动态
+        - DYNAMIC_TYPE_AV: 投稿视频动态
+        - DYNAMIC_TYPE_ARTICLE: 投稿专栏动态
+        - DYNAMIC_TYPE_MUSIC: 投稿音频动态
+        """
+        type_mapping = {
+            'DYNAMIC_TYPE_WORD': 4,      # 文字动态
+            'DYNAMIC_TYPE_DRAW': 2,      # 图文动态
+            'DYNAMIC_TYPE_FORWARD': 1,   # 转发动态
+            'DYNAMIC_TYPE_AV': 8,        # 投稿视频
+            'DYNAMIC_TYPE_ARTICLE': 64,  # 投稿专栏
+            'DYNAMIC_TYPE_MUSIC': 256,   # 投稿音频
+            'DYNAMIC_TYPE_LIVE': 16,     # 直播动态
+            'DYNAMIC_TYPE_LIVE_RCMD': 16, # 直播推荐
+        }
+
+        return type_mapping.get(bili_type, 0)  # 默认其他动态
+
+    def _get_author_type_description(self, author_type: str) -> str:
+        """获取作者类型描述"""
+        type_descriptions = {
+            'AUTHOR_TYPE_NORMAL': '普通用户',
+            'AUTHOR_TYPE_OFFICIAL': '官方账号',
+            'AUTHOR_TYPE_BIZ': '商业账号',
+            'AUTHOR_TYPE_BIG_VIP': '大会员',
+        }
+        return type_descriptions.get(author_type, '未知类型')
