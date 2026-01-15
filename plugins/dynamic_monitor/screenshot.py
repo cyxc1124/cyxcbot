@@ -36,28 +36,55 @@ async def fill_font(route):
 
 
 async def init_browser(proxy=None, **kwargs) -> BrowserContext:
-    """初始化浏览器"""
-    logger.info("初始化浏览器")
+    """初始化浏览器 - 最佳实践配置"""
+    logger.info("初始化Playwright浏览器")
+
     playwright = await async_playwright().start()
+
+    # 优化的浏览器启动参数
+    browser_args = [
+        '--no-sandbox',                    # 禁用沙盒（Docker环境必需）
+        '--disable-setuid-sandbox',        # 禁用setuid沙盒
+        '--disable-dev-shm-usage',         # 禁用/dev/shm使用
+        '--disable-accelerated-2d-canvas', # 禁用硬件加速画布
+        '--no-first-run',                  # 跳过首次运行设置
+        '--no-zygote',                     # 禁用zygote进程
+        '--disable-gpu',                   # 禁用GPU硬件加速
+        '--disable-web-security',          # 禁用同源策略（如果需要）
+        '--disable-features=VizDisplayCompositor', # 禁用显示合成器
+        #'--disable-extensions',            # 禁用扩展
+        #'--disable-plugins',               # 禁用插件
+        #'--disable-images',                # 不加载图片（可选，加快加载）
+        #'--disable-javascript',            # 不执行JS（但我们需要JS，所以不加）
+        '--disable-background-timer-throttling', # 禁用后台定时器限制
+        '--disable-backgrounding-occluded-windows', # 禁用后台窗口限制
+        '--disable-renderer-backgrounding', # 禁用渲染器后台化
+    ]
+
     browser = await playwright.chromium.launch(
         headless=True,
-        args=[
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process',
-            '--disable-gpu'
-        ],
+        args=browser_args,
         proxy={"server": proxy} if proxy else None,
+        # 内存和性能优化
+        handle_sigint=False,
+        handle_sigterm=False,
+        handle_sighup=False,
         **kwargs
     )
+
+    # 创建优化的浏览器上下文
     context = await browser.new_context(
-        viewport={"width": 460, "height": 780},  # 移动端尺寸
-        user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1"
+        # 默认使用PC端设置，后续可根据需要调整viewport
+        viewport={"width": 1920, "height": 1080},
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+        # 性能优化设置
+        ignore_https_errors=True,  # 忽略HTTPS错误
+        bypass_csp=True,          # 绕过内容安全策略
+        # 禁用不必要的资源加载以提高性能
+        permissions=[],           # 不授予任何权限
     )
+
+    logger.info("浏览器初始化完成")
     return context
 
 
@@ -101,7 +128,7 @@ class DynamicScreenshot:
             await page.set_viewport_size({
                 "width": 1920,
                 "height": 1080,
-                "device_scale_factor": 1  # PC端通常不需要高DPI缩放
+                "device_scale_factor": 1  # PC端标准缩放
             })
 
             # 设置字体路由拦截
@@ -271,14 +298,8 @@ const checkInterval = setInterval(() => {
                 return screenshot, None
 
             except Exception as full_screenshot_error:
-                logger.warning(f"完整截图失败，尝试简化截图: {full_screenshot_error}")
-
-                # 如果完整截图失败，尝试简化截图
-                try:
-                    return await self.get_dynamic_screenshot_simple(dynamic_id, page)
-                except Exception as simple_error:
-                    logger.error(f"简化截图也失败: {simple_error}")
-                    return None, f"截图失败: {str(full_screenshot_error)}"
+                logger.error(f"PC端截图失败: {full_screenshot_error}")
+                return None, f"截图失败: {str(full_screenshot_error)}"
 
         except Notfound:
             logger.warning(f"动态 {dynamic_id} 不存在")
@@ -295,54 +316,6 @@ const checkInterval = setInterval(() => {
                 except Exception as close_error:
                     logger.warning(f"关闭页面时出错: {close_error}")
 
-    async def get_dynamic_screenshot_simple(self, dynamic_id: int, page: Page) -> Tuple[Optional[bytes], Optional[str]]:
-        """简化版动态截图 - 当完整截图失败时的备选方案"""
-        try:
-            url = f"https://t.bilibili.com/{dynamic_id}"
-            logger.info(f"开始PC端简化截图动态 {dynamic_id}, 请求URL: {url}")
-
-            # PC端页面加载 - 使用标准桌面视口
-            await page.set_viewport_size({
-                "width": 1920,
-                "height": 1080,
-                "device_scale_factor": 1
-            })
-            logger.debug(f"简化截图: 正在加载页面 {url}")
-            await page.goto(url, wait_until="domcontentloaded", timeout=15000)
-
-            # 检查404
-            if "404" in page.url:
-                raise Notfound("动态不存在")
-
-            # 等待页面基本加载
-            await page.wait_for_load_state("domcontentloaded", timeout=5000)
-
-            # 简化版也添加滚动和等待逻辑
-            try:
-                await page.evaluate("window.scrollTo(0, 100)")
-                await page.wait_for_timeout(300)
-                await page.evaluate("window.scrollTo(0, 0)")
-            except Exception as e:
-                logger.warning(f"简化截图滚动失败: {e}")
-
-            # 等待内容稳定
-            await page.wait_for_timeout(800)
-
-            # 直接截取整个可见区域（简化方案）
-            logger.debug(f"简化截图: 正在截取可见区域")
-            screenshot = await page.screenshot(
-                type="jpeg",
-                quality=100,  # 最高质量设置
-                full_page=False  # 只截取可见区域
-            )
-
-            screenshot_size = len(screenshot) if screenshot else 0
-            logger.info(f"使用简化截图成功获取动态 {dynamic_id}, 大小: {screenshot_size} bytes")
-            return screenshot, None
-
-        except Exception as e:
-            logger.error(f"简化截图也失败: {str(e)}")
-            raise
 
 
 # 全局截图器实例
