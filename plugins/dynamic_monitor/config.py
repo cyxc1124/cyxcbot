@@ -28,6 +28,12 @@ class Config(BaseModel):
         description="是否在推送消息中包含动态截图"
     )
 
+    # B站Cookie配置
+    bilibili_cookie: str = Field(
+        default_factory=lambda: Config._get_bilibili_cookie(),
+        description="B站用户Cookie，用于提高API请求成功率"
+    )
+
     @staticmethod
     def _get_dynamic_monitor_mapping() -> Dict[str, List[str]]:
         """从环境变量读取UP主UID-群组映射配置"""
@@ -75,6 +81,18 @@ class Config(BaseModel):
             return True
         except (json.JSONDecodeError, TypeError):
             return True
+
+    @staticmethod
+    def _get_bilibili_cookie() -> str:
+        """从环境变量读取B站Cookie配置"""
+        try:
+            cookie = os.getenv('BILIBILI_COOKIE', '')
+            if cookie:
+                logger.info("加载B站Cookie配置")
+            return cookie
+        except Exception as e:
+            logger.error(f"读取B站Cookie配置失败: {e}")
+            return ""
 
     model_config = {
         "env_prefix": "",  # 无前缀，直接读取环境变量

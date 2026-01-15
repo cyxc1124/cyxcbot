@@ -25,12 +25,13 @@ class DynamicFetcher:
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         }
 
-    async def fetch_user_dynamics(self, uid: str, current_pinned_id: Optional[int] = None) -> Optional[tuple[List[DynamicItem], Optional[int]]]:
+    async def fetch_user_dynamics(self, uid: str, current_pinned_id: Optional[int] = None, cookie: Optional[str] = None) -> Optional[tuple[List[DynamicItem], Optional[int]]]:
         """直接调用B站API获取用户动态
 
         Args:
             uid: 用户ID
             current_pinned_id: 当前记录的置顶动态ID
+            cookie: B站用户Cookie（可选，用于绕过限制）
 
         Returns:
             (动态列表, 当前置顶动态ID)
@@ -62,9 +63,14 @@ class DynamicFetcher:
 
             logger.debug(f"请求B站动态API: {api_url} 用户: {uid}")
 
-            # 动态设置Referer
+            # 动态设置请求头
             request_headers = self.headers.copy()
             request_headers['Referer'] = f'https://space.bilibili.com/{uid}/'
+
+            # 添加Cookie（如果提供）
+            if cookie:
+                request_headers['Cookie'] = cookie
+                logger.debug(f"使用Cookie进行B站API请求: cookie={cookie}")
 
             async with self.session.get(
                 api_url,

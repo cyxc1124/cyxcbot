@@ -25,6 +25,19 @@
 
 #### DYNAMIC_MONITOR_INTERVAL
 监控间隔时间（秒），默认300秒（5分钟）
+
+#### DYNAMIC_ENABLE_SCREENSHOT
+是否启用动态截图功能，默认为true
+
+#### BILIBILI_COOKIE_{uid} (可选)
+B站用户Cookie配置，用于提高API请求成功率：
+
+- 变量格式：`BILIBILI_COOKIE`
+- 获取方式：
+  1. 打开浏览器开发者工具 → Network面板 → 刷新页面
+- 示例：`BILIBILI_COOKIE_2267573=SESSDATA=xxxxx;DedeUserID=xxxxx;bili_jct=xxxxx`
+
+**⚠️ 安全提醒**：Cookie包含登录信息，请妥善保管，避免泄露。
 ```bash
 DYNAMIC_MONITOR_INTERVAL=300
 ```
