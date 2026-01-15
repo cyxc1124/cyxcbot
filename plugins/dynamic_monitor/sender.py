@@ -20,15 +20,11 @@ class DynamicSender:
         """构建动态推送消息"""
         message = Message()
 
-        # UP主名称
-        message.append(f"{dynamic.name}\n")
-
+        # 第一行：UP主名字 + 动态类型描述
+        message.append(f"{dynamic.name} {dynamic.get_type_description()}\n")
+        
         # 发布时间（北京时间）
         message.append(f"{dynamic.get_beijing_time()}\n")
-
-        # 动态类型
-        message.append(f"{dynamic.get_type_description()}\n")
-
         # 如果启用了截图且有截图数据，添加图片
         if self.enable_screenshot and screenshot_image:
             try:
