@@ -49,7 +49,7 @@ class DynamicFetcher:
             # 添加dm验证信息 (模拟RSSHub的addDmVerifyInfo)
             dm_img_str = "bm8gd2ViZ2w"  # "no webgl" 的base64编码，去掉末尾的==
             dm_cover_img_str = "bm8gd2ViZ2w"  # "no webgl" 的base64编码，去掉末尾的==
-            dm_img_list = '[{"x":1245,"y":1285,"z":1,"timestamp":1736169600000,"duration":0}]'  # 模拟dm图像列表
+            dm_img_list = self._generate_dm_img_list()  # 动态生成dm图像列表
 
             params_str = f"{base_params}&dm_img_list={dm_img_list}&dm_img_str={dm_img_str}&dm_cover_img_str={dm_cover_img_str}"
 
@@ -253,6 +253,35 @@ class DynamicFetcher:
             'DYNAMIC_TYPE_LIVE_RCMD': '直播',
         }
         return type_descriptions.get(bili_type, '动态')
+
+    def _generate_dm_img_list(self) -> str:
+        """生成dm图像列表，参考RSSHub的getDmImgList实现"""
+        import random
+        import time
+
+        # 生成高斯分布的随机坐标 (参考RSSHub的generateGaussianInteger)
+        def generate_gaussian_integer(mean: float, std: float) -> int:
+            # 使用Box-Muller变换生成高斯分布随机数
+            import math
+            u1 = random.random()
+            u2 = random.random()
+            z0 = math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
+            return max(int(round(z0 * std + mean)), 0)
+
+        # 生成dm图像坐标
+        x = generate_gaussian_integer(1245, 5)
+        y = generate_gaussian_integer(1285, 5)
+
+        # 构建dm图像列表
+        dm_img_data = [{
+            "x": x,
+            "y": y,
+            "z": 1,
+            "timestamp": int(time.time() * 1000),  # 毫秒时间戳
+            "duration": 0
+        }]
+
+        return json.dumps(dm_img_data)
 
     def _map_dynamic_type(self, bili_type: str) -> int:
         """将B站动态类型映射为内部类型编号
