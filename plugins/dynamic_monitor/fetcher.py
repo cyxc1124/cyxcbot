@@ -47,8 +47,8 @@ class DynamicFetcher:
             base_params = f"host_mid={uid}&platform=web&features=itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote"
 
             # 添加dm验证信息 (模拟RSSHub的addDmVerifyInfo)
-            dm_img_str = "bm8gd2ViZ2w"  # "no webgl" 的base64编码，去掉末尾的==
-            dm_cover_img_str = "bm8gd2ViZ2w"  # "no webgl" 的base64编码，去掉末尾的==
+            dm_img_str = self._generate_dm_verify_string()
+            dm_cover_img_str = self._generate_dm_verify_string()
             dm_img_list = self._generate_dm_img_list()  # 动态生成dm图像列表
 
             params_str = f"{base_params}&dm_img_list={dm_img_list}&dm_img_str={dm_img_str}&dm_cover_img_str={dm_cover_img_str}"
@@ -282,6 +282,12 @@ class DynamicFetcher:
         }]
 
         return json.dumps(dm_img_data)
+
+    def _generate_dm_verify_string(self) -> str:
+        """生成dm验证字符串，参考RSSHub的实现"""
+        import base64
+        # 模拟RSSHub: Buffer.from('no webgl').toString('base64').slice(0, -2)
+        return base64.b64encode(b'no webgl').decode()[:-2]
 
     def _map_dynamic_type(self, bili_type: str) -> int:
         """将B站动态类型映射为内部类型编号
