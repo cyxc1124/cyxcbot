@@ -156,22 +156,24 @@ class DynamicFetcher:
             # 提取时间戳
             timestamp = item.get('pub_ts', int(time.time()))
 
-            # 提取动态类型和内容
+            # 提取动态类型 - 只需基本类型信息用于描述
             bili_dynamic_type = item.get('type', 'DYNAMIC_TYPE_WORD')
             dynamic_type = self._map_dynamic_type(bili_dynamic_type)
-            content = self._extract_content_from_item(item)
 
-            # 特殊处理转发动态
+            # 初始化内容为空，因为我们要截图，不需要解析详细内容
+            content = ""
+
+            # 特殊处理转发动态 - 需要解析原始动态信息用于描述
             if bili_dynamic_type == 'DYNAMIC_TYPE_FORWARD':
                 orig_info = self._extract_forward_orig_info(item)
                 if orig_info:
-                    # 更新内容描述为转发信息
+                    # 设置转发描述
                     content = f"转发了{orig_info['author']}的{orig_info['type_desc']}"
 
-            logger.debug(f"动态 {dynamic_id}: B站类型={bili_dynamic_type}, 映射类型={dynamic_type}, 作者={name}({author_type_desc})")
+            logger.debug(f"动态 {dynamic_id}: B站类型={bili_dynamic_type}, 映射类型={dynamic_type}, 作者={name}")
 
-            # 提取图片
-            images = self._extract_images_from_item(item)
+            # 图片链接不需要，因为我们要截图
+            images = []
 
             return DynamicItem(
                 dynamic_id=dynamic_id,
@@ -188,59 +190,6 @@ class DynamicFetcher:
             logger.warning(f"解析动态项异常: {e}")
             return None
 
-    def _extract_content_from_item(self, item: dict) -> str:
-        """从动态项中提取文本内容"""
-        try:
-            modules = item.get('modules', {})
-            dynamic_module = modules.get('module_dynamic', {})
-
-            # 尝试从desc字段提取
-            desc = dynamic_module.get('desc', {})
-            if desc and desc.get('text'):
-                return desc['text']
-
-            # 尝试从major字段提取（图文动态）
-            major = dynamic_module.get('major', {})
-            if major and major.get('opus', {}):
-                opus = major['opus']
-                summary = opus.get('summary', {})
-                if summary and summary.get('text'):
-                    return summary['text']
-
-            return ""
-
-        except Exception as e:
-            logger.debug(f"提取动态内容失败: {e}")
-            return ""
-
-    def _extract_images_from_item(self, item: dict) -> List[str]:
-        """从动态项中提取图片链接"""
-        images = []
-        try:
-            modules = item.get('modules', {})
-            dynamic_module = modules.get('module_dynamic', {})
-            major = dynamic_module.get('major', {})
-
-            # 提取图文动态的图片
-            if major.get('type') == 'MAJOR_TYPE_OPUS':
-                opus = major.get('opus', {})
-                pics = opus.get('pics', [])
-                for pic in pics:
-                    if pic.get('url'):
-                        images.append(pic['url'])
-
-            # 提取普通动态的图片
-            elif major.get('type') == 'MAJOR_TYPE_DRAW':
-                draw = major.get('draw', {})
-                items = draw.get('items', [])
-                for pic_item in items:
-                    if pic_item.get('src'):
-                        images.append(pic_item['src'])
-
-        except Exception as e:
-            logger.debug(f"提取动态图片失败: {e}")
-
-        return images
 
     def _extract_forward_orig_info(self, item: dict) -> Optional[dict]:
         """提取转发动态的原始信息"""
