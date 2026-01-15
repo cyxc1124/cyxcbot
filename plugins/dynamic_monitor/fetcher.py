@@ -25,7 +25,7 @@ class DynamicFetcher:
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         }
 
-    async def fetch_user_dynamics(self, uid: str, current_pinned_id: str = None) -> Optional[tuple[List[DynamicItem], str]]:
+    async def fetch_user_dynamics(self, uid: str, current_pinned_id: Optional[int] = None) -> Optional[tuple[List[DynamicItem], Optional[int]]]:
         """直接调用B站API获取用户动态
 
         Args:
@@ -100,9 +100,11 @@ class DynamicFetcher:
 
                         if is_pinned:
                             pinned_id = item.get('id_str')
-                            current_pinned_id = pinned_id
-                            # 如果是新的置顶动态（或第一次检测到置顶），允许推送
-                            should_include = (pinned_id != current_pinned_id)
+                            if pinned_id:
+                                pinned_id_int = int(pinned_id)
+                                current_pinned_id = pinned_id_int
+                            # 置顶动态总是包含在结果中，由调用方决定是否推送
+                            should_include = True
                             if should_include:
                                 logger.info(f"检测到新的置顶动态: {pinned_id}")
                         else:

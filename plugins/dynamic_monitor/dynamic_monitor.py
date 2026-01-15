@@ -24,7 +24,7 @@ class DynamicMonitor:
     def __init__(self, config: Config):
         self.config = config
         self.last_dynamic_ids: Dict[str, int] = {}  # UID -> 最后动态ID
-        self.pinned_dynamic_ids: Dict[str, str] = {}  # UID -> 当前置顶动态ID
+        self.pinned_dynamic_ids: Dict[str, Optional[int]] = {}  # UID -> 当前置顶动态ID
         self.is_running = False
         self.session: Optional[aiohttp.ClientSession] = None
         self.fetcher: Optional[DynamicFetcher] = None
@@ -153,7 +153,7 @@ class DynamicMonitor:
             # 只有当前置顶动态ID存在且有变化时，才推送置顶动态通知
             if new_pinned_id and current_pinned_id is not None:
                 # 查找置顶动态并推送
-                pinned_dynamic = next((d for d in dynamics if str(d.id) == new_pinned_id), None)
+                pinned_dynamic = next((d for d in dynamics if d.id == new_pinned_id), None)
                 if pinned_dynamic:
                     await self._send_dynamic_notification(uid, pinned_dynamic)
 
