@@ -43,8 +43,8 @@ class DynamicFetcher:
 
         try:
             # 构建请求参数 - 参考RSSHub实现
-            # 基础参数
-            base_params = f"host_mid={uid}&platform=web&features=itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote"
+            # 基础参数 - 与RSSHub完全一致
+            base_params = f"offset=&host_mid={uid}&platform=web&features=itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote"
 
             # 添加dm验证信息 (模拟RSSHub的addDmVerifyInfo)
             dm_img_str = self._generate_dm_verify_string()
@@ -257,7 +257,6 @@ class DynamicFetcher:
     def _generate_dm_img_list(self) -> str:
         """生成dm图像列表，参考RSSHub的getDmImgList实现"""
         import random
-        import time
 
         # 生成高斯分布的随机坐标 (参考RSSHub的generateGaussianInteger)
         def generate_gaussian_integer(mean: float, std: float) -> int:
@@ -268,17 +267,24 @@ class DynamicFetcher:
             z0 = math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
             return max(int(round(z0 * std + mean)), 0)
 
-        # 生成dm图像坐标
+        # 生成基础坐标
         x = generate_gaussian_integer(1245, 5)
         y = generate_gaussian_integer(1285, 5)
 
-        # 构建dm图像列表
+        # 按照RSSHub的算法计算最终坐标
+        final_x = 3 * x + 2 * y
+        final_y = 4 * x - 5 * y
+
+        # 生成时间戳 (围绕30的随机数)
+        timestamp = generate_gaussian_integer(30, 5)
+
+        # 构建dm图像列表 - 与RSSHub完全一致的格式
         dm_img_data = [{
-            "x": x,
-            "y": y,
-            "z": 1,
-            "timestamp": int(time.time() * 1000),  # 毫秒时间戳
-            "duration": 0
+            "x": final_x,
+            "y": final_y,
+            "z": 0,
+            "timestamp": timestamp,
+            "type": 0
         }]
 
         return json.dumps(dm_img_data)
