@@ -7,6 +7,7 @@ import aiohttp
 import json
 import time
 from typing import List, Optional
+from urllib.parse import urlencode
 from nonebot.log import logger
 
 from .models import DynamicItem
@@ -61,7 +62,9 @@ class DynamicFetcher:
                     key, value = param.split('=', 1)
                     params[key] = value
 
-            logger.debug(f"请求B站动态API: {api_url} 用户: {uid}")
+            # 构建完整的请求URL用于日志
+            full_url = f"{api_url}?{urlencode(params)}"
+            logger.debug(f"请求B站动态API: {full_url}")
 
             # 动态设置请求头
             request_headers = self.headers.copy()
