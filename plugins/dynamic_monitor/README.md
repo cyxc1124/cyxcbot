@@ -29,6 +29,16 @@
 #### DYNAMIC_ENABLE_SCREENSHOT
 是否启用动态截图功能，默认为true
 
+#### LOG_LEVEL (可选)
+程序日志级别配置：
+
+- 可选值：`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
+- 默认值：`INFO`
+- 建议：
+  - 开发环境：`DEBUG`（显示详细调试信息）
+  - 生产环境：`INFO`（显示必要信息）
+  - 高负载环境：`WARNING`（只显示警告和错误）
+
 #### BILIBILI_COOKIE (可选)
 B站用户Cookie配置，用于提高API请求成功率：
 

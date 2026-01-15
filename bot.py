@@ -1,6 +1,7 @@
 import nonebot
 import os
-from nonebot.log import logger
+import logging
+from nonebot.log import logger, LoguruHandler
 from nonebot.adapters.console import Adapter as ConsoleAdapter  # 避免重复命名
 from nonebot.adapters.onebot.v11 import Adapter as OneBotAdapter  # 添加OneBot适配器
 
@@ -93,8 +94,38 @@ def log_environment_config():
     
     logger.info("🔧 Environment configuration loaded")
 
+# 配置日志级别
+def configure_logging():
+    """根据NoneBot最佳实践配置日志级别"""
+    # 从环境变量获取日志级别，默认为INFO
+    log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+
+    # 验证日志级别
+    valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+    if log_level not in valid_levels:
+        log_level = 'INFO'
+
+    # 设置标准库日志级别（影响第三方库的日志）
+    numeric_level = getattr(logging, log_level)
+    logging.getLogger().setLevel(numeric_level)
+
+    # 为特定模块设置更详细的日志级别（如果需要）
+    if log_level == 'DEBUG':
+        # 在调试模式下，为关键模块启用更详细的日志
+        logging.getLogger('aiohttp').setLevel(logging.WARNING)  # 减少aiohttp的噪声
+        logging.getLogger('playwright').setLevel(logging.WARNING)  # 减少playwright的噪声
+    else:
+        # 在生产模式下，减少第三方库的日志
+        logging.getLogger('aiohttp').setLevel(logging.ERROR)
+        logging.getLogger('playwright').setLevel(logging.ERROR)
+
+    return log_level
+
 # 初始化 NoneBot
 nonebot.init()
+
+# 配置日志级别
+configure_logging()
 
 # 调用环境变量记录函数（在NoneBot初始化之后）
 log_environment_config()
