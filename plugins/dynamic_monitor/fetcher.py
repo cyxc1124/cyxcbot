@@ -199,7 +199,7 @@ class DynamicFetcher:
                 orig_info = self._extract_forward_orig_info(item)
                 if orig_info:
                     # 设置转发描述
-                    content = f"转发了{orig_info['author']}的{orig_info['type_desc']}"
+                    content = f"转发了【{orig_info['author']}】的{orig_info['type_desc']}"
 
             logger.debug(f"动态 {dynamic_id}: B站类型={bili_dynamic_type}, 映射类型={dynamic_type}, UID={author_uid}")
 
@@ -413,18 +413,24 @@ class DynamicFetcher:
     def _extract_forward_orig_info(self, item: dict) -> Optional[dict]:
         """提取转发动态的原始信息"""
         try:
-            modules = item.get('modules', {})
-            dynamic_module = modules.get('module_dynamic', {})
-            orig = dynamic_module.get('orig')
+            # 转发动态的orig信息直接在item根级别
+            orig = item.get('orig')
 
             if not orig:
                 return None
 
             # 提取原始动态的作者信息
+            # 注意：转发动态的orig中，作者信息可能有两种结构
             orig_modules = orig.get('modules', {})
             orig_author = orig_modules.get('module_author', {})
+
+            # 优先尝试从author子对象获取（主动态的结构）
             orig_author_info = orig_author.get('author', {})
-            orig_author_name = orig_author_info.get('name', '未知用户')
+            orig_author_name = orig_author_info.get('name')
+
+            # 如果没有，则直接从module_author获取（orig中的结构）
+            if not orig_author_name:
+                orig_author_name = orig_author.get('name', '未知用户')
 
             # 提取原始动态的类型
             orig_type = orig.get('type', 'DYNAMIC_TYPE_UNKNOWN')
