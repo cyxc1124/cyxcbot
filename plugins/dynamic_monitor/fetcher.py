@@ -454,23 +454,32 @@ class DynamicFetcher:
             'DYNAMIC_TYPE_LIVE_RCMD': '直播',
         }
 
+        logger.debug(f"获取转发类型描述: bili_type={bili_type}, has_orig_data={orig_data is not None}")
+
         # 如果有原始数据，尝试从major.type获取更精确的类型
         if orig_data and bili_type == 'DYNAMIC_TYPE_AV':
             try:
-                modules = orig_data.get('modules', {})
-                dynamic_module = modules.get('module_dynamic', {})
-                major = dynamic_module.get('major', {})
-                major_type = major.get('type')
+                # 直接检查major.type，简化逻辑
+                major_type = orig_data.get('modules', {}).get('module_dynamic', {}).get('major', {}).get('type')
+
+                logger.debug(f"转发视频检查: major_type={major_type}")
 
                 # 检查是否是投稿视频
                 if major_type == 'MAJOR_TYPE_ARCHIVE':
-                    archive = major.get('archive', {})
-                    if archive:
-                        return '视频'
+                    logger.debug("确认是投稿视频，返回'视频'")
+                    return '视频'
+                elif major_type:
+                    logger.debug(f"其他major_type: {major_type}")
+                else:
+                    logger.debug("没有找到major.type")
             except Exception as e:
                 logger.debug(f"解析转发视频类型失败: {e}")
+                import traceback
+                logger.debug(f"异常详情: {traceback.format_exc()}")
 
-        return type_descriptions.get(bili_type, '动态')
+        result = type_descriptions.get(bili_type, '动态')
+        logger.debug(f"返回转发类型描述: {result}")
+        return result
 
     def _generate_dm_img_list(self) -> str:
         """生成dm图像列表，参考RSSHub的getDmImgList实现"""
