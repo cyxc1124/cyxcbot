@@ -60,12 +60,12 @@ class Config(BaseModel):
             interval_str = os.getenv('DYNAMIC_MONITOR_INTERVAL')
             if interval_str:
                 interval = int(interval_str)
-                # 确保间隔在合理范围内（30秒到1小时）
-                return max(30, min(3600, interval))
-            # 默认值：5分钟
-            return 300
+                # 确保间隔在合理范围内（10秒到1小时）
+                return max(10, min(3600, interval))
+            # 默认值：30秒
+            return 30
         except (ValueError, TypeError):
-            return 300
+            return 30
 
 
 
