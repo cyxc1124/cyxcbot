@@ -16,8 +16,9 @@ from .models import DynamicItem
 class DynamicFetcher:
     """B站动态数据获取器"""
 
-    def __init__(self, session: aiohttp.ClientSession):
+    def __init__(self, session: aiohttp.ClientSession, cookie: Optional[str] = None):
         self.session = session
+        self.cookie = cookie  # 保存cookie供后续使用
         # B站API请求头
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
@@ -131,7 +132,7 @@ class DynamicFetcher:
                             should_include = True
 
                         if should_include:
-                            dynamic_item = self._parse_dynamic_item(item, uid, is_pinned)
+                            dynamic_item = await self._parse_dynamic_item(item, uid, is_pinned)
                             if dynamic_item:
                                 dynamics.append(dynamic_item)
 
@@ -151,7 +152,7 @@ class DynamicFetcher:
             logger.error(f"B站API请求异常 {uid}: {e}")
             return None
 
-    def _parse_dynamic_item(self, item: dict, uid: str, is_pinned: bool = False) -> Optional[DynamicItem]:
+    async def _parse_dynamic_item(self, item: dict, uid: str, is_pinned: bool = False) -> Optional[DynamicItem]:
         """解析单个动态项"""
         try:
 
@@ -168,8 +169,11 @@ class DynamicFetcher:
             author_module = modules.get('module_author', {})
             author_info = author_module.get('author', {})
 
-            name = author_info.get('name', '未知用户')
             author_uid = author_info.get('mid', uid)
+
+            # 暂时不获取用户名，只保存UID，在需要推送时再获取
+            name = f"UP主_{author_uid}"  # 临时占位符，推送时会被替换
+
             author_type = author_info.get('type', 'AUTHOR_TYPE_UNKNOWN')
             author_type_desc = self._get_author_type_description(author_type)
             author_type = author_info.get('type', 'AUTHOR_TYPE_NORMAL')
@@ -182,7 +186,7 @@ class DynamicFetcher:
 
             # 过滤直播动态，因为直播推送由其他插件负责
             if bili_dynamic_type in ('DYNAMIC_TYPE_LIVE_RCMD', 'DYNAMIC_TYPE_LIVE'):
-                logger.debug(f"跳过直播动态: {dynamic_id}, 类型={bili_dynamic_type}, 作者={name}")
+                logger.debug(f"跳过直播动态: {dynamic_id}, 类型={bili_dynamic_type}, UID={author_uid}")
                 return None
 
             dynamic_type = self._map_dynamic_type(bili_dynamic_type)
@@ -197,7 +201,7 @@ class DynamicFetcher:
                     # 设置转发描述
                     content = f"转发了{orig_info['author']}的{orig_info['type_desc']}"
 
-            logger.debug(f"动态 {dynamic_id}: B站类型={bili_dynamic_type}, 映射类型={dynamic_type}, 作者={name}")
+            logger.debug(f"动态 {dynamic_id}: B站类型={bili_dynamic_type}, 映射类型={dynamic_type}, UID={author_uid}")
 
             # 图片链接不需要，因为我们要截图
             images = []
@@ -244,6 +248,167 @@ class DynamicFetcher:
             logger.warning(f"解析动态项异常: {e}")
             return None
 
+    async def _get_user_name_from_api(self, uid: str) -> Optional[str]:
+        """从B站API获取用户信息"""
+        try:
+            # 按照RSSHub的方式使用WBI签名API
+            user_info_url = "https://api.bilibili.com/x/space/wbi/acc/info"
+
+            # 基础参数字符串（按照RSSHub格式）
+            base_params = f"mid={uid}&token=&platform=web&web_location=1550101"
+
+            # 生成WBI签名参数
+            signed_params = await self._add_wbi_verify_info(base_params)
+
+            # 请求头
+            user_headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Referer': f'https://space.bilibili.com/{uid}/',
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+            }
+
+            # 如果有Cookie，添加到请求头
+            if self.cookie:
+                user_headers['Cookie'] = self.cookie
+
+            logger.debug(f"获取UP主 {uid} 信息，请求URL: {user_info_url}?{signed_params}")
+
+            async with self.session.get(
+                user_info_url,
+                params=signed_params,
+                headers=user_headers,
+                timeout=10
+            ) as response:
+
+                if response.status != 200:
+                    logger.debug(f"获取用户信息失败 {uid}: HTTP {response.status}")
+                    return None
+
+                data = await response.json()
+                logger.debug(f"用户信息API响应 {uid}: code={data.get('code')}")
+
+                if data.get('code') != 0:
+                    logger.debug(f"获取用户信息失败 {uid}: {data.get('message', '未知错误')}")
+                    return None
+
+                user_data = data.get('data', {})
+                name = user_data.get('name')
+                if name:
+                    logger.debug(f"成功获取UP主 {uid} 信息: {name}")
+                    return name
+                else:
+                    logger.debug(f"用户信息中没有找到名字 {uid}")
+                    return None
+
+        except Exception as e:
+            logger.debug(f"获取UP主信息异常 {uid}: {e}")
+            return None
+
+    async def _add_wbi_verify_info(self, params: str) -> str:
+        """添加WBI签名参数（按照RSSHub的实现）"""
+        try:
+            import hashlib
+            import time
+            import json
+            from urllib.parse import urlencode
+
+            # 获取WBI验证字符串
+            wbi_verify_string = await self._get_wbi_verify_string()
+            if not wbi_verify_string:
+                logger.debug("无法获取WBI验证字符串，回退到无签名模式")
+                return params
+
+            # 解析参数并排序
+            param_dict = {}
+            for param in params.split('&'):
+                if '=' in param:
+                    key, value = param.split('=', 1)
+                    param_dict[key] = value
+
+            # 按key排序
+            sorted_params = '&'.join([f"{k}={param_dict[k]}" for k in sorted(param_dict.keys())])
+
+            # 添加时间戳
+            wts = int(time.time())
+
+            # 生成w_rid签名
+            sign_str = f"{sorted_params}&wts={wts}{wbi_verify_string}"
+            w_rid = hashlib.md5(sign_str.encode('utf-8')).hexdigest()
+
+            # 添加签名参数
+            param_dict['w_rid'] = w_rid
+            param_dict['wts'] = str(wts)
+
+            # 构建最终参数字符串
+            final_params = '&'.join([f"{k}={v}" for k, v in param_dict.items()])
+            return final_params
+
+        except Exception as e:
+            logger.debug(f"WBI签名生成失败: {e}")
+            # 如果签名失败，返回原始参数
+            return params
+
+    async def _get_wbi_verify_string(self) -> Optional[str]:
+        """获取WBI验证字符串（按照RSSHub的实现）"""
+        try:
+            # 获取导航信息
+            nav_url = "https://api.bilibili.com/x/web-interface/nav"
+            nav_headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Referer': 'https://www.bilibili.com/',
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+            }
+
+            if self.cookie:
+                nav_headers['Cookie'] = self.cookie
+
+            async with self.session.get(nav_url, headers=nav_headers, timeout=10) as response:
+                if response.status != 200:
+                    logger.debug("导航API请求失败")
+                    return None
+
+                nav_data = await response.json()
+                if nav_data.get('code') != 0 or 'wbi_img' not in nav_data.get('data', {}):
+                    logger.debug("导航数据获取失败")
+                    return None
+
+                nav_data = nav_data['data']
+
+            # 提取img_key和sub_key
+            img_url = nav_data['wbi_img']['img_url']
+            sub_url = nav_data['wbi_img']['sub_url']
+
+            # 按照RSSHub的方式提取key
+            img_key = img_url.split('/')[-1].split('.')[0]
+            sub_key = sub_url.split('/')[-1].split('.')[0]
+            r = img_key + sub_key
+
+            # 获取混淆数组（硬编码RSSHub中的数组）
+            # 这是一个固定的混淆数组，从B站的JS文件中提取
+            mixin_key = [
+                46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
+                33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61,
+                26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36,
+                20, 34, 44, 52
+            ]
+
+            # 重新排列字符
+            result = []
+            for t in mixin_key:
+                if t < len(r):
+                    result.append(r[t])
+
+            # 取前32个字符
+            wbi_verify_string = ''.join(result)[:32]
+            logger.debug(f"生成WBI验证字符串成功: {wbi_verify_string[:8]}...")
+            return wbi_verify_string
+
+        except Exception as e:
+            logger.debug(f"获取WBI验证字符串失败: {e}")
+            return None
+
 
     def _extract_forward_orig_info(self, item: dict) -> Optional[dict]:
         """提取转发动态的原始信息"""
@@ -263,7 +428,7 @@ class DynamicFetcher:
 
             # 提取原始动态的类型
             orig_type = orig.get('type', 'DYNAMIC_TYPE_UNKNOWN')
-            orig_type_desc = self._get_forward_type_description(orig_type)
+            orig_type_desc = self._get_forward_type_description(orig_type, orig)
 
             return {
                 'author': orig_author_name,
@@ -275,8 +440,9 @@ class DynamicFetcher:
             logger.debug(f"解析转发原始信息失败: {e}")
             return None
 
-    def _get_forward_type_description(self, bili_type: str) -> str:
+    def _get_forward_type_description(self, bili_type: str, orig_data: dict = None) -> str:
         """获取转发类型描述"""
+        # 基础类型映射
         type_descriptions = {
             'DYNAMIC_TYPE_WORD': '动态',
             'DYNAMIC_TYPE_DRAW': '图文动态',
@@ -287,6 +453,23 @@ class DynamicFetcher:
             'DYNAMIC_TYPE_LIVE': '直播',
             'DYNAMIC_TYPE_LIVE_RCMD': '直播',
         }
+
+        # 如果有原始数据，尝试从major.type获取更精确的类型
+        if orig_data and bili_type == 'DYNAMIC_TYPE_AV':
+            try:
+                modules = orig_data.get('modules', {})
+                dynamic_module = modules.get('module_dynamic', {})
+                major = dynamic_module.get('major', {})
+                major_type = major.get('type')
+
+                # 检查是否是投稿视频
+                if major_type == 'MAJOR_TYPE_ARCHIVE':
+                    archive = major.get('archive', {})
+                    if archive:
+                        return '视频'
+            except Exception as e:
+                logger.debug(f"解析转发视频类型失败: {e}")
+
         return type_descriptions.get(bili_type, '动态')
 
     def _generate_dm_img_list(self) -> str:

@@ -34,7 +34,7 @@ class DynamicMonitor:
         """启动监控"""
         self.is_running = True
         self.session = aiohttp.ClientSession()
-        self.fetcher = DynamicFetcher(self.session)
+        self.fetcher = DynamicFetcher(self.session, self.config.bilibili_cookie)
         self.sender = DynamicSender(self.config.enable_dynamic_screenshot)
 
         # 初始化置顶动态ID记录
@@ -172,7 +172,14 @@ class DynamicMonitor:
 
     async def _send_dynamic_notification(self, uid: str, dynamic):
         """发送动态通知"""
-        logger.info(f"发现新动态: {dynamic.name} - {dynamic.get_type_description()}")
+        # 获取真实的用户名（只在需要推送时才获取）
+        real_name = await self.fetcher._get_user_name_from_api(str(dynamic.uid))
+        if real_name:
+            dynamic.name = real_name
+            logger.info(f"发现新动态: {dynamic.name} - {dynamic.get_type_description()}")
+        else:
+            dynamic.name = f"UP主_{dynamic.uid}"
+            logger.info(f"发现新动态: UP主_{dynamic.uid} - {dynamic.get_type_description()}")
 
         # 获取动态截图（如果启用了截图功能）
         screenshot_image = None
