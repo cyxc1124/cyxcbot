@@ -167,9 +167,14 @@ class DynamicFetcher:
             # 提取作者信息
             modules = item.get('modules', {})
             author_module = modules.get('module_author', {})
-            author_info = author_module.get('author', {})
 
-            author_uid = author_info.get('mid', uid)
+            # 优先尝试从author子对象获取（主动态的结构）
+            author_info = author_module.get('author', {})
+            author_uid = author_info.get('mid')
+
+            # 如果没有，则直接从module_author获取（转发动态的结构）
+            if not author_uid:
+                author_uid = author_module.get('mid', uid)
 
             # 暂时不获取用户名，只保存UID，在需要推送时再获取
             name = f"UP主_{author_uid}"  # 临时占位符，推送时会被替换
@@ -198,8 +203,14 @@ class DynamicFetcher:
             if bili_dynamic_type == 'DYNAMIC_TYPE_FORWARD':
                 orig_info = self._extract_forward_orig_info(item)
                 if orig_info:
-                    # 设置转发描述
-                    content = f"转发了【{orig_info['author']}】的{orig_info['type_desc']}"
+                    # 判断是否转发自己的内容
+                    orig_author_uid = orig_info.get('author_uid')
+                    if orig_author_uid and str(orig_author_uid) == str(author_uid):
+                        # 转发自己的内容
+                        content = f"转发了自己的{orig_info['type_desc']}"
+                    else:
+                        # 转发别人的内容
+                        content = f"转发了【{orig_info['author']}】的{orig_info['type_desc']}"
 
             logger.debug(f"动态 {dynamic_id}: B站类型={bili_dynamic_type}, 映射类型={dynamic_type}, UID={author_uid}")
 
@@ -427,10 +438,12 @@ class DynamicFetcher:
             # 优先尝试从author子对象获取（主动态的结构）
             orig_author_info = orig_author.get('author', {})
             orig_author_name = orig_author_info.get('name')
+            orig_author_uid = orig_author_info.get('mid')
 
             # 如果没有，则直接从module_author获取（orig中的结构）
             if not orig_author_name:
                 orig_author_name = orig_author.get('name', '未知用户')
+                orig_author_uid = orig_author.get('mid')
 
             # 提取原始动态的类型
             orig_type = orig.get('type', 'DYNAMIC_TYPE_UNKNOWN')
@@ -438,6 +451,7 @@ class DynamicFetcher:
 
             return {
                 'author': orig_author_name,
+                'author_uid': orig_author_uid,
                 'type_desc': orig_type_desc,
                 'orig_type': orig_type
             }
