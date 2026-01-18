@@ -72,16 +72,20 @@ async def init_browser(proxy=None, **kwargs) -> BrowserContext:
         **kwargs
     )
 
-    # 创建优化的浏览器上下文
+    # 创建优化的浏览器上下文 - 高质量截图配置
     context = await browser.new_context(
-        # 默认使用PC端设置，后续可根据需要调整viewport
+        # 高分辨率视口设置
         viewport={"width": 1920, "height": 1080},
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
-        # 性能优化设置
+        # 高质量渲染设置
         ignore_https_errors=True,  # 忽略HTTPS错误
         bypass_csp=True,          # 绕过内容安全策略
         # 禁用不必要的资源加载以提高性能
         permissions=[],           # 不授予任何权限
+        # 高质量渲染选项
+        device_scale_factor=2,    # 默认2倍缩放，提高清晰度
+        is_mobile=False,          # PC模式
+        has_touch=False,          # 非触摸设备
     )
 
     logger.info("浏览器初始化完成")
@@ -124,11 +128,11 @@ class DynamicScreenshot:
         logger.info(f"开始PC端截图动态 {dynamic_id}, 请求URL: {url}")
 
         try:
-            # 设置PC端视口 - 使用标准桌面分辨率
+            # 设置PC端视口 - 高清分辨率以提高截图质量
             await page.set_viewport_size({
                 "width": 1920,
                 "height": 1080,
-                "device_scale_factor": 1  # PC端标准缩放
+                "device_scale_factor": 2  # 2倍缩放，提高清晰度
             })
 
             # 设置字体路由拦截
@@ -188,11 +192,23 @@ class DynamicScreenshot:
             except Exception as e:
                 logger.warning(f"页面滚动失败: {e}")
 
-            # PC端样式处理
+            # PC端样式处理 - 高质量渲染优化
             try:
                 await page.add_script_tag(path=mobile_js)
                 await page.evaluate("setFont()")
-                logger.debug(f"动态 {dynamic_id} 样式设置完成")
+
+                # 额外的清晰度优化
+                await page.evaluate("""
+                    // 强制高DPI渲染
+                    document.documentElement.style.imageRendering = 'crisp-edges';
+                    document.documentElement.style.imageRendering = '-webkit-crisp-edges';
+
+                    // 确保文本清晰
+                    document.body.style.webkitFontSmoothing = 'antialiased';
+                    document.body.style.textRendering = 'optimizeLegibility';
+                """)
+
+                logger.debug(f"动态 {dynamic_id} 样式设置和高清优化完成")
             except Exception as e:
                 logger.warning(f"样式设置失败: {e}")
 
@@ -287,12 +303,12 @@ return new Promise(resolve => {
             try:
                 page, clip = await self.get_dynamic_screenshot_pc(dynamic_id, page)
 
-                # 截图
+                # 截图 - 使用PNG格式获得最佳质量（2倍缩放+无损压缩）
                 logger.debug(f"正在截图动态 {dynamic_id}, 区域大小: {clip['width']}x{clip['height']}")
                 screenshot = await page.screenshot(
                     clip=clip,
-                    type="jpeg",
-                    quality=100  # 最高JPEG质量
+                    type="png",  # 改为PNG格式，无损压缩，保证最高质量
+                    # PNG是无损格式，文件较大但质量最佳
                 )
                 screenshot_size = len(screenshot) if screenshot else 0
                 logger.info(f"动态 {dynamic_id} 截图成功，大小: {screenshot_size} bytes")
