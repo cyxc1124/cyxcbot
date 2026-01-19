@@ -23,8 +23,8 @@ class Notfound(Exception):
     pass
 
 
-# mobile.js 文件路径
-mobile_js = Path(__file__).parent.joinpath("mobile.js")
+# bilibili_style.js 文件路径
+bilibili_style = Path(__file__).parent.joinpath("bilibili_style.js")
 
 
 async def fill_font(route):
@@ -194,7 +194,7 @@ class DynamicScreenshot:
 
             # PC端样式处理 - 高质量渲染优化
             try:
-                await page.add_script_tag(path=mobile_js)
+                await page.add_script_tag(path=bilibili_style)
                 await page.evaluate("setFont()")
 
                 # 额外的清晰度优化

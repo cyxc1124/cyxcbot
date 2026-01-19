@@ -1,5 +1,5 @@
 /*
- * 移动端动态页面样式处理脚本
+ * B站动态页面样式处理脚本
  * 基于HarukaBot的mobile.js实现
  */
 async function getMobileStyle(useImageBig = false) {
@@ -83,7 +83,7 @@ async function getMobileStyle(useImageBig = false) {
     });
 
     // 标记样式处理完成
-    window.mobileStyleComplete = true;
+    window.bilibiliStyleComplete = true;
 }
 
 function setFont(font = "", fontSource = "local") {
