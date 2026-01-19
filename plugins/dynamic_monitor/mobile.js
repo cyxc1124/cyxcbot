@@ -61,18 +61,23 @@ async function getMobileStyle(useImageBig = false) {
     // 修复字体和换行问题
     const dyn = document.querySelector(".dyn-card") || document.querySelector(".opus-modules");
     if (dyn) {
-        dyn.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", "Noto Sans CJK SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "SimSun", sans-serif';
+        // 优化字体栈：优先使用拉丁字体确保数字正确显示，然后才是CJK字体
+        dyn.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", "DejaVu Sans", "Liberation Sans", "Noto Sans CJK SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "SimSun", sans-serif';
         dyn.style.overflowWrap = 'break-word';
         dyn.style.wordBreak = 'break-word';
         dyn.style.fontVariantLigatures = 'normal';
         dyn.style.textRendering = 'optimizeLegibility';
+        // 确保数字使用半角形式
+        dyn.style.fontVariantNumeric = 'normal';
     }
 
     // 确保所有文本元素都有正确的字体
-    const textElements = document.querySelectorAll('p, span, div, h1, h2, h3, h4, h5, h6, em, strong, b, i');
+    const textElements = document.querySelectorAll('p, span, div, h1, h2, h3, h4, h5, h6, em, strong, b, i, time, .bili-dyn-time, .dyn-time');
     textElements.forEach(el => {
         if (getComputedStyle(el).fontFamily.includes('system-ui') === false) {
-            el.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", "Noto Sans CJK SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "SimSun", sans-serif';
+            // 优化字体栈：优先使用拉丁字体确保数字正确显示
+            el.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", "DejaVu Sans", "Liberation Sans", "Noto Sans CJK SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "SimSun", sans-serif';
+            el.style.fontVariantNumeric = 'normal';
         }
     });
 
@@ -81,22 +86,34 @@ async function getMobileStyle(useImageBig = false) {
 }
 
 function setFont(font = "", fontSource = "local") {
-    // 使用支持emoji的字体栈
-    const fontFamily = font || "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Emoji', 'Segoe UI Symbol', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Noto Sans CJK SC', 'Noto Color Emoji', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'SimSun', 'Apple Color Emoji', sans-serif";
+    // 优化字体栈：优先使用拉丁字体确保数字正确显示，然后才是CJK和Emoji字体
+    const fontFamily = font || "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', 'DejaVu Sans', 'Liberation Sans', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Sans CJK SC', 'Noto Color Emoji', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'SimSun', 'Apple Color Emoji', sans-serif";
 
     // 设置全局字体
     document.body.style.fontFamily = fontFamily;
+    document.body.style.fontVariantNumeric = 'normal';
     document.documentElement.style.fontFamily = fontFamily;
+    document.documentElement.style.fontVariantNumeric = 'normal';
 
     // 确保动态内容区域也使用正确字体
-    const dynElements = document.querySelectorAll('.card, .dynamic-card, .bili-dyn-item__card, .dyn-card, .opus-modules, .dyn-header, .dyn-content, .opus-module-content');
+    const dynElements = document.querySelectorAll('.card, .dynamic-card, .bili-dyn-item__card, .dyn-card, .opus-modules, .dyn-header, .dyn-content, .opus-module-content, .bili-dyn-time, .dyn-time, time');
     dynElements.forEach(el => {
         el.style.fontFamily = fontFamily;
         el.style.fontVariantLigatures = 'normal';
         el.style.textRendering = 'optimizeLegibility';
         el.style.fontFeatureSettings = '"liga" off';
+        // 确保数字使用半角形式
+        el.style.fontVariantNumeric = 'normal';
         // 确保emoji正确显示
         el.style.fontVariantEmoji = 'emoji';
+    });
+
+    // 特别处理时间戳元素，确保数字正确显示
+    const timeElements = document.querySelectorAll('time, .bili-dyn-time, .dyn-time, [class*="time"], [class*="Time"]');
+    timeElements.forEach(el => {
+        el.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", "DejaVu Sans", "Liberation Sans", monospace, sans-serif';
+        el.style.fontVariantNumeric = 'normal';
+        el.style.fontFeatureSettings = '"tnum" 1, "lnum" 1';
     });
 
     // 标记字体加载完成
