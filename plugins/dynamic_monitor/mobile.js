@@ -115,7 +115,8 @@ function setFont(font = "", fontSource = "local") {
     timeElements.forEach(el => {
         el.style.fontFamily = '"Segoe UI", "DejaVu Sans", monospace, sans-serif';
         el.style.fontVariantNumeric = 'normal';
-        el.style.fontFeatureSettings = '"tnum" 1, "lnum" 1';
+        // 移除可能导致数字显示异常的等宽数字设置
+        // el.style.fontFeatureSettings = '"tnum" 1, "lnum" 1';
     });
 
     // 标记字体加载完成
