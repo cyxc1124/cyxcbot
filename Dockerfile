@@ -59,31 +59,12 @@ RUN apt-get update \
         libcairo2 \
         libgtk-3-0 \
         libfontconfig1 \
-        # 中日韩文字体支持
-        fonts-noto-cjk \
-        fonts-noto-cjk-extra \
-        fonts-noto-cjk-mono \
-        fonts-noto-cjk-serif \
-        fonts-noto-cjk-thin \
-        # 日文字体增强
-        fonts-ipafont-gothic \
-        fonts-ipafont-mincho \
-        fonts-takao-gothic \
-        fonts-takao-mincho \
-        # 中文字体增强
-        fonts-wqy-zenhei \
-        fonts-wqy-microhei \
-        fonts-arphic-ukai \
-        fonts-arphic-uming \
-        # 拉丁和等宽字体支持（确保数字正确显示）
+        # 拉丁字体支持（确保数字和英文正确显示，对应Windows的Segoe UI）
         fonts-dejavu-core \
-        fonts-dejavu-extra \
-        fonts-liberation \
-        fonts-liberation2 \
-        # Emoji和符号字体支持
+        # 中日韩字体支持（对应Windows的Microsoft YaHei/Meiryo/Malgun Gothic）
+        fonts-noto-cjk \
+        # Emoji字体支持（对应Windows的Segoe UI Emoji）
         fonts-noto-color-emoji \
-        fonts-symbola \
-        fonts-freefont-ttf \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
