@@ -16,15 +16,35 @@ class DynamicSender:
     def __init__(self, enable_screenshot: bool = True):
         self.enable_screenshot = enable_screenshot
 
-    def build_dynamic_message(self, dynamic: DynamicItem, screenshot_image: Optional[bytes] = None) -> Message:
-        """构建动态推送消息"""
+    def build_dynamic_message(self, dynamic: DynamicItem, screenshot_image: Optional[bytes] = None, is_pinned: bool = False, is_query: bool = False, query_type: str = "") -> Message:
+        """构建动态推送消息
+
+        Args:
+            dynamic: 动态对象
+            screenshot_image: 截图数据
+            is_pinned: 是否为置顶动态变更通知
+            is_query: 是否为主动查询
+            query_type: 查询类型 ("latest" 或 "pinned")
+        """
         message = Message()
 
-        # 第一行：UP主名字 + 动态类型描述
-        message.append(f"{dynamic.name} {dynamic.get_type_description()}\n")
-        
-        # 发布时间（北京时间）
-        message.append(f"{dynamic.get_beijing_time()}\n")
+        # 第一行：根据消息类型构建不同的标题
+        if is_query:
+            if query_type == "latest":
+                message.append(f"【{dynamic.name} 的最新动态】\n")
+            elif query_type == "pinned":
+                message.append(f"【{dynamic.name} 的置顶动态】\n")
+        elif is_pinned:
+            # 置顶动态变更通知
+            message.append(f"{dynamic.name} 置顶了动态\n")
+        else:
+            # 普通动态推送
+            message.append(f"{dynamic.name} {dynamic.get_type_description()}\n")
+
+        # 对于非查询消息，添加时间和截图
+        if not is_query:
+            message.append(f"{dynamic.format_beijing_time()}\n")
+
         # 如果启用了截图且有截图数据，添加图片
         if self.enable_screenshot and screenshot_image:
             try:
@@ -35,7 +55,6 @@ class DynamicSender:
 
         # 动态链接
         message.append(f"{dynamic.url}")
-
 
         return message
 

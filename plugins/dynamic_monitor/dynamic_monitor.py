@@ -7,6 +7,7 @@ import asyncio
 import aiohttp
 from typing import Dict, List, Optional
 from nonebot.log import logger
+from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 
 from .config import Config
 from .fetcher import DynamicFetcher
@@ -159,7 +160,7 @@ class DynamicMonitor:
                 # 查找置顶动态并推送
                 pinned_dynamic = next((d for d in dynamics if d.id == new_pinned_id), None)
                 if pinned_dynamic:
-                    await self._send_dynamic_notification(uid, pinned_dynamic)
+                    await self._send_dynamic_notification(uid, pinned_dynamic, is_pinned=True)
 
         # 如果有新动态，处理推送
         if new_dynamics:
@@ -170,7 +171,7 @@ class DynamicMonitor:
             for dynamic in sorted(new_dynamics, key=lambda x: x.timestamp):
                 await self._send_dynamic_notification(uid, dynamic)
 
-    async def _send_dynamic_notification(self, uid: str, dynamic):
+    async def _send_dynamic_notification(self, uid: str, dynamic, is_pinned: bool = False):
         """发送动态通知"""
         # 获取真实的用户名（只在需要推送时才获取）
         real_name = await self.fetcher._get_user_name_from_api(str(dynamic.uid))
@@ -192,7 +193,7 @@ class DynamicMonitor:
                 logger.warning(f"截图服务异常: {e}")
 
         # 构建通知消息
-        message = self.sender.build_dynamic_message(dynamic, screenshot_image)
+        message = self.sender.build_dynamic_message(dynamic, screenshot_image, is_pinned)
 
         # 获取需要推送的群组列表
         group_ids = self.config.dynamic_monitor_mapping.get(uid, [])
@@ -202,6 +203,136 @@ class DynamicMonitor:
 
         # 推送到每个群组
         await self.sender.send_to_groups(message, group_ids)
+
+    async def get_latest_dynamic(self, uid: str, group_id: str):
+        """获取并发送指定UP主的最新动态"""
+        logger.info(f"主动获取UP主 {uid} 的最新动态")
+
+        # 获取用户的动态列表
+        cookie = self.config.bilibili_cookie if self.config.bilibili_cookie else None
+        logger.debug(f"开始获取UP主 {uid} 的动态数据")
+        result = await self.fetcher.fetch_user_dynamics(uid, None, cookie)
+        logger.debug(f"获取UP主 {uid} 的动态数据完成: {result is not None}")
+
+        if not result:
+            logger.warning(f"获取UP主 {uid} 动态失败")
+            raise Exception(f"无法获取UP主 {uid} 的动态数据")
+
+        dynamics, _ = result
+        logger.debug(f"UP主 {uid} 动态数量: {len(dynamics)}")
+
+        if not dynamics:
+            logger.info(f"UP主 {uid} 没有动态")
+            await self.sender.send_to_groups(Message("该UP主暂无动态"), [group_id])
+            return
+
+        # 获取最新的动态（按时间戳排序）
+        latest_dynamic = max(dynamics, key=lambda x: x.timestamp)
+        logger.debug(f"UP主 {uid} 最新动态ID: {latest_dynamic.id}, 类型: {latest_dynamic.get_type_description()}")
+
+        # 获取动态截图（如果启用了截图功能）
+        screenshot_image = None
+        if self.config.enable_dynamic_screenshot:
+            try:
+                screenshot_image, screenshot_error = await get_dynamic_screenshot(latest_dynamic.id)
+                if screenshot_error:
+                    logger.warning(f"获取动态{latest_dynamic.id}截图失败: {screenshot_error}")
+            except Exception as e:
+                logger.warning(f"截图服务异常: {e}")
+
+        # 获取真实的用户名
+        real_name = await self.fetcher._get_user_name_from_api(str(latest_dynamic.uid))
+        if real_name:
+            latest_dynamic.name = real_name
+        else:
+            latest_dynamic.name = f"UP主_{latest_dynamic.uid}"
+
+        # 构建主动查询的消息（包含截图）
+        logger.debug(f"开始构建UP主 {uid} 的主动查询消息")
+
+        # 获取用户名
+        real_name = await self.fetcher._get_user_name_from_api(str(latest_dynamic.uid))
+        if real_name:
+            latest_dynamic.name = real_name
+        else:
+            latest_dynamic.name = f"UP主_{latest_dynamic.uid}"
+
+        # 使用统一的消息构建方法
+        message = self.sender.build_dynamic_message(
+            latest_dynamic,
+            screenshot_image,
+            is_pinned=False,
+            is_query=True,
+            query_type="latest"
+        )
+
+        logger.debug(f"主动查询消息构建完成，开始发送到群组 {group_id}")
+
+        # 发送到指定群组
+        await self.sender.send_to_groups(message, [group_id])
+        logger.info(f"已发送UP主 {uid} 的最新动态查询结果到群组 {group_id}")
+
+    async def get_pinned_dynamic(self, uid: str, group_id: str):
+        """获取并发送指定UP主的置顶动态"""
+        logger.info(f"主动获取UP主 {uid} 的置顶动态")
+
+        # 获取用户的动态列表
+        cookie = self.config.bilibili_cookie if self.config.bilibili_cookie else None
+        logger.debug(f"开始获取UP主 {uid} 的动态数据")
+        result = await self.fetcher.fetch_user_dynamics(uid, None, cookie)
+        logger.debug(f"获取UP主 {uid} 的动态数据完成: {result is not None}")
+
+        if not result:
+            logger.warning(f"获取UP主 {uid} 动态失败")
+            raise Exception(f"无法获取UP主 {uid} 的动态数据")
+
+        dynamics, pinned_id = result
+
+        if not pinned_id:
+            logger.info(f"UP主 {uid} 没有置顶动态")
+            await self.sender.send_to_groups(Message("该UP主暂无置顶动态"), [group_id])
+            return
+
+        # 查找置顶动态
+        pinned_dynamic = next((d for d in dynamics if d.id == pinned_id), None)
+        if not pinned_dynamic:
+            logger.warning(f"未找到UP主 {uid} 的置顶动态 {pinned_id}")
+            raise Exception(f"未找到UP主 {uid} 的置顶动态")
+
+        # 获取动态截图（如果启用了截图功能）
+        screenshot_image = None
+        if self.config.enable_dynamic_screenshot:
+            try:
+                screenshot_image, screenshot_error = await get_dynamic_screenshot(pinned_dynamic.id)
+                if screenshot_error:
+                    logger.warning(f"获取动态{pinned_dynamic.id}截图失败: {screenshot_error}")
+            except Exception as e:
+                logger.warning(f"截图服务异常: {e}")
+
+        # 获取用户名
+        real_name = await self.fetcher._get_user_name_from_api(str(pinned_dynamic.uid))
+        if real_name:
+            pinned_dynamic.name = real_name
+        else:
+            pinned_dynamic.name = f"UP主_{pinned_dynamic.uid}"
+
+        # 构建主动查询的消息（包含截图）
+        logger.debug(f"开始构建UP主 {uid} 的置顶动态主动查询消息")
+
+        # 使用统一的消息构建方法
+        message = self.sender.build_dynamic_message(
+            pinned_dynamic,
+            screenshot_image,
+            is_pinned=False,
+            is_query=True,
+            query_type="pinned"
+        )
+
+        logger.debug(f"置顶动态主动查询消息构建完成，开始发送到群组 {group_id}")
+
+        # 发送到指定群组
+        await self.sender.send_to_groups(message, [group_id])
+        logger.info(f"已发送UP主 {uid} 的置顶动态查询结果到群组 {group_id}")
 
 
 

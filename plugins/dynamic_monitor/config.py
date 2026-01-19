@@ -94,6 +94,21 @@ class Config(BaseModel):
             logger.error(f"读取B站Cookie配置失败: {e}")
             return ""
 
+    def get_uids_by_group_id(self, group_id: str) -> List[str]:
+        """根据群组ID反向查找对应的UP主UID列表
+
+        Args:
+            group_id: 群组ID
+
+        Returns:
+            该群组对应的UP主UID列表
+        """
+        uids = []
+        for uid, group_ids in self.dynamic_monitor_mapping.items():
+            if group_id in group_ids:
+                uids.append(uid)
+        return uids
+
     model_config = {
         "env_prefix": "",  # 无前缀，直接读取环境变量
         "env_file": ".env",  # 从.env文件读取

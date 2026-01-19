@@ -25,8 +25,8 @@ class DynamicItem:
         self.url = f"https://t.bilibili.com/{dynamic_id}"
 
 
-    def get_beijing_time(self) -> str:
-        """获取北京时间格式化的字符串"""
+    def format_beijing_time(self) -> str:
+        """格式化北京时间为字符串"""
         # 时间戳已经是北京时间，直接转换
         beijing_time = datetime.fromtimestamp(self.timestamp)
         # 格式化为易读的字符串
@@ -41,7 +41,7 @@ class DynamicItem:
         type_msg = {
             0: "发布了新动态",
             1: "转发了动态",
-            2: "发布了新图文动态",
+            2: "发布了新动态",
             4: "发布了新文字动态",
             8: "发布了新投稿视频",
             16: "发布了直播",
