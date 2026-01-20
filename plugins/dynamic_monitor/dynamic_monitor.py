@@ -226,8 +226,15 @@ class DynamicMonitor:
             await self.sender.send_to_groups(Message("该UP主暂无动态"), [group_id])
             return
 
-        # 获取最新的动态（按时间戳排序）
-        latest_dynamic = max(dynamics, key=lambda x: x.timestamp)
+        # 过滤掉置顶动态和直播动态，获取最新的动态（按时间戳排序）
+        # 注意：直播动态已经在fetcher中被过滤，这里主要过滤置顶动态
+        filtered_dynamics = [d for d in dynamics if not d.is_pinned and d.type != 16]
+        if not filtered_dynamics:
+            logger.info(f"UP主 {uid} 没有非置顶非直播动态")
+            await self.sender.send_to_groups(Message("该UP主暂无非置顶的动态"), [group_id])
+            return
+
+        latest_dynamic = max(filtered_dynamics, key=lambda x: x.timestamp)
         logger.debug(f"UP主 {uid} 最新动态ID: {latest_dynamic.id}, 类型: {latest_dynamic.get_type_description()}")
 
         # 获取动态截图（如果启用了截图功能）

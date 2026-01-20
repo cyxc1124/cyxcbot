@@ -227,7 +227,8 @@ class DynamicFetcher:
                 dynamic_type=dynamic_type,
                 content=content,
                 images=images,
-                author_type=author_type
+                author_type=author_type,
+                is_pinned=is_pinned
             )
 
             # 对于视频动态，尝试提取视频链接而不是动态链接
