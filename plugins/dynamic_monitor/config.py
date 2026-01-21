@@ -23,12 +23,6 @@ class Config(BaseModel):
 
 
 
-    # 是否启用动态截图
-    enable_dynamic_screenshot: bool = Field(
-        default_factory=lambda: Config._get_enable_dynamic_screenshot(),
-        description="是否在推送消息中包含动态截图"
-    )
-
     # B站Cookie配置
     bilibili_cookie: str = Field(
         default_factory=lambda: BilibiliConfig.get_bilibili_cookie(),
@@ -69,19 +63,6 @@ class Config(BaseModel):
             return 30
 
 
-
-    @staticmethod
-    def _get_enable_dynamic_screenshot() -> bool:
-        """从环境变量读取是否启用动态截图配置"""
-        try:
-            # 从环境变量读取
-            enable_screenshot_str = os.getenv('DYNAMIC_ENABLE_SCREENSHOT')
-            if enable_screenshot_str:
-                return json.loads(enable_screenshot_str.lower())
-            # 默认值：启用截图
-            return True
-        except (json.JSONDecodeError, TypeError):
-            return True
 
     def get_uids_by_group_id(self, group_id: str) -> List[str]:
         """根据群组ID反向查找对应的UP主UID列表

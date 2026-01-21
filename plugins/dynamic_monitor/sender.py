@@ -13,8 +13,8 @@ from utils.bilibili_api import DynamicItem
 class DynamicSender:
     """动态消息发送器"""
 
-    def __init__(self, enable_screenshot: bool = True):
-        self.enable_screenshot = enable_screenshot
+    def __init__(self):
+        pass
 
     def build_dynamic_message(self, dynamic: DynamicItem, screenshot_image: Optional[bytes] = None, is_pinned: bool = False, is_query: bool = False, query_type: str = "") -> Message:
         """构建动态推送消息
@@ -45,8 +45,8 @@ class DynamicSender:
         if not is_query:
             message.append(f"{dynamic.format_beijing_time()}\n")
 
-        # 如果启用了截图且有截图数据，添加图片
-        if self.enable_screenshot and screenshot_image:
+        # 如果有截图数据，添加图片
+        if screenshot_image:
             try:
                 message.append(MessageSegment.image(screenshot_image))
                 message.append("")  # 添加空行

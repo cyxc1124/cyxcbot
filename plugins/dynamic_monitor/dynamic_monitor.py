@@ -36,17 +36,16 @@ class DynamicMonitor:
         self.is_running = True
         self.session = aiohttp.ClientSession()
         self.fetcher = DynamicFetcher(self.session, self.config.bilibili_cookie)
-        self.sender = DynamicSender(self.config.enable_dynamic_screenshot)
+        self.sender = DynamicSender()
 
         # 初始化置顶动态ID记录
         for uid in self.config.dynamic_monitor_mapping.keys():
             if uid not in self.pinned_dynamic_ids:
                 self.pinned_dynamic_ids[uid] = None
 
-        # 如果启用了截图功能，初始化截图服务
-        if self.config.enable_dynamic_screenshot:
-            await init_screenshot_service()
-            logger.info("动态截图服务已启动")
+        # 初始化截图服务
+        await init_screenshot_service()
+        logger.info("动态截图服务已启动")
 
         logger.info(f"UP主动态监控已启动，直接调用B站API，监控间隔: {self.config.monitor_interval}秒")
 
@@ -90,8 +89,7 @@ class DynamicMonitor:
         try:
             if self.session and not self.session.closed:
                 await self.session.close()
-            if self.config.enable_dynamic_screenshot:
-                await close_screenshot_service()
+            await close_screenshot_service()
         except Exception as e:
             logger.warning(f"清理资源时出错: {e}")
 
@@ -182,15 +180,14 @@ class DynamicMonitor:
             dynamic.name = f"UP主_{dynamic.uid}"
             logger.info(f"发现新动态: UP主_{dynamic.uid} - {dynamic.get_type_description()}")
 
-        # 获取动态截图（如果启用了截图功能）
+        # 获取动态截图
         screenshot_image = None
-        if self.config.enable_dynamic_screenshot:
-            try:
-                screenshot_image, screenshot_error = await get_dynamic_screenshot(dynamic.id)
-                if screenshot_error:
-                    logger.warning(f"获取动态{dynamic.id}截图失败: {screenshot_error}")
-            except Exception as e:
-                logger.warning(f"截图服务异常: {e}")
+        try:
+            screenshot_image, screenshot_error = await get_dynamic_screenshot(dynamic.id)
+            if screenshot_error:
+                logger.warning(f"获取动态{dynamic.id}截图失败: {screenshot_error}")
+        except Exception as e:
+            logger.warning(f"截图服务异常: {e}")
 
         # 构建通知消息
         message = self.sender.build_dynamic_message(dynamic, screenshot_image, is_pinned)
@@ -237,15 +234,14 @@ class DynamicMonitor:
         latest_dynamic = max(filtered_dynamics, key=lambda x: x.timestamp)
         logger.debug(f"UP主 {uid} 最新动态ID: {latest_dynamic.id}, 类型: {latest_dynamic.get_type_description()}")
 
-        # 获取动态截图（如果启用了截图功能）
+        # 获取动态截图
         screenshot_image = None
-        if self.config.enable_dynamic_screenshot:
-            try:
-                screenshot_image, screenshot_error = await get_dynamic_screenshot(latest_dynamic.id)
-                if screenshot_error:
-                    logger.warning(f"获取动态{latest_dynamic.id}截图失败: {screenshot_error}")
-            except Exception as e:
-                logger.warning(f"截图服务异常: {e}")
+        try:
+            screenshot_image, screenshot_error = await get_dynamic_screenshot(latest_dynamic.id)
+            if screenshot_error:
+                logger.warning(f"获取动态{latest_dynamic.id}截图失败: {screenshot_error}")
+        except Exception as e:
+            logger.warning(f"截图服务异常: {e}")
 
         # 获取真实的用户名
         real_name = await self.fetcher._get_user_name_from_api(str(latest_dynamic.uid))
@@ -306,15 +302,14 @@ class DynamicMonitor:
             logger.warning(f"未找到UP主 {uid} 的置顶动态 {pinned_id}")
             raise Exception(f"未找到UP主 {uid} 的置顶动态")
 
-        # 获取动态截图（如果启用了截图功能）
+        # 获取动态截图
         screenshot_image = None
-        if self.config.enable_dynamic_screenshot:
-            try:
-                screenshot_image, screenshot_error = await get_dynamic_screenshot(pinned_dynamic.id)
-                if screenshot_error:
-                    logger.warning(f"获取动态{pinned_dynamic.id}截图失败: {screenshot_error}")
-            except Exception as e:
-                logger.warning(f"截图服务异常: {e}")
+        try:
+            screenshot_image, screenshot_error = await get_dynamic_screenshot(pinned_dynamic.id)
+            if screenshot_error:
+                logger.warning(f"获取动态{pinned_dynamic.id}截图失败: {screenshot_error}")
+        except Exception as e:
+            logger.warning(f"截图服务异常: {e}")
 
         # 获取用户名
         real_name = await self.fetcher._get_user_name_from_api(str(pinned_dynamic.uid))
