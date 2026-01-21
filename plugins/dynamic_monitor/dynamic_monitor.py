@@ -12,7 +12,7 @@ from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from .config import Config
 from utils.bilibili_api import DynamicFetcher
 from .sender import DynamicSender
-from .screenshot import init_screenshot_service, close_screenshot_service, get_dynamic_screenshot
+from utils.screenshot import init_screenshot_service, close_screenshot_service, get_dynamic_screenshot
 
 # 全局监控实例和任务
 dynamic_monitor_instance: Optional['DynamicMonitor'] = None
