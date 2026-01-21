@@ -28,7 +28,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     GIT_COMMIT=${GIT_COMMIT} \
     GIT_BRANCH=${GIT_BRANCH} \
     BUILD_TIME=${BUILD_TIME} \
-    BUILD_NUMBER=${BUILD_NUMBER}
+    BUILD_NUMBER=${BUILD_NUMBER} \
+    TZ=Asia/Shanghai
 
 # 安装系统依赖
 RUN apt-get update \
@@ -74,6 +75,13 @@ COPY requirements.txt .
 # 安装 Python 依赖
 RUN pip install --no-cache-dir -r requirements.txt
 
+# 复制启动脚本
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# 安装 Playwright Chromium 浏览器
+RUN playwright install chromium
+
 # 复制项目文件
 COPY . .
 
@@ -82,8 +90,4 @@ EXPOSE 8080
 
 # 设置默认 shell 为 bash
 SHELL ["/bin/bash", "-c"]
-
-# 使用 bash 启动脚本
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 ENTRYPOINT ["docker-entrypoint.sh"] 
