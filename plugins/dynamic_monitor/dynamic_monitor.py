@@ -10,7 +10,7 @@ from nonebot.log import logger
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 
 from .config import Config
-from .fetcher import DynamicFetcher
+from utils.bilibili_api import DynamicFetcher
 from .sender import DynamicSender
 from .screenshot import init_screenshot_service, close_screenshot_service, get_dynamic_screenshot
 
