@@ -7,7 +7,7 @@ from typing import List, Optional
 from nonebot.log import logger
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 
-from .models import DynamicItem
+from utils.bilibili_api import DynamicItem
 
 
 class DynamicSender:
