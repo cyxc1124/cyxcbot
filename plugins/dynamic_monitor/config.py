@@ -3,6 +3,7 @@ from typing import List, Dict
 import os
 import json
 from nonebot.log import logger
+from utils.bilibili_api import BilibiliConfig
 
 
 class Config(BaseModel):
@@ -30,7 +31,7 @@ class Config(BaseModel):
 
     # B站Cookie配置
     bilibili_cookie: str = Field(
-        default_factory=lambda: Config._get_bilibili_cookie(),
+        default_factory=lambda: BilibiliConfig.get_bilibili_cookie(),
         description="B站用户Cookie，用于提高API请求成功率"
     )
 
@@ -81,18 +82,6 @@ class Config(BaseModel):
             return True
         except (json.JSONDecodeError, TypeError):
             return True
-
-    @staticmethod
-    def _get_bilibili_cookie() -> str:
-        """从环境变量读取B站Cookie配置"""
-        try:
-            cookie = os.getenv('BILIBILI_COOKIE', '')
-            if cookie:
-                logger.info("加载B站Cookie配置")
-            return cookie
-        except Exception as e:
-            logger.error(f"读取B站Cookie配置失败: {e}")
-            return ""
 
     def get_uids_by_group_id(self, group_id: str) -> List[str]:
         """根据群组ID反向查找对应的UP主UID列表

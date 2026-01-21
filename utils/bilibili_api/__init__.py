@@ -5,8 +5,10 @@ B站API工具模块
 
 from .fetcher import DynamicFetcher
 from .models import DynamicItem
+from .config import BilibiliConfig
 
 __all__ = [
     'DynamicFetcher',
     'DynamicItem',
+    'BilibiliConfig',
 ]
