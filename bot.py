@@ -1,6 +1,7 @@
 import nonebot
 import os
 import logging
+from pathlib import Path
 from nonebot.log import logger, LoguruHandler
 from nonebot.adapters.console import Adapter as ConsoleAdapter  # 避免重复命名
 from nonebot.adapters.onebot.v11 import Adapter as OneBotAdapter  # 添加OneBot适配器
@@ -8,71 +9,93 @@ from nonebot.adapters.onebot.v11 import Adapter as OneBotAdapter  # 添加OneBot
 # 记录环境变量配置（用于调试）
 def log_environment_config():
     """记录当前环境变量配置到日志"""
-    logger.info("🔧 Environment Variables Debug Info")
-    
+    logger.info("环境变量配置信息")
+
     # 检测运行环境
     is_kubernetes = any(key.startswith(('KUBERNETES_', 'KUBE_')) for key in os.environ)
     is_docker = os.getenv('DOCKER_CONTAINER', '').lower() == 'true' or os.path.exists('/.dockerenv')
-    
+
     if is_kubernetes:
-        logger.info("🎯 Environment: Kubernetes")
-        logger.info("📄 Using ConfigMap/Environment Variables (K8s)")
+        logger.info("运行环境: Kubernetes")
+        logger.info("配置来源: ConfigMap/环境变量 (K8s)")
     elif is_docker:
-        logger.info("🐳 Environment: Docker Container")  
-        logger.info("📄 Using Docker Environment Variables")
+        logger.info("运行环境: Docker容器")
+        logger.info("配置来源: Docker环境变量")
     else:
-        logger.info("🖥️ Environment: Local Development")
-        
+        logger.info("运行环境: 本地开发环境")
+
         # 在本地环境中尝试加载.env文件
         try:
-            from pathlib import Path
+            from dotenv import load_dotenv, dotenv_values
             env_file = Path(".env")
             if env_file.exists():
-                logger.info(f"📄 Loading .env file: {env_file.absolute()}")
+                logger.info(f"配置文件: {env_file.absolute()}")
+                # 使用python-dotenv加载.env文件
+                env_values = dotenv_values(env_file)
                 loaded_count = 0
-                # 手动读取.env文件
-                with open(env_file, 'r', encoding='utf-8') as f:
-                    for line_num, line in enumerate(f, 1):
-                        line = line.strip()
-                        if line and not line.startswith('#') and '=' in line:
-                            key, value = line.split('=', 1)
-                            key = key.strip()
-                            value = value.strip()
-                            # 设置到环境变量中（如果还没有设置的话）
-                            if key not in os.environ:
-                                os.environ[key] = value
-                                loaded_count += 1
-                logger.info(f"📥 Loaded {loaded_count} variables from .env file")
+                for key, value in env_values.items():
+                    if key and value is not None and key not in os.environ:
+                        os.environ[key] = str(value)
+                        loaded_count += 1
+                logger.info(f"已加载 {loaded_count} 个环境变量从 .env 文件")
             else:
-                logger.info("📄 No .env file found - using system environment variables")
+                logger.info("未找到 .env 文件 - 使用系统环境变量")
+        except ImportError:
+            logger.warning("未安装 python-dotenv 库，使用手动解析")
+            try:
+                env_file = Path(".env")
+                if env_file.exists():
+                    logger.info(f"配置文件: {env_file.absolute()}")
+                    loaded_count = 0
+                    with open(env_file, 'r', encoding='utf-8') as f:
+                        for line_num, line in enumerate(f, 1):
+                            line = line.strip()
+                            if line and not line.startswith('#') and '=' in line:
+                                key, value = line.split('=', 1)
+                                key = key.strip()
+                                value = value.strip()
+                                if key not in os.environ:
+                                    os.environ[key] = value
+                                    loaded_count += 1
+                    logger.info(f"已加载 {loaded_count} 个环境变量从 .env 文件")
+                else:
+                    logger.info("未找到 .env 文件 - 使用系统环境变量")
+            except Exception as e:
+                logger.error(f"加载 .env 文件时出错: {e}")
         except Exception as e:
-            logger.error(f"⚠️ Error loading .env file: {e}")
-    
+            logger.error(f"加载 .env 文件时出错: {e}")
+
     # 统计环境变量
     all_env_count = len(os.environ)
-    plugin_env_count = len([k for k in os.environ.keys() 
+    plugin_env_count = len([k for k in os.environ.keys()
                            if any(prefix in k for prefix in ['HOST', 'PORT', 'SUPERUSERS', 'NOTIFY_', 'STATUS_CHECK_', 'INCLUDE_ROOM', 'COMMAND_'])])
-    logger.info(f"📊 Total environment variables: {all_env_count}, Plugin-related: {plugin_env_count}")
-    
+    logger.info(f"环境变量统计: 总数 {all_env_count} 个, 插件相关 {plugin_env_count} 个")
+
     # 定义要检查的环境变量
     plugin_vars = {
-        "Basic Config": [
-            "HOST", "PORT", "COMMAND_START", "COMMAND_SEP"
+        "基础配置": [
+            "HOST", "PORT", "COMMAND_START", "COMMAND_SEP", "LOG_LEVEL"
         ],
-        "User & Groups": [
+        "用户和群组": [
             "SUPERUSERS", "NOTIFY_GROUPS"
         ],
-        "Stream Notify": [
+        "动态监控": [
+            "DYNAMIC_MONITOR_MAPPING",
+            "DYNAMIC_MONITOR_INTERVAL",
+            "BILIBILI_COOKIE"
+        ],
+        "直播通知": [
+            "STREAMER_GROUP_MAPPING",
             "INCLUDE_ROOM_INFO"
         ],
-        "Status Check": [
+        "状态检查": [
             "STATUS_CHECK_ALLOWED_QQ",
             "STATUS_CHECK_SHOW_DETAILED",
-            "STATUS_CHECK_SHOW_UPTIME", 
+            "STATUS_CHECK_SHOW_UPTIME",
             "STATUS_CHECK_SHOW_MEMORY"
         ]
     }
-    
+
     # 记录所有插件相关环境变量
     for category, vars_list in plugin_vars.items():
         config_items = []
@@ -86,13 +109,13 @@ def log_environment_config():
                     display_value = value
                 config_items.append(f"{var}={display_value}")
             else:
-                config_items.append(f"{var}=(not set)")
-        
+                config_items.append(f"{var}=(未设置)")
+
         # 将同一类别的配置项合并成一条日志
         if config_items:
-            logger.info(f"📂 {category}: {' | '.join(config_items)}")
-    
-    logger.info("🔧 Environment configuration loaded")
+            logger.info(f"{category}: {' | '.join(config_items)}")
+
+    logger.info("环境配置加载完成")
 
 # 配置日志级别
 def configure_logging():
@@ -125,7 +148,8 @@ def configure_logging():
 nonebot.init()
 
 # 配置日志级别
-configure_logging()
+log_level = configure_logging()
+logger.info(f"日志级别设置为: {log_level}")
 
 # 调用环境变量记录函数（在NoneBot初始化之后）
 log_environment_config()
@@ -136,12 +160,16 @@ nonebot.get_driver().config.console_headless_mode = True
 # 注册适配器
 driver = nonebot.get_driver()
 driver.register_adapter(ConsoleAdapter)
-driver.register_adapter(OneBotAdapter)  # 注册OneBot适配器
+driver.register_adapter(OneBotAdapter)
 
-# 在这里加载插件
-nonebot.load_builtin_plugins("echo")  # 内置插件
-nonebot.load_plugins("plugins")  # 加载本地插件
-# nonebot.load_plugin("thirdparty_plugin")  # 第三方插件
+# 加载插件
+try:
+    nonebot.load_builtin_plugins("echo")  # 内置插件
+    nonebot.load_plugins("plugins")  # 加载本地插件
+    logger.info("插件加载完成")
+except Exception as e:
+    logger.error(f"插件加载失败: {e}")
+    raise
 
 if __name__ == "__main__":
     nonebot.run()
