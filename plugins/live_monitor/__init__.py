@@ -44,18 +44,37 @@ __plugin_meta__ = PluginMetadata(
 driver = get_driver()
 
 
-@driver.on_startup
-async def _():
-    """NoneBot启动时启动直播监控"""
-    logger.info("正在启动B站直播监控插件...")
-    await start_live_monitor()
+@driver.on_bot_connect
+async def _(bot):
+    """机器人连接后开始监控"""
+    logger.info(f"机器人 {bot.self_id} 已连接，开始初始化直播监控...")
+    try:
+        await start_live_monitor()
+        logger.info("直播监控初始化完成")
+    except Exception as e:
+        logger.error(f"直播监控初始化失败: {e}")
+
+
+@driver.on_bot_disconnect
+async def _(bot):
+    """机器人断开连接时停止监控"""
+    logger.info(f"机器人 {bot.self_id} 断开连接，正在停止直播监控...")
+    try:
+        await stop_live_monitor()
+        logger.info("直播监控已停止")
+    except Exception as e:
+        logger.error(f"直播监控停止失败: {e}")
 
 
 @driver.on_shutdown
 async def _():
-    """NoneBot关闭时停止直播监控"""
-    logger.info("正在停止B站直播监控插件...")
-    await stop_live_monitor()
+    """应用关闭时确保监控完全停止"""
+    logger.info("应用关闭，确保直播监控完全停止...")
+    try:
+        await stop_live_monitor()
+        logger.info("直播监控已在应用关闭时完全停止")
+    except Exception as e:
+        logger.error(f"应用关闭时直播监控停止失败: {e}")
 
 
 # 查询直播状态命令
