@@ -263,163 +263,73 @@ class DynamicFetcher:
 
     async def _get_user_name_from_api(self, uid: str) -> Optional[str]:
         """从B站API获取用户信息"""
+        from . import wbi
+        
         try:
-            # 按照RSSHub的方式使用WBI签名API
             user_info_url = "https://api.bilibili.com/x/space/wbi/acc/info"
 
-            # 基础参数字符串（按照RSSHub格式）
-            base_params = f"mid={uid}&token=&platform=web&web_location=1550101"
+            # 参数
+            params = {
+                'mid': uid,
+                'token': '',
+                'platform': 'web',
+                'web_location': '1550101'
+            }
 
-            # 生成WBI签名参数
-            signed_params = await self._add_wbi_verify_info(base_params)
+            # 使用公共 WBI 模块签名
+            signed_query = await wbi.sign_params(self.session, params, self.cookie)
+            
+            if signed_query:
+                url = f"{user_info_url}?{signed_query}"
+            else:
+                # 降级：不使用签名
+                url = user_info_url
+                logger.debug(f"无法获取WBI签名，尝试无签名请求")
 
             # 请求头
             user_headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Referer': f'https://space.bilibili.com/{uid}/',
                 'Accept': 'application/json, text/plain, */*',
                 'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
             }
 
-            # 如果有Cookie，添加到请求头
             if self.cookie:
                 user_headers['Cookie'] = self.cookie
 
-            logger.debug(f"获取UP主 {uid} 信息，请求URL: {user_info_url}?{signed_params}")
+            logger.debug(f"获取UP主 {uid} 信息，请求URL: {url[:80]}...")
 
-            async with self.session.get(
-                user_info_url,
-                params=signed_params,
-                headers=user_headers,
-                timeout=10
-            ) as response:
-
-                if response.status != 200:
-                    logger.debug(f"获取用户信息失败 {uid}: HTTP {response.status}")
-                    return None
-
-                data = await response.json()
-                logger.debug(f"用户信息API响应 {uid}: code={data.get('code')}")
-
-                if data.get('code') != 0:
-                    logger.debug(f"获取用户信息失败 {uid}: {data.get('message', '未知错误')}")
-                    return None
-
-                user_data = data.get('data', {})
-                name = user_data.get('name')
-                if name:
-                    logger.debug(f"成功获取UP主 {uid} 信息: {name}")
-                    return name
-                else:
-                    logger.debug(f"用户信息中没有找到名字 {uid}")
-                    return None
+            if signed_query:
+                async with self.session.get(url, headers=user_headers, timeout=10) as response:
+                    return await self._parse_user_info_response(response, uid)
+            else:
+                async with self.session.get(url, params=params, headers=user_headers, timeout=10) as response:
+                    return await self._parse_user_info_response(response, uid)
 
         except Exception as e:
             logger.debug(f"获取UP主信息异常 {uid}: {e}")
             return None
+    
+    async def _parse_user_info_response(self, response, uid: str) -> Optional[str]:
+        """解析用户信息响应"""
+        if response.status != 200:
+            logger.debug(f"获取用户信息失败 {uid}: HTTP {response.status}")
+            return None
 
-    async def _add_wbi_verify_info(self, params: str) -> str:
-        """添加WBI签名参数（按照RSSHub的实现）"""
-        try:
-            import hashlib
-            import time
-            import json
-            from urllib.parse import urlencode
+        data = await response.json()
+        logger.debug(f"用户信息API响应 {uid}: code={data.get('code')}")
 
-            # 获取WBI验证字符串
-            wbi_verify_string = await self._get_wbi_verify_string()
-            if not wbi_verify_string:
-                logger.debug("无法获取WBI验证字符串，回退到无签名模式")
-                return params
+        if data.get('code') != 0:
+            logger.debug(f"获取用户信息失败 {uid}: {data.get('message', '未知错误')}")
+            return None
 
-            # 解析参数并排序
-            param_dict = {}
-            for param in params.split('&'):
-                if '=' in param:
-                    key, value = param.split('=', 1)
-                    param_dict[key] = value
-
-            # 按key排序
-            sorted_params = '&'.join([f"{k}={param_dict[k]}" for k in sorted(param_dict.keys())])
-
-            # 添加时间戳
-            wts = int(time.time())
-
-            # 生成w_rid签名
-            sign_str = f"{sorted_params}&wts={wts}{wbi_verify_string}"
-            w_rid = hashlib.md5(sign_str.encode('utf-8')).hexdigest()
-
-            # 添加签名参数
-            param_dict['w_rid'] = w_rid
-            param_dict['wts'] = str(wts)
-
-            # 构建最终参数字符串
-            final_params = '&'.join([f"{k}={v}" for k, v in param_dict.items()])
-            return final_params
-
-        except Exception as e:
-            logger.debug(f"WBI签名生成失败: {e}")
-            # 如果签名失败，返回原始参数
-            return params
-
-    async def _get_wbi_verify_string(self) -> Optional[str]:
-        """获取WBI验证字符串（按照RSSHub的实现）"""
-        try:
-            # 获取导航信息
-            nav_url = "https://api.bilibili.com/x/web-interface/nav"
-            nav_headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Referer': 'https://www.bilibili.com/',
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
-            }
-
-            if self.cookie:
-                nav_headers['Cookie'] = self.cookie
-
-            async with self.session.get(nav_url, headers=nav_headers, timeout=10) as response:
-                if response.status != 200:
-                    logger.debug("导航API请求失败")
-                    return None
-
-                nav_data = await response.json()
-                if nav_data.get('code') != 0 or 'wbi_img' not in nav_data.get('data', {}):
-                    logger.debug("导航数据获取失败")
-                    return None
-
-                nav_data = nav_data['data']
-
-            # 提取img_key和sub_key
-            img_url = nav_data['wbi_img']['img_url']
-            sub_url = nav_data['wbi_img']['sub_url']
-
-            # 按照RSSHub的方式提取key
-            img_key = img_url.split('/')[-1].split('.')[0]
-            sub_key = sub_url.split('/')[-1].split('.')[0]
-            r = img_key + sub_key
-
-            # 获取混淆数组（硬编码RSSHub中的数组）
-            # 这是一个固定的混淆数组，从B站的JS文件中提取
-            mixin_key = [
-                46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
-                33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61,
-                26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36,
-                20, 34, 44, 52
-            ]
-
-            # 重新排列字符
-            result = []
-            for t in mixin_key:
-                if t < len(r):
-                    result.append(r[t])
-
-            # 取前32个字符
-            wbi_verify_string = ''.join(result)[:32]
-            logger.debug(f"生成WBI验证字符串成功: {wbi_verify_string[:8]}...")
-            return wbi_verify_string
-
-        except Exception as e:
-            logger.debug(f"获取WBI验证字符串失败: {e}")
+        user_data = data.get('data', {})
+        name = user_data.get('name')
+        if name:
+            logger.debug(f"成功获取UP主 {uid} 信息: {name}")
+            return name
+        else:
+            logger.debug(f"用户信息中没有找到名字 {uid}")
             return None
 
 
