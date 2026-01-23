@@ -3,20 +3,19 @@ UP主动态监控核心模块
 负责协调各个组件进行动态监控
 """
 
-import asyncio
 import aiohttp
 from typing import Dict, List, Optional
 from nonebot.log import logger
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot_plugin_apscheduler import scheduler
 
 from .config import Config
 from utils.bilibili_api import DynamicFetcher
 from .sender import DynamicSender
 from utils.screenshot import init_screenshot_service, close_screenshot_service, get_dynamic_screenshot
 
-# 全局监控实例和任务
+# 全局监控实例
 dynamic_monitor_instance: Optional['DynamicMonitor'] = None
-_monitoring_task: Optional[asyncio.Task] = None
 
 
 class DynamicMonitor:
@@ -31,9 +30,8 @@ class DynamicMonitor:
         self.fetcher: Optional[DynamicFetcher] = None
         self.sender: Optional[DynamicSender] = None
 
-    async def start_monitoring(self):
-        """启动监控"""
-        self.is_running = True
+    async def init_resources(self):
+        """初始化资源"""
         self.session = aiohttp.ClientSession()
         self.fetcher = DynamicFetcher(self.session, self.config.bilibili_cookie)
         self.sender = DynamicSender()
@@ -47,42 +45,31 @@ class DynamicMonitor:
         await init_screenshot_service()
         logger.info("动态截图服务已启动")
 
-        logger.info(f"UP主动态监控已启动，直接调用B站API，监控间隔: {self.config.monitor_interval}秒")
-
         # 初始化最后动态ID
         for uid in self.config.dynamic_monitor_mapping.keys():
             self.last_dynamic_ids[uid] = 0
 
-        try:
-            # 启动监控循环
-            while self.is_running:
-                try:
-                    # 检查是否被要求停止
-                    if not self.is_running:
-                        break
+    async def start_monitoring(self):
+        """启动监控 - 使用APScheduler定时任务"""
+        self.is_running = True
+        
+        # 初始化资源
+        await self.init_resources()
+        
+        logger.info(f"UP主动态监控已启动，直接调用B站API，监控间隔: {self.config.monitor_interval}秒")
 
-                    await self._check_all_dynamics()
-                    await asyncio.sleep(self.config.monitor_interval)
-
-                except asyncio.CancelledError:
-                    # 处理取消信号
-                    logger.info("动态监控收到取消信号，正在停止...")
-                    self.is_running = False
-                    break
-
-                except Exception as e:
-                    if self.is_running:  # 只在仍在运行时记录错误
-                        logger.error(f"动态监控出错: {e}")
-                        try:
-                            await asyncio.sleep(60)
-                        except asyncio.CancelledError:
-                            self.is_running = False
-                            break
-
-        finally:
-            logger.info("动态监控循环已结束")
-            # 确保资源被清理
-            await self._cleanup_resources()
+        # 使用APScheduler添加定时任务
+        scheduler.add_job(
+            self._check_all_dynamics,
+            "interval",
+            seconds=self.config.monitor_interval,
+            id="dynamic_monitor_check",
+            replace_existing=True,
+            max_instances=1,  # 确保同一时间只有一个任务在执行
+            misfire_grace_time=60  # 允许60秒的容错时间
+        )
+        
+        logger.info("动态监控定时任务已添加到调度器")
 
     async def _cleanup_resources(self):
         """清理资源"""
@@ -97,18 +84,34 @@ class DynamicMonitor:
         """停止监控"""
         logger.info("正在停止UP主动态监控...")
         self.is_running = False
-        # 注意：资源清理由start_monitoring的finally块处理
-        logger.info("UP主动态监控停止信号已发送")
+        
+        # 移除定时任务
+        try:
+            scheduler.remove_job("dynamic_monitor_check")
+            logger.info("动态监控定时任务已从调度器移除")
+        except Exception as e:
+            logger.warning(f"移除定时任务时出错: {e}")
+        
+        # 清理资源
+        await self._cleanup_resources()
+        logger.info("UP主动态监控已完全停止")
 
     async def _check_all_dynamics(self):
-        """检查所有UP主的动态"""
-        logger.debug(f"开始检查所有UP主动态，共 {len(self.config.dynamic_monitor_mapping)} 个用户")
-        for uid in self.config.dynamic_monitor_mapping.keys():
-            try:
-                await self._check_user_dynamic(uid)
-            except Exception as e:
-                logger.error(f"检查UP主 {uid} 动态失败: {e}")
-        logger.debug(f"完成本次动态检查，将在 {self.config.monitor_interval} 秒后进行下次检查")
+        """检查所有UP主的动态 - 由APScheduler定时调用"""
+        if not self.is_running:
+            logger.debug("监控已停止，跳过本次检查")
+            return
+            
+        try:
+            logger.debug(f"开始检查所有UP主动态，共 {len(self.config.dynamic_monitor_mapping)} 个用户")
+            for uid in self.config.dynamic_monitor_mapping.keys():
+                try:
+                    await self._check_user_dynamic(uid)
+                except Exception as e:
+                    logger.error(f"检查UP主 {uid} 动态失败: {e}")
+            logger.debug(f"完成本次动态检查")
+        except Exception as e:
+            logger.error(f"动态监控检查出错: {e}")
 
     async def _check_user_dynamic(self, uid: str):
         """检查单个UP主的动态"""
@@ -341,7 +344,7 @@ class DynamicMonitor:
 # 插件启动和关闭函数
 async def start_dynamic_monitor():
     """启动动态监控"""
-    global dynamic_monitor_instance, _monitoring_task
+    global dynamic_monitor_instance
 
     if dynamic_monitor_instance is not None:
         logger.warning("动态监控已在运行中")
@@ -359,36 +362,19 @@ async def start_dynamic_monitor():
         # 创建监控实例
         dynamic_monitor_instance = DynamicMonitor(config)
 
-        # 创建监控任务
-        _monitoring_task = asyncio.create_task(
-            dynamic_monitor_instance.start_monitoring()
-        )
+        # 启动监控（会添加APScheduler定时任务）
+        await dynamic_monitor_instance.start_monitoring()
 
-        # 添加任务完成的回调
-        def task_done_callback(task):
-            try:
-                if task.exception():
-                    logger.error(f"动态监控任务异常结束: {task.exception()}")
-                else:
-                    logger.info("动态监控任务正常结束")
-            except Exception as e:
-                logger.error(f"处理任务完成回调时出错: {e}")
-
-        _monitoring_task.add_done_callback(task_done_callback)
-
-        logger.info("UP主动态监控任务已创建并启动")
+        logger.info("UP主动态监控已启动")
 
     except Exception as e:
         logger.error(f"启动动态监控失败: {e}")
         dynamic_monitor_instance = None
-        if _monitoring_task:
-            _monitoring_task.cancel()
-            _monitoring_task = None
 
 
 async def stop_dynamic_monitor():
     """停止动态监控"""
-    global dynamic_monitor_instance, _monitoring_task
+    global dynamic_monitor_instance
 
     if not dynamic_monitor_instance:
         return
@@ -396,34 +382,12 @@ async def stop_dynamic_monitor():
     logger.info("正在停止动态监控...")
 
     try:
-        # 首先设置实例的运行标志为False
-        if dynamic_monitor_instance:
-            dynamic_monitor_instance.is_running = False
-
-        # 取消监控任务
-        if _monitoring_task and not _monitoring_task.done():
-            _monitoring_task.cancel()
-            try:
-                # 等待任务完成，但设置超时避免无限等待
-                await asyncio.wait_for(_monitoring_task, timeout=5.0)
-                logger.info("动态监控任务已正常结束")
-            except asyncio.TimeoutError:
-                logger.warning("动态监控任务取消超时")
-            except asyncio.CancelledError:
-                logger.info("动态监控任务已取消")
-            except Exception as e:
-                logger.error(f"等待任务结束时出错: {e}")
-
-        # 停止监控实例
-        if dynamic_monitor_instance:
-            await dynamic_monitor_instance.stop_monitoring()
-            dynamic_monitor_instance = None
-
-        _monitoring_task = None
+        # 停止监控实例（会移除APScheduler定时任务并清理资源）
+        await dynamic_monitor_instance.stop_monitoring()
+        dynamic_monitor_instance = None
         logger.info("动态监控已完全停止")
 
     except Exception as e:
         logger.error(f"停止动态监控时出错: {e}")
         # 即使出错也要清理资源
         dynamic_monitor_instance = None
-        _monitoring_task = None
