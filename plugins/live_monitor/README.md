@@ -151,16 +151,19 @@ BILIBILI_COOKIE=SESSDATA=xxxxx;DedeUserID=xxxxx;buvid3=xxxxx
 plugins/live_monitor/
 ├── __init__.py        # 插件入口，命令处理
 ├── config.py          # 配置管理
-├── models.py          # 数据模型（LiveStatus, RoomInfo等）
-├── live_api.py        # B站直播API调用
+├── models.py          # 监控状态模型（LiveRoomState）
 ├── danmaku_client.py  # WebSocket弹幕客户端（实时监控）
 ├── live_monitor.py    # 监控核心逻辑
 └── README.md          # 说明文档
 
-# 依赖的公共模块
+# 公共模块（utils/bilibili_api/）
 utils/bilibili_api/
-├── wbi.py             # B站WBI签名模块（API鉴权，公共）
-└── ...
+├── __init__.py        # 模块导出
+├── wbi.py             # B站WBI签名模块
+├── live_models.py     # 直播数据模型（LiveStatus, RoomInfo, UserInfo）
+├── live_api.py        # B站直播API封装（LiveApi, LiveApiManager）
+├── fetcher.py         # 动态数据获取
+└── models.py          # 动态数据模型
 ```
 
 ## 更新日志

@@ -18,9 +18,9 @@ from nonebot.adapters.onebot.v11 import Bot, MessageSegment
 from nonebot_plugin_apscheduler import scheduler
 
 from .config import Config
-from .models import LiveStatus, RoomInfo, UserInfo, LiveRoomState
-from .live_api import api_manager
+from .models import LiveRoomState
 from .danmaku_client import DanmakuClient
+from utils.bilibili_api import LiveStatus, RoomInfo, UserInfo, api_manager
 
 
 # 全局监控实例

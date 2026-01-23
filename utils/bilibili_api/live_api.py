@@ -1,16 +1,14 @@
 """
 B站直播API调用模块
-参考 blrec 的 API 实现
+提供直播间信息、主播信息、直播状态等API封装
 """
 
 import aiohttp
-import asyncio
 import json
 import re
 from typing import Optional, Tuple
-from nonebot.log import logger
 
-from .models import RoomInfo, UserInfo, LiveStatus
+from .live_models import RoomInfo, UserInfo, LiveStatus
 
 
 # API 基础配置
@@ -56,13 +54,11 @@ class LiveApi:
             room_info_data = await self._get_room_info_via_api(room_id)
             return RoomInfo.from_api_data(room_info_data)
         except Exception as e:
-            logger.warning(f"API获取房间 {room_id} 信息失败: {e}，尝试HTML解析")
             try:
                 # 备用方案：从HTML页面解析
                 room_info_data = await self._get_room_info_via_html(room_id)
                 return RoomInfo.from_api_data(room_info_data)
-            except Exception as e2:
-                logger.error(f"HTML解析房间 {room_id} 信息也失败: {e2}")
+            except Exception:
                 return None
     
     async def get_user_info(self, room_id: int, uid: Optional[int] = None) -> Optional[UserInfo]:
@@ -70,8 +66,7 @@ class LiveApi:
         try:
             data = await self._get_info_by_room(room_id)
             return UserInfo.from_api_data(data)
-        except Exception as e:
-            logger.warning(f"获取房间 {room_id} 主播信息失败: {e}")
+        except Exception:
             return None
     
     async def get_live_status(self, room_id: int) -> Optional[LiveStatus]:
@@ -82,13 +77,11 @@ class LiveApi:
         try:
             room_info_data = await self._get_room_info_via_api(room_id)
             return LiveStatus(int(room_info_data['live_status']))
-        except Exception as e:
-            logger.debug(f"API获取房间 {room_id} 状态失败: {e}，尝试HTML解析")
+        except Exception:
             try:
                 status = await self._get_live_status_via_html(room_id)
                 return LiveStatus(status)
-            except Exception as e2:
-                logger.error(f"获取房间 {room_id} 直播状态失败: {e2}")
+            except Exception:
                 return None
     
     async def get_room_and_user_info(self, room_id: int) -> Tuple[Optional[RoomInfo], Optional[UserInfo]]:
@@ -98,8 +91,7 @@ class LiveApi:
             room_info = RoomInfo.from_api_data(data['room_info'])
             user_info = UserInfo.from_api_data(data)
             return room_info, user_info
-        except Exception as e:
-            logger.warning(f"获取房间 {room_id} 完整信息失败: {e}")
+        except Exception:
             # 尝试单独获取
             room_info = await self.get_room_info(room_id)
             user_info = await self.get_user_info(room_id) if room_info else None
@@ -203,7 +195,6 @@ class LiveApiManager:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
         self._api = LiveApi(self._session, cookie)
-        logger.info("直播API管理器已初始化")
     
     async def close(self):
         """关闭API管理器"""
@@ -211,7 +202,6 @@ class LiveApiManager:
             await self._session.close()
             self._session = None
         self._api = None
-        logger.info("直播API管理器已关闭")
     
     @property
     def api(self) -> LiveApi:

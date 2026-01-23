@@ -81,7 +81,7 @@ async def handle_live_status(bot: Bot, event: GroupMessageEvent, args: Message =
             result = await live_monitor_instance.check_room_now(room_id)
         else:
             # 如果监控实例未启动，临时获取状态
-            from .live_api import api_manager
+            from utils.bilibili_api import api_manager
             await api_manager.init()
             room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
             await api_manager.close()
