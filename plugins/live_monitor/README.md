@@ -152,6 +152,7 @@ plugins/live_monitor/
 ├── __init__.py        # 插件入口，命令处理
 ├── config.py          # 配置管理
 ├── models.py          # 监控状态模型（LiveRoomState）
+├── sender.py          # 通知消息发送模块
 ├── danmaku_client.py  # WebSocket弹幕客户端（实时监控）
 ├── live_monitor.py    # 监控核心逻辑
 └── README.md          # 说明文档

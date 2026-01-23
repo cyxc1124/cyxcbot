@@ -12,14 +12,13 @@ import asyncio
 import aiohttp
 from typing import Dict, Optional
 from datetime import datetime
-from nonebot import get_driver
 from nonebot.log import logger
-from nonebot.adapters.onebot.v11 import Bot, MessageSegment
 from nonebot_plugin_apscheduler import scheduler
 
 from .config import Config
 from .models import LiveRoomState
 from .danmaku_client import DanmakuClient
+from .sender import LiveNotificationSender
 from utils.bilibili_api import LiveStatus, RoomInfo, UserInfo, api_manager
 
 
@@ -44,6 +43,8 @@ class LiveMonitor:
         self._danmaku_clients: Dict[str, DanmakuClient] = {}
         # aiohttp session for WebSocket
         self._ws_session: Optional[aiohttp.ClientSession] = None
+        # 通知发送器
+        self._sender = LiveNotificationSender(include_room_info=config.include_room_info)
     
     async def init_resources(self):
         """初始化资源"""
@@ -328,93 +329,18 @@ class LiveMonitor:
         
         # 获取主播名称
         streamer_name = state.user_info.name if state.user_info else f"房间{room_id}"
-        room_info = state.room_info
         
-        # 获取所有机器人实例
-        bots = get_driver().bots
+        # 计算直播时长（仅关播时使用）
+        duration_seconds = state.get_duration_seconds() if status == "end" else 0
         
-        for bot_id, bot in bots.items():
-            if not isinstance(bot, Bot):
-                continue
-            
-            for group_id in target_groups:
-                try:
-                    # 检查机器人权限
-                    can_at_all = await self._check_admin_permission(bot, group_id)
-                    
-                    # 构建消息
-                    if status == "start":
-                        message = await self._build_start_message(
-                            streamer_name, room_info, can_at_all
-                        )
-                    else:
-                        message = await self._build_end_message(
-                            streamer_name, room_info, state
-                        )
-                    
-                    # 发送消息
-                    await bot.send_group_msg(group_id=int(group_id), message=message)
-                    logger.success(f"直播{status}通知已发送到群组 {group_id}")
-                    
-                except Exception as e:
-                    logger.error(f"发送通知到群组 {group_id} 失败: {e}")
-    
-    async def _build_start_message(
-        self, streamer_name: str, room_info: Optional[RoomInfo], can_at_all: bool
-    ) -> str:
-        """构建开播消息"""
-        message = f"🎉 {streamer_name} 开播啦！\n"
-        
-        if self.config.include_room_info and room_info:
-            message += f"直播间标题：{room_info.title}\n"
-            message += f"房间号：{room_info.room_id}\n"
-            
-            # 格式化开播时间
-            if room_info.live_start_time > 0:
-                start_time = datetime.fromtimestamp(room_info.live_start_time)
-                time_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
-                message += f"开播时间：{time_str}\n"
-            
-            if room_info.area_name:
-                message += f"分区：{room_info.parent_area_name} - {room_info.area_name}\n"
-            
-            message += f"点我直达：{room_info.get_live_url()}\n"
-        
-        # 根据权限决定是否@全体成员
-        if can_at_all:
-            message += str(MessageSegment.at("all"))
-        else:
-            message += "\n📢 请关注直播动态！"
-        
-        return message
-    
-    async def _build_end_message(
-        self, streamer_name: str, room_info: Optional[RoomInfo], state: LiveRoomState
-    ) -> str:
-        """构建关播消息"""
-        message = f"【下播提醒】\n"
-        message += f"{streamer_name}下播啦！\n"
-        
-        # 计算直播时长
-        duration_str = state.format_duration()
-        if duration_str:
-            message += f"直播时长：{duration_str}"
-        
-        return message
-    
-    async def _check_admin_permission(self, bot: Bot, group_id: str) -> bool:
-        """检查机器人在群组中是否有管理员权限"""
-        try:
-            bot_info = await bot.get_group_member_info(
-                group_id=int(group_id),
-                user_id=int(bot.self_id),
-                no_cache=False
-            )
-            role = bot_info.get("role", "member")
-            return role in ["admin", "owner"]
-        except Exception as e:
-            logger.warning(f"检查机器人管理员权限失败: {e}")
-            return False
+        # 使用发送器发送通知
+        await self._sender.send_notification(
+            status=status,
+            streamer_name=streamer_name,
+            room_info=state.room_info,
+            target_groups=target_groups,
+            duration_seconds=duration_seconds
+        )
     
     async def check_room_now(self, room_id: str) -> Optional[Dict]:
         """立即检查指定房间的状态（用于手动触发）"""
