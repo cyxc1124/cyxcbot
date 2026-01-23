@@ -84,9 +84,11 @@ def log_environment_config():
             "DYNAMIC_MONITOR_INTERVAL",
             "BILIBILI_COOKIE"
         ],
-        "直播通知": [
-            "STREAMER_GROUP_MAPPING",
-            "INCLUDE_ROOM_INFO"
+        "直播监控": [
+            "LIVE_MONITOR_MAPPING",
+            "LIVE_MONITOR_INTERVAL",
+            "LIVE_MONITOR_INCLUDE_INFO",
+            "LIVE_MONITOR_USE_WEBSOCKET"
         ],
         "状态检查": [
             "STATUS_CHECK_ALLOWED_QQ",
