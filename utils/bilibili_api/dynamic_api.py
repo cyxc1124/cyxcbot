@@ -11,7 +11,7 @@ from typing import List, Optional
 from urllib.parse import urlencode
 from nonebot.log import logger
 
-from .models import DynamicItem
+from .dynamic_models import DynamicItem
 
 
 class DynamicFetcher:

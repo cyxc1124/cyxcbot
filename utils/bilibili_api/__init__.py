@@ -3,8 +3,8 @@ B站API工具模块
 提供B站动态数据获取和解析、直播API、WBI签名等功能
 """
 
-from .fetcher import DynamicFetcher
-from .models import DynamicItem
+from .dynamic_api import DynamicFetcher
+from .dynamic_models import DynamicItem
 from .config import BilibiliConfig
 from . import wbi
 
