@@ -12,6 +12,7 @@ from nonebot.log import logger
 
 try:
     from playwright.async_api import async_playwright, Browser, Page, BrowserContext
+    from playwright_stealth import Stealth
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
@@ -33,6 +34,21 @@ async def fill_font(route):
         content_type="font/woff2",
         body=b''  # 返回空字体
     )
+
+
+def _parse_cookie_string(cookie_str: str) -> list:
+    """将Cookie字符串解析为Playwright所需的Cookie列表"""
+    cookies = []
+    for item in cookie_str.split("; "):
+        if "=" in item:
+            name, value = item.split("=", 1)
+            cookies.append({
+                "name": name.strip(),
+                "value": value.strip(),
+                "domain": ".bilibili.com",
+                "path": "/",
+            })
+    return cookies
 
 
 async def init_browser(proxy=None, **kwargs) -> BrowserContext:
@@ -87,6 +103,16 @@ async def init_browser(proxy=None, **kwargs) -> BrowserContext:
         is_mobile=False,          # PC模式
         has_touch=False,          # 非触摸设备
     )
+
+    # 注入B站Cookie
+    from utils.bilibili_api.config import BilibiliConfig
+    cookie_str = BilibiliConfig.get_bilibili_cookie()
+    if cookie_str:
+        cookies = _parse_cookie_string(cookie_str)
+        await context.add_cookies(cookies)
+        logger.info(f"已注入 {len(cookies)} 个B站Cookie")
+    else:
+        logger.warning("未配置BILIBILI_COOKIE，截图可能触发验证码")
 
     logger.info("浏览器初始化完成")
     return context
@@ -160,14 +186,8 @@ class DynamicScreenshot:
 
             # 等待并检查动态内容区域 - PC端选择器
             dynamic_selectors = [
-                ".bili-dyn-item",  # 完整动态卡片 - 优先级最高
-                ".card",  # PC端主要卡片
-                ".dynamic-card",  # 动态卡片
-                ".bili-dyn-item__card",  # 新版动态卡片
-                ".bili-dyn-list__item",  # 动态列表项
-                "[class*='card']",  # 包含card的元素
-                ".opus-modules",  # 兼容旧版
-                ".dyn-card"  # 通用动态卡片
+                ".bili-dyn-item",       # 完整动态卡片
+                ".bili-dyn-item__main", # 主内容区域
             ]
 
             dynamic_found = False
@@ -228,7 +248,7 @@ return new Promise(resolve => {
     let checkCount = 0;
     const checkInterval = setInterval(() => {
         checkCount++;
-        const cards = document.querySelectorAll('.bili-dyn-item, .card, .dynamic-card, .bili-dyn-item__card');
+                const cards = document.querySelectorAll('.bili-dyn-item, .bili-dyn-item__main');
         if (cards.length > 0 || checkCount > 10) {
             clearInterval(checkInterval);
             resolve(true);
@@ -246,13 +266,8 @@ return new Promise(resolve => {
             # 获取动态卡片，PC端选择器 - 优先选择完整动态卡片
             card = None
             selectors = [
-                ".bili-dyn-item",  # 完整动态卡片 - 优先级最高
-                ".card",  # PC端主要卡片
-                ".dynamic-card",  # 动态卡片
-                ".bili-dyn-item__card",  # 新版动态卡片
-                ".bili-dyn-list__item",  # 动态列表项
-                "[class*='card']",  # 包含card的元素
-                ".opus-modules"  # 兼容移动端
+                ".bili-dyn-item",       # 完整动态卡片
+                ".bili-dyn-item__main", # 主内容区域
             ]
 
             for selector in selectors:
@@ -297,6 +312,7 @@ return new Promise(resolve => {
         page = None
         try:
             page = await self.browser_context.new_page()
+            await Stealth().apply_stealth_async(page)
             page.set_default_timeout(timeout)
 
             # 首先尝试完整版截图
