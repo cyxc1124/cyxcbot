@@ -5,8 +5,6 @@
 """
 
 import asyncio
-import re
-from pathlib import Path
 from typing import Optional, Tuple
 from nonebot.log import logger
 
@@ -22,18 +20,6 @@ except ImportError:
 class Notfound(Exception):
     """动态不存在异常"""
     pass
-
-
-# bilibili_style.js 文件路径
-bilibili_style = Path(__file__).parent.joinpath("bilibili_style.js")
-
-
-async def fill_font(route):
-    """字体路由处理"""
-    await route.fulfill(
-        content_type="font/woff2",
-        body=b''  # 返回空字体
-    )
 
 
 def _parse_cookie_string(cookie_str: str) -> list:
@@ -161,9 +147,6 @@ class DynamicScreenshot:
                 "device_scale_factor": 2  # 2倍缩放，提高清晰度
             })
 
-            # 设置字体路由拦截
-            await page.route(re.compile(r"^https://static\.graiax\.fonts/(.+)$"), fill_font)
-
             # 设置页面超时
             page.set_default_timeout(30000)  # 30秒超时
 
@@ -211,26 +194,6 @@ class DynamicScreenshot:
                 logger.debug("页面滚动完成，触发懒加载")
             except Exception as e:
                 logger.warning(f"页面滚动失败: {e}")
-
-            # PC端样式处理 - 高质量渲染优化
-            try:
-                await page.add_script_tag(path=bilibili_style)
-                await page.evaluate("setFont()")
-
-                # 额外的清晰度优化
-                await page.evaluate("""
-                    // 强制高DPI渲染
-                    document.documentElement.style.imageRendering = 'crisp-edges';
-                    document.documentElement.style.imageRendering = '-webkit-crisp-edges';
-
-                    // 确保文本清晰
-                    document.body.style.webkitFontSmoothing = 'antialiased';
-                    document.body.style.textRendering = 'optimizeLegibility';
-                """)
-
-                logger.debug(f"动态 {dynamic_id} 样式设置和高清优化完成")
-            except Exception as e:
-                logger.warning(f"样式设置失败: {e}")
 
             # 等待更长时间让内容完全渲染
             try:
