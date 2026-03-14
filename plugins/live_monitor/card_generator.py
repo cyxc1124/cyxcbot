@@ -40,7 +40,6 @@ COLOR_BG = (255, 255, 255)
 COLOR_BG_LIGHT_PINK = (255, 245, 247)
 COLOR_PRIMARY = (255, 158, 181)
 COLOR_TEXT_DARK = (51, 51, 51)
-COLOR_TEXT_GRAY = (153, 153, 153)
 COLOR_TEXT_WHITE = (255, 255, 255)
 COLOR_LIVE_TAG_BG = (231, 76, 60)
 COLOR_END_TAG_BG = (153, 153, 153)
@@ -243,7 +242,7 @@ def _draw_card(
 
     if area_label:
         area_y = name_y + 24 * S
-        draw.text((text_x, area_y), area_label, fill=COLOR_TEXT_GRAY, font=font_area)
+        draw.text((text_x, area_y), area_label, fill=COLOR_TEXT_DARK, font=font_area)
 
     # 状态标签
     if card_type == "end":
@@ -317,7 +316,7 @@ def _draw_card(
     else:
         footer_right = ""
 
-    draw.text((CARD_PADDING, y), footer_left, fill=COLOR_TEXT_GRAY, font=font_footer)
+    draw.text((CARD_PADDING, y), footer_left, fill=COLOR_TEXT_DARK, font=font_footer)
 
     if footer_right:
         right_bbox = draw.textbbox((0, 0), footer_right, font=font_footer)
@@ -325,7 +324,7 @@ def _draw_card(
         draw.text(
             (CARD_WIDTH - CARD_PADDING - right_w, y),
             footer_right,
-            fill=COLOR_TEXT_GRAY,
+            fill=COLOR_TEXT_DARK,
             font=font_footer
         )
 
