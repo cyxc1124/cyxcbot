@@ -12,3 +12,4 @@ feedparser==6.0.10
 playwright==1.57.0
 playwright-stealth==2.0.2
 brotli==1.2.0
+Pillow==12.1.1
