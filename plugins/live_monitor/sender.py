@@ -18,116 +18,98 @@ class LiveNotificationSender:
     """直播通知发送器"""
     
     def __init__(self, include_room_info: bool = True):
-        """
-        初始化发送器
-        
-        Args:
-            include_room_info: 是否在通知中包含详细房间信息
-        """
         self.include_room_info = include_room_info
     
-    def build_start_message(
+    async def build_start_message(
         self,
         streamer_name: str,
         room_info: Optional[RoomInfo],
+        user_info: Optional[UserInfo] = None,
         can_at_all: bool = False
     ) -> Message:
         """
         构建开播通知消息
         
-        Args:
-            streamer_name: 主播名称
-            room_info: 房间信息对象
-            can_at_all: 是否可以@全体成员
-        
-        Returns:
-            构建好的消息对象
+        尝试生成卡片图片替代原有封面；
+        卡片生成失败时自动回退为原有纯文本+封面通知。
         """
         message = Message()
         
-        # @全体成员或提示消息
         if can_at_all:
             message.append(MessageSegment.at("all"))
         else:
             message.append("📢 请关注直播动态！")
 
-        # 开播标题
         message.append(f" {streamer_name} 开播啦！\n")
         message.append("\n")
         
-        # 详细信息
-        if self.include_room_info and room_info:
-            # 直播间标题
-            message.append(f"标题：{room_info.title}\n")
-            
-            # 房间号
-            # message.append(f"房间号：{room_info.room_id}\n")
-            
-            # 开播时间
-            if room_info.live_start_time > 0:
-                start_time = datetime.fromtimestamp(room_info.live_start_time)
-                time_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
-                message.append(f"开播时间：{time_str}\n")
+        card_image = await self._try_generate_card(streamer_name, user_info, room_info)
+        
+        if card_image:
+            try:
+                message.append(MessageSegment.image(card_image))
                 message.append("\n")
-            
-            # 分区信息
-            # if room_info.area_name:
-            #     if room_info.parent_area_name:
-            #         message.append(f"分区：{room_info.parent_area_name} - {room_info.area_name}\n")
-            #     else:
-            #         message.append(f"分区：{room_info.area_name}\n")
-            
-            # 直播间封面
-            if room_info.cover:
-                try:
-                    message.append(MessageSegment.image(room_info.cover))
+            except Exception as e:
+                logger.warning(f"添加卡片图片到消息失败: {e}")
+                card_image = None
+        
+        if self.include_room_info and room_info:
+            if not card_image:
+                message.append(f"标题：{room_info.title}\n")
+                
+                if room_info.live_start_time > 0:
+                    start_time = datetime.fromtimestamp(room_info.live_start_time)
+                    time_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
+                    message.append(f"开播时间：{time_str}\n")
                     message.append("\n")
-                except Exception as e:
-                    logger.warning(f"添加直播封面失败: {e}")
+                
+                if room_info.cover:
+                    try:
+                        message.append(MessageSegment.image(room_info.cover))
+                        message.append("\n")
+                    except Exception as e:
+                        logger.warning(f"添加直播封面失败: {e}")
             
-            # 直播间链接
             message.append(f"{room_info.get_live_url()}")
         
         return message
     
-    def build_end_message(
+    async def build_end_message(
         self,
         streamer_name: str,
+        room_info: Optional[RoomInfo] = None,
+        user_info: Optional[UserInfo] = None,
         duration_seconds: int = 0
     ) -> Message:
         """
-        构建关播通知消息
-        
-        Args:
-            streamer_name: 主播名称
-            duration_seconds: 直播时长（秒）
-        
-        Returns:
-            构建好的消息对象
+        构建下播通知消息
+
+        尝试生成下播卡片图片；
+        卡片生成失败时自动回退为纯文本通知。
         """
         message = Message()
-        
-        # 关播标题
         message.append("【下播提醒】\n")
         message.append(f"{streamer_name}下播啦！\n")
-        
-        # 直播时长
-        if duration_seconds > 0:
+
+        card_image = await self._try_generate_end_card(
+            streamer_name, user_info, room_info, duration_seconds
+        )
+
+        if card_image:
+            try:
+                message.append(MessageSegment.image(card_image))
+                message.append("\n")
+            except Exception as e:
+                logger.warning(f"添加下播卡片图片到消息失败: {e}")
+                card_image = None
+
+        if not card_image and duration_seconds > 0:
             duration_str = self._format_duration(duration_seconds)
             message.append(f"直播时长：{duration_str}")
-        
+
         return message
     
     def _format_duration(self, seconds: int) -> str:
-        """
-        格式化直播时长
-        
-        Args:
-            seconds: 时长（秒）
-        
-        Returns:
-            格式化后的时长字符串
-        """
         if seconds <= 0:
             return ""
         
@@ -142,17 +124,45 @@ class LiveNotificationSender:
         else:
             return f"{secs}秒"
     
+    async def _try_generate_card(
+        self,
+        streamer_name: str,
+        user_info: Optional[UserInfo],
+        room_info: Optional[RoomInfo],
+    ) -> Optional[bytes]:
+        """尝试生成开播卡片图片，失败返回 None（触发降级）"""
+        try:
+            from .card_generator import generate_live_start_card
+            return await generate_live_start_card(
+                streamer_name=streamer_name,
+                user_info=user_info,
+                room_info=room_info,
+            )
+        except Exception as e:
+            logger.error(f"生成开播卡片失败，将降级为纯文本通知: {e}")
+            return None
+
+    async def _try_generate_end_card(
+        self,
+        streamer_name: str,
+        user_info: Optional[UserInfo],
+        room_info: Optional[RoomInfo],
+        duration_seconds: int = 0,
+    ) -> Optional[bytes]:
+        """尝试生成下播卡片图片，失败返回 None（触发降级）"""
+        try:
+            from .card_generator import generate_live_end_card
+            return await generate_live_end_card(
+                streamer_name=streamer_name,
+                user_info=user_info,
+                room_info=room_info,
+                duration_seconds=duration_seconds,
+            )
+        except Exception as e:
+            logger.error(f"生成下播卡片失败，将降级为纯文本通知: {e}")
+            return None
+    
     async def check_admin_permission(self, bot: Bot, group_id: str) -> bool:
-        """
-        检查机器人在群组中是否有管理员权限
-        
-        Args:
-            bot: 机器人实例
-            group_id: 群组ID
-        
-        Returns:
-            是否有管理员权限
-        """
         try:
             bot_info = await bot.get_group_member_info(
                 group_id=int(group_id),
@@ -171,6 +181,7 @@ class LiveNotificationSender:
         streamer_name: str,
         room_info: Optional[RoomInfo],
         target_groups: List[str],
+        user_info: Optional[UserInfo] = None,
         duration_seconds: int = 0
     ):
         """
@@ -181,6 +192,7 @@ class LiveNotificationSender:
             streamer_name: 主播名称
             room_info: 房间信息对象
             target_groups: 目标群组ID列表
+            user_info: 主播用户信息（头像等，开播卡片需要）
             duration_seconds: 直播时长（秒，仅关播时使用）
         """
         if not target_groups:
@@ -189,7 +201,6 @@ class LiveNotificationSender:
         
         logger.info(f"开始发送直播{status}通知 - 主播: {streamer_name}, 目标群组: {target_groups}")
         
-        # 获取所有机器人实例
         bots = get_driver().bots
         
         if not bots:
@@ -204,23 +215,23 @@ class LiveNotificationSender:
             
             for group_id in target_groups:
                 try:
-                    # 检查管理员权限
                     can_at_all = await self.check_admin_permission(bot, group_id)
                     
-                    # 构建消息
                     if status == "start":
-                        message = self.build_start_message(
+                        message = await self.build_start_message(
                             streamer_name=streamer_name,
                             room_info=room_info,
+                            user_info=user_info,
                             can_at_all=can_at_all
                         )
                     else:
-                        message = self.build_end_message(
+                        message = await self.build_end_message(
                             streamer_name=streamer_name,
+                            room_info=room_info,
+                            user_info=user_info,
                             duration_seconds=duration_seconds
                         )
                     
-                    # 发送消息
                     await bot.send_group_msg(
                         group_id=int(group_id),
                         message=message
@@ -233,7 +244,6 @@ class LiveNotificationSender:
                     logger.debug(f"错误详情: {traceback.format_exc()}")
 
 
-# 全局发送器实例
 notification_sender: Optional[LiveNotificationSender] = None
 
 
@@ -241,5 +251,7 @@ def get_sender(include_room_info: bool = True) -> LiveNotificationSender:
     """获取或创建发送器实例"""
     global notification_sender
     if notification_sender is None:
-        notification_sender = LiveNotificationSender(include_room_info)
+        notification_sender = LiveNotificationSender(
+            include_room_info=include_room_info,
+        )
     return notification_sender

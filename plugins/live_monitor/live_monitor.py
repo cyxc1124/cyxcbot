@@ -44,7 +44,9 @@ class LiveMonitor:
         # aiohttp session for WebSocket
         self._ws_session: Optional[aiohttp.ClientSession] = None
         # 通知发送器
-        self._sender = LiveNotificationSender(include_room_info=config.include_room_info)
+        self._sender = LiveNotificationSender(
+            include_room_info=config.include_room_info,
+        )
     
     async def init_resources(self):
         """初始化资源"""
@@ -339,6 +341,7 @@ class LiveMonitor:
             streamer_name=streamer_name,
             room_info=state.room_info,
             target_groups=target_groups,
+            user_info=state.user_info,
             duration_seconds=duration_seconds
         )
     
