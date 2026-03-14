@@ -74,19 +74,39 @@ class LiveNotificationSender:
         
         return message
     
-    def build_end_message(
+    async def build_end_message(
         self,
         streamer_name: str,
+        room_info: Optional[RoomInfo] = None,
+        user_info: Optional[UserInfo] = None,
         duration_seconds: int = 0
     ) -> Message:
+        """
+        构建下播通知消息
+
+        尝试生成下播卡片图片；
+        卡片生成失败时自动回退为纯文本通知。
+        """
         message = Message()
         message.append("【下播提醒】\n")
         message.append(f"{streamer_name}下播啦！\n")
-        
-        if duration_seconds > 0:
+
+        card_image = await self._try_generate_end_card(
+            streamer_name, user_info, room_info, duration_seconds
+        )
+
+        if card_image:
+            try:
+                message.append(MessageSegment.image(card_image))
+                message.append("\n")
+            except Exception as e:
+                logger.warning(f"添加下播卡片图片到消息失败: {e}")
+                card_image = None
+
+        if not card_image and duration_seconds > 0:
             duration_str = self._format_duration(duration_seconds)
             message.append(f"直播时长：{duration_str}")
-        
+
         return message
     
     def _format_duration(self, seconds: int) -> str:
@@ -110,7 +130,7 @@ class LiveNotificationSender:
         user_info: Optional[UserInfo],
         room_info: Optional[RoomInfo],
     ) -> Optional[bytes]:
-        """尝试生成卡片图片，失败返回 None（触发降级）"""
+        """尝试生成开播卡片图片，失败返回 None（触发降级）"""
         try:
             from .card_generator import generate_live_start_card
             return await generate_live_start_card(
@@ -120,6 +140,26 @@ class LiveNotificationSender:
             )
         except Exception as e:
             logger.error(f"生成开播卡片失败，将降级为纯文本通知: {e}")
+            return None
+
+    async def _try_generate_end_card(
+        self,
+        streamer_name: str,
+        user_info: Optional[UserInfo],
+        room_info: Optional[RoomInfo],
+        duration_seconds: int = 0,
+    ) -> Optional[bytes]:
+        """尝试生成下播卡片图片，失败返回 None（触发降级）"""
+        try:
+            from .card_generator import generate_live_end_card
+            return await generate_live_end_card(
+                streamer_name=streamer_name,
+                user_info=user_info,
+                room_info=room_info,
+                duration_seconds=duration_seconds,
+            )
+        except Exception as e:
+            logger.error(f"生成下播卡片失败，将降级为纯文本通知: {e}")
             return None
     
     async def check_admin_permission(self, bot: Bot, group_id: str) -> bool:
@@ -185,8 +225,10 @@ class LiveNotificationSender:
                             can_at_all=can_at_all
                         )
                     else:
-                        message = self.build_end_message(
+                        message = await self.build_end_message(
                             streamer_name=streamer_name,
+                            room_info=room_info,
+                            user_info=user_info,
                             duration_seconds=duration_seconds
                         )
                     

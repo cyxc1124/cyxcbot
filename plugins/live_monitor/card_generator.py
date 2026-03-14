@@ -43,6 +43,7 @@ COLOR_TEXT_DARK = (51, 51, 51)
 COLOR_TEXT_GRAY = (153, 153, 153)
 COLOR_TEXT_WHITE = (255, 255, 255)
 COLOR_LIVE_TAG_BG = (231, 76, 60)
+COLOR_END_TAG_BG = (153, 153, 153)
 COLOR_COVER_PLACEHOLDER = (255, 228, 233)
 
 # 字体路径候选列表（按优先级）
@@ -168,6 +169,8 @@ def _draw_card(
     room_id: int,
     live_start_time: int,
     area_label: str = "",
+    card_type: str = "start",
+    duration_seconds: int = 0,
 ) -> bytes:
     """同步绘制卡片，返回 PNG bytes"""
     S = SCALE
@@ -242,9 +245,16 @@ def _draw_card(
         area_y = name_y + 24 * S
         draw.text((text_x, area_y), area_label, fill=COLOR_TEXT_GRAY, font=font_area)
 
-    # 「正在直播~」标签
-    tag_text = " 正在直播~ "
-    tag_bbox = draw.textbbox((0, 0), tag_text, font=font_tag)
+    # 状态标签
+    if card_type == "end":
+        tag_label = "已下播"
+        tag_bg = COLOR_END_TAG_BG
+    else:
+        tag_label = "正在直播~"
+        tag_bg = COLOR_LIVE_TAG_BG
+
+    tag_text_full = f" {tag_label} "
+    tag_bbox = draw.textbbox((0, 0), tag_text_full, font=font_tag)
     tag_w = tag_bbox[2] - tag_bbox[0] + 16 * S
     tag_h = tag_bbox[3] - tag_bbox[1] + 10 * S
     tag_x = CARD_WIDTH - CARD_PADDING - tag_w
@@ -252,7 +262,7 @@ def _draw_card(
     draw.rounded_rectangle(
         [(tag_x, tag_y), (tag_x + tag_w, tag_y + tag_h)],
         radius=tag_h // 2,
-        fill=COLOR_LIVE_TAG_BG
+        fill=tag_bg
     )
     # 小圆点
     dot_r = 3 * S
@@ -264,7 +274,7 @@ def _draw_card(
     )
     tag_text_x = dot_x + dot_r + 4 * S
     tag_text_y = tag_y + (tag_h - (tag_bbox[3] - tag_bbox[1])) // 2 - 1 * S
-    draw.text((tag_text_x, tag_text_y), "正在直播~", fill=COLOR_TEXT_WHITE, font=font_tag)
+    draw.text((tag_text_x, tag_text_y), tag_label, fill=COLOR_TEXT_WHITE, font=font_tag)
 
     y += HEADER_HEIGHT
 
@@ -289,21 +299,40 @@ def _draw_card(
         )
     y += cover_h + 12 * S
 
-    # === 底部：房间号 + 开播时间 ===
-    room_text = f"房间号：{room_id}"
-    draw.text((CARD_PADDING, y), room_text, fill=COLOR_TEXT_GRAY, font=font_footer)
-
-    if live_start_time > 0:
+    # === 底部信息 ===
+    footer_left = f"房间号：{room_id}"
+    if card_type == "end" and duration_seconds > 0:
+        hours = duration_seconds // 3600
+        minutes = (duration_seconds % 3600) // 60
+        secs = duration_seconds % 60
+        if hours > 0:
+            footer_right = f"直播时长：{hours}小时{minutes}分钟{secs}秒"
+        elif minutes > 0:
+            footer_right = f"直播时长：{minutes}分钟{secs}秒"
+        else:
+            footer_right = f"直播时长：{secs}秒"
+    elif live_start_time > 0:
         time_str = datetime.fromtimestamp(live_start_time).strftime("%Y-%m-%d %H:%M:%S")
-        time_text = f"开播于：{time_str}"
-        time_bbox = draw.textbbox((0, 0), time_text, font=font_footer)
-        time_w = time_bbox[2] - time_bbox[0]
+        footer_right = f"开播于：{time_str}"
+    else:
+        footer_right = ""
+
+    draw.text((CARD_PADDING, y), footer_left, fill=COLOR_TEXT_GRAY, font=font_footer)
+
+    if footer_right:
+        right_bbox = draw.textbbox((0, 0), footer_right, font=font_footer)
+        right_w = right_bbox[2] - right_bbox[0]
         draw.text(
-            (CARD_WIDTH - CARD_PADDING - time_w, y),
-            time_text,
+            (CARD_WIDTH - CARD_PADDING - right_w, y),
+            footer_right,
             fill=COLOR_TEXT_GRAY,
             font=font_footer
         )
+
+    # 下播卡片叠加暗色蒙版，营造"已结束"的视觉感
+    if card_type == "end":
+        dark_overlay = Image.new("RGBA", (CARD_WIDTH, card_height), (0, 0, 0, 60))  # 暗色蒙版：40 微暗 / 60 适中 / 90 较暗
+        card = Image.alpha_composite(card, dark_overlay)
 
     # 输出 PNG bytes
     output = BytesIO()
@@ -367,6 +396,71 @@ async def generate_live_start_card(
         return None
     except Exception as e:
         logger.error(f"卡片生成失败: {e}")
+        import traceback
+        logger.debug(traceback.format_exc())
+        return None
+
+
+async def generate_live_end_card(
+    streamer_name: str,
+    user_info: Optional[UserInfo],
+    room_info: Optional[RoomInfo],
+    duration_seconds: int = 0,
+) -> Optional[bytes]:
+    """
+    生成下播通知卡片图片
+
+    Args:
+        streamer_name: 主播名称
+        user_info: 主播信息（含头像 URL）
+        room_info: 房间信息（含封面 URL、标题、分区等）
+        duration_seconds: 直播时长（秒）
+
+    Returns:
+        PNG 图片 bytes，失败返回 None
+    """
+    if not room_info:
+        logger.warning("缺少 room_info，无法生成下播卡片")
+        return None
+
+    try:
+        face_url = user_info.face if user_info else ""
+        cover_url = room_info.cover or ""
+
+        avatar_img, cover_img = await asyncio.gather(
+            _download_image(face_url),
+            _download_image(cover_url),
+        )
+
+        area_parts = []
+        if room_info.parent_area_name:
+            area_parts.append(room_info.parent_area_name)
+        if room_info.area_name:
+            area_parts.append(room_info.area_name)
+        area_label = " · ".join(area_parts)
+
+        card_bytes = await asyncio.get_event_loop().run_in_executor(
+            None,
+            _draw_card,
+            avatar_img,
+            cover_img,
+            streamer_name,
+            room_info.title or "",
+            room_info.room_id,
+            room_info.live_start_time,
+            area_label,
+            "end",
+            duration_seconds,
+        )
+
+        logger.info(f"下播卡片生成成功，大小: {len(card_bytes)} bytes")
+        return card_bytes
+
+    except FileNotFoundError as e:
+        logger.error(f"下播卡片生成失败（字体缺失）: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"下播卡片生成失败: {e}")
         import traceback
         logger.debug(traceback.format_exc())
         return None
