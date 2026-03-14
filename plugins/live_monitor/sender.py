@@ -103,7 +103,7 @@ class LiveNotificationSender:
                 logger.warning(f"添加下播卡片图片到消息失败: {e}")
                 card_image = None
 
-        if not card_image and duration_seconds > 0:
+        if duration_seconds > 0:
             duration_str = self._format_duration(duration_seconds)
             message.append(f"直播时长：{duration_str}")
 
