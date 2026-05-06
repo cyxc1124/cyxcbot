@@ -136,7 +136,7 @@ class DynamicScreenshot:
 
     async def get_dynamic_screenshot_pc(self, dynamic_id: int, page: Page):
         """PC端动态截图 - 使用桌面版页面获得更好质量"""
-        url = f"https://t.bilibili.com/{dynamic_id}"
+        url = f"https://www.bilibili.com/opus/{dynamic_id}"
         logger.info(f"开始PC端截图动态 {dynamic_id}, 请求URL: {url}")
 
         try:
@@ -167,10 +167,9 @@ class DynamicScreenshot:
             # 等待页面完全加载
             await page.wait_for_load_state(state="domcontentloaded", timeout=10000)
 
-            # 等待并检查动态内容区域 - PC端选择器
+            # 等待并检查动态内容区域 - opus页面选择器
             dynamic_selectors = [
-                ".bili-dyn-item",       # 完整动态卡片
-                ".bili-dyn-item__main", # 主内容区域
+                "bili-opus-view",  # opus动态主体
             ]
 
             dynamic_found = False
@@ -211,7 +210,7 @@ return new Promise(resolve => {
     let checkCount = 0;
     const checkInterval = setInterval(() => {
         checkCount++;
-                const cards = document.querySelectorAll('.bili-dyn-item, .bili-dyn-item__main');
+                const cards = document.querySelectorAll('bili-opus-view');
         if (cards.length > 0 || checkCount > 10) {
             clearInterval(checkInterval);
             resolve(true);
@@ -226,11 +225,10 @@ return new Promise(resolve => {
             # 最终等待，确保页面稳定
             await page.wait_for_timeout(500)
 
-            # 获取动态卡片，PC端选择器 - 优先选择完整动态卡片
+            # 获取动态卡片，PC端opus页面选择器
             card = None
             selectors = [
-                ".bili-dyn-item",       # 完整动态卡片
-                ".bili-dyn-item__main", # 主内容区域
+                "bili-opus-view",  # opus动态主体
             ]
 
             for selector in selectors:
