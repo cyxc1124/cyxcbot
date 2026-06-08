@@ -6,11 +6,12 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from admin.deps import CurrentUser, RequireSetup
 from admin.schemas.bilibili import (
+    LogoutResponse,
     QrcodeLoginResponse,
     QrcodePollRequest,
     QrcodeStartResponse,
 )
-from admin.services.connection_status import get_bilibili_connection_status
+from admin.services.connection_status import bilibili_status_message, get_bilibili_connection_status
 from admin.services.monitor_bridge import reload_all_monitors
 from shared.audit.service import write_audit, write_system_event
 from shared.bilibili.qrcode_login import (
@@ -77,12 +78,41 @@ async def poll_qrcode_login(request: Request, body: QrcodePollRequest, user: Cur
     if not conn.get("logged_in"):
         return QrcodeLoginResponse(
             success=False,
-            message=conn.get("message") or "Cookie 已保存，但登录验证未通过",
+            message=bilibili_status_message(conn) or "Cookie 已保存，但登录验证未通过",
         )
 
     return QrcodeLoginResponse(
         success=True,
         username=conn.get("username"),
         uid=conn.get("uid"),
-        message=conn.get("message") or "登录成功",
+        message=bilibili_status_message(conn) or "登录成功",
     )
+
+
+@router.post("/logout", response_model=LogoutResponse)
+async def logout_bilibili(request: Request, user: CurrentUser):
+    svc = get_config_service()
+    snap = svc.get_snapshot()
+    if not snap.bilibili_cookie_set:
+        return LogoutResponse(success=True, message="当前未登录 B 站")
+
+    await svc.set_settings({"bilibili_cookie_encrypted": ""})
+    await svc.reload()
+    await reload_all_monitors()
+
+    ip = request.client.host if request.client else None
+    await write_audit(
+        AuditAction.SETTINGS_UPDATE,
+        actor_user_id=user.id,
+        actor_username=user.username,
+        ip_address=ip,
+        details=svc.serialize_details(
+            {
+                "bilibili_cookie_encrypted": "",
+                "source": "bilibili_logout",
+            }
+        ),
+    )
+    await write_system_event(SystemEventType.CONFIG_RELOAD, "Bilibili cookie cleared via logout")
+
+    return LogoutResponse(success=True, message="已退出 B 站登录")

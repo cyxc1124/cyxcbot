@@ -21,3 +21,8 @@ class QrcodeLoginResponse(BaseModel):
     username: Optional[str] = None
     uid: Optional[str] = None
     message: str
+
+
+class LogoutResponse(BaseModel):
+    success: bool
+    message: str

@@ -21,17 +21,31 @@ _NAV_HEADERS = {
 }
 
 
+def bilibili_status_message(status: Dict[str, Any]) -> str:
+    """Human-readable message for settings / login API responses."""
+    if status.get("logged_in"):
+        uid = status.get("uid")
+        return f"已登录 · UID {uid}" if uid else "已登录"
+
+    messages = {
+        "not_configured": "尚未登录 B 站账号",
+        "session_expired": "登录已失效，请重新登录",
+        "verify_failed": "无法验证登录状态",
+    }
+    return messages.get(str(status.get("status")), "未知状态")
+
+
 async def get_bilibili_connection_status() -> Dict[str, Any]:
     snap = get_config_service().get_snapshot()
     configured = snap.bilibili_cookie_set
 
     if not configured or not snap.bilibili_cookie:
         return {
+            "status": "not_configured",
             "configured": False,
             "logged_in": False,
             "username": None,
             "uid": None,
-            "message": "未配置 Cookie，请在系统设置中填写",
         }
 
     try:
@@ -39,51 +53,52 @@ async def get_bilibili_connection_status() -> Dict[str, Any]:
         async with aiohttp.ClientSession() as session:
             async with session.get(_NAV_URL, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status != 200:
+                    logger.warning(f"Bilibili nav check failed: HTTP {resp.status}")
                     return {
+                        "status": "verify_failed",
                         "configured": True,
                         "logged_in": False,
                         "username": None,
                         "uid": None,
-                        "message": f"验证失败（HTTP {resp.status}）",
                     }
                 data = await resp.json()
 
         if data.get("code") != 0:
             return {
+                "status": "session_expired",
                 "configured": True,
                 "logged_in": False,
                 "username": None,
                 "uid": None,
-                "message": data.get("message") or "Cookie 无效或已过期",
             }
 
         nav = data.get("data") or {}
         if not nav.get("isLogin"):
             return {
+                "status": "session_expired",
                 "configured": True,
                 "logged_in": False,
                 "username": None,
                 "uid": None,
-                "message": "Cookie 未登录或已失效",
             }
 
         username = nav.get("uname")
         mid = nav.get("mid")
         return {
+            "status": "logged_in",
             "configured": True,
             "logged_in": True,
             "username": username,
             "uid": str(mid) if mid is not None else None,
-            "message": f"已登录 · UID {mid}" if mid else "已登录",
         }
     except Exception as exc:
         logger.warning(f"Bilibili login check failed: {exc}")
         return {
+            "status": "verify_failed",
             "configured": True,
             "logged_in": False,
             "username": None,
             "uid": None,
-            "message": "无法验证登录状态",
         }
 
 

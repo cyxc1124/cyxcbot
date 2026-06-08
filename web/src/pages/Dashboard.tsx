@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   getConnectionsStatus,
   getDynamicMonitorStatus,
@@ -27,8 +28,36 @@ import { formatDateTime, formatPercent, formatUptime } from '../utils/format'
 function bilibiliCardValue(b: BilibiliConnectionStatus | undefined): string {
   if (!b) return '—'
   if (b.logged_in) return b.username || '已登录'
-  if (b.configured) return '未登录'
-  return '未配置'
+  return '未登录'
+}
+
+function bilibiliSettingsLink(action = '登录') {
+  return (
+    <>
+      前往
+      <Link to="/settings" className="font-medium text-brand-600 hover:text-brand-700 hover:underline dark:text-brand-400">
+      系统设置
+      </Link>
+      {action}
+    </>
+  )
+}
+
+function bilibiliCardSubtitle(b: BilibiliConnectionStatus | undefined) {
+  if (!b) return undefined
+
+  if (b.status === 'logged_in') {
+    return b.uid ? `UID ${b.uid}` : undefined
+  }
+
+  switch (b.status) {
+    case 'not_configured':
+      return bilibiliSettingsLink()
+    case 'session_expired':
+      return <>登录已失效 · {bilibiliSettingsLink('重新登录')}</>
+    case 'verify_failed':
+      return <>无法验证登录状态 · {bilibiliSettingsLink('重新登录')}</>
+  }
 }
 
 function qqCardValue(q: QqConnectionStatus | undefined): string {
@@ -105,7 +134,7 @@ export function DashboardPage() {
         <StatCard
           title="B 站账号"
           value={bilibiliCardValue(connections?.bilibili)}
-          subtitle={connections?.bilibili.message}
+          subtitle={bilibiliCardSubtitle(connections?.bilibili)}
         />
         <StatCard
           title="QQ 登录"

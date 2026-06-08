@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { getSettings, patchSettings, testCookie } from '../api/client'
+import { getSettings, logoutBilibili, patchSettings, testCookie } from '../api/client'
 import type { Settings } from '../api/types'
 import { BilibiliQrLogin } from '../components/BilibiliQrLogin'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { ErrorAlert } from '../components/ErrorAlert'
 import { PageLoading } from '../components/LoadingSpinner'
 import { useToast } from '../contexts/ToastContext'
@@ -13,6 +14,8 @@ export function SettingsPage() {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [cookieInput, setCookieInput] = useState('')
   const [showCookie, setShowCookie] = useState(false)
 
@@ -74,6 +77,21 @@ export function SettingsPage() {
       showToast('error', err instanceof Error ? err.message : '测试失败')
     } finally {
       setTesting(false)
+    }
+  }
+
+  const handleLogout = async () => {
+    setLoggingOut(true)
+    try {
+      const result = await logoutBilibili()
+      setCookieInput('')
+      setShowLogoutConfirm(false)
+      showToast('success', result.message)
+      await load()
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : '退出失败')
+    } finally {
+      setLoggingOut(false)
     }
   }
 
@@ -207,6 +225,16 @@ export function SettingsPage() {
               <span className="ml-1 text-amber-600">未配置</span>
             )}
           </p>
+          {settings.bilibili_cookie.configured && (
+            <button
+              type="button"
+              className="btn-danger"
+              disabled={loggingOut}
+              onClick={() => setShowLogoutConfirm(true)}
+            >
+              退出 B 站登录
+            </button>
+          )}
           <div>
             <label className="label" htmlFor="cookie">
               更新 Cookie（留空则不修改）
@@ -285,6 +313,18 @@ export function SettingsPage() {
           {saving ? '保存中…' : '保存设置'}
         </button>
       </form>
+
+      <ConfirmDialog
+        open={showLogoutConfirm}
+        title="退出 B 站登录"
+        message="确定退出 B 站登录？已保存的 Cookie 将被清除，相关监控功能可能受到影响。"
+        confirmLabel="退出登录"
+        loading={loggingOut}
+        onCancel={() => {
+          if (!loggingOut) setShowLogoutConfirm(false)
+        }}
+        onConfirm={() => void handleLogout()}
+      />
     </div>
   )
 }

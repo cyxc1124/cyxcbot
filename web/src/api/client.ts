@@ -1,6 +1,7 @@
 import type {
   AuditLog,
   AuditLogQuery,
+  BilibiliLogoutResult,
   BilibiliQrcodeLoginResult,
   BilibiliQrcodeStart,
   CookieTestResult,
@@ -215,6 +216,9 @@ export async function pollBilibiliQrcodeLogin(
 
   return response.json() as Promise<BilibiliQrcodeLoginResult>
 }
+
+export const logoutBilibili = () =>
+  request<BilibiliLogoutResult>('/bilibili/logout', { method: 'POST' })
 
 // Dynamic Targets
 export const getDynamicTargets = () =>

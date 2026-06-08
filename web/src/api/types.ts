@@ -63,6 +63,11 @@ export interface BilibiliQrcodeLoginResult {
   message: string
 }
 
+export interface BilibiliLogoutResult {
+  success: boolean
+  message: string
+}
+
 // Targets / Mappings
 export interface DynamicTarget {
   id: number
@@ -146,12 +151,18 @@ export interface SystemMonitorStatus {
   bot_version: string
 }
 
+export type BilibiliConnectionStatusKind =
+  | 'logged_in'
+  | 'not_configured'
+  | 'session_expired'
+  | 'verify_failed'
+
 export interface BilibiliConnectionStatus {
+  status: BilibiliConnectionStatusKind
   configured: boolean
   logged_in: boolean
   username: string | null
   uid: string | null
-  message: string
 }
 
 export interface QqBotInfo {
