@@ -27,7 +27,14 @@ from admin.services.target_metadata import (
 from shared.audit.service import write_audit, write_system_event
 from shared.config.service import get_config_service
 from shared.db.enums import AuditAction, SystemEventType
-from shared.db.models import DynamicTarget, DynamicTargetGroup, LiveTarget, LiveTargetGroup
+from shared.db.models import (
+    DynamicTarget,
+    DynamicTargetGroup,
+    DynamicTargetUser,
+    LiveTarget,
+    LiveTargetGroup,
+    LiveTargetUser,
+)
 
 router = APIRouter(
     tags=["targets"],
@@ -43,6 +50,7 @@ def _dynamic_to_response(target: DynamicTarget) -> DynamicTargetResponse:
         enabled=target.enabled,
         at_all=target.at_all,
         group_ids=[g.group_id for g in target.groups],
+        user_ids=[u.user_id for u in target.users],
         created_at=target.created_at,
         updated_at=target.updated_at,
     )
@@ -56,20 +64,37 @@ def _live_to_response(target: LiveTarget) -> LiveTargetResponse:
         enabled=target.enabled,
         at_all=target.at_all,
         group_ids=[g.group_id for g in target.groups],
+        user_ids=[u.user_id for u in target.users],
         created_at=target.created_at,
         updated_at=target.updated_at,
     )
 
 
-def _normalize_group_ids(group_ids: list[str]) -> list[str]:
+def _normalize_ids(values: list[str]) -> list[str]:
     seen: set[str] = set()
     normalized: list[str] = []
-    for gid in group_ids:
-        value = str(gid).strip()
-        if value and value not in seen:
-            seen.add(value)
-            normalized.append(value)
+    for value in values:
+        item = str(value).strip()
+        if item and item not in seen:
+            seen.add(item)
+            normalized.append(item)
     return normalized
+
+
+def _ensure_recipients(group_ids: list[str], user_ids: list[str]) -> None:
+    if not group_ids and not user_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请至少选择一个群组或好友",
+        )
+
+
+def _normalize_group_ids(group_ids: list[str]) -> list[str]:
+    return _normalize_ids(group_ids)
+
+
+def _normalize_user_ids(user_ids: list[str]) -> list[str]:
+    return _normalize_ids(user_ids)
 
 
 async def _sync_groups_dynamic(session, target: DynamicTarget, group_ids: list[str]) -> None:
@@ -80,12 +105,28 @@ async def _sync_groups_dynamic(session, target: DynamicTarget, group_ids: list[s
     target.groups = [DynamicTargetGroup(group_id=gid) for gid in normalized]
 
 
+async def _sync_users_dynamic(session, target: DynamicTarget, user_ids: list[str]) -> None:
+    normalized = _normalize_user_ids(user_ids)
+    for user in list(target.users):
+        await session.delete(user)
+    await session.flush()
+    target.users = [DynamicTargetUser(user_id=uid) for uid in normalized]
+
+
 async def _sync_groups_live(session, target: LiveTarget, group_ids: list[str]) -> None:
     normalized = _normalize_group_ids(group_ids)
     for group in list(target.groups):
         await session.delete(group)
     await session.flush()
     target.groups = [LiveTargetGroup(group_id=gid) for gid in normalized]
+
+
+async def _sync_users_live(session, target: LiveTarget, user_ids: list[str]) -> None:
+    normalized = _normalize_user_ids(user_ids)
+    for user in list(target.users):
+        await session.delete(user)
+    await session.flush()
+    target.users = [LiveTargetUser(user_id=uid) for uid in normalized]
 
 
 async def _refresh_missing_dynamic_names(targets: list[DynamicTarget]) -> None:
@@ -112,7 +153,10 @@ async def _refresh_missing_live_names(targets: list[LiveTarget]) -> None:
 async def list_dynamic_targets(_: CurrentUser):
     session = get_session()
     async with session.begin():
-        stmt = select(DynamicTarget).options(selectinload(DynamicTarget.groups))
+        stmt = select(DynamicTarget).options(
+            selectinload(DynamicTarget.groups),
+            selectinload(DynamicTarget.users),
+        )
         targets = (await session.scalars(stmt)).all()
         await _refresh_missing_dynamic_names(targets)
         return [_dynamic_to_response(t) for t in targets]
@@ -132,11 +176,13 @@ async def create_dynamic_target(request: Request, body: DynamicTargetCreate, use
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="无法获取 UP 主信息，请检查 UID 是否正确，或手动填写显示名称",
             )
+        _ensure_recipients(body.group_ids, body.user_ids)
         target = DynamicTarget(uid=body.uid, name=resolved_name, enabled=body.enabled, at_all=body.at_all)
         await _sync_groups_dynamic(session, target, body.group_ids)
+        await _sync_users_dynamic(session, target, body.user_ids)
         session.add(target)
         await session.flush()
-        await session.refresh(target, ["groups"])
+        await session.refresh(target, ["groups", "users"])
         response = _dynamic_to_response(target)
 
     await get_config_service().reload()
@@ -161,7 +207,10 @@ async def get_dynamic_target(target_id: int, _: CurrentUser):
         target = await session.scalar(
             select(DynamicTarget)
             .where(DynamicTarget.id == target_id)
-            .options(selectinload(DynamicTarget.groups))
+            .options(
+                selectinload(DynamicTarget.groups),
+                selectinload(DynamicTarget.users),
+            )
         )
         if not target:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
@@ -178,7 +227,10 @@ async def update_dynamic_target(
         target = await session.scalar(
             select(DynamicTarget)
             .where(DynamicTarget.id == target_id)
-            .options(selectinload(DynamicTarget.groups))
+            .options(
+                selectinload(DynamicTarget.groups),
+                selectinload(DynamicTarget.users),
+            )
         )
         if not target:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
@@ -210,6 +262,13 @@ async def update_dynamic_target(
             target.at_all = body.at_all
         if body.group_ids is not None:
             await _sync_groups_dynamic(session, target, body.group_ids)
+        if body.user_ids is not None:
+            await _sync_users_dynamic(session, target, body.user_ids)
+        if body.group_ids is not None or body.user_ids is not None:
+            _ensure_recipients(
+                [g.group_id for g in target.groups],
+                [u.user_id for u in target.users],
+            )
         if not target.name:
             resolved = await resolve_up_name(target.uid)
             if not resolved:
@@ -219,7 +278,7 @@ async def update_dynamic_target(
                 )
             target.name = resolved
         await session.flush()
-        await session.refresh(target, ["groups"])
+        await session.refresh(target, ["groups", "users"])
         response = _dynamic_to_response(target)
 
     await get_config_service().reload()
@@ -266,7 +325,10 @@ async def delete_dynamic_target(target_id: int, request: Request, user: CurrentU
 async def list_live_targets(_: CurrentUser):
     session = get_session()
     async with session.begin():
-        stmt = select(LiveTarget).options(selectinload(LiveTarget.groups))
+        stmt = select(LiveTarget).options(
+            selectinload(LiveTarget.groups),
+            selectinload(LiveTarget.users),
+        )
         targets = (await session.scalars(stmt)).all()
         await _refresh_missing_live_names(targets)
         return [_live_to_response(t) for t in targets]
@@ -286,11 +348,13 @@ async def create_live_target(request: Request, body: LiveTargetCreate, user: Cur
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="无法获取直播间信息，请检查房间号是否正确，或手动填写显示名称",
             )
+        _ensure_recipients(body.group_ids, body.user_ids)
         target = LiveTarget(room_id=body.room_id, name=resolved_name, enabled=body.enabled, at_all=body.at_all)
         await _sync_groups_live(session, target, body.group_ids)
+        await _sync_users_live(session, target, body.user_ids)
         session.add(target)
         await session.flush()
-        await session.refresh(target, ["groups"])
+        await session.refresh(target, ["groups", "users"])
         response = _live_to_response(target)
 
     await get_config_service().reload()
@@ -315,7 +379,10 @@ async def get_live_target(target_id: int, _: CurrentUser):
         target = await session.scalar(
             select(LiveTarget)
             .where(LiveTarget.id == target_id)
-            .options(selectinload(LiveTarget.groups))
+            .options(
+                selectinload(LiveTarget.groups),
+                selectinload(LiveTarget.users),
+            )
         )
         if not target:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
@@ -332,7 +399,10 @@ async def update_live_target(
         target = await session.scalar(
             select(LiveTarget)
             .where(LiveTarget.id == target_id)
-            .options(selectinload(LiveTarget.groups))
+            .options(
+                selectinload(LiveTarget.groups),
+                selectinload(LiveTarget.users),
+            )
         )
         if not target:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
@@ -364,6 +434,13 @@ async def update_live_target(
             target.at_all = body.at_all
         if body.group_ids is not None:
             await _sync_groups_live(session, target, body.group_ids)
+        if body.user_ids is not None:
+            await _sync_users_live(session, target, body.user_ids)
+        if body.group_ids is not None or body.user_ids is not None:
+            _ensure_recipients(
+                [g.group_id for g in target.groups],
+                [u.user_id for u in target.users],
+            )
         if not target.name:
             resolved = await resolve_live_streamer_name(target.room_id)
             if not resolved:
@@ -373,7 +450,7 @@ async def update_live_target(
                 )
             target.name = resolved
         await session.flush()
-        await session.refresh(target, ["groups"])
+        await session.refresh(target, ["groups", "users"])
         response = _live_to_response(target)
 
     await get_config_service().reload()

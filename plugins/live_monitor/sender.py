@@ -182,13 +182,18 @@ class LiveNotificationSender:
         user_info: Optional[UserInfo] = None,
         duration_seconds: int = 0,
         at_all_enabled: bool = False,
+        target_users: Optional[List[str]] = None,
     ):
-        """发送直播通知到指定群组"""
-        if not target_groups:
-            logger.warning("没有配置目标群组，跳过发送通知")
+        """发送直播通知到指定群组与好友"""
+        target_users = target_users or []
+        if not target_groups and not target_users:
+            logger.warning("没有配置推送目标，跳过发送通知")
             return
 
-        logger.info(f"开始发送直播{status}通知 - 主播: {streamer_name}, 目标群组: {target_groups}")
+        logger.info(
+            f"开始发送直播{status}通知 - 主播: {streamer_name}, "
+            f"目标群组: {target_groups}, 目标好友: {target_users}"
+        )
 
         bots = get_driver().bots
 
@@ -238,6 +243,34 @@ class LiveNotificationSender:
 
                 except Exception as e:
                     logger.error(f"发送通知到群组 {group_id} 失败: {e}")
+                    import traceback
+                    logger.debug(f"错误详情: {traceback.format_exc()}")
+
+            for user_id in target_users:
+                try:
+                    if status == "start":
+                        message = self.build_start_message(
+                            streamer_name=streamer_name,
+                            room_info=room_info,
+                            card_image=card_image,
+                            at_all_enabled=False,
+                            can_at_all=False,
+                        )
+                    else:
+                        message = self.build_end_message(
+                            streamer_name=streamer_name,
+                            card_image=card_image,
+                            duration_seconds=duration_seconds,
+                        )
+
+                    await bot.send_private_msg(
+                        user_id=int(user_id),
+                        message=message,
+                    )
+                    logger.success(f"直播{status}通知已发送到好友 {user_id}")
+
+                except Exception as e:
+                    logger.error(f"发送通知到好友 {user_id} 失败: {e}")
                     import traceback
                     logger.debug(f"错误详情: {traceback.format_exc()}")
 

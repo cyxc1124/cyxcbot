@@ -99,7 +99,9 @@ class ConfigService:
         async with session.begin():
             settings = await self._load_settings(session)
             dynamic_mapping = await self._load_dynamic_mapping(session)
+            dynamic_user_mapping = await self._load_dynamic_user_mapping(session)
             live_mapping = await self._load_live_mapping(session)
+            live_user_mapping = await self._load_live_user_mapping(session)
             dynamic_at_all = await self._load_dynamic_at_all(session)
             live_at_all = await self._load_live_at_all(session)
             link_parser_group_policies = await self._load_link_parser_group_policies(session)
@@ -115,11 +117,13 @@ class ConfigService:
 
         self._snapshot = AppConfigSnapshot(
             dynamic_monitor_mapping=dynamic_mapping,
+            dynamic_monitor_user_mapping=dynamic_user_mapping,
             dynamic_at_all=dynamic_at_all,
             dynamic_monitor_interval=settings.get("dynamic_monitor_interval", 30),
             dynamic_enable_screenshot=settings.get("dynamic_enable_screenshot", True),
             dynamic_message_templates=dynamic_templates_from_settings(settings),
             live_monitor_mapping=live_mapping,
+            live_monitor_user_mapping=live_user_mapping,
             live_at_all=live_at_all,
             live_monitor_interval=settings.get("live_monitor_interval", 60),
             live_monitor_include_info=settings.get("live_monitor_include_info", True),
@@ -235,6 +239,18 @@ class ConfigService:
             mapping[target.uid] = [g.group_id for g in target.groups]
         return mapping
 
+    async def _load_dynamic_user_mapping(self, session) -> dict[str, list[str]]:
+        stmt = (
+            select(DynamicTarget)
+            .where(DynamicTarget.enabled.is_(True))
+            .options(selectinload(DynamicTarget.users))
+        )
+        targets = (await session.scalars(stmt)).all()
+        mapping: dict[str, list[str]] = {}
+        for target in targets:
+            mapping[target.uid] = [u.user_id for u in target.users]
+        return mapping
+
     async def _load_dynamic_at_all(self, session) -> dict[str, bool]:
         stmt = select(DynamicTarget).where(DynamicTarget.enabled.is_(True))
         targets = (await session.scalars(stmt)).all()
@@ -250,6 +266,18 @@ class ConfigService:
         mapping: dict[str, list[str]] = {}
         for target in targets:
             mapping[target.room_id] = [g.group_id for g in target.groups]
+        return mapping
+
+    async def _load_live_user_mapping(self, session) -> dict[str, list[str]]:
+        stmt = (
+            select(LiveTarget)
+            .where(LiveTarget.enabled.is_(True))
+            .options(selectinload(LiveTarget.users))
+        )
+        targets = (await session.scalars(stmt)).all()
+        mapping: dict[str, list[str]] = {}
+        for target in targets:
+            mapping[target.room_id] = [u.user_id for u in target.users]
         return mapping
 
     async def _load_live_at_all(self, session) -> dict[str, bool]:

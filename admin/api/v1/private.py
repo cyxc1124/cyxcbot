@@ -9,6 +9,7 @@ from fastapi import APIRouter, Request
 from admin.deps import CurrentUser, RequireSetup
 from admin.schemas.private import (
     FriendInfo,
+    FriendListResponse,
     PrivateMessagePolicyResponse,
     PrivateMessagePolicyUpdateRequest,
 )
@@ -22,6 +23,12 @@ router = APIRouter(
     tags=["private"],
     dependencies=[RequireSetup],
 )
+
+
+@router.get("/friends", response_model=FriendListResponse)
+async def list_friends(_: CurrentUser):
+    users = await get_friend_list()
+    return FriendListResponse(friends=[FriendInfo(**user) for user in users])
 
 
 @router.get("/message-policy", response_model=PrivateMessagePolicyResponse)

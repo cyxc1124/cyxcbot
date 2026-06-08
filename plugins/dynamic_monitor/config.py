@@ -12,6 +12,11 @@ class Config(BaseModel):
         description="UP主UID-群组ID映射配置"
     )
 
+    dynamic_monitor_user_mapping: Dict[str, List[str]] = Field(
+        default_factory=dict,
+        description="UP主UID-好友QQ号映射配置"
+    )
+
     dynamic_at_all: Dict[str, bool] = Field(
         default_factory=dict,
         description="UP主UID-是否@全体成员"
@@ -44,6 +49,7 @@ class Config(BaseModel):
         snap = get_config_service().get_snapshot()
         return cls(
             dynamic_monitor_mapping=snap.dynamic_monitor_mapping,
+            dynamic_monitor_user_mapping=snap.dynamic_monitor_user_mapping,
             dynamic_at_all=snap.dynamic_at_all,
             monitor_interval=snap.dynamic_monitor_interval,
             enable_screenshot=snap.dynamic_enable_screenshot,

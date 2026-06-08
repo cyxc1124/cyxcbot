@@ -121,3 +121,30 @@ class DynamicSender:
         except Exception as e:
             logger.error(f"发送消息到群组 {group_id} 失败: {e}")
             raise
+
+    async def send_to_users(self, message: Message, user_ids: List[str]):
+        """发送消息到多个好友私聊"""
+        for user_id in user_ids:
+            try:
+                await self._send_to_user(user_id, message)
+                logger.debug(f"成功发送动态到好友 {user_id}")
+            except Exception as e:
+                logger.error(f"发送消息到好友 {user_id} 失败: {e}")
+
+    async def _send_to_user(self, user_id: str, message: Message):
+        """发送消息到指定好友"""
+        try:
+            from nonebot import get_bot
+            bot = get_bot()
+
+            if not bot:
+                logger.warning(f"机器人未连接，跳过发送到好友 {user_id}")
+                return
+
+            await bot.send_private_msg(
+                user_id=int(user_id),
+                message=message,
+            )
+        except Exception as e:
+            logger.error(f"发送消息到好友 {user_id} 失败: {e}")
+            raise

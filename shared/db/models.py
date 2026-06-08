@@ -58,6 +58,9 @@ class DynamicTarget(Model):
     groups: Mapped[list["DynamicTargetGroup"]] = relationship(
         back_populates="target", cascade="all, delete-orphan"
     )
+    users: Mapped[list["DynamicTargetUser"]] = relationship(
+        back_populates="target", cascade="all, delete-orphan"
+    )
 
 
 class DynamicTargetGroup(Model):
@@ -75,6 +78,24 @@ class DynamicTargetGroup(Model):
 
     __table_args__ = (
         UniqueConstraint("dynamic_target_id", "group_id", name="uq_dynamic_target_group"),
+    )
+
+
+class DynamicTargetUser(Model):
+    """Friend mapping for a dynamic target."""
+
+    __tablename__ = "shared_db_dynamictargetuser"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    dynamic_target_id: Mapped[int] = mapped_column(
+        ForeignKey("shared_db_dynamictarget.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    target: Mapped["DynamicTarget"] = relationship(back_populates="users")
+
+    __table_args__ = (
+        UniqueConstraint("dynamic_target_id", "user_id", name="uq_dynamic_target_user"),
     )
 
 
@@ -98,6 +119,9 @@ class LiveTarget(Model):
     groups: Mapped[list["LiveTargetGroup"]] = relationship(
         back_populates="target", cascade="all, delete-orphan"
     )
+    users: Mapped[list["LiveTargetUser"]] = relationship(
+        back_populates="target", cascade="all, delete-orphan"
+    )
 
 
 class LiveTargetGroup(Model):
@@ -115,6 +139,24 @@ class LiveTargetGroup(Model):
 
     __table_args__ = (
         UniqueConstraint("live_target_id", "group_id", name="uq_live_target_group"),
+    )
+
+
+class LiveTargetUser(Model):
+    """Friend mapping for a live target."""
+
+    __tablename__ = "shared_db_livetargetuser"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    live_target_id: Mapped[int] = mapped_column(
+        ForeignKey("shared_db_livetarget.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    target: Mapped["LiveTarget"] = relationship(back_populates="users")
+
+    __table_args__ = (
+        UniqueConstraint("live_target_id", "user_id", name="uq_live_target_user"),
     )
 
 

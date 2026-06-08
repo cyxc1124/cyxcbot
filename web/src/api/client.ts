@@ -10,6 +10,7 @@ import type {
   DynamicTarget,
   DynamicTargetCreate,
   DynamicTargetUpdate,
+  Friend,
   EventQuery,
   Group,
   GroupMessagePolicy,
@@ -287,6 +288,9 @@ export const updateMessagePolicy = (payload: {
 
 export const getPrivateMessagePolicy = () =>
   request<PrivateMessagePolicy>('/private/message-policy')
+
+export const getFriends = () =>
+  request<{ friends: Friend[] }>('/private/friends').then((data) => data.friends ?? [])
 
 export const updatePrivateMessagePolicy = (payload: {
   restrict: boolean

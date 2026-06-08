@@ -5,13 +5,15 @@ import {
   deleteDynamicTarget,
   deleteLiveTarget,
   getDynamicTargets,
+  getFriends,
   getGroups,
   getLiveTargets,
   updateDynamicTarget,
   updateLiveTarget,
 } from '../api/client'
-import type { DynamicTarget, Group, LiveTarget } from '../api/types'
+import type { DynamicTarget, Friend, Group, LiveTarget } from '../api/types'
 import { LoadErrorBanner } from './LoadErrorBanner'
+import { FriendSelector } from './FriendSelector'
 import { GroupSelector } from './GroupSelector'
 import { ToggleSwitch } from './ToggleSwitch'
 import { useToast } from '../contexts/ToastContext'
@@ -27,6 +29,7 @@ interface TargetFormState {
   enabled: boolean
   at_all: boolean
   group_ids: string[]
+  user_ids: string[]
 }
 
 const emptyForm = (isDynamic: boolean): TargetFormState => ({
@@ -35,6 +38,7 @@ const emptyForm = (isDynamic: boolean): TargetFormState => ({
   enabled: true,
   at_all: !isDynamic,
   group_ids: [],
+  user_ids: [],
 })
 
 interface TargetMappingSectionProps {
@@ -57,6 +61,7 @@ function getTargetDisplayName(
 export function TargetMappingSection({ type }: TargetMappingSectionProps) {
   const { showToast } = useToast()
   const [groups, setGroups] = useState<Group[]>([])
+  const [friends, setFriends] = useState<Friend[]>([])
   const [targets, setTargets] = useState<SubscriptionTarget[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -76,11 +81,13 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
     setLoading(true)
     setError('')
     try {
-      const [g, items] = await Promise.all([
+      const [g, f, items] = await Promise.all([
         getGroups(),
+        getFriends(),
         isDynamic ? getDynamicTargets() : getLiveTargets(),
       ])
       setGroups(g)
+      setFriends(f)
       setTargets(items)
       setSelectedId((prev) => {
         if (prev !== null && !items.some((t) => t.id === prev)) return null
@@ -124,6 +131,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
       enabled: target.enabled,
       at_all: target.at_all,
       group_ids: [...target.group_ids],
+      user_ids: [...target.user_ids],
     })
     setShowForm(true)
   }
@@ -145,8 +153,8 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
     setSaving(true)
     try {
       const idValue = form.id.trim()
-      if (!idValue || form.group_ids.length === 0) {
-        showToast('error', `请填写${idLabel}并选择至少一个群组`)
+      if (!idValue || (form.group_ids.length === 0 && form.user_ids.length === 0)) {
+        showToast('error', `请填写${idLabel}并选择至少一个群组或好友`)
         return
       }
 
@@ -158,6 +166,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
             enabled: form.enabled,
             at_all: form.at_all,
             group_ids: form.group_ids,
+            user_ids: form.user_ids,
           })
           showToast('success', '订阅已更新')
         } else {
@@ -167,6 +176,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
             enabled: form.enabled,
             at_all: form.at_all,
             group_ids: form.group_ids,
+            user_ids: form.user_ids,
           })
           setSelectedId(created.id)
           showToast('success', '订阅已创建')
@@ -178,6 +188,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
           enabled: form.enabled,
           at_all: form.at_all,
           group_ids: form.group_ids,
+          user_ids: form.user_ids,
         })
         showToast('success', '订阅已更新')
       } else {
@@ -187,6 +198,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
           enabled: form.enabled,
           at_all: form.at_all,
           group_ids: form.group_ids,
+          user_ids: form.user_ids,
         })
         setSelectedId(created.id)
         showToast('success', '订阅已创建')
@@ -307,6 +319,16 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
           />
         </div>
 
+        <div>
+          <label className="label">订阅好友（私聊推送）</label>
+          <FriendSelector
+            friends={friends}
+            selected={form.user_ids}
+            onChange={(ids) => setForm((f) => ({ ...f, user_ids: ids }))}
+            disabled={saving}
+          />
+        </div>
+
         <div className="flex flex-wrap items-center gap-6">
           <div className="inline-flex items-center gap-2">
             <span className="text-sm text-slate-600 dark:text-slate-400">启用订阅</span>
@@ -326,7 +348,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
           </div>
         </div>
         <p className="text-xs text-slate-500">
-          @全体成员需机器人为群管理员；否则将使用提醒文案
+          @全体成员仅对群组生效；私聊推送不支持 @全体，需机器人为群管理员时群组 @ 才生效
         </p>
 
         <div className="flex gap-2">
@@ -417,44 +439,81 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
           </div>
         </div>
 
-        <div className="flex-1 pt-6">
-          <h4 className="mb-3 text-sm font-medium text-slate-700 dark:text-slate-300">
-            推送群组
-            <span className="ml-2 font-normal text-slate-500">
-              （{target.group_ids.length} 个）
-            </span>
-          </h4>
-          {target.group_ids.length === 0 ? (
-            <p className="text-sm text-slate-500">尚未配置推送群组</p>
-          ) : (
-            <ul className="space-y-2">
-              {target.group_ids.map((groupId) => {
-                const group = groups.find((g) => g.group_id === groupId)
-                const name = group?.group_name ?? groupId
-                const hasName = group?.group_name
-                return (
-                  <li
-                    key={groupId}
-                    className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3 dark:border-slate-700"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-slate-900 dark:text-white">
-                        {hasName ? name : `群 ${groupId}`}
-                      </p>
-                      {hasName && (
-                        <p className="mt-0.5 font-mono text-xs text-slate-500">{groupId}</p>
+        <div className="flex-1 space-y-6 pt-6">
+          <div>
+            <h4 className="mb-3 text-sm font-medium text-slate-700 dark:text-slate-300">
+              推送群组
+              <span className="ml-2 font-normal text-slate-500">
+                （{target.group_ids.length} 个）
+              </span>
+            </h4>
+            {target.group_ids.length === 0 ? (
+              <p className="text-sm text-slate-500">尚未配置推送群组</p>
+            ) : (
+              <ul className="space-y-2">
+                {target.group_ids.map((groupId) => {
+                  const group = groups.find((g) => g.group_id === groupId)
+                  const name = group?.group_name ?? groupId
+                  const hasName = group?.group_name
+                  return (
+                    <li
+                      key={groupId}
+                      className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3 dark:border-slate-700"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-slate-900 dark:text-white">
+                          {hasName ? name : `群 ${groupId}`}
+                        </p>
+                        {hasName && (
+                          <p className="mt-0.5 font-mono text-xs text-slate-500">{groupId}</p>
+                        )}
+                      </div>
+                      {group?.member_count != null && (
+                        <span className="shrink-0 text-xs text-slate-500">
+                          {group.member_count} 人
+                        </span>
                       )}
-                    </div>
-                    {group?.member_count != null && (
-                      <span className="shrink-0 text-xs text-slate-500">
-                        {group.member_count} 人
-                      </span>
-                    )}
-                  </li>
-                )
-              })}
-            </ul>
-          )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+
+          <div>
+            <h4 className="mb-3 text-sm font-medium text-slate-700 dark:text-slate-300">
+              推送好友
+              <span className="ml-2 font-normal text-slate-500">
+                （{target.user_ids.length} 个）
+              </span>
+            </h4>
+            {target.user_ids.length === 0 ? (
+              <p className="text-sm text-slate-500">尚未配置推送好友</p>
+            ) : (
+              <ul className="space-y-2">
+                {target.user_ids.map((userId) => {
+                  const friend = friends.find((f) => f.user_id === userId)
+                  const name = friend?.nickname ?? userId
+                  const hasName = friend?.nickname
+                  return (
+                    <li
+                      key={userId}
+                      className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3 dark:border-slate-700"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-slate-900 dark:text-white">
+                          {hasName ? name : `QQ ${userId}`}
+                        </p>
+                        {hasName && (
+                          <p className="mt-0.5 font-mono text-xs text-slate-500">{userId}</p>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
         </div>
       </div>
     )
@@ -467,7 +526,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-500">
-          选择{targetLabel}查看推送群组，一个{targetLabel}可订阅多个 QQ 群
+          选择{targetLabel}查看推送目标，可同时订阅多个 QQ 群与好友私聊
         </p>
         <button type="button" className="btn-primary" onClick={openCreate}>
           添加订阅
@@ -530,7 +589,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
                           />
                         </div>
                         <p className="mt-1 text-xs text-slate-500">
-                          {target.group_ids.length} 个群
+                          {target.group_ids.length} 个群 · {target.user_ids.length} 个好友
                         </p>
                       </button>
                     </li>

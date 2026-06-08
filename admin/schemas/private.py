@@ -12,6 +12,10 @@ class FriendInfo(BaseModel):
     nickname: Optional[str] = None
 
 
+class FriendListResponse(BaseModel):
+    friends: List[FriendInfo]
+
+
 class PrivateMessagePolicyResponse(BaseModel):
     restrict: bool
     enabled_user_ids: List[str]

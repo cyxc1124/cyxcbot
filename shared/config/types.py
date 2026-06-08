@@ -24,6 +24,7 @@ class AppConfigSnapshot:
     """Full application configuration snapshot loaded from DB."""
 
     dynamic_monitor_mapping: Dict[str, List[str]] = field(default_factory=dict)
+    dynamic_monitor_user_mapping: Dict[str, List[str]] = field(default_factory=dict)
     dynamic_at_all: Dict[str, bool] = field(default_factory=dict)
     dynamic_monitor_interval: int = 30
     dynamic_enable_screenshot: bool = True
@@ -31,6 +32,7 @@ class AppConfigSnapshot:
         default_factory=DynamicMessageTemplates
     )
     live_monitor_mapping: Dict[str, List[str]] = field(default_factory=dict)
+    live_monitor_user_mapping: Dict[str, List[str]] = field(default_factory=dict)
     live_at_all: Dict[str, bool] = field(default_factory=dict)
     live_monitor_interval: int = 60
     live_monitor_include_info: bool = True

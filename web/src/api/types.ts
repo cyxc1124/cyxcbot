@@ -91,6 +91,7 @@ export interface DynamicTarget {
   enabled: boolean
   at_all: boolean
   group_ids: string[]
+  user_ids: string[]
   created_at: string
 }
 
@@ -101,6 +102,7 @@ export interface LiveTarget {
   enabled: boolean
   at_all: boolean
   group_ids: string[]
+  user_ids: string[]
   created_at: string
 }
 
@@ -110,6 +112,7 @@ export interface DynamicTargetCreate {
   enabled?: boolean
   at_all?: boolean
   group_ids: string[]
+  user_ids?: string[]
 }
 
 export interface LiveTargetCreate {
@@ -118,6 +121,7 @@ export interface LiveTargetCreate {
   enabled?: boolean
   at_all?: boolean
   group_ids: string[]
+  user_ids?: string[]
 }
 
 export type DynamicTargetUpdate = Partial<

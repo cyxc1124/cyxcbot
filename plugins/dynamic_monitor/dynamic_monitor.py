@@ -285,15 +285,16 @@ class DynamicMonitor:
             include_dynamic_media=not self.config.enable_screenshot,
         )
 
-        # 获取需要推送的群组列表
+        # 获取需要推送的群组与好友
         group_ids = self.config.dynamic_monitor_mapping.get(uid, [])
-        if not group_ids:
-            logger.warning(f"UP主 {uid} 没有配置推送群组")
+        user_ids = self.config.dynamic_monitor_user_mapping.get(uid, [])
+        if not group_ids and not user_ids:
+            logger.warning(f"UP主 {uid} 没有配置推送目标")
             return
 
-        # 推送到每个群组
         at_all_enabled = self.config.dynamic_at_all.get(uid, False)
         await self.sender.send_to_groups(message, group_ids, at_all_enabled=at_all_enabled)
+        await self.sender.send_to_users(message, user_ids)
 
         try:
             await write_audit(
@@ -303,6 +304,7 @@ class DynamicMonitor:
                     "dynamic_id": dynamic.id,
                     "is_pinned": is_pinned,
                     "groups": group_ids,
+                    "users": user_ids,
                 }),
             )
         except Exception as exc:

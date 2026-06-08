@@ -14,6 +14,7 @@ class DynamicTargetBase(BaseModel):
     enabled: bool = True
     at_all: bool = False
     group_ids: List[str] = Field(default_factory=list)
+    user_ids: List[str] = Field(default_factory=list)
 
 
 class DynamicTargetCreate(DynamicTargetBase):
@@ -26,6 +27,7 @@ class DynamicTargetUpdate(BaseModel):
     enabled: Optional[bool] = None
     at_all: Optional[bool] = None
     group_ids: Optional[List[str]] = None
+    user_ids: Optional[List[str]] = None
 
 
 class DynamicTargetResponse(BaseModel):
@@ -35,6 +37,7 @@ class DynamicTargetResponse(BaseModel):
     enabled: bool
     at_all: bool
     group_ids: List[str]
+    user_ids: List[str]
     created_at: datetime
     updated_at: datetime
 
@@ -45,6 +48,7 @@ class LiveTargetBase(BaseModel):
     enabled: bool = True
     at_all: bool = True
     group_ids: List[str] = Field(default_factory=list)
+    user_ids: List[str] = Field(default_factory=list)
 
 
 class LiveTargetCreate(LiveTargetBase):
@@ -57,6 +61,7 @@ class LiveTargetUpdate(BaseModel):
     enabled: Optional[bool] = None
     at_all: Optional[bool] = None
     group_ids: Optional[List[str]] = None
+    user_ids: Optional[List[str]] = None
 
 
 class LiveTargetResponse(BaseModel):
@@ -66,5 +71,6 @@ class LiveTargetResponse(BaseModel):
     enabled: bool
     at_all: bool
     group_ids: List[str]
+    user_ids: List[str]
     created_at: datetime
     updated_at: datetime

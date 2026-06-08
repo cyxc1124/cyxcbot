@@ -443,8 +443,9 @@ class LiveMonitor:
         """发送直播通知"""
         # 获取目标群组
         target_groups = self.config.live_monitor_mapping.get(room_id, [])
-        if not target_groups:
-            logger.warning(f"房间 {room_id} 没有配置目标群组")
+        target_users = self.config.live_monitor_user_mapping.get(room_id, [])
+        if not target_groups and not target_users:
+            logger.warning(f"房间 {room_id} 没有配置推送目标")
             return
         
         # 获取主播名称
@@ -459,6 +460,7 @@ class LiveMonitor:
             streamer_name=streamer_name,
             room_info=state.room_info,
             target_groups=target_groups,
+            target_users=target_users,
             user_info=state.user_info,
             duration_seconds=duration_seconds,
             at_all_enabled=self.config.live_at_all.get(room_id, True),
@@ -472,6 +474,7 @@ class LiveMonitor:
                     "status": status,
                     "streamer": streamer_name,
                     "groups": target_groups,
+                    "users": target_users,
                 }),
             )
         except Exception as exc:

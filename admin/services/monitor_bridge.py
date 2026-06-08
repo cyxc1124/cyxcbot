@@ -194,6 +194,7 @@ def get_dynamic_monitor_details() -> List[Dict[str, Any]]:
             "initialized": instance.initialized_uids.get(uid, False) if instance else False,
             "pinned_dynamic_id": instance.pinned_dynamic_ids.get(uid) if instance else None,
             "group_count": len(snap.dynamic_monitor_mapping.get(uid, [])),
+            "user_count": len(snap.dynamic_monitor_user_mapping.get(uid, [])),
         })
     return details
 
@@ -213,5 +214,6 @@ def get_live_monitor_details() -> List[Dict[str, Any]]:
             "streamer_name": state.user_info.name if state and state.user_info else None,
             "is_living": is_living,
             "group_count": len(snap.live_monitor_mapping.get(room_id, [])),
+            "user_count": len(snap.live_monitor_user_mapping.get(room_id, [])),
         })
     return details
