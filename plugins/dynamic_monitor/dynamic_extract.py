@@ -85,17 +85,14 @@ async def _handle_extract(bot: Bot, event: GroupMessageEvent | PrivateMessageEve
 
     if not _subscription_allowed(event):
         scope = "群" if isinstance(event, GroupMessageEvent) else "好友"
-        await _send_reply(
-            bot,
-            event,
-            Message(
-                f"动态{dynamic_id}的图片\n"
-                f"该{scope}未配置任何 UP 主动态订阅映射，无法提取图片。\n"
-                "请在「动态订阅」中添加 UP 主与推送目标的映射（无需开启推送）。"
-            ),
+        target = (
+            f"group={event.group_id}"
+            if isinstance(event, GroupMessageEvent)
+            else f"user={event.user_id}"
         )
-        logger.info(
-            f"拒绝提取动态图片: id={dynamic_id} user={event.user_id} reason=no_subscription"
+        logger.warning(
+            f"拒绝提取动态图片: id={dynamic_id} user={event.user_id} {target} "
+            f"scope={scope} reason=no_subscription"
         )
         return
 
