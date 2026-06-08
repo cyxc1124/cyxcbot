@@ -138,11 +138,21 @@ export interface GroupMessagePolicy {
   groups: Group[]
 }
 
+export interface Friend {
+  user_id: string
+  nickname: string | null
+}
+
+export interface PrivateMessagePolicy {
+  restrict: boolean
+  enabled_user_ids: string[]
+  users: Friend[]
+}
+
 export interface LinkParserGlobalPolicy {
   enabled: boolean
   video_enabled: boolean
   live_enabled: boolean
-  private_enabled: boolean
 }
 
 export interface LinkParserGroupPolicyItem {
@@ -173,7 +183,6 @@ export interface LinkParserUserPolicyItem {
   enabled: boolean
   video_enabled: boolean
   live_enabled: boolean
-  private_enabled: boolean
 }
 
 export interface LinkParserUserPolicyList {
@@ -192,7 +201,6 @@ export interface LinkParserUserPolicyInput {
   enabled: boolean
   video_enabled: boolean
   live_enabled: boolean
-  private_enabled: boolean
 }
 
 // Monitors

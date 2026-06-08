@@ -152,20 +152,6 @@ export function SettingsMonitorPage() {
               )
             }
           />
-          <SettingToggleRow
-            label="私聊中响应"
-            checked={settings?.bilibili_link_parser_private_enabled ?? false}
-            disabled={
-              formDisabled ||
-              saving ||
-              !(settings?.bilibili_link_parser_enabled ?? false)
-            }
-            onChange={(checked) =>
-              setSettings((s) =>
-                s ? { ...s, bilibili_link_parser_private_enabled: checked } : s,
-              )
-            }
-          />
         </div>
       </div>
 

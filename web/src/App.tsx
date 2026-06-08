@@ -10,6 +10,7 @@ import { DashboardPage } from './pages/Dashboard'
 import { DynamicMonitorPage } from './pages/DynamicMonitor'
 import { EventsPage } from './pages/Events'
 import { GroupsPage } from './pages/Groups'
+import { PrivatePage } from './pages/Private'
 import { LiveMonitorPage } from './pages/LiveMonitor'
 import { LoginPage } from './pages/Login'
 import { MessageTemplatesPage } from './pages/MessageTemplates'
@@ -42,6 +43,7 @@ export default function App() {
                 <Route path="live" element={<LiveMonitorPage />} />
                 <Route path="templates" element={<MessageTemplatesPage />} />
                 <Route path="groups" element={<GroupsPage />} />
+                <Route path="private" element={<PrivatePage />} />
                 <Route path="settings" element={<SettingsLayout />}>
                   <Route index element={<Navigate to="monitor" replace />} />
                   <Route path="monitor" element={<SettingsMonitorPage />} />

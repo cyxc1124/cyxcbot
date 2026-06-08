@@ -99,7 +99,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         live_monitor_include_info: settings.live_monitor_include_info,
         live_monitor_use_websocket: settings.live_monitor_use_websocket,
         bilibili_link_parser_enabled: settings.bilibili_link_parser_enabled,
-        bilibili_link_parser_private_enabled: settings.bilibili_link_parser_private_enabled,
         bilibili_link_parser_video_enabled: settings.bilibili_link_parser_video_enabled,
         bilibili_link_parser_live_enabled: settings.bilibili_link_parser_live_enabled,
         audit_log_retention_days: settings.audit_log_retention_days,

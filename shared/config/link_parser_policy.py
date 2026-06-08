@@ -49,7 +49,6 @@ def _global_policy(snapshot: AppConfigSnapshot) -> LinkParserScopePolicy:
         enabled=snapshot.bilibili_link_parser_enabled,
         video_enabled=snapshot.bilibili_link_parser_video_enabled,
         live_enabled=snapshot.bilibili_link_parser_live_enabled,
-        private_enabled=snapshot.bilibili_link_parser_private_enabled,
     )
 
 
@@ -70,7 +69,6 @@ def resolve_link_parser_policy(
                 enabled=group_override.enabled,
                 video_enabled=group_override.video_enabled,
                 live_enabled=group_override.live_enabled,
-                private_enabled=policy.private_enabled,
             )
 
     if user_id:
@@ -80,14 +78,9 @@ def resolve_link_parser_policy(
                 enabled=user_override.enabled,
                 video_enabled=user_override.video_enabled,
                 live_enabled=user_override.live_enabled,
-                private_enabled=(
-                    user_override.private_enabled if is_private else policy.private_enabled
-                ),
             )
 
     if not policy.enabled:
-        return _disabled_policy()
-    if is_private and not policy.private_enabled:
         return _disabled_policy()
 
     return policy

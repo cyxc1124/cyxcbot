@@ -45,7 +45,6 @@ function GlobalPolicyHint({ policy, scope }: { policy: LinkParserGlobalPolicy; s
         {policy.enabled ? '已启用' : '已关闭'} /
         视频{policy.video_enabled ? '开' : '关'} /
         直播{policy.live_enabled ? '开' : '关'}
-        {policy.private_enabled ? '' : ' / 私聊关'}
         。未单独配置的{scope === 'group' ? '群' : '用户'}将继承全局设置（在「系统设置 → 监控」中修改）。
       </p>
       {scope === 'group' && (
@@ -55,7 +54,7 @@ function GlobalPolicyHint({ policy, scope }: { policy: LinkParserGlobalPolicy; s
       )}
       {scope === 'user' && (
         <p className="text-sm text-slate-500">
-          列表仅包含机器人好友；群内用户级策略仍对对应 QQ 号生效，但不会出现在此列表中。
+          仅显示已启用「私聊消息」的好友；关闭私聊消息的用户不会响应任何指令，也无法配置链接解析。
         </p>
       )}
     </div>
@@ -294,16 +293,13 @@ export function LinkParserUserPolicyTab() {
 
   const patchUser = async (
     userId: string,
-    patch: Partial<
-      Pick<LinkParserUserPolicyItem, 'enabled' | 'video_enabled' | 'live_enabled' | 'private_enabled'>
-    >,
+    patch: Partial<Pick<LinkParserUserPolicyItem, 'enabled' | 'video_enabled' | 'live_enabled'>>,
   ) => {
     let saved:
       | {
           enabled: boolean
           video_enabled: boolean
           live_enabled: boolean
-          private_enabled: boolean
         }
       | undefined
     let note: string | null = null
@@ -317,7 +313,6 @@ export function LinkParserUserPolicyTab() {
           enabled: next.enabled,
           video_enabled: next.video_enabled,
           live_enabled: next.live_enabled,
-          private_enabled: next.private_enabled,
         }
         return next
       }),
@@ -332,7 +327,6 @@ export function LinkParserUserPolicyTab() {
         enabled: saved.enabled,
         video_enabled: saved.video_enabled,
         live_enabled: saved.live_enabled,
-        private_enabled: saved.private_enabled,
       })
       applyUserItem(data.item, data.global_policy)
     } catch (err) {
@@ -366,11 +360,11 @@ export function LinkParserUserPolicyTab() {
 
       {users.length === 0 ? (
         <p className="text-sm text-slate-500">
-          暂无好友数据，请确保机器人已连接 OneBot 且协议端支持 get_friend_list。
+          暂无已启用私聊消息的好友。请先在「私聊消息」Tab 中启用对应好友，或确保机器人已连接 OneBot。
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[800px] text-left text-sm">
+          <table className="w-full min-w-[720px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-slate-500 dark:border-slate-700">
                 <th className="pb-3 pr-4 font-medium">昵称</th>
@@ -378,7 +372,6 @@ export function LinkParserUserPolicyTab() {
                 <th className="pb-3 pr-4 font-medium">链接解析</th>
                 <th className="pb-3 pr-4 font-medium">视频</th>
                 <th className="pb-3 pr-4 font-medium">直播</th>
-                <th className="pb-3 pr-4 font-medium">私聊</th>
                 <th className="pb-3 font-medium text-right">操作</th>
               </tr>
             </thead>
@@ -425,14 +418,6 @@ export function LinkParserUserPolicyTab() {
                         checked={user.live_enabled}
                         disabled={false}
                         onChange={(checked) => void patchUser(user.user_id, { live_enabled: checked })}
-                      />
-                    </td>
-                    <td className="py-3.5 pr-4">
-                      <PolicyToggleRow
-                        label="私聊"
-                        checked={user.private_enabled}
-                        disabled={false}
-                        onChange={(checked) => void patchUser(user.user_id, { private_enabled: checked })}
                       />
                     </td>
                     <td className="py-3.5 text-right">

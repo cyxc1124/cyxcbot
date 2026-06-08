@@ -18,6 +18,7 @@ import type {
   LinkParserUserPolicyInput,
   LinkParserUserPolicyList,
   LinkParserUserPolicyMutation,
+  PrivateMessagePolicy,
   LiveMonitorStatus,
   LiveTarget,
   LiveTargetCreate,
@@ -280,6 +281,18 @@ export const updateMessagePolicy = (payload: {
   enabled_group_ids: string[]
 }) =>
   request<GroupMessagePolicy>('/groups/message-policy', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+
+export const getPrivateMessagePolicy = () =>
+  request<PrivateMessagePolicy>('/private/message-policy')
+
+export const updatePrivateMessagePolicy = (payload: {
+  restrict: boolean
+  enabled_user_ids: string[]
+}) =>
+  request<PrivateMessagePolicy>('/private/message-policy', {
     method: 'PUT',
     body: JSON.stringify(payload),
   })

@@ -22,6 +22,7 @@ from shared.audit.service import write_audit, write_system_event
 from shared.config.service import get_config_service
 from shared.db.enums import AuditAction, SystemEventType
 from shared.group_policy import is_group_message_enabled_from_snapshot
+from shared.private_policy import is_private_message_enabled_from_snapshot
 
 router = APIRouter(
     prefix="/link-parser/policies",
@@ -35,7 +36,6 @@ def _global_policy(snap) -> LinkParserGlobalPolicy:
         enabled=snap.bilibili_link_parser_enabled,
         video_enabled=snap.bilibili_link_parser_video_enabled,
         live_enabled=snap.bilibili_link_parser_live_enabled,
-        private_enabled=snap.bilibili_link_parser_private_enabled,
     )
 
 
@@ -45,6 +45,22 @@ def _message_enabled_groups(snap, groups: list[dict]) -> list[dict]:
         for group in groups
         if is_group_message_enabled_from_snapshot(str(group["group_id"]), snap)
     ]
+
+
+def _message_enabled_users(snap, users: list[dict]) -> list[dict]:
+    return [
+        user
+        for user in users
+        if is_private_message_enabled_from_snapshot(str(user["user_id"]), snap)
+    ]
+
+
+def _ensure_private_message_enabled(user_id: str, snap) -> None:
+    if not is_private_message_enabled_from_snapshot(user_id, snap):
+        raise HTTPException(
+            status_code=400,
+            detail="该用户未启用私聊消息，无法配置链接解析",
+        )
 
 
 def _ensure_group_message_enabled(group_id: str, snap) -> None:
@@ -67,21 +83,14 @@ def _group_policy_values(snap, group_id: str) -> tuple[bool, bool, bool, bool]:
     )
 
 
-def _user_policy_values(snap, user_id: str) -> tuple[bool, bool, bool, bool, bool]:
+def _user_policy_values(snap, user_id: str) -> tuple[bool, bool, bool, bool]:
     override = snap.link_parser_user_policies.get(user_id)
     if override:
-        return (
-            override.enabled,
-            override.video_enabled,
-            override.live_enabled,
-            override.private_enabled,
-            True,
-        )
+        return override.enabled, override.video_enabled, override.live_enabled, True
     return (
         snap.bilibili_link_parser_enabled,
         snap.bilibili_link_parser_video_enabled,
         snap.bilibili_link_parser_live_enabled,
-        snap.bilibili_link_parser_private_enabled,
         False,
     )
 
@@ -107,9 +116,7 @@ def _build_group_items(snap, groups: list[dict]) -> list[LinkParserGroupPolicyIt
 
 def _build_user_item(snap, user: dict) -> LinkParserUserPolicyItem:
     user_id = str(user["user_id"])
-    enabled, video_enabled, live_enabled, private_enabled, customized = _user_policy_values(
-        snap, user_id
-    )
+    enabled, video_enabled, live_enabled, customized = _user_policy_values(snap, user_id)
     override = snap.link_parser_user_policies.get(user_id)
     return LinkParserUserPolicyItem(
         user_id=user_id,
@@ -119,12 +126,12 @@ def _build_user_item(snap, user: dict) -> LinkParserUserPolicyItem:
         enabled=enabled,
         video_enabled=video_enabled,
         live_enabled=live_enabled,
-        private_enabled=private_enabled,
     )
 
 
 def _build_user_items(snap, users: list[dict]) -> list[LinkParserUserPolicyItem]:
-    by_id: dict[str, dict] = {str(user["user_id"]): user for user in users}
+    enabled_users = _message_enabled_users(snap, users)
+    by_id: dict[str, dict] = {str(user["user_id"]): user for user in enabled_users}
 
     for user_id, record in snap.link_parser_user_policies.items():
         if user_id not in by_id:
@@ -146,7 +153,6 @@ def _user_matches_global(snap, body: LinkParserUserPolicyUpdateRequest) -> bool:
         body.enabled == snap.bilibili_link_parser_enabled
         and body.video_enabled == snap.bilibili_link_parser_video_enabled
         and body.live_enabled == snap.bilibili_link_parser_live_enabled
-        and body.private_enabled == snap.bilibili_link_parser_private_enabled
     )
 
 
@@ -169,7 +175,7 @@ async def _user_meta(user_id: str, snap) -> dict:
 async def _list_user_policy_response(snap, *, refresh_users: bool = False) -> LinkParserUserPolicyListResponse:
     if refresh_users:
         invalidate_user_list_cache()
-    users = await get_friend_list()
+    users = _message_enabled_users(snap, await get_friend_list())
     return LinkParserUserPolicyListResponse(
         global_policy=_global_policy(snap),
         users=_build_user_items(snap, users),
@@ -272,7 +278,9 @@ async def create_user_policy(
         raise HTTPException(status_code=400, detail="QQ 号必须为数字")
 
     svc = get_config_service()
-    if user_id in svc.get_snapshot().link_parser_user_policies:
+    snap = svc.get_snapshot()
+    _ensure_private_message_enabled(user_id, snap)
+    if user_id in snap.link_parser_user_policies:
         raise HTTPException(status_code=409, detail="该用户策略已存在")
 
     await svc.upsert_link_parser_user_policy(
@@ -280,7 +288,7 @@ async def create_user_policy(
         enabled=body.enabled,
         video_enabled=body.video_enabled,
         live_enabled=body.live_enabled,
-        private_enabled=body.private_enabled,
+        private_enabled=True,
         name=body.name,
     )
     await svc.reload()
@@ -312,6 +320,7 @@ async def update_user_policy(
 ):
     svc = get_config_service()
     snap = svc.get_snapshot()
+    _ensure_private_message_enabled(user_id, snap)
     existing = snap.link_parser_user_policies.get(user_id)
 
     if _user_matches_global(snap, body):
@@ -322,7 +331,7 @@ async def update_user_policy(
             enabled=body.enabled,
             video_enabled=body.video_enabled,
             live_enabled=body.live_enabled,
-            private_enabled=body.private_enabled,
+            private_enabled=True,
             name=body.name if body.name is not None else (existing.name if existing else None),
         )
     await svc.reload()

@@ -11,7 +11,6 @@ class LinkParserGlobalPolicy(BaseModel):
     enabled: bool
     video_enabled: bool
     live_enabled: bool
-    private_enabled: bool
 
 
 class LinkParserGroupPolicyItem(BaseModel):
@@ -48,7 +47,6 @@ class LinkParserUserPolicyItem(BaseModel):
     enabled: bool
     video_enabled: bool
     live_enabled: bool
-    private_enabled: bool
 
 
 class LinkParserUserPolicyListResponse(BaseModel):
@@ -67,7 +65,6 @@ class LinkParserUserPolicyCreateRequest(BaseModel):
     enabled: bool = True
     video_enabled: bool = True
     live_enabled: bool = True
-    private_enabled: bool = True
 
 
 class LinkParserUserPolicyUpdateRequest(BaseModel):
@@ -75,4 +72,3 @@ class LinkParserUserPolicyUpdateRequest(BaseModel):
     enabled: bool
     video_enabled: bool
     live_enabled: bool
-    private_enabled: bool
