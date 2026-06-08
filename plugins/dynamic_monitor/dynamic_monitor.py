@@ -24,6 +24,7 @@ class DynamicMonitor:
     def __init__(self, config: Config):
         self.config = config
         self.last_dynamic_ids: Dict[str, int] = {}  # UID -> 最后动态ID
+        self.initialized_uids: Dict[str, bool] = {}  # UID -> 是否已完成首次基准记录
         self.pinned_dynamic_ids: Dict[str, Optional[int]] = {}  # UID -> 当前置顶动态ID
         self.is_running = False
         self.session: Optional[aiohttp.ClientSession] = None
@@ -47,9 +48,10 @@ class DynamicMonitor:
         else:
             logger.info("动态截图已禁用（DYNAMIC_ENABLE_SCREENSHOT=false）")
 
-        # 初始化最后动态ID
+        # 初始化最后动态ID与首次检查标记
         for uid in self.config.dynamic_monitor_mapping.keys():
             self.last_dynamic_ids[uid] = 0
+            self.initialized_uids[uid] = False
 
     async def start_monitoring(self):
         """启动监控 - 使用APScheduler定时任务"""
@@ -140,18 +142,20 @@ class DynamicMonitor:
             if dynamic.id > last_dynamic_id:
                 new_dynamics.append(dynamic)
 
-        # 如果是第一次检查该用户（last_dynamic_id为0），只记录状态，不推送
-        if last_dynamic_id == 0:
-            # 记录最新的动态ID作为基准点
-            if new_dynamics:
-                self.last_dynamic_ids[uid] = max(d.id for d in new_dynamics)
+        # 首次检查只记录基准状态，不推送（避免启动时刷屏）
+        # 注意：不能用 last_dynamic_id == 0 判断，无动态用户的基准 ID 也会一直是 0
+        if not self.initialized_uids.get(uid, False):
+            if dynamics:
+                self.last_dynamic_ids[uid] = max(d.id for d in dynamics)
                 logger.info(f"UP主 {uid} 首次监控，已记录最新动态ID: {self.last_dynamic_ids[uid]}")
+            else:
+                logger.info(f"UP主 {uid} 首次监控，当前无动态")
 
-            # 记录当前的置顶动态ID作为基准点
             self.pinned_dynamic_ids[uid] = new_pinned_id
             if new_pinned_id:
                 logger.info(f"UP主 {uid} 首次监控，已记录置顶动态ID: {new_pinned_id}")
 
+            self.initialized_uids[uid] = True
             return
 
         # 处理置顶动态变化（只有在非首次启动时才推送置顶动态变化）
