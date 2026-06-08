@@ -1,13 +1,45 @@
+const FALLBACK_TZ = 'Asia/Shanghai'
+
+/** 后端时间为 UTC；无时区后缀的 ISO 字符串按 UTC 解析 */
+function parseApiDateTime(iso: string): Date {
+  const trimmed = iso.trim()
+  if (/[Zz]$/.test(trimmed) || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    return new Date(trimmed)
+  }
+  const normalized = trimmed.includes('T') ? trimmed : trimmed.replace(' ', 'T')
+  return new Date(`${normalized}Z`)
+}
+
+/** 优先用浏览器本地时区；无法检测时回退北京时间 */
+export function resolveDisplayTimeZone(): string {
+  try {
+    const { timeZone } = Intl.DateTimeFormat().resolvedOptions()
+    if (timeZone) return timeZone
+  } catch {
+    // ignore
+  }
+  return FALLBACK_TZ
+}
+
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   try {
-    return new Date(iso).toLocaleString('zh-CN', {
+    const date = parseApiDateTime(iso)
+    if (Number.isNaN(date.getTime())) return iso
+
+    const timeZone = resolveDisplayTimeZone()
+    const showOffset = timeZone !== FALLBACK_TZ
+
+    return date.toLocaleString('zh-CN', {
+      timeZone,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
+      hour12: false,
+      ...(showOffset ? { timeZoneName: 'shortOffset' as const } : {}),
     })
   } catch {
     return iso
