@@ -146,6 +146,10 @@ import admin.startup  # noqa: F401
 log_level = configure_logging()
 logger.info(f"日志级别设置为: {log_level}")
 
+from shared.logging.broadcast import install_log_broadcast
+
+install_log_broadcast()
+
 # 记录启动配置（在 NoneBot 初始化之后）
 log_startup_config()
 

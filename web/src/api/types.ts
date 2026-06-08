@@ -340,6 +340,18 @@ export interface EventQuery {
   category?: string
 }
 
+export interface RuntimeLogEntry {
+  ts: string
+  level: string
+  logger: string
+  message: string
+}
+
+export interface RecentLogsResponse {
+  items: RuntimeLogEntry[]
+  total_buffered: number
+}
+
 export interface ApiError {
   detail: string
 }

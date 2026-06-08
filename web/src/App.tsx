@@ -9,6 +9,7 @@ import { AuditPage } from './pages/Audit'
 import { DashboardPage } from './pages/Dashboard'
 import { DynamicMonitorPage } from './pages/DynamicMonitor'
 import { EventsPage } from './pages/Events'
+import { LogsPage } from './pages/Logs'
 import { GroupsPage } from './pages/Groups'
 import { PrivatePage } from './pages/Private'
 import { LiveMonitorPage } from './pages/LiveMonitor'
@@ -53,6 +54,7 @@ export default function App() {
                 </Route>
                 <Route path="audit" element={<AuditPage />} />
                 <Route path="events" element={<EventsPage />} />
+                <Route path="logs" element={<LogsPage />} />
                 <Route path="about" element={<AboutPage />} />
                 <Route path="mappings" element={<Navigate to="/dynamic" replace />} />
                 <Route path="settings/templates" element={<Navigate to="/templates" replace />} />
