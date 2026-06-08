@@ -197,8 +197,11 @@ class DynamicFetcher:
 
             dynamic_type = self._map_dynamic_type(bili_dynamic_type)
 
-            # 初始化内容为空，因为我们要截图，不需要解析详细内容
             content = ""
+            body_text = ""
+            title = ""
+            images: List[str] = []
+            module_dynamic = modules.get('module_dynamic', {})
 
             # 特殊处理转发动态 - 需要解析原始动态信息用于描述
             if bili_dynamic_type == 'DYNAMIC_TYPE_FORWARD':
@@ -213,10 +216,24 @@ class DynamicFetcher:
                         # 转发别人的内容
                         content = f"转发了【{orig_info['author']}】的{orig_info['type_desc']}"
 
-            logger.debug(f"动态 {dynamic_id}: B站类型={bili_dynamic_type}, 映射类型={dynamic_type}, UID={author_uid}")
+                orig = item.get('orig')
+                if orig and isinstance(orig, dict):
+                    orig_modules = orig.get('modules', {})
+                    orig_dynamic = orig_modules.get('module_dynamic', {})
+                    body_text, title = self._extract_text_from_module_dynamic(orig_dynamic)
+                    images = self._extract_images_from_major(
+                        orig_dynamic.get('major') if isinstance(orig_dynamic, dict) else None
+                    )
+            else:
+                body_text, title = self._extract_text_from_module_dynamic(module_dynamic)
+                images = self._extract_images_from_major(
+                    module_dynamic.get('major') if isinstance(module_dynamic, dict) else None
+                )
 
-            # 图片链接不需要，因为我们要截图
-            images = []
+            logger.debug(
+                f"动态 {dynamic_id}: B站类型={bili_dynamic_type}, 映射类型={dynamic_type}, "
+                f"UID={author_uid}, 图片数={len(images)}"
+            )
 
             # 创建DynamicItem对象
             dynamic_item = DynamicItem(
@@ -225,7 +242,9 @@ class DynamicFetcher:
                 name=name,
                 timestamp=timestamp,
                 dynamic_type=dynamic_type,
+                title=title,
                 content=content,
+                body_text=body_text,
                 images=images,
                 author_type=author_type,
                 is_pinned=is_pinned
@@ -332,6 +351,113 @@ class DynamicFetcher:
             logger.debug(f"用户信息中没有找到名字 {uid}")
             return None
 
+
+    @staticmethod
+    def _normalize_image_url(url: str) -> str:
+        """规范化图片 URL"""
+        if not url:
+            return ""
+        url = url.split("@")[0]
+        if url.startswith("//"):
+            return "https:" + url
+        return url
+
+    @classmethod
+    def _dedupe_images(cls, images: List[str]) -> List[str]:
+        """去重并保持顺序"""
+        seen = set()
+        result = []
+        for url in images:
+            normalized = cls._normalize_image_url(url)
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                result.append(normalized)
+        return result
+
+    @classmethod
+    def _extract_images_from_major(cls, major: Optional[dict]) -> List[str]:
+        """从动态主体中提取图片 URL"""
+        if not major or not isinstance(major, dict):
+            return []
+
+        images: List[str] = []
+
+        draw = major.get("draw")
+        if isinstance(draw, dict):
+            for item in draw.get("items") or []:
+                if isinstance(item, dict) and item.get("src"):
+                    images.append(item["src"])
+
+        opus = major.get("opus")
+        if isinstance(opus, dict):
+            for pic in opus.get("pics") or []:
+                if isinstance(pic, dict) and pic.get("url"):
+                    images.append(pic["url"])
+
+        archive = major.get("archive")
+        if isinstance(archive, dict) and archive.get("cover"):
+            images.append(archive["cover"])
+
+        article = major.get("article")
+        if isinstance(article, dict):
+            for cover in article.get("covers") or []:
+                if cover:
+                    images.append(cover)
+            if not article.get("covers") and article.get("cover"):
+                images.append(article["cover"])
+
+        return cls._dedupe_images(images)
+
+    @staticmethod
+    def _extract_text_from_module_dynamic(module_dynamic: Optional[dict]) -> tuple[str, str]:
+        """从 module_dynamic 中提取正文和标题"""
+        if not module_dynamic or not isinstance(module_dynamic, dict):
+            return "", ""
+
+        text_parts: List[str] = []
+        title = ""
+
+        desc = module_dynamic.get("desc")
+        if isinstance(desc, dict):
+            desc_text = (desc.get("text") or "").strip()
+            if desc_text:
+                text_parts.append(desc_text)
+
+        major = module_dynamic.get("major")
+        if isinstance(major, dict):
+            opus = major.get("opus")
+            if isinstance(opus, dict):
+                opus_title = (opus.get("title") or "").strip()
+                if opus_title:
+                    title = opus_title
+                summary = opus.get("summary")
+                if isinstance(summary, dict):
+                    summary_text = (summary.get("text") or "").strip()
+                    if summary_text and summary_text not in text_parts:
+                        text_parts.append(summary_text)
+
+            archive = major.get("archive")
+            if isinstance(archive, dict):
+                archive_title = (archive.get("title") or "").strip()
+                if archive_title:
+                    if not title:
+                        title = archive_title
+                    if archive_title not in text_parts:
+                        text_parts.append(archive_title)
+                archive_desc = (archive.get("desc") or "").strip()
+                if archive_desc and archive_desc not in text_parts:
+                    text_parts.append(archive_desc)
+
+            article = major.get("article")
+            if isinstance(article, dict):
+                article_title = (article.get("title") or "").strip()
+                if article_title:
+                    if not title:
+                        title = article_title
+                    if article_title not in text_parts:
+                        text_parts.append(article_title)
+
+        return "\n".join(text_parts), title
 
     def _extract_forward_orig_info(self, item: dict) -> Optional[dict]:
         """提取转发动态的原始信息"""

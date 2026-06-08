@@ -21,7 +21,11 @@ class Config(BaseModel):
         description="监控间隔时间（秒）"
     )
 
-
+    # 是否启用动态截图
+    enable_screenshot: bool = Field(
+        default_factory=lambda: Config._get_enable_screenshot(),
+        description="是否在推送消息中包含动态网页截图"
+    )
 
     # B站Cookie配置
     bilibili_cookie: str = Field(
@@ -62,7 +66,16 @@ class Config(BaseModel):
         except (ValueError, TypeError):
             return 30
 
-
+    @staticmethod
+    def _get_enable_screenshot() -> bool:
+        """从环境变量读取是否启用动态截图"""
+        try:
+            value = os.getenv('DYNAMIC_ENABLE_SCREENSHOT')
+            if value:
+                return json.loads(value.lower())
+            return True
+        except (json.JSONDecodeError, TypeError):
+            return True
 
     def get_uids_by_group_id(self, group_id: str) -> List[str]:
         """根据群组ID反向查找对应的UP主UID列表

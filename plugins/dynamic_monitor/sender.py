@@ -16,7 +16,15 @@ class DynamicSender:
     def __init__(self):
         pass
 
-    def build_dynamic_message(self, dynamic: DynamicItem, screenshot_image: Optional[bytes] = None, is_pinned: bool = False, is_query: bool = False, query_type: str = "") -> Message:
+    def build_dynamic_message(
+        self,
+        dynamic: DynamicItem,
+        screenshot_image: Optional[bytes] = None,
+        is_pinned: bool = False,
+        is_query: bool = False,
+        query_type: str = "",
+        include_dynamic_media: bool = False,
+    ) -> Message:
         """构建动态推送消息
 
         Args:
@@ -25,6 +33,7 @@ class DynamicSender:
             is_pinned: 是否为置顶动态变更通知
             is_query: 是否为主动查询
             query_type: 查询类型 ("latest" 或 "pinned")
+            include_dynamic_media: 是否包含 API 解析的正文与图片（关闭截图时使用）
         """
         message = Message()
 
@@ -41,15 +50,16 @@ class DynamicSender:
             # 普通动态推送
             message.append(f"{dynamic.name} {dynamic.get_type_description()}\n")
 
-        # 对于非查询消息，添加时间和截图
+        # 对于非查询消息，添加时间
         if not is_query:
             message.append(f"{dynamic.format_beijing_time()}\n")
 
-        # 如果有截图数据，添加图片
-        if screenshot_image:
+        if include_dynamic_media:
+            self._append_dynamic_media(message, dynamic)
+        elif screenshot_image:
             try:
                 message.append(MessageSegment.image(screenshot_image))
-                message.append("")  # 添加空行
+                message.append("")
             except Exception as e:
                 logger.warning(f"添加动态截图失败: {e}")
 
@@ -57,6 +67,17 @@ class DynamicSender:
         message.append(f"{dynamic.url}")
 
         return message
+
+    def _append_dynamic_media(self, message: Message, dynamic: DynamicItem) -> None:
+        """追加动态正文与图片"""
+        if dynamic.body_text:
+            message.append(f"{dynamic.body_text}\n")
+
+        for image_url in dynamic.images:
+            try:
+                message.append(MessageSegment.image(image_url))
+            except Exception as e:
+                logger.warning(f"添加动态图片失败: {image_url}, {e}")
 
     async def send_to_groups(self, message: Message, group_ids: List[str]):
         """发送消息到多个群组"""

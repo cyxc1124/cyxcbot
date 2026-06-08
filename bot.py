@@ -82,6 +82,7 @@ def log_environment_config():
         "动态监控": [
             "DYNAMIC_MONITOR_MAPPING",
             "DYNAMIC_MONITOR_INTERVAL",
+            "DYNAMIC_ENABLE_SCREENSHOT",
             "BILIBILI_COOKIE"
         ],
         "直播监控": [

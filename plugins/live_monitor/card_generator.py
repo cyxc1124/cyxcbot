@@ -70,8 +70,8 @@ def _find_font_path() -> str:
         if os.path.isfile(path):
             return path
     raise FileNotFoundError(
-        "未找到可用中文字体。容器中需安装 fonts-noto-cjk，"
-        "或配置 LIVE_MONITOR_CARD_FONT 指向字体文件路径。"
+        "未找到可用中文字体。Docker/Linux 环境请安装 fonts-noto-cjk，"
+        "或将字体文件放入 assets/fonts/ 目录。"
     )
 
 

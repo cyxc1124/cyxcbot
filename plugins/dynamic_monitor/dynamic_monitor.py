@@ -41,9 +41,11 @@ class DynamicMonitor:
             if uid not in self.pinned_dynamic_ids:
                 self.pinned_dynamic_ids[uid] = None
 
-        # 初始化截图服务
-        await init_screenshot_service()
-        logger.info("动态截图服务已启动")
+        if self.config.enable_screenshot:
+            await init_screenshot_service()
+            logger.info("动态截图服务已启动")
+        else:
+            logger.info("动态截图已禁用（DYNAMIC_ENABLE_SCREENSHOT=false）")
 
         # 初始化最后动态ID
         for uid in self.config.dynamic_monitor_mapping.keys():
@@ -76,7 +78,8 @@ class DynamicMonitor:
         try:
             if self.session and not self.session.closed:
                 await self.session.close()
-            await close_screenshot_service()
+            if self.config.enable_screenshot:
+                await close_screenshot_service()
         except Exception as e:
             logger.warning(f"清理资源时出错: {e}")
 
@@ -172,6 +175,19 @@ class DynamicMonitor:
             for dynamic in sorted(new_dynamics, key=lambda x: x.timestamp):
                 await self._send_dynamic_notification(uid, dynamic)
 
+    async def _fetch_dynamic_screenshot(self, dynamic_id: int) -> Optional[bytes]:
+        """获取动态截图，未启用时直接返回 None"""
+        if not self.config.enable_screenshot:
+            return None
+        try:
+            screenshot_image, screenshot_error = await get_dynamic_screenshot(dynamic_id)
+            if screenshot_error:
+                logger.warning(f"获取动态{dynamic_id}截图失败: {screenshot_error}")
+            return screenshot_image
+        except Exception as e:
+            logger.warning(f"截图服务异常: {e}")
+            return None
+
     async def _send_dynamic_notification(self, uid: str, dynamic, is_pinned: bool = False):
         """发送动态通知"""
         # 获取真实的用户名（只在需要推送时才获取）
@@ -183,17 +199,15 @@ class DynamicMonitor:
             dynamic.name = f"UP主_{dynamic.uid}"
             logger.info(f"发现新动态: UP主_{dynamic.uid} - {dynamic.get_type_description()}")
 
-        # 获取动态截图
-        screenshot_image = None
-        try:
-            screenshot_image, screenshot_error = await get_dynamic_screenshot(dynamic.id)
-            if screenshot_error:
-                logger.warning(f"获取动态{dynamic.id}截图失败: {screenshot_error}")
-        except Exception as e:
-            logger.warning(f"截图服务异常: {e}")
+        screenshot_image = await self._fetch_dynamic_screenshot(dynamic.id)
 
         # 构建通知消息
-        message = self.sender.build_dynamic_message(dynamic, screenshot_image, is_pinned)
+        message = self.sender.build_dynamic_message(
+            dynamic,
+            screenshot_image,
+            is_pinned,
+            include_dynamic_media=not self.config.enable_screenshot,
+        )
 
         # 获取需要推送的群组列表
         group_ids = self.config.dynamic_monitor_mapping.get(uid, [])
@@ -237,21 +251,7 @@ class DynamicMonitor:
         latest_dynamic = max(filtered_dynamics, key=lambda x: x.timestamp)
         logger.debug(f"UP主 {uid} 最新动态ID: {latest_dynamic.id}, 类型: {latest_dynamic.get_type_description()}")
 
-        # 获取动态截图
-        screenshot_image = None
-        try:
-            screenshot_image, screenshot_error = await get_dynamic_screenshot(latest_dynamic.id)
-            if screenshot_error:
-                logger.warning(f"获取动态{latest_dynamic.id}截图失败: {screenshot_error}")
-        except Exception as e:
-            logger.warning(f"截图服务异常: {e}")
-
-        # 获取真实的用户名
-        real_name = await self.fetcher._get_user_name_from_api(str(latest_dynamic.uid))
-        if real_name:
-            latest_dynamic.name = real_name
-        else:
-            latest_dynamic.name = f"UP主_{latest_dynamic.uid}"
+        screenshot_image = await self._fetch_dynamic_screenshot(latest_dynamic.id)
 
         # 构建主动查询的消息（包含截图）
         logger.debug(f"开始构建UP主 {uid} 的主动查询消息")
@@ -269,7 +269,8 @@ class DynamicMonitor:
             screenshot_image,
             is_pinned=False,
             is_query=True,
-            query_type="latest"
+            query_type="latest",
+            include_dynamic_media=not self.config.enable_screenshot,
         )
 
         logger.debug(f"主动查询消息构建完成，开始发送到群组 {group_id}")
@@ -305,14 +306,7 @@ class DynamicMonitor:
             logger.warning(f"未找到UP主 {uid} 的置顶动态 {pinned_id}")
             raise Exception(f"未找到UP主 {uid} 的置顶动态")
 
-        # 获取动态截图
-        screenshot_image = None
-        try:
-            screenshot_image, screenshot_error = await get_dynamic_screenshot(pinned_dynamic.id)
-            if screenshot_error:
-                logger.warning(f"获取动态{pinned_dynamic.id}截图失败: {screenshot_error}")
-        except Exception as e:
-            logger.warning(f"截图服务异常: {e}")
+        screenshot_image = await self._fetch_dynamic_screenshot(pinned_dynamic.id)
 
         # 获取用户名
         real_name = await self.fetcher._get_user_name_from_api(str(pinned_dynamic.uid))
@@ -330,7 +324,8 @@ class DynamicMonitor:
             screenshot_image,
             is_pinned=False,
             is_query=True,
-            query_type="pinned"
+            query_type="pinned",
+            include_dynamic_media=not self.config.enable_screenshot,
         )
 
         logger.debug(f"置顶动态主动查询消息构建完成，开始发送到群组 {group_id}")
