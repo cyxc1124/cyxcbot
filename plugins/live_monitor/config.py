@@ -5,6 +5,8 @@ B站直播监控插件配置（从 ConfigService 加载）
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
 
+from shared.config.message_templates import LiveMessageTemplates
+
 
 class Config(BaseModel):
     """B站直播监控插件配置"""
@@ -39,6 +41,11 @@ class Config(BaseModel):
         description="是否启用 WebSocket 实时监控"
     )
 
+    message_templates: LiveMessageTemplates = Field(
+        default_factory=LiveMessageTemplates,
+        description="直播推送消息模板"
+    )
+
     @classmethod
     def from_service(cls) -> "Config":
         from shared.config.service import get_config_service
@@ -51,4 +58,5 @@ class Config(BaseModel):
             include_room_info=snap.live_monitor_include_info,
             bilibili_cookie=snap.bilibili_cookie or None,
             use_websocket=snap.live_monitor_use_websocket,
+            message_templates=snap.live_message_templates,
         )

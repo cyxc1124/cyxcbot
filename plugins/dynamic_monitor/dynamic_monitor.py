@@ -40,7 +40,7 @@ class DynamicMonitor:
         """初始化资源"""
         self.session = aiohttp.ClientSession()
         self.fetcher = DynamicFetcher(self.session, self.config.bilibili_cookie)
-        self.sender = DynamicSender()
+        self.sender = DynamicSender(templates=config.message_templates)
 
         # 初始化置顶动态ID记录
         for uid in self.config.dynamic_monitor_mapping.keys():
@@ -117,6 +117,9 @@ class DynamicMonitor:
                 await init_screenshot_service()
             else:
                 await close_screenshot_service()
+
+        if self.sender:
+            self.sender.templates = self.config.message_templates
 
     async def start_monitoring(self):
         """启动监控 - 使用APScheduler定时任务"""

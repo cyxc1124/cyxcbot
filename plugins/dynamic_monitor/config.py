@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import List, Dict
 
+from shared.config.message_templates import DynamicMessageTemplates
+
 
 class Config(BaseModel):
     """UP主动态监控插件配置（从 ConfigService 加载）"""
@@ -25,6 +27,11 @@ class Config(BaseModel):
         description="是否在推送消息中包含动态网页截图"
     )
 
+    message_templates: DynamicMessageTemplates = Field(
+        default_factory=DynamicMessageTemplates,
+        description="动态推送消息模板"
+    )
+
     bilibili_cookie: str = Field(
         default="",
         description="B站用户Cookie，用于提高API请求成功率"
@@ -40,6 +47,7 @@ class Config(BaseModel):
             dynamic_at_all=snap.dynamic_at_all,
             monitor_interval=snap.dynamic_monitor_interval,
             enable_screenshot=snap.dynamic_enable_screenshot,
+            message_templates=snap.dynamic_message_templates,
             bilibili_cookie=snap.bilibili_cookie,
         )
 

@@ -11,6 +11,11 @@ from sqlalchemy.orm import selectinload
 
 from nonebot_plugin_orm import get_session
 
+from shared.config.message_templates import (
+    MESSAGE_TEMPLATE_KEYS,
+    dynamic_templates_from_settings,
+    live_templates_from_settings,
+)
 from shared.config.nonebot_superusers import apply_nonebot_superusers
 from shared.config.types import AppConfigSnapshot
 from shared.db.models import (
@@ -36,6 +41,9 @@ SETTING_KEYS = {
     "status_check_allowed_qq": ("[]", "json_list"),
     "nonebot_superusers": ("[]", "json_list"),
 }
+
+for key, default in MESSAGE_TEMPLATE_KEYS.items():
+    SETTING_KEYS[key] = (default, str)
 
 
 def _parse_bool(value: str) -> bool:
@@ -90,11 +98,13 @@ class ConfigService:
             dynamic_at_all=dynamic_at_all,
             dynamic_monitor_interval=settings.get("dynamic_monitor_interval", 30),
             dynamic_enable_screenshot=settings.get("dynamic_enable_screenshot", True),
+            dynamic_message_templates=dynamic_templates_from_settings(settings),
             live_monitor_mapping=live_mapping,
             live_at_all=live_at_all,
             live_monitor_interval=settings.get("live_monitor_interval", 60),
             live_monitor_include_info=settings.get("live_monitor_include_info", True),
             live_monitor_use_websocket=settings.get("live_monitor_use_websocket", True),
+            live_message_templates=live_templates_from_settings(settings),
             bilibili_cookie=cookie,
             bilibili_cookie_set=bool(cookie_encrypted),
             audit_log_retention_days=settings.get("audit_log_retention_days", 90),
@@ -166,6 +176,9 @@ class ConfigService:
                         result[key] = []
                 except json.JSONDecodeError:
                     result[key] = []
+            elif typ is str and key in MESSAGE_TEMPLATE_KEYS:
+                text = (value or default).strip()
+                result[key] = text[:500] if text else default
             else:
                 result[key] = value
         return result
@@ -210,12 +223,20 @@ class ConfigService:
 
         snap = self._snapshot
         masked = mask_secret(snap.bilibili_cookie) if snap.bilibili_cookie else ""
+        dt = snap.dynamic_message_templates
+        lt = snap.live_message_templates
         return {
             "dynamic_monitor_interval": snap.dynamic_monitor_interval,
             "dynamic_enable_screenshot": snap.dynamic_enable_screenshot,
+            "dynamic_template_push": dt.push,
+            "dynamic_template_pinned": dt.pinned,
+            "dynamic_template_query_latest": dt.query_latest,
+            "dynamic_template_query_pinned": dt.query_pinned,
             "live_monitor_interval": snap.live_monitor_interval,
             "live_monitor_include_info": snap.live_monitor_include_info,
             "live_monitor_use_websocket": snap.live_monitor_use_websocket,
+            "live_template_start": lt.start,
+            "live_template_end": lt.end,
             "bilibili_cookie": {
                 "configured": snap.bilibili_cookie_set,
                 "preview": masked or None,

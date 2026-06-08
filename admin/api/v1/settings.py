@@ -11,6 +11,7 @@ from admin.schemas.settings import CookieTestResultResponse, SettingsResponse, S
 from admin.services.connection_status import bilibili_status_message, get_bilibili_connection_status
 from admin.services.monitor_bridge import reload_all_monitors
 from shared.audit.service import write_audit, write_system_event
+from shared.config.message_templates import MESSAGE_TEMPLATE_KEYS
 from shared.config.service import get_config_service
 from shared.db.enums import AuditAction, SystemEventType
 
@@ -37,6 +38,10 @@ async def update_settings(request: Request, body: SettingsUpdateRequest, user: C
         updates["dynamic_monitor_interval"] = str(body.dynamic_monitor_interval)
     if body.dynamic_enable_screenshot is not None:
         updates["dynamic_enable_screenshot"] = str(body.dynamic_enable_screenshot).lower()
+    for key in MESSAGE_TEMPLATE_KEYS:
+        value = getattr(body, key, None)
+        if value is not None:
+            updates[key] = value.strip()[:500]
     if body.live_monitor_interval is not None:
         updates["live_monitor_interval"] = str(body.live_monitor_interval)
     if body.live_monitor_include_info is not None:

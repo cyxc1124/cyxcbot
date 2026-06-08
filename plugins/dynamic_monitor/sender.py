@@ -3,19 +3,24 @@
 负责构建和发送动态通知消息
 """
 
-from typing import List, Optional
+from typing import Iterable, List, Optional, Union
+
 from nonebot.log import logger
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 
 from utils.bilibili_api import DynamicItem
+from shared.config.message_templates import DynamicMessageTemplates
 from shared.notify.at_all import DYNAMIC_AT_ALL_FALLBACK, resolve_at_all_prefix
+from shared.notify.message_template import build_message_from_template
+
+SegmentPart = Union[MessageSegment, str]
 
 
 class DynamicSender:
     """动态消息发送器"""
 
-    def __init__(self):
-        pass
+    def __init__(self, templates: Optional[DynamicMessageTemplates] = None):
+        self.templates = templates or DynamicMessageTemplates()
 
     def build_dynamic_message(
         self,
@@ -26,59 +31,52 @@ class DynamicSender:
         query_type: str = "",
         include_dynamic_media: bool = False,
     ) -> Message:
-        """构建动态推送消息
+        """严格按模板顺序构建动态推送消息。"""
+        template = self._resolve_template(is_pinned, is_query, query_type)
+        text_variables = {
+            "name": dynamic.name,
+            "type_desc": dynamic.get_type_description(),
+            "time": dynamic.format_beijing_time(),
+            "url": dynamic.url,
+            "dynamic_id": str(dynamic.id),
+            "uid": str(dynamic.uid),
+        }
 
-        Args:
-            dynamic: 动态对象
-            screenshot_image: 截图数据
-            is_pinned: 是否为置顶动态变更通知
-            is_query: 是否为主动查询
-            query_type: 查询类型 ("latest" 或 "pinned")
-            include_dynamic_media: 是否包含 API 解析的正文与图片（关闭截图时使用）
-        """
-        message = Message()
+        def media_parts() -> Iterable[SegmentPart]:
+            if include_dynamic_media:
+                parts: List[SegmentPart] = []
+                if dynamic.body_text:
+                    parts.append(f"{dynamic.body_text}\n")
+                for image_url in dynamic.images:
+                    try:
+                        parts.append(MessageSegment.image(image_url))
+                    except Exception as exc:
+                        logger.warning(f"添加动态图片失败: {image_url}, {exc}")
+                return parts
 
-        # 第一行：根据消息类型构建不同的标题
+            if screenshot_image:
+                try:
+                    return [MessageSegment.image(screenshot_image)]
+                except Exception as exc:
+                    logger.warning(f"添加动态截图失败: {exc}")
+            return []
+
+        return build_message_from_template(
+            template,
+            text_variables,
+            {"media": media_parts},
+        )
+
+    def _resolve_template(self, is_pinned: bool, is_query: bool, query_type: str) -> str:
         if is_query:
             if query_type == "latest":
-                message.append(f"【{dynamic.name} 的最新动态】\n")
-            elif query_type == "pinned":
-                message.append(f"【{dynamic.name} 的置顶动态】\n")
-        elif is_pinned:
-            # 置顶动态变更通知
-            message.append(f"{dynamic.name} 置顶了动态\n")
-        else:
-            # 普通动态推送
-            message.append(f"{dynamic.name} {dynamic.get_type_description()}\n")
-
-        # 对于非查询消息，添加时间
-        if not is_query:
-            message.append(f"{dynamic.format_beijing_time()}\n")
-
-        if include_dynamic_media:
-            self._append_dynamic_media(message, dynamic)
-        elif screenshot_image:
-            try:
-                message.append(MessageSegment.image(screenshot_image))
-                message.append("")
-            except Exception as e:
-                logger.warning(f"添加动态截图失败: {e}")
-
-        # 动态链接
-        message.append(f"{dynamic.url}")
-
-        return message
-
-    def _append_dynamic_media(self, message: Message, dynamic: DynamicItem) -> None:
-        """追加动态正文与图片"""
-        if dynamic.body_text:
-            message.append(f"{dynamic.body_text}\n")
-
-        for image_url in dynamic.images:
-            try:
-                message.append(MessageSegment.image(image_url))
-            except Exception as e:
-                logger.warning(f"添加动态图片失败: {image_url}, {e}")
+                return self.templates.query_latest
+            if query_type == "pinned":
+                return self.templates.query_pinned
+            return self.templates.push
+        if is_pinned:
+            return self.templates.pinned
+        return self.templates.push
 
     async def send_to_groups(
         self,

@@ -53,6 +53,7 @@ class LiveMonitor:
         # 通知发送器
         self._sender = LiveNotificationSender(
             include_room_info=config.include_room_info,
+            templates=config.message_templates,
         )
     
     async def init_resources(self):
@@ -150,6 +151,7 @@ class LiveMonitor:
                     await self._start_single_danmaku_client(room_id)
 
         self._sender.include_room_info = self.config.include_room_info
+        self._sender.templates = self.config.message_templates
 
     async def start_monitoring(self):
         """启动监控"""

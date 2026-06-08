@@ -1,0 +1,391 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { getSettings, patchSettings } from '../api/client'
+import { LoadErrorBanner } from '../components/LoadErrorBanner'
+import { PageLoading } from '../components/LoadingSpinner'
+import {
+  allTemplateFields,
+  dynamicTemplateFields,
+  liveTemplateFields,
+  PREVIEW_SAMPLE_VALUES,
+  PREVIEW_SEGMENT_LABELS,
+  templateCategoryLabels,
+  templatesFromSettings,
+  type TemplateField,
+  type TemplateKey,
+} from '../constants/messageTemplates'
+import { useToast } from '../contexts/ToastContext'
+import { formatApiError } from '../utils/apiError'
+import { insertIntoTextarea, renderStrictTemplatePreview } from '../utils/messageTemplate'
+
+function VariablePanel({
+  field,
+  disabled,
+  onInsert,
+}: {
+  field: TemplateField
+  disabled: boolean
+  onInsert: (token: string) => void
+}) {
+  return (
+    <aside className="shrink-0 space-y-3 lg:w-52">
+      <div>
+        <h4 className="text-sm font-medium text-slate-900 dark:text-white">可用变量</h4>
+        <p className="mt-1 text-xs text-slate-500">点击插入到光标位置</p>
+      </div>
+      <ul className="space-y-2">
+        {field.variables.map((variable) => (
+          <li key={variable.key}>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onInsert(`{${variable.key}}`)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-left transition-colors hover:border-brand-300 hover:bg-brand-50 disabled:opacity-50 dark:border-slate-700 dark:hover:border-brand-700 dark:hover:bg-brand-950/40"
+            >
+              <code className="text-xs font-semibold text-brand-700 dark:text-brand-300">
+                {'{'}{variable.key}{'}'}
+              </code>
+              <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">{variable.label}</p>
+              <p className="mt-0.5 text-[11px] text-slate-400">{variable.description}</p>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </aside>
+  )
+}
+
+function TemplateDetailPanel({
+  field,
+  value,
+  savedValue,
+  disabled,
+  saving,
+  onChange,
+  onSave,
+  onReset,
+  onBack,
+}: {
+  field: TemplateField
+  value: string
+  savedValue: string
+  disabled: boolean
+  saving: boolean
+  onChange: (value: string) => void
+  onSave: () => void
+  onReset: () => void
+  onBack: () => void
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const dirty = value !== savedValue
+  const previewVariables =
+    field.category === 'live'
+      ? { ...PREVIEW_SAMPLE_VALUES, url: 'https://live.bilibili.com/12345' }
+      : PREVIEW_SAMPLE_VALUES
+  const preview = renderStrictTemplatePreview(value, previewVariables, PREVIEW_SEGMENT_LABELS)
+
+  const handleInsert = (token: string) => {
+    const textarea = textareaRef.current
+    if (!textarea) {
+      onChange(value + token)
+      return
+    }
+    const { nextValue, cursor } = insertIntoTextarea(textarea, value, token)
+    onChange(nextValue)
+    requestAnimationFrame(() => {
+      textarea.focus()
+      textarea.setSelectionRange(cursor, cursor)
+    })
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-700">
+        <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            className="mb-2 text-sm text-brand-600 hover:underline dark:text-brand-400 lg:hidden"
+            onClick={onBack}
+          >
+            ← 返回列表
+          </button>
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{field.label}</h3>
+          <p className="mt-1 text-sm text-slate-500">{field.description}</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="btn-secondary text-sm"
+            disabled={disabled || saving}
+            onClick={onReset}
+          >
+            恢复默认
+          </button>
+          <button
+            type="button"
+            className="btn-primary text-sm"
+            disabled={disabled || saving || !dirty}
+            onClick={onSave}
+          >
+            {saving ? '保存中…' : '保存'}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-1 flex-col gap-6 pt-6 lg:flex-row lg:items-start">
+        <div className="min-w-0 flex-1 space-y-4">
+          <div>
+            <label className="label" htmlFor={`template-${field.key}`}>
+              模板内容
+            </label>
+            <textarea
+              id={`template-${field.key}`}
+              ref={textareaRef}
+              className="input min-h-[8rem] resize-y font-mono text-sm"
+              rows={4}
+              maxLength={500}
+              value={value}
+              disabled={disabled || saving}
+              onChange={(e) => onChange(e.target.value)}
+            />
+            <p className="mt-1 text-xs text-slate-400">{value.length}/500</p>
+          </div>
+
+          <div>
+            <h4 className="mb-2 text-sm font-medium text-slate-900 dark:text-white">效果预览</h4>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/60">
+              <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-800 dark:text-slate-200">
+                {preview}
+              </pre>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              预览严格按模板顺序渲染；{'{media}'}、{'{card}'}、{'{cover}'} 在推送时替换为实际图片。
+            </p>
+          </div>
+        </div>
+
+        <VariablePanel field={field} disabled={disabled || saving} onInsert={handleInsert} />
+      </div>
+    </div>
+  )
+}
+
+export function MessageTemplatesPage() {
+  const { showToast } = useToast()
+  const [form, setForm] = useState(templatesFromSettings(null))
+  const [savedForm, setSavedForm] = useState(templatesFromSettings(null))
+  const [selectedKey, setSelectedKey] = useState<TemplateKey | null>(null)
+  const [draftValues, setDraftValues] = useState<Partial<Record<TemplateKey, string>>>({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const settings = await getSettings()
+      const next = templatesFromSettings(settings)
+      setForm(next)
+      setSavedForm(next)
+      setDraftValues({})
+    } catch (err) {
+      setError(formatApiError(err, '加载失败'))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const getCurrentValue = (key: TemplateKey) => draftValues[key] ?? form[key]
+
+  const isDirty = (key: TemplateKey) => getCurrentValue(key) !== savedForm[key]
+
+  const selectTemplate = (key: TemplateKey) => {
+    if (selectedKey && isDirty(selectedKey)) {
+      const field = allTemplateFields.find((item) => item.key === selectedKey)
+      const confirmed = window.confirm(
+        `「${field?.label ?? '当前模板'}」有未保存的修改，确定切换吗？`,
+      )
+      if (!confirmed) return
+      setDraftValues((current) => {
+        const next = { ...current }
+        delete next[selectedKey]
+        return next
+      })
+    }
+    setSelectedKey(key)
+  }
+
+  const clearSelection = () => {
+    if (selectedKey && isDirty(selectedKey)) {
+      const field = allTemplateFields.find((item) => item.key === selectedKey)
+      const confirmed = window.confirm(
+        `「${field?.label ?? '当前模板'}」有未保存的修改，确定返回吗？`,
+      )
+      if (!confirmed) return
+      setDraftValues((current) => {
+        const next = { ...current }
+        delete next[selectedKey]
+        return next
+      })
+    }
+    setSelectedKey(null)
+  }
+
+  const updateCurrent = (value: string) => {
+    if (!selectedKey) return
+    setDraftValues((current) => ({ ...current, [selectedKey]: value }))
+  }
+
+  const handleSave = async () => {
+    if (!selectedKey) return
+    const field = allTemplateFields.find((item) => item.key === selectedKey)
+    if (!field) return
+
+    const value = getCurrentValue(selectedKey).trim() || field.defaultValue
+    setSaving(true)
+    try {
+      const updated = await patchSettings({ [selectedKey]: value })
+      const next = templatesFromSettings(updated)
+      setForm(next)
+      setSavedForm(next)
+      setDraftValues((current) => {
+        const copy = { ...current }
+        delete copy[selectedKey]
+        return copy
+      })
+      showToast('success', '模板已保存')
+    } catch (err) {
+      showToast('error', formatApiError(err, '保存失败'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleReset = () => {
+    if (!selectedKey) return
+    const field = getTemplateFieldSafe(selectedKey)
+    if (!field) return
+    setDraftValues((current) => ({ ...current, [selectedKey]: field.defaultValue }))
+  }
+
+  const selectedField = selectedKey ? allTemplateFields.find((item) => item.key === selectedKey) : null
+  const showSplit = selectedKey !== null
+  const listHiddenOnMobile = showSplit && selectedField
+
+  if (loading && !error) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">消息模板</h2>
+          <p className="mt-1 text-sm text-slate-500">自定义动态与直播推送的文本内容</p>
+        </div>
+        <PageLoading />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-white">消息模板</h2>
+        <p className="mt-1 text-sm text-slate-500">选择模板进行编辑，支持变量插入与效果预览</p>
+      </div>
+
+      {error && <LoadErrorBanner message={error} onRetry={load} />}
+
+      <div
+        className={`flex min-h-[28rem] overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 ${
+          showSplit ? 'divide-x divide-slate-200 dark:divide-slate-700' : ''
+        }`}
+      >
+        <aside
+          className={`shrink-0 bg-slate-50 dark:bg-slate-900/40 ${
+            listHiddenOnMobile ? 'hidden lg:block' : ''
+          } ${showSplit ? 'w-full lg:w-72' : 'w-full'}`}
+        >
+          <div className="flex h-full max-h-[32rem] flex-col lg:max-h-[40rem]">
+            <div className="border-b border-slate-200 px-3 py-2.5 dark:border-slate-700">
+              <p className="text-xs font-medium text-slate-500">模板列表</p>
+            </div>
+            <nav className="flex-1 overflow-y-auto p-2">
+              {(
+                [
+                  ['dynamic', dynamicTemplateFields],
+                  ['live', liveTemplateFields],
+                ] as const
+              ).map(([category, fields]) => (
+                <div key={category} className="mb-3 last:mb-0">
+                  <p className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    {templateCategoryLabels[category]}
+                  </p>
+                  <ul>
+                    {fields.map((field) => {
+                      const isSelected = selectedKey === field.key
+                      const dirty = isDirty(field.key)
+                      return (
+                        <li key={field.key}>
+                          <button
+                            type="button"
+                            onClick={() => selectTemplate(field.key)}
+                            className={`mb-1 w-full rounded-lg px-3 py-2.5 text-left transition-colors ${
+                              isSelected
+                                ? 'bg-brand-50 text-brand-800 dark:bg-brand-950 dark:text-brand-200'
+                                : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-sm font-medium">{field.label}</p>
+                              {dirty && (
+                                <span
+                                  className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-500"
+                                  title="有未保存的修改"
+                                />
+                              )}
+                            </div>
+                            <p className="mt-0.5 line-clamp-2 font-mono text-xs text-slate-500">
+                              {getCurrentValue(field.key)}
+                            </p>
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </nav>
+          </div>
+        </aside>
+
+        {showSplit && selectedField && (
+          <main className="min-w-0 flex-1 bg-white p-4 dark:bg-slate-900 lg:p-6">
+            <TemplateDetailPanel
+              field={selectedField}
+              value={getCurrentValue(selectedKey)}
+              savedValue={savedForm[selectedKey]}
+              disabled={Boolean(error)}
+              saving={saving}
+              onChange={updateCurrent}
+              onSave={() => void handleSave()}
+              onReset={handleReset}
+              onBack={clearSelection}
+            />
+          </main>
+        )}
+
+        {!showSplit && !error && (
+          <main className="hidden min-w-0 flex-1 items-center justify-center bg-white p-6 text-sm text-slate-500 dark:bg-slate-900 lg:flex">
+            请从左侧选择一个模板
+          </main>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function getTemplateFieldSafe(key: TemplateKey): TemplateField | undefined {
+  return allTemplateFields.find((item) => item.key === key)
+}

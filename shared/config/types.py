@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List
 
+from shared.config.message_templates import DynamicMessageTemplates, LiveMessageTemplates
+
 
 @dataclass
 class AppConfigSnapshot:
@@ -14,11 +16,15 @@ class AppConfigSnapshot:
     dynamic_at_all: Dict[str, bool] = field(default_factory=dict)
     dynamic_monitor_interval: int = 30
     dynamic_enable_screenshot: bool = True
+    dynamic_message_templates: DynamicMessageTemplates = field(
+        default_factory=DynamicMessageTemplates
+    )
     live_monitor_mapping: Dict[str, List[str]] = field(default_factory=dict)
     live_at_all: Dict[str, bool] = field(default_factory=dict)
     live_monitor_interval: int = 60
     live_monitor_include_info: bool = True
     live_monitor_use_websocket: bool = True
+    live_message_templates: LiveMessageTemplates = field(default_factory=LiveMessageTemplates)
     bilibili_cookie: str = ""
     bilibili_cookie_set: bool = False
     audit_log_retention_days: int = 90

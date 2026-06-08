@@ -12,6 +12,7 @@ import { EventsPage } from './pages/Events'
 import { GroupsPage } from './pages/Groups'
 import { LiveMonitorPage } from './pages/LiveMonitor'
 import { LoginPage } from './pages/Login'
+import { MessageTemplatesPage } from './pages/MessageTemplates'
 import { SettingsLayout } from './pages/settings/SettingsLayout'
 import { SettingsAccountPage } from './pages/settings/SettingsAccount'
 import { SettingsBotPage } from './pages/settings/SettingsBot'
@@ -39,6 +40,7 @@ export default function App() {
                 <Route index element={<DashboardPage />} />
                 <Route path="dynamic" element={<DynamicMonitorPage />} />
                 <Route path="live" element={<LiveMonitorPage />} />
+                <Route path="templates" element={<MessageTemplatesPage />} />
                 <Route path="groups" element={<GroupsPage />} />
                 <Route path="settings" element={<SettingsLayout />}>
                   <Route index element={<Navigate to="monitor" replace />} />
@@ -51,6 +53,7 @@ export default function App() {
                 <Route path="events" element={<EventsPage />} />
                 <Route path="about" element={<AboutPage />} />
                 <Route path="mappings" element={<Navigate to="/dynamic" replace />} />
+                <Route path="settings/templates" element={<Navigate to="/templates" replace />} />
               </Route>
             </Route>
 

@@ -34,9 +34,15 @@ export interface CookieStatus {
 export interface Settings {
   dynamic_monitor_interval: number
   dynamic_enable_screenshot: boolean
+  dynamic_template_push: string
+  dynamic_template_pinned: string
+  dynamic_template_query_latest: string
+  dynamic_template_query_pinned: string
   live_monitor_interval: number
   live_monitor_include_info: boolean
   live_monitor_use_websocket: boolean
+  live_template_start: string
+  live_template_end: string
   bilibili_cookie: CookieStatus
   audit_log_retention_days: number
   event_retention_days: number
