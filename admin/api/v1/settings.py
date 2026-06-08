@@ -8,11 +8,9 @@ from admin.deps import CurrentUser, RequireSetup
 from admin.schemas.settings import CookieTestResultResponse, SettingsResponse, SettingsUpdateRequest
 from admin.services.connection_status import bilibili_status_message, get_bilibili_connection_status
 from admin.services.monitor_bridge import reload_all_monitors
-from shared.audit.service import write_audit
+from shared.audit.service import write_audit, write_system_event
 from shared.config.service import get_config_service
 from shared.db.enums import AuditAction, SystemEventType
-from shared.audit.service import write_system_event
-from shared.security.crypto import encrypt_value
 
 router = APIRouter(
     prefix="/settings",
@@ -48,11 +46,6 @@ async def update_settings(request: Request, body: SettingsUpdateRequest, user: C
     if body.event_retention_days is not None:
         updates["event_retention_days"] = str(body.event_retention_days)
 
-    if body.clear_bilibili_cookie:
-        updates["bilibili_cookie_encrypted"] = ""
-    elif body.bilibili_cookie is not None and body.bilibili_cookie.strip():
-        updates["bilibili_cookie_encrypted"] = encrypt_value(body.bilibili_cookie.strip())
-
     if updates:
         await svc.set_settings(updates)
         await svc.reload()
@@ -64,7 +57,7 @@ async def update_settings(request: Request, body: SettingsUpdateRequest, user: C
         actor_user_id=user.id,
         actor_username=user.username,
         ip_address=ip,
-        details=svc.serialize_details({k: "***" if "cookie" in k else v for k, v in updates.items()}),
+        details=svc.serialize_details(updates),
     )
     await write_system_event(SystemEventType.CONFIG_RELOAD, "Settings updated via Web Admin")
 

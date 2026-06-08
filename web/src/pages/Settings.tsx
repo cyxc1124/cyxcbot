@@ -16,8 +16,6 @@ export function SettingsPage() {
   const [testing, setTesting] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
-  const [cookieInput, setCookieInput] = useState('')
-  const [showCookie, setShowCookie] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -50,12 +48,8 @@ export function SettingsPage() {
         audit_log_retention_days: settings.audit_log_retention_days,
         event_retention_days: settings.event_retention_days,
       }
-      if (cookieInput.trim()) {
-        payload.bilibili_cookie = cookieInput.trim()
-      }
       const updated = await patchSettings(payload)
       setSettings(updated)
-      setCookieInput('')
       showToast('success', '设置已保存')
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : '保存失败')
@@ -64,17 +58,14 @@ export function SettingsPage() {
     }
   }
 
-  const handleTestCookie = async () => {
+  const handleTestLogin = async () => {
     setTesting(true)
     try {
-      if (cookieInput.trim()) {
-        await patchSettings({ bilibili_cookie: cookieInput.trim() })
-      }
       const result = await testCookie()
       showToast(result.success ? 'success' : 'error', result.message)
       await load()
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : '测试失败')
+      showToast('error', err instanceof Error ? err.message : '验证失败')
     } finally {
       setTesting(false)
     }
@@ -84,7 +75,6 @@ export function SettingsPage() {
     setLoggingOut(true)
     try {
       const result = await logoutBilibili()
-      setCookieInput('')
       setShowLogoutConfirm(false)
       showToast('success', result.message)
       await load()
@@ -104,7 +94,7 @@ export function SettingsPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-slate-900 dark:text-white">系统设置</h2>
-        <p className="mt-1 text-sm text-slate-500">监控间隔、功能开关与 Cookie 配置</p>
+        <p className="mt-1 text-sm text-slate-500">监控间隔、功能开关与 B 站账号</p>
       </div>
 
       {error && <ErrorAlert message={error} onRetry={load} />}
@@ -202,7 +192,7 @@ export function SettingsPage() {
         </div>
 
         <div className="card space-y-4">
-          <h3 className="font-semibold text-slate-900 dark:text-white">B 站 Cookie</h3>
+          <h3 className="font-semibold text-slate-900 dark:text-white">B 站账号</h3>
           <BilibiliQrLogin
             onSuccess={() => {
               showToast('success', 'B 站扫码登录成功')
@@ -213,58 +203,31 @@ export function SettingsPage() {
           <p className="text-sm text-slate-500">
             状态：
             {settings.bilibili_cookie.configured ? (
-              <span className="ml-1 text-emerald-600">
-                已配置
-                {settings.bilibili_cookie.preview && (
-                  <code className="ml-2 rounded bg-slate-100 px-2 py-0.5 text-xs dark:bg-slate-800">
-                    {settings.bilibili_cookie.preview}
-                  </code>
-                )}
-              </span>
+              <span className="ml-1 text-emerald-600">已登录</span>
             ) : (
-              <span className="ml-1 text-amber-600">未配置</span>
+              <span className="ml-1 text-amber-600">未登录</span>
             )}
           </p>
           {settings.bilibili_cookie.configured && (
-            <button
-              type="button"
-              className="btn-danger"
-              disabled={loggingOut}
-              onClick={() => setShowLogoutConfirm(true)}
-            >
-              退出 B 站登录
-            </button>
-          )}
-          <div>
-            <label className="label" htmlFor="cookie">
-              更新 Cookie（留空则不修改）
-            </label>
-            <div className="flex gap-2">
-              <input
-                id="cookie"
-                type={showCookie ? 'text' : 'password'}
-                className="input font-mono text-xs"
-                value={cookieInput}
-                onChange={(e) => setCookieInput(e.target.value)}
-                placeholder="SESSDATA=...; DedeUserID=...; bili_jct=..."
-              />
+            <>
               <button
                 type="button"
-                className="btn-secondary shrink-0"
-                onClick={() => setShowCookie((v) => !v)}
+                className="btn-secondary"
+                disabled={testing}
+                onClick={() => void handleTestLogin()}
               >
-                {showCookie ? '隐藏' : '显示'}
+                {testing ? '验证中…' : '验证登录状态'}
               </button>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={testing}
-            onClick={handleTestCookie}
-          >
-            {testing ? '测试中…' : '测试 Cookie 有效性'}
-          </button>
+              <button
+                type="button"
+                className="btn-danger"
+                disabled={loggingOut}
+                onClick={() => setShowLogoutConfirm(true)}
+              >
+                退出 B 站登录
+              </button>
+            </>
+          )}
         </div>
 
         <div className="card space-y-4">
@@ -317,7 +280,7 @@ export function SettingsPage() {
       <ConfirmDialog
         open={showLogoutConfirm}
         title="退出 B 站登录"
-        message="确定退出 B 站登录？已保存的 Cookie 将被清除，相关监控功能可能受到影响。"
+        message="确定退出 B 站登录？登录状态将被清除，相关监控功能可能受到影响。"
         confirmLabel="退出登录"
         loading={loggingOut}
         onCancel={() => {

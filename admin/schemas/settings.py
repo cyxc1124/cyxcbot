@@ -34,7 +34,5 @@ class SettingsUpdateRequest(BaseModel):
     live_monitor_interval: Optional[int] = Field(default=None, ge=30, le=3600)
     live_monitor_include_info: Optional[bool] = None
     live_monitor_use_websocket: Optional[bool] = None
-    bilibili_cookie: Optional[str] = None
-    clear_bilibili_cookie: Optional[bool] = None
     audit_log_retention_days: Optional[int] = Field(default=None, ge=0, le=3650)
     event_retention_days: Optional[int] = Field(default=None, ge=0, le=3650)

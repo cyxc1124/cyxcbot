@@ -42,9 +42,7 @@ export interface Settings {
   event_retention_days: number
 }
 
-export type SettingsUpdate = Partial<
-  Omit<Settings, 'bilibili_cookie'> & { bilibili_cookie?: string }
->
+export type SettingsUpdate = Partial<Omit<Settings, 'bilibili_cookie'>>
 
 export interface CookieTestResult {
   success: boolean
