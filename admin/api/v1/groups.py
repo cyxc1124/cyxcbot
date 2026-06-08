@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request, status
 
 from admin.deps import CurrentUser, RequireSetup
 from admin.schemas.groups import (
@@ -22,6 +22,7 @@ from admin.services.onebot_bridge import get_group_list
 from shared.audit.service import write_audit, write_system_event
 from shared.config.service import get_config_service
 from shared.db.enums import AuditAction, SystemEventType
+from shared.group_policy import is_group_message_enabled_from_snapshot
 
 router = APIRouter(
     prefix="/groups",
@@ -96,13 +97,36 @@ def _status_display_options(snap) -> StatusCheckDisplayOptions:
     )
 
 
+def _message_enabled_groups(snap, groups: list[dict]) -> list[dict]:
+    return [
+        group
+        for group in groups
+        if is_group_message_enabled_from_snapshot(str(group["group_id"]), snap)
+    ]
+
+
+def _ensure_group_message_enabled(group_id: str, snap) -> None:
+    if not is_group_message_enabled_from_snapshot(group_id, snap):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该群未启用群消息，无法配置状态查询",
+        )
+
+
+def _filter_status_enabled_group_ids(enabled_ids: list[str], groups: list[dict]) -> list[str]:
+    allowed = {str(group["group_id"]) for group in groups}
+    return [gid for gid in enabled_ids if gid in allowed]
+
+
 @router.get("/status-policy", response_model=GroupStatusPolicyResponse)
 async def get_status_policy(_: CurrentUser):
     snap = get_config_service().get_snapshot()
-    groups = await get_group_list()
+    groups = _message_enabled_groups(snap, await get_group_list())
     return GroupStatusPolicyResponse(
         restrict=snap.status_check_group_restrict,
-        enabled_group_ids=snap.status_check_enabled_group_ids,
+        enabled_group_ids=_filter_status_enabled_group_ids(
+            snap.status_check_enabled_group_ids, groups
+        ),
         groups=[GroupInfo(**g) for g in groups],
         display=_status_display_options(snap),
     )
@@ -115,7 +139,16 @@ async def update_status_policy(
     user: CurrentUser,
 ):
     svc = get_config_service()
-    enabled_ids = [str(gid).strip() for gid in body.enabled_group_ids if str(gid).strip()]
+    snap = svc.get_snapshot()
+    message_groups = _message_enabled_groups(snap, await get_group_list())
+    enabled_ids = [
+        str(gid).strip()
+        for gid in body.enabled_group_ids
+        if str(gid).strip()
+    ]
+    for group_id in enabled_ids:
+        _ensure_group_message_enabled(group_id, snap)
+    enabled_ids = _filter_status_enabled_group_ids(enabled_ids, message_groups)
     updates: dict[str, str] = {
         "status_check_group_restrict": str(body.restrict).lower(),
         "status_check_enabled_group_ids": json.dumps(enabled_ids, ensure_ascii=False),
@@ -145,10 +178,12 @@ async def update_status_policy(
     await write_system_event(SystemEventType.CONFIG_RELOAD, "Group status policy updated")
 
     snap = svc.get_snapshot()
-    groups = await get_group_list()
+    groups = _message_enabled_groups(snap, await get_group_list())
     return GroupStatusPolicyResponse(
         restrict=snap.status_check_group_restrict,
-        enabled_group_ids=snap.status_check_enabled_group_ids,
+        enabled_group_ids=_filter_status_enabled_group_ids(
+            snap.status_check_enabled_group_ids, groups
+        ),
         groups=[GroupInfo(**g) for g in groups],
         display=_status_display_options(snap),
     )

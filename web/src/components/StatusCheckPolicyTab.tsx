@@ -279,8 +279,8 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <p className="text-sm text-slate-500">
           {isGroup
-            ? '配置哪些群可使用 /status、/状态 查询机器人运行状态。超级用户与系统设置中的额外 QQ 号不受此限制。'
-            : '配置哪些好友可使用 /status、/状态 查询机器人运行状态。超级用户与系统设置中的额外 QQ 号不受此限制。'}
+            ? '配置哪些群可使用 /status、/状态 查询机器人运行状态。仅显示已启用「群消息」的群；超级用户与系统设置中的额外 QQ 号不受此限制。'
+            : '配置哪些好友可使用 /status、/状态 查询机器人运行状态。仅显示已启用「好友消息」的好友；超级用户与系统设置中的额外 QQ 号不受此限制。'}
         </p>
         {items.length > 0 && (
           <div className="flex gap-2">
@@ -312,8 +312,8 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
             {error
               ? '数据暂时无法加载'
               : isGroup
-                ? '暂无可用群组，请确保机器人已连接 OneBot 并在线。'
-                : '暂无好友数据，请确保机器人已连接 OneBot 且协议端支持 get_friend_list。'}
+                ? '暂无已启用群消息的群组。请先在「群消息」Tab 中启用对应群组，或确保机器人已连接 OneBot。'
+                : '暂无已启用好友消息的好友。请先在「好友消息」Tab 中启用对应好友，或确保机器人已连接 OneBot。'}
           </p>
         ) : (
           <div className="overflow-x-auto">
