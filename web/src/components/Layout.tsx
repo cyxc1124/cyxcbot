@@ -19,7 +19,7 @@ const SIDEBAR_WIDTH_CLASS = 'w-64'
 
 export function Layout() {
   const { user, logout } = useAuth()
-  const { navCollapsed, setNavCollapsed, setNavCollapsible } = useSidebar()
+  const { navCollapsed, setNavCollapsed } = useSidebar()
   const location = useLocation()
   const [dark, setDark] = useState(() =>
     document.documentElement.classList.contains('dark'),
@@ -29,9 +29,8 @@ export function Layout() {
 
   useEffect(() => {
     setNavCollapsed(false)
-    setNavCollapsible(false)
     setNavHoverExpanded(false)
-  }, [location.pathname, setNavCollapsed, setNavCollapsible])
+  }, [location.pathname, setNavCollapsed])
 
   useEffect(() => {
     if (!navCollapsed) setNavHoverExpanded(false)

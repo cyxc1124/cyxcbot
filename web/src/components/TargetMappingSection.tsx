@@ -15,7 +15,6 @@ import { LoadErrorBanner } from './LoadErrorBanner'
 import { GroupSelector } from './GroupSelector'
 import { ToggleSwitch } from './ToggleSwitch'
 import { useToast } from '../contexts/ToastContext'
-import { useSidebar } from '../contexts/SidebarContext'
 import { formatApiError } from '../utils/apiError'
 import { formatDateTime } from '../utils/format'
 
@@ -57,7 +56,6 @@ function getTargetDisplayName(
 
 export function TargetMappingSection({ type }: TargetMappingSectionProps) {
   const { showToast } = useToast()
-  const { setNavCollapsed, setNavCollapsible } = useSidebar()
   const [groups, setGroups] = useState<Group[]>([])
   const [targets, setTargets] = useState<SubscriptionTarget[]>([])
   const [loading, setLoading] = useState(true)
@@ -94,16 +92,6 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
       setLoading(false)
     }
   }, [isDynamic])
-
-  useEffect(() => {
-    const collapsible = selectedId !== null
-    setNavCollapsible(collapsible)
-    setNavCollapsed(collapsible)
-    return () => {
-      setNavCollapsible(false)
-      setNavCollapsed(false)
-    }
-  }, [selectedId, setNavCollapsed, setNavCollapsible])
 
   useEffect(() => {
     void load()
