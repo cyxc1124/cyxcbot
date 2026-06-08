@@ -25,3 +25,5 @@ class AppConfigSnapshot:
     event_retention_days: int = 90
     message_group_restrict: bool = False
     message_enabled_group_ids: List[str] = field(default_factory=list)
+    status_check_allowed_qq: List[str] = field(default_factory=list)
+    nonebot_superusers: List[str] = field(default_factory=list)

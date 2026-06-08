@@ -40,6 +40,8 @@ export interface Settings {
   bilibili_cookie: CookieStatus
   audit_log_retention_days: number
   event_retention_days: number
+  status_check_allowed_qq: string[]
+  nonebot_superusers: string[]
 }
 
 export type SettingsUpdate = Partial<Omit<Settings, 'bilibili_cookie'>>

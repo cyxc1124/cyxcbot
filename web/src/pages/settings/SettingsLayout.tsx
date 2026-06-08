@@ -7,6 +7,7 @@ import { SettingsProvider, useSettingsForm } from './SettingsContext'
 const settingsNavItems = [
   { to: '/settings/monitor', label: '监控', description: '动态与直播检查间隔、功能开关' },
   { to: '/settings/account', label: 'B 站账号', description: '扫码登录与 Cookie 管理' },
+  { to: '/settings/bot', label: '机器人', description: 'QQ 命令权限与状态查询' },
   { to: '/settings/data', label: '数据保留', description: '审计日志与系统事件保留策略' },
 ]
 

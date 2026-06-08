@@ -18,17 +18,31 @@ config = get_plugin_config(Config)
 start_time = time.time()
 
 # 权限检查函数
+def _get_allowed_qq_numbers() -> set[int]:
+    """从 Web Admin 数据库读取允许查询状态的 QQ 列表"""
+    try:
+        from shared.config.service import get_config_service
+
+        allowed: set[int] = set()
+        for qq in get_config_service().get_snapshot().status_check_allowed_qq:
+            qq_str = str(qq).strip()
+            if qq_str.isdigit():
+                allowed.add(int(qq_str))
+        return allowed
+    except Exception as exc:
+        logger.debug(f"读取状态查询权限配置失败: {exc}")
+        return set()
+
+
 async def check_status_permission(bot: Bot, event: GroupMessageEvent | PrivateMessageEvent) -> bool:
     """检查用户是否有查询状态的权限"""
     user_id = event.user_id
-    
-    # 优先检查是否为超级用户
+
     if await SUPERUSER(bot, event):
-        logger.info(f"超级用户 {user_id} 查询机器人状态")
+        logger.info(f"NoneBot 超级用户 {user_id} 查询机器人状态")
         return True
-    
-    # 检查是否在允许的QQ号列表中
-    if user_id in config.allowed_qq_numbers:
+
+    if user_id in _get_allowed_qq_numbers():
         logger.info(f"允许的用户 {user_id} 查询机器人状态")
         return True
     

@@ -68,7 +68,7 @@ def log_environment_config():
     # 统计环境变量
     all_env_count = len(os.environ)
     plugin_env_count = len([k for k in os.environ.keys()
-                           if any(prefix in k for prefix in ['HOST', 'PORT', 'SUPERUSERS', 'NOTIFY_', 'STATUS_CHECK_', 'INCLUDE_ROOM', 'COMMAND_'])])
+                           if any(prefix in k for prefix in ['HOST', 'PORT', 'NOTIFY_', 'STATUS_CHECK_', 'INCLUDE_ROOM', 'COMMAND_'])])
     logger.info(f"环境变量统计: 总数 {all_env_count} 个, 插件相关 {plugin_env_count} 个")
 
     # 定义要检查的环境变量
@@ -77,7 +77,7 @@ def log_environment_config():
             "HOST", "PORT", "COMMAND_START", "COMMAND_SEP", "LOG_LEVEL"
         ],
         "用户和群组": [
-            "SUPERUSERS", "NOTIFY_GROUPS"
+            "NOTIFY_GROUPS"
         ],
         "动态监控": [
             "DYNAMIC_MONITOR_MAPPING",
@@ -92,7 +92,6 @@ def log_environment_config():
             "LIVE_MONITOR_USE_WEBSOCKET"
         ],
         "状态检查": [
-            "STATUS_CHECK_ALLOWED_QQ",
             "STATUS_CHECK_SHOW_DETAILED",
             "STATUS_CHECK_SHOW_UPTIME",
             "STATUS_CHECK_SHOW_MEMORY"
@@ -105,11 +104,7 @@ def log_environment_config():
         for var in vars_list:
             value = os.getenv(var)
             if value is not None:
-                # 对敏感信息进行部分隐藏
-                if "SUPERUSERS" in var and value:
-                    display_value = value[:10] + "..." if len(value) > 10 else value
-                else:
-                    display_value = value
+                display_value = value
                 config_items.append(f"{var}={display_value}")
             else:
                 config_items.append(f"{var}=(未设置)")

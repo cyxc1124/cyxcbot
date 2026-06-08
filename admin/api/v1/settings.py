@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Request
 
 from admin.deps import CurrentUser, RequireSetup
@@ -45,11 +47,28 @@ async def update_settings(request: Request, body: SettingsUpdateRequest, user: C
         updates["audit_log_retention_days"] = str(body.audit_log_retention_days)
     if body.event_retention_days is not None:
         updates["event_retention_days"] = str(body.event_retention_days)
+    if body.status_check_allowed_qq is not None:
+        cleaned = [
+            item.strip()
+            for qq in body.status_check_allowed_qq
+            for item in [str(qq).strip()]
+            if item.isdigit()
+        ]
+        updates["status_check_allowed_qq"] = json.dumps(cleaned, ensure_ascii=False)
+    if body.nonebot_superusers is not None:
+        cleaned = [
+            item.strip()
+            for qq in body.nonebot_superusers
+            for item in [str(qq).strip()]
+            if item.isdigit()
+        ]
+        updates["nonebot_superusers"] = json.dumps(cleaned, ensure_ascii=False)
 
     if updates:
         await svc.set_settings(updates)
         await svc.reload()
-        await reload_all_monitors()
+        if any(k not in ("status_check_allowed_qq", "nonebot_superusers") for k in updates):
+            await reload_all_monitors()
 
     ip = request.client.host if request.client else None
     await write_audit(

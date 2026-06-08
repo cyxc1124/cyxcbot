@@ -14,6 +14,7 @@ import { LiveMonitorPage } from './pages/LiveMonitor'
 import { LoginPage } from './pages/Login'
 import { SettingsLayout } from './pages/settings/SettingsLayout'
 import { SettingsAccountPage } from './pages/settings/SettingsAccount'
+import { SettingsBotPage } from './pages/settings/SettingsBot'
 import { SettingsDataPage } from './pages/settings/SettingsData'
 import { SettingsMonitorPage } from './pages/settings/SettingsMonitor'
 import { SetupPage } from './pages/Setup'
@@ -43,6 +44,7 @@ export default function App() {
                   <Route index element={<Navigate to="monitor" replace />} />
                   <Route path="monitor" element={<SettingsMonitorPage />} />
                   <Route path="account" element={<SettingsAccountPage />} />
+                  <Route path="bot" element={<SettingsBotPage />} />
                   <Route path="data" element={<SettingsDataPage />} />
                 </Route>
                 <Route path="audit" element={<AuditPage />} />

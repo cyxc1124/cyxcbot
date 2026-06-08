@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from nonebot_plugin_orm import get_session
 
+from shared.config.nonebot_superusers import apply_nonebot_superusers
 from shared.config.types import AppConfigSnapshot
 from shared.db.models import (
     DynamicTarget,
@@ -32,6 +33,8 @@ SETTING_KEYS = {
     "event_retention_days": ("90", int),
     "message_group_restrict": ("false", bool),
     "message_enabled_group_ids": ("[]", "json_list"),
+    "status_check_allowed_qq": ("[]", "json_list"),
+    "nonebot_superusers": ("[]", "json_list"),
 }
 
 
@@ -98,7 +101,10 @@ class ConfigService:
             event_retention_days=settings.get("event_retention_days", 90),
             message_group_restrict=settings.get("message_group_restrict", False),
             message_enabled_group_ids=settings.get("message_enabled_group_ids", []),
+            status_check_allowed_qq=settings.get("status_check_allowed_qq", []),
+            nonebot_superusers=settings.get("nonebot_superusers", []),
         )
+        apply_nonebot_superusers(self._snapshot.nonebot_superusers)
         logger.info(
             f"Config loaded from DB: {len(dynamic_mapping)} dynamic targets, "
             f"{len(live_mapping)} live targets"
@@ -216,6 +222,8 @@ class ConfigService:
             },
             "audit_log_retention_days": snap.audit_log_retention_days,
             "event_retention_days": snap.event_retention_days,
+            "status_check_allowed_qq": snap.status_check_allowed_qq,
+            "nonebot_superusers": snap.nonebot_superusers,
         }
 
     @staticmethod
