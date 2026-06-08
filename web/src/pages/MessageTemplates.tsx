@@ -28,12 +28,12 @@ function VariablePanel({
   onInsert: (token: string) => void
 }) {
   return (
-    <aside className="shrink-0 space-y-3 lg:w-52">
-      <div>
+    <aside className="flex min-h-0 w-full shrink-0 flex-col lg:w-52 lg:self-stretch">
+      <div className="shrink-0">
         <h4 className="text-sm font-medium text-slate-900 dark:text-white">可用变量</h4>
         <p className="mt-1 text-xs text-slate-500">点击插入到光标位置</p>
       </div>
-      <ul className="space-y-2">
+      <ul className="mt-3 min-h-0 max-h-48 flex-1 space-y-2 overflow-y-auto pr-1 lg:max-h-none">
         {field.variables.map((variable) => (
           <li key={variable.key}>
             <button
@@ -107,8 +107,8 @@ function TemplateDetailPanel({
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-700">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-700">
         <div className="min-w-0 flex-1">
           <button
             type="button"
@@ -140,35 +140,37 @@ function TemplateDetailPanel({
         </div>
       </div>
 
-      <div className="flex flex-1 flex-col gap-6 pt-6 lg:flex-row lg:items-start">
-        <div className="min-w-0 flex-1 space-y-4">
-          <div>
-            <label className="label" htmlFor={`template-${field.key}`}>
-              模板内容
-            </label>
-            <textarea
-              id={`template-${field.key}`}
-              ref={textareaRef}
-              className="input min-h-[8rem] resize-y font-mono text-sm"
-              rows={4}
-              maxLength={500}
-              value={value}
-              disabled={disabled || saving}
-              onChange={(e) => onChange(e.target.value)}
-            />
-            <p className="mt-1 text-xs text-slate-400">{value.length}/500</p>
-          </div>
-
-          <div>
-            <h4 className="mb-2 text-sm font-medium text-slate-900 dark:text-white">效果预览</h4>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/60">
-              <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-800 dark:text-slate-200">
-                {preview}
-              </pre>
+      <div className="flex min-h-0 flex-1 flex-col gap-4 pt-6 lg:flex-row lg:gap-6">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto pr-1">
+          <div className="space-y-4">
+            <div>
+              <label className="label" htmlFor={`template-${field.key}`}>
+                模板内容
+              </label>
+              <textarea
+                id={`template-${field.key}`}
+                ref={textareaRef}
+                className="input mt-1 min-h-[8rem] resize-y font-mono text-sm"
+                rows={6}
+                maxLength={500}
+                value={value}
+                disabled={disabled || saving}
+                onChange={(e) => onChange(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-slate-400">{value.length}/500</p>
             </div>
-            <p className="mt-2 text-xs text-slate-500">
-              预览严格按模板顺序渲染；{'{media}'}、{'{card}'}、{'{cover}'} 在推送时替换为实际图片。
-            </p>
+
+            <div>
+              <h4 className="mb-2 text-sm font-medium text-slate-900 dark:text-white">效果预览</h4>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/60">
+                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-800 dark:text-slate-200">
+                  {preview}
+                </pre>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                预览严格按模板顺序渲染；{'{media}'}、{'{card}'}、{'{cover}'} 在推送时替换为实际图片。
+              </p>
+            </div>
           </div>
         </div>
 
@@ -287,8 +289,8 @@ export function MessageTemplatesPage() {
 
   if (loading && !error) {
     return (
-      <div className="space-y-6">
-        <div>
+      <div className="flex h-[calc(100dvh-4rem-2rem)] flex-col gap-6 overflow-hidden lg:h-[calc(100dvh-4rem-4rem)]">
+        <div className="shrink-0">
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white">消息模板</h2>
           <p className="mt-1 text-sm text-slate-500">自定义动态、直播推送与链接解析的文本内容</p>
         </div>
@@ -298,29 +300,33 @@ export function MessageTemplatesPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="flex h-[calc(100dvh-4rem-2rem)] flex-col gap-6 overflow-hidden lg:h-[calc(100dvh-4rem-4rem)]">
+      <div className="shrink-0">
         <h2 className="text-2xl font-bold text-slate-900 dark:text-white">消息模板</h2>
         <p className="mt-1 text-sm text-slate-500">选择模板进行编辑，支持变量插入与效果预览</p>
       </div>
 
-      {error && <LoadErrorBanner message={error} onRetry={load} />}
+      {error && (
+        <div className="shrink-0">
+          <LoadErrorBanner message={error} onRetry={load} />
+        </div>
+      )}
 
       <div
-        className={`flex min-h-[28rem] overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 ${
+        className={`flex min-h-0 flex-1 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 ${
           showSplit ? 'divide-x divide-slate-200 dark:divide-slate-700' : ''
         }`}
       >
         <aside
-          className={`shrink-0 bg-slate-50 dark:bg-slate-900/40 ${
-            listHiddenOnMobile ? 'hidden lg:block' : ''
+          className={`flex min-h-0 flex-col bg-slate-50 dark:bg-slate-900/40 ${
+            listHiddenOnMobile ? 'hidden lg:flex' : ''
           } ${showSplit ? 'w-full lg:w-72' : 'w-full'}`}
         >
-          <div className="flex h-full max-h-[32rem] flex-col lg:max-h-[40rem]">
-            <div className="border-b border-slate-200 px-3 py-2.5 dark:border-slate-700">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="shrink-0 border-b border-slate-200 px-3 py-2.5 dark:border-slate-700">
               <p className="text-xs font-medium text-slate-500">模板列表</p>
             </div>
-            <nav className="flex-1 overflow-y-auto p-2">
+            <nav className="min-h-0 flex-1 overflow-y-auto p-2">
               {(
                 [
                   ['dynamic', dynamicTemplateFields],
@@ -371,7 +377,7 @@ export function MessageTemplatesPage() {
         </aside>
 
         {showSplit && selectedField && (
-          <main className="min-w-0 flex-1 bg-white p-4 dark:bg-slate-900 lg:p-6">
+          <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-white p-4 dark:bg-slate-900 lg:p-6">
             <TemplateDetailPanel
               field={selectedField}
               value={getCurrentValue(selectedKey)}
@@ -387,7 +393,7 @@ export function MessageTemplatesPage() {
         )}
 
         {!showSplit && !error && (
-          <main className="hidden min-w-0 flex-1 items-center justify-center bg-white p-6 text-sm text-slate-500 dark:bg-slate-900 lg:flex">
+          <main className="hidden min-h-0 min-w-0 flex-1 items-center justify-center overflow-y-auto bg-white p-6 text-sm text-slate-500 dark:bg-slate-900 lg:flex">
             请从左侧选择一个模板
           </main>
         )}
