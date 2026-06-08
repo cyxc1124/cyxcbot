@@ -65,11 +65,11 @@ export function BilibiliQrLogin({ onSuccess, onError }: BilibiliQrLoginProps) {
   useEffect(() => () => stopPolling(), [stopPolling])
 
   return (
-    <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/40">
+    <div className="space-y-4 rounded-lg border border-border bg-muted p-4 border-border bg-card/40">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="font-medium text-slate-900 dark:text-white">扫码登录</p>
-          <p className="text-sm text-slate-500">使用 B 站 App 扫描 TV 登录二维码，无需手动复制 Cookie</p>
+          <p className="font-medium text-foreground">扫码登录</p>
+          <p className="text-sm text-muted-foreground">使用 B 站 App 扫描 TV 登录二维码，无需手动复制 Cookie</p>
         </div>
         <div className="flex gap-2">
           {(phase === 'waiting' || phase === 'loading') && (
@@ -95,7 +95,7 @@ export function BilibiliQrLogin({ onSuccess, onError }: BilibiliQrLoginProps) {
               ? 'text-red-600'
               : phase === 'success'
                 ? 'text-emerald-600'
-                : 'text-slate-500'
+                : 'text-muted-foreground'
           }`}
         >
           {message}

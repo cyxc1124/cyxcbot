@@ -18,8 +18,8 @@ export function SettingsAccountPage() {
 
   return (
     <div className="card space-y-4">
-      <h3 className="font-semibold text-slate-900 dark:text-white">B 站账号</h3>
-      <p className="text-sm text-slate-500">
+      <h3 className="font-semibold text-foreground">B 站账号</h3>
+      <p className="text-sm text-muted-foreground">
         用于拉取 UP 主信息与直播状态，未登录时部分监控功能不可用
       </p>
 

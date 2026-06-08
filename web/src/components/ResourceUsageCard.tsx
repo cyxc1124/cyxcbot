@@ -23,10 +23,10 @@ export function ResourceUsageCard({ label, percent, detail }: ResourceUsageCardP
   return (
     <div className="card flex flex-col gap-3">
       <div className="flex items-baseline justify-between gap-2">
-        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p>
+        <p className="text-sm font-medium text-muted-foreground">{label}</p>
         <p
           className={`text-2xl font-bold tabular-nums ${
-            clamped !== null ? textColor(clamped) : 'text-slate-400'
+            clamped !== null ? textColor(clamped) : 'text-muted-foreground'
           }`}
         >
           {clamped !== null ? `${clamped.toFixed(1)}%` : '—'}
@@ -34,7 +34,7 @@ export function ResourceUsageCard({ label, percent, detail }: ResourceUsageCardP
       </div>
 
       <div
-        className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"
+        className="h-2.5 w-full overflow-hidden rounded-full bg-secondary"
         role="progressbar"
         aria-valuenow={clamped ?? undefined}
         aria-valuemin={0}
@@ -50,7 +50,7 @@ export function ResourceUsageCard({ label, percent, detail }: ResourceUsageCardP
       </div>
 
       {detail && (
-        <p className="text-xs text-slate-500 dark:text-slate-400">{detail}</p>
+        <p className="text-xs text-muted-foreground">{detail}</p>
       )}
     </div>
   )

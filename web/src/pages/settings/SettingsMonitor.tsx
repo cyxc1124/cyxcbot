@@ -14,11 +14,11 @@ function SettingToggleRow({
 }) {
   return (
     <div className="flex items-center gap-4 py-2">
-      <span className="min-w-0 flex-1 text-sm text-slate-700 dark:text-slate-300">{label}</span>
+      <span className="min-w-0 flex-1 text-sm text-foreground">{label}</span>
       <div className="flex w-[5.75rem] shrink-0 items-center justify-end gap-2">
         <span
           className={`w-10 shrink-0 text-right text-xs ${
-            checked ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
+            checked ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
           }`}
         >
           {checked ? '已启用' : '已关闭'}
@@ -35,7 +35,7 @@ export function SettingsMonitorPage() {
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="card space-y-4">
-        <h3 className="font-semibold text-slate-900 dark:text-white">动态监控</h3>
+        <h3 className="font-semibold text-foreground">动态监控</h3>
         <div className="max-w-xs">
           <label className="label" htmlFor="dynamic_interval">
             检查间隔（秒）
@@ -55,7 +55,7 @@ export function SettingsMonitorPage() {
             }
           />
         </div>
-        <div className="border-t border-slate-100 pt-1 dark:border-slate-800">
+        <div className="border-t border-border pt-1 border-border">
           <SettingToggleRow
             label="启用动态截图（Playwright）"
             checked={settings?.dynamic_enable_screenshot ?? false}
@@ -68,7 +68,7 @@ export function SettingsMonitorPage() {
       </div>
 
       <div className="card space-y-4">
-        <h3 className="font-semibold text-slate-900 dark:text-white">直播监控</h3>
+        <h3 className="font-semibold text-foreground">直播监控</h3>
         <div className="max-w-xs">
           <label className="label" htmlFor="live_interval">
             检查间隔（秒）
@@ -88,7 +88,7 @@ export function SettingsMonitorPage() {
             }
           />
         </div>
-        <div className="divide-y divide-slate-100 border-t border-slate-100 pt-1 dark:divide-slate-800 dark:border-slate-800">
+        <div className="divide-y divide-border border-t border-border pt-1">
           <SettingToggleRow
             label="通知包含详细房间信息"
             checked={settings?.live_monitor_include_info ?? false}

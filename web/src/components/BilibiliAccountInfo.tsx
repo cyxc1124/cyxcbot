@@ -33,29 +33,29 @@ export function BilibiliAccountInfo({ account }: BilibiliAccountInfoProps) {
   const meta = STATUS_META[account.status]
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/40">
+    <div className="rounded-lg border border-border bg-muted p-4 border-border bg-card/40">
       {account.logged_in ? (
         <>
           <div className="flex flex-wrap items-center gap-2">
-            <p className="truncate text-lg font-semibold text-slate-900 dark:text-white">
+            <p className="truncate text-lg font-semibold text-foreground">
               {account.username || '未知用户'}
             </p>
             <span className={`badge shrink-0 ${meta.badge}`}>{meta.label}</span>
           </div>
           {account.uid && (
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-muted-foreground">
               UID{' '}
-              <span className="font-mono text-slate-700 dark:text-slate-300">{account.uid}</span>
+              <span className="font-mono text-foreground">{account.uid}</span>
             </p>
           )}
         </>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
-            <p className="font-medium text-slate-900 dark:text-white">{meta.title}</p>
+            <p className="font-medium text-foreground">{meta.title}</p>
             <span className={`badge shrink-0 ${meta.badge}`}>{meta.label}</span>
           </div>
-          {meta.hint && <p className="mt-1 text-sm text-slate-500">{meta.hint}</p>}
+          {meta.hint && <p className="mt-1 text-sm text-muted-foreground">{meta.hint}</p>}
         </>
       )}
     </div>

@@ -9,9 +9,9 @@ const LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR'] as const
 type LogLevel = (typeof LEVELS)[number]
 
 const LEVEL_CLASS: Record<string, string> = {
-  TRACE: 'text-slate-400',
-  DEBUG: 'text-slate-500 dark:text-slate-400',
-  INFO: 'text-slate-800 dark:text-slate-200',
+  TRACE: 'text-muted-foreground',
+  DEBUG: 'text-muted-foreground',
+  INFO: 'text-primary',
   SUCCESS: 'text-emerald-600 dark:text-emerald-400',
   WARNING: 'text-amber-600 dark:text-amber-400',
   ERROR: 'text-red-600 dark:text-red-400',
@@ -29,11 +29,11 @@ function LogLine({ entry }: { entry: RuntimeLogEntry }) {
   const levelClass = LEVEL_CLASS[entry.level.toUpperCase()] ?? LEVEL_CLASS.INFO
   return (
     <div className="whitespace-pre-wrap break-all font-mono text-xs leading-5">
-      <span className="text-slate-400">{entry.ts}</span>
+      <span className="log-line-ts">{entry.ts}</span>
       {' '}
       <span className={levelClass}>{entry.level.padEnd(7)}</span>
-      <span className="text-slate-500"> {entry.logger} | </span>
-      <span className="text-slate-800 dark:text-slate-100">{entry.message}</span>
+      <span className="log-line-logger"> {entry.logger} | </span>
+      <span className="log-line-msg">{entry.message}</span>
     </div>
   )
 }
@@ -170,8 +170,8 @@ export function LogsPage() {
     <div className="flex h-[calc(100vh-8rem)] flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">运行日志</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <h2 className="text-2xl font-bold text-foreground">运行日志</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             实时查看 Bot 控制台输出，内存保留最近约 {DISPLAY_MAX.toLocaleString()} 条
           </p>
         </div>
@@ -199,12 +199,12 @@ export function LogsPage() {
           </select>
         </div>
 
-        <label className="flex items-center gap-2 pb-2 text-sm text-slate-600 dark:text-slate-300">
+        <label className="flex items-center gap-2 pb-2 text-sm text-muted-foreground">
           <input
             type="checkbox"
             checked={autoScroll}
             onChange={(e) => setAutoScroll(e.target.checked)}
-            className="rounded border-slate-300"
+            className="rounded border-input"
           />
           自动滚到底部
         </label>
@@ -216,17 +216,14 @@ export function LogsPage() {
           清空显示
         </button>
 
-        <p className="ml-auto pb-2 text-xs text-slate-500">
+        <p className="ml-auto pb-2 text-xs text-muted-foreground">
           显示 {logs.length} 条{buffered > 0 ? ` · 服务端缓冲约 ${buffered} 条` : ''}
         </p>
       </div>
 
-      <div
-        ref={containerRef}
-        className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-950 p-4 dark:border-slate-700"
-      >
+      <div ref={containerRef} className="log-panel">
         {logs.length === 0 ? (
-          <p className="font-mono text-sm text-slate-500">暂无日志，等待输出…</p>
+          <p className="font-mono text-sm text-muted-foreground">暂无日志，等待输出…</p>
         ) : (
           <div className="space-y-0.5">
             {logs.map((entry, index) => (

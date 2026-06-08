@@ -15,10 +15,10 @@ interface InfoRowProps {
 
 function InfoRow({ label, value, hint }: InfoRowProps) {
   return (
-    <div className="border-b border-slate-100 py-4 last:border-0 dark:border-slate-800">
-      <dt className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</dt>
-      <dd className="mt-1 text-base font-medium text-slate-900 dark:text-white">{value}</dd>
-      {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
+    <div className="border-b border-border py-4 last:border-0 border-border">
+      <dt className="text-sm font-medium text-muted-foreground">{label}</dt>
+      <dd className="mt-1 text-base font-medium text-foreground">{value}</dd>
+      {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
     </div>
   )
 }
@@ -49,22 +49,22 @@ export function AboutPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white">关于</h2>
-        <p className="mt-1 text-sm text-slate-500">机器草 Web 管理面板</p>
+        <h2 className="text-2xl font-bold text-foreground">关于</h2>
+        <p className="mt-1 text-sm text-muted-foreground">机器草 Web 管理面板</p>
       </div>
 
       {error && <LoadErrorBanner message={error} onRetry={load} />}
 
       <div className="card">
         <div className="mb-6 flex items-center gap-4">
-          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-xl font-bold text-white">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary text-xl font-bold text-white">
             C
           </span>
           <div>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+            <h3 className="text-lg font-semibold text-foreground">
               {about?.app_name ?? '机器草'}
             </h3>
-            <p className="text-sm text-slate-500">Bilibili 监控机器人管理界面</p>
+            <p className="text-sm text-muted-foreground">Bilibili 监控机器人管理界面</p>
           </div>
         </div>
 

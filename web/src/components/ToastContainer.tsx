@@ -3,7 +3,7 @@ import { useToast } from '../contexts/ToastContext'
 const typeStyles = {
   success: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200',
   error: 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200',
-  info: 'border-brand-200 bg-brand-50 text-brand-800 dark:border-brand-800 dark:bg-brand-950 dark:text-brand-200',
+  info: 'border-primary/25 bg-sidebar-accent text-sidebar-primary',
 }
 
 export function ToastContainer() {

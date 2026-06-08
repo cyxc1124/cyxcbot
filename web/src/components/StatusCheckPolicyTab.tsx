@@ -65,16 +65,16 @@ function DisplayOptionsCard({
   return (
     <div className="card space-y-4">
       <div>
-        <h3 className="font-semibold text-slate-900 dark:text-white">状态回复内容</h3>
-        <p className="mt-1 text-sm text-slate-500">
-          控制 <code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800">/status</code>{' '}
-          、<code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800">/状态</code>{' '}
+        <h3 className="font-semibold text-foreground">状态回复内容</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          控制 <code className="rounded bg-secondary px-1 py-0.5 text-xs bg-secondary">/status</code>{' '}
+          、<code className="rounded bg-secondary px-1 py-0.5 text-xs bg-secondary">/状态</code>{' '}
           回复中包含的信息。群组与好友共用此设置。
         </p>
       </div>
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-4">
-          <span className="text-sm text-slate-700 dark:text-slate-300">显示详细技术信息</span>
+          <span className="text-sm text-foreground">显示详细技术信息</span>
           <ToggleSwitch
             checked={display.show_detailed}
             disabled={disabled}
@@ -82,7 +82,7 @@ function DisplayOptionsCard({
           />
         </div>
         <div className="flex items-center justify-between gap-4">
-          <span className="text-sm text-slate-700 dark:text-slate-300">显示运行时长</span>
+          <span className="text-sm text-foreground">显示运行时长</span>
           <ToggleSwitch
             checked={display.show_uptime}
             disabled={disabled}
@@ -90,7 +90,7 @@ function DisplayOptionsCard({
           />
         </div>
         <div className="flex items-center justify-between gap-4">
-          <span className="text-sm text-slate-700 dark:text-slate-300">显示内存使用情况</span>
+          <span className="text-sm text-foreground">显示内存使用情况</span>
           <ToggleSwitch
             checked={display.show_memory}
             disabled={disabled}
@@ -277,7 +277,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
       />
 
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted-foreground">
           {isGroup
             ? '配置哪些群可使用 /status、/状态 查询机器人运行状态。仅显示已启用「群消息」的群；超级用户与系统设置中的额外 QQ 号不受此限制。'
             : '配置哪些好友可使用 /status、/状态 查询机器人运行状态。仅显示已启用「好友消息」的好友；超级用户与系统设置中的额外 QQ 号不受此限制。'}
@@ -308,7 +308,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
 
       <div className="card">
         {items.length === 0 ? (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             {error
               ? '数据暂时无法加载'
               : isGroup
@@ -319,7 +319,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[480px] text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-slate-500 dark:border-slate-700">
+                <tr className="border-b border-border text-muted-foreground border-border">
                   <th className="pb-3 pr-4 font-medium">{isGroup ? '群名称' : '昵称'}</th>
                   <th className="pb-3 pr-4 font-medium">{isGroup ? '群号' : 'QQ 号'}</th>
                   {isGroup && <th className="pb-3 pr-4 font-medium">成员数</th>}
@@ -333,21 +333,21 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
                   return (
                     <tr
                       key={item.id}
-                      className="border-b border-slate-100 last:border-0 dark:border-slate-800"
+                      className="border-b border-border last:border-0 border-border"
                     >
-                      <td className="py-3.5 pr-4 font-medium text-slate-900 dark:text-white">
+                      <td className="py-3.5 pr-4 font-medium text-foreground">
                         {item.name ?? '—'}
                       </td>
-                      <td className="py-3.5 pr-4 font-mono text-xs text-slate-500">{item.id}</td>
+                      <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">{item.id}</td>
                       {isGroup && (
-                        <td className="py-3.5 pr-4 text-slate-600 dark:text-slate-400">
+                        <td className="py-3.5 pr-4 text-muted-foreground">
                           {item.extra ?? '—'}
                         </td>
                       )}
                       <td className="py-3.5 text-right">
                         <div className="inline-flex items-center justify-end gap-2">
                           <span
-                            className={`text-xs ${enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}
+                            className={`text-xs ${enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}
                           >
                             {enabled ? '已启用' : '已关闭'}
                           </span>

@@ -48,7 +48,7 @@ export function ConfirmDialog({
       role="presentation"
       onClick={loading ? undefined : onCancel}
     >
-      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" />
       <div
         role="dialog"
         aria-modal="true"
@@ -57,10 +57,10 @@ export function ConfirmDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="space-y-2">
-          <h3 id="confirm-dialog-title" className="text-lg font-semibold text-slate-900 dark:text-white">
+          <h3 id="confirm-dialog-title" className="text-lg font-semibold text-foreground">
             {title}
           </h3>
-          <div className="text-sm text-slate-600 dark:text-slate-300">{message}</div>
+          <div className="text-sm text-muted-foreground">{message}</div>
         </div>
         <div className="flex justify-end gap-3">
           <button type="button" className="btn-secondary" disabled={loading} onClick={onCancel}>

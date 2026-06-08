@@ -28,7 +28,7 @@ function PolicyToggleRow({
 }) {
   return (
     <div className="inline-flex items-center gap-2">
-      <span className={`text-xs ${checked ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
+      <span className={`text-xs ${checked ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
         {checked ? '已启用' : '已关闭'}
       </span>
       <ToggleSwitch checked={checked} disabled={disabled} onChange={onChange} />
@@ -39,16 +39,16 @@ function PolicyToggleRow({
 function GlobalPolicyHint({ scope }: { scope: 'group' | 'user' }) {
   return (
     <div className="space-y-1">
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-muted-foreground">
         在下方为每个{scope === 'group' ? '群' : '好友'}单独开启视频链接或直播链接解析；两者都关闭时不解析。文案可在「消息模板」中配置。
       </p>
       {scope === 'group' && (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted-foreground">
           仅显示已启用「群消息」的群；关闭群消息的群不会响应任何消息，也无法配置链接解析。
         </p>
       )}
       {scope === 'user' && (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted-foreground">
           仅显示已启用「好友消息」的好友；关闭好友消息的用户不会响应任何指令，也无法配置链接解析。
         </p>
       )}
@@ -159,14 +159,14 @@ export function LinkParserGroupPolicyTab() {
       {error && <LoadErrorBanner message={error} onRetry={load} />}
 
       {groups.length === 0 ? (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted-foreground">
           暂无已启用群消息的群组。请先在「群消息」Tab 中启用对应群组，或确保机器人已连接 OneBot。
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-slate-500 dark:border-slate-700">
+              <tr className="border-b border-border text-muted-foreground border-border">
                 <th className="pb-3 pr-4 font-medium">群名称</th>
                 <th className="pb-3 pr-4 font-medium">群号</th>
                 <th className="pb-3 pr-4 font-medium">视频链接</th>
@@ -180,9 +180,9 @@ export function LinkParserGroupPolicyTab() {
                 return (
                   <tr
                     key={group.group_id}
-                    className="border-b border-slate-100 last:border-0 dark:border-slate-800"
+                    className="border-b border-border last:border-0 border-border"
                   >
-                    <td className="py-3.5 pr-4 font-medium text-slate-900 dark:text-white">
+                    <td className="py-3.5 pr-4 font-medium text-foreground">
                       {group.group_name ?? '—'}
                       {group.customized && (
                         <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700 dark:bg-amber-950 dark:text-amber-300">
@@ -190,10 +190,10 @@ export function LinkParserGroupPolicyTab() {
                         </span>
                       )}
                       {saving && (
-                        <span className="ml-2 text-[10px] text-slate-400">保存中…</span>
+                        <span className="ml-2 text-[10px] text-muted-foreground">保存中…</span>
                       )}
                     </td>
-                    <td className="py-3.5 pr-4 font-mono text-xs text-slate-500">{group.group_id}</td>
+                    <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">{group.group_id}</td>
                     <td className="py-3.5 pr-4">
                       <PolicyToggleRow
                         checked={group.video_enabled}
@@ -338,14 +338,14 @@ export function LinkParserUserPolicyTab() {
       {error && <LoadErrorBanner message={error} onRetry={load} />}
 
       {users.length === 0 ? (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted-foreground">
           暂无已启用好友消息的好友。请先在「好友消息」Tab 中启用对应好友，或确保机器人已连接 OneBot。
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-slate-500 dark:border-slate-700">
+              <tr className="border-b border-border text-muted-foreground border-border">
                 <th className="pb-3 pr-4 font-medium">昵称</th>
                 <th className="pb-3 pr-4 font-medium">QQ 号</th>
                 <th className="pb-3 pr-4 font-medium">视频链接</th>
@@ -360,9 +360,9 @@ export function LinkParserUserPolicyTab() {
                 return (
                   <tr
                     key={user.user_id}
-                    className="border-b border-slate-100 last:border-0 dark:border-slate-800"
+                    className="border-b border-border last:border-0 border-border"
                   >
-                    <td className="py-3.5 pr-4 font-medium text-slate-900 dark:text-white">
+                    <td className="py-3.5 pr-4 font-medium text-foreground">
                       {displayName ?? '—'}
                       {user.customized && (
                         <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700 dark:bg-amber-950 dark:text-amber-300">
@@ -370,10 +370,10 @@ export function LinkParserUserPolicyTab() {
                         </span>
                       )}
                       {saving && (
-                        <span className="ml-2 text-[10px] text-slate-400">保存中…</span>
+                        <span className="ml-2 text-[10px] text-muted-foreground">保存中…</span>
                       )}
                     </td>
-                    <td className="py-3.5 pr-4 font-mono text-xs text-slate-500">{user.user_id}</td>
+                    <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">{user.user_id}</td>
                     <td className="py-3.5 pr-4">
                       <PolicyToggleRow
                         checked={user.video_enabled}

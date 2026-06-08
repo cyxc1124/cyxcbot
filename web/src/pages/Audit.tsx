@@ -52,8 +52,8 @@ export function AuditPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white">审计日志</h2>
-        <p className="mt-1 text-sm text-slate-500">管理员操作记录</p>
+        <h2 className="text-2xl font-bold text-foreground">审计日志</h2>
+        <p className="mt-1 text-sm text-muted-foreground">管理员操作记录</p>
       </div>
 
       <form onSubmit={handleFilter} className="card flex flex-wrap items-end gap-4">
@@ -107,7 +107,7 @@ export function AuditPage() {
           <>
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-slate-500 dark:border-slate-700">
+                <tr className="border-b border-border text-muted-foreground border-border">
                   <th className="pb-3 pr-4 font-medium">时间</th>
                   <th className="pb-3 pr-4 font-medium">操作</th>
                   <th className="pb-3 pr-4 font-medium">操作者</th>
@@ -120,20 +120,20 @@ export function AuditPage() {
                 {logs.map((log) => (
                   <tr
                     key={log.id}
-                    className="border-b border-slate-100 dark:border-slate-800"
+                    className="border-b border-border"
                   >
-                    <td className="py-3 pr-4 whitespace-nowrap text-slate-500">
+                    <td className="py-3 pr-4 whitespace-nowrap text-muted-foreground">
                       {formatDateTime(log.created_at)}
                     </td>
                     <td className="py-3 pr-4 font-medium">{log.action}</td>
                     <td className="py-3 pr-4">{log.actor}</td>
-                    <td className="py-3 pr-4 text-xs text-slate-500">
+                    <td className="py-3 pr-4 text-xs text-muted-foreground">
                       {log.resource_type
                         ? `${log.resource_type}${log.resource_id ? `#${log.resource_id}` : ''}`
                         : '—'}
                     </td>
                     <td className="py-3 pr-4 font-mono text-xs">{log.ip_address ?? '—'}</td>
-                    <td className="py-3 max-w-xs truncate text-xs text-slate-500">
+                    <td className="py-3 max-w-xs truncate text-xs text-muted-foreground">
                       {log.details ? JSON.stringify(log.details) : '—'}
                     </td>
                   </tr>
@@ -141,7 +141,7 @@ export function AuditPage() {
               </tbody>
             </table>
             {logs.length === 0 && (
-              <p className="py-8 text-center text-sm text-slate-500">
+              <p className="py-8 text-center text-sm text-muted-foreground">
                 {error ? '数据暂时无法加载' : '暂无审计记录'}
               </p>
             )}

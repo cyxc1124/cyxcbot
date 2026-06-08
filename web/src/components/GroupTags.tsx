@@ -19,7 +19,7 @@ export function GroupTags({
   compact = false,
 }: GroupTagsProps) {
   if (groupIds.length === 0) {
-    return <span className="text-xs text-slate-400">{emptyText}</span>
+    return <span className="text-xs text-muted-foreground">{emptyText}</span>
   }
 
   return (
@@ -30,7 +30,7 @@ export function GroupTags({
         return (
           <span
             key={groupId}
-            className={`inline-flex max-w-full items-center gap-1 rounded-md border border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 ${
+            className={`inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-muted text-foreground border-input bg-secondary text-foreground ${
               compact ? 'px-2 py-0.5 text-xs' : 'px-2.5 py-1 text-xs'
             }`}
             title={hasName ? `群号 ${groupId}` : undefined}
@@ -38,7 +38,7 @@ export function GroupTags({
             {hasName ? (
               <>
                 <span className="truncate font-medium">{name}</span>
-                <span className="shrink-0 font-mono text-slate-400">{groupId}</span>
+                <span className="shrink-0 font-mono text-muted-foreground">{groupId}</span>
               </>
             ) : (
               <span className="font-mono">{groupId}</span>

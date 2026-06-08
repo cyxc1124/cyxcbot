@@ -6,8 +6,8 @@ export function SettingsDataPage() {
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="card space-y-4">
-        <h3 className="font-semibold text-slate-900 dark:text-white">数据保留</h3>
-        <p className="text-sm text-slate-500">超出保留天数的记录将在清理任务中自动删除</p>
+        <h3 className="font-semibold text-foreground">数据保留</h3>
+        <p className="text-sm text-muted-foreground">超出保留天数的记录将在清理任务中自动删除</p>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="label" htmlFor="audit_retention">

@@ -72,7 +72,7 @@ export function FriendSelector({
 
   if (list.length === 0 && selected.length === 0) {
     return (
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-muted-foreground">
         暂无好友数据，请确保机器人已连接 OneBot 且协议端支持 get_friend_list。
       </p>
     )
@@ -80,10 +80,10 @@ export function FriendSelector({
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-muted-foreground">
         {helperText ?? '点击左侧好友添加到推送列表'}
         {selected.length > 0 && (
-          <span className="ml-1 font-medium text-brand-600 dark:text-brand-400">
+          <span className="ml-1 font-medium text-primary">
             （已选 {selected.length} 个）
           </span>
         )}
@@ -91,9 +91,9 @@ export function FriendSelector({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div
-          className={`flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 ${PANEL_HEIGHT}`}
+          className={`flex flex-col overflow-hidden rounded-lg border border-border bg-card ${PANEL_HEIGHT}`}
         >
-          <div className="border-b border-slate-200 p-2 dark:border-slate-700">
+          <div className="border-b border-border p-2 border-border">
             <input
               type="search"
               className="input py-1.5 text-sm"
@@ -103,13 +103,13 @@ export function FriendSelector({
               onChange={(e) => setAvailableQuery(e.target.value)}
             />
           </div>
-          <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-slate-800">
-            <span className="text-xs font-medium text-slate-500">可选好友</span>
-            <span className="text-xs text-slate-400">{available.length} 个</span>
+          <div className="flex items-center justify-between border-b border-border px-3 py-2 border-border">
+            <span className="text-xs font-medium text-muted-foreground">可选好友</span>
+            <span className="text-xs text-muted-foreground">{available.length} 个</span>
           </div>
           <ul className="flex-1 overflow-y-auto p-1">
             {available.length === 0 ? (
-              <li className="px-3 py-6 text-center text-sm text-slate-400">
+              <li className="px-3 py-6 text-center text-sm text-muted-foreground">
                 {availableQuery.trim() ? '没有匹配的好友' : '已全部添加'}
               </li>
             ) : (
@@ -119,13 +119,13 @@ export function FriendSelector({
                     type="button"
                     disabled={disabled}
                     onClick={() => addFriend(friend.user_id)}
-                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-slate-800"
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 hover:bg-accent"
                   >
-                    <span className="min-w-0 flex-1 truncate text-slate-900 dark:text-white">
+                    <span className="min-w-0 flex-1 truncate text-foreground">
                       {friend.nickname ?? friend.user_id}
                     </span>
                     {friend.nickname && (
-                      <span className="shrink-0 font-mono text-xs text-slate-400">
+                      <span className="shrink-0 font-mono text-xs text-muted-foreground">
                         {friend.user_id}
                       </span>
                     )}
@@ -137,9 +137,9 @@ export function FriendSelector({
         </div>
 
         <div
-          className={`flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 ${PANEL_HEIGHT}`}
+          className={`flex flex-col overflow-hidden rounded-lg border border-border bg-card ${PANEL_HEIGHT}`}
         >
-          <div className="border-b border-slate-200 p-2 dark:border-slate-700">
+          <div className="border-b border-border p-2 border-border">
             <input
               type="search"
               className="input py-1.5 text-sm"
@@ -149,9 +149,9 @@ export function FriendSelector({
               onChange={(e) => setSelectedQuery(e.target.value)}
             />
           </div>
-          <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-slate-800">
-            <span className="text-xs font-medium text-slate-500">已选好友</span>
-            <span className="text-xs text-slate-400">
+          <div className="flex items-center justify-between border-b border-border px-3 py-2 border-border">
+            <span className="text-xs font-medium text-muted-foreground">已选好友</span>
+            <span className="text-xs text-muted-foreground">
               {selectedQuery.trim()
                 ? `${filteredSelectedFriends.length} / ${selectedFriends.length} 个`
                 : `${selectedFriends.length} 个`}
@@ -159,25 +159,25 @@ export function FriendSelector({
           </div>
           <ul className="flex-1 overflow-y-auto p-1">
             {selectedFriends.length === 0 ? (
-              <li className="px-3 py-6 text-center text-sm text-slate-400">
+              <li className="px-3 py-6 text-center text-sm text-muted-foreground">
                 点击左侧好友添加
               </li>
             ) : filteredSelectedFriends.length === 0 ? (
-              <li className="px-3 py-6 text-center text-sm text-slate-400">
+              <li className="px-3 py-6 text-center text-sm text-muted-foreground">
                 没有匹配的好友
               </li>
             ) : (
               filteredSelectedFriends.map((friend) => (
                 <li
                   key={friend.user_id}
-                  className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted hover:bg-accent/50"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-slate-900 dark:text-white">
+                    <p className="truncate text-sm text-foreground">
                       {friend.nickname ?? friend.user_id}
                     </p>
                     {friend.nickname && (
-                      <p className="font-mono text-xs text-slate-400">{friend.user_id}</p>
+                      <p className="font-mono text-xs text-muted-foreground">{friend.user_id}</p>
                     )}
                   </div>
                   <button
@@ -185,7 +185,7 @@ export function FriendSelector({
                     disabled={disabled}
                     aria-label={`移除 ${friend.nickname ?? friend.user_id}`}
                     onClick={() => removeFriend(friend.user_id)}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 hover:bg-accent hover:text-foreground"
                   >
                     <span className="text-base leading-none" aria-hidden>
                       ×

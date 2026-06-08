@@ -265,7 +265,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
 
   const renderForm = () => (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+      <h3 className="text-lg font-semibold text-foreground">
         {editingId ? '编辑订阅' : '新建订阅'}
       </h3>
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -296,13 +296,13 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
               placeholder="留空将自动从 B 站获取"
             />
             {!editingId ? (
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 {isDynamic
                   ? 'UID 无效且未填写名称时无法保存'
                   : '房间号无效且未填写名称时无法保存'}
               </p>
             ) : (
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 修改 {idLabel} 后将清空名称并重新从 B 站获取
               </p>
             )}
@@ -331,7 +331,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
 
         <div className="flex flex-wrap items-center gap-6">
           <div className="inline-flex items-center gap-2">
-            <span className="text-sm text-slate-600 dark:text-slate-400">启用订阅</span>
+            <span className="text-sm text-muted-foreground">启用订阅</span>
             <ToggleSwitch
               checked={form.enabled}
               disabled={saving}
@@ -339,7 +339,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
             />
           </div>
           <div className="inline-flex items-center gap-2">
-            <span className="text-sm text-slate-600 dark:text-slate-400">@全体成员</span>
+            <span className="text-sm text-muted-foreground">@全体成员</span>
             <ToggleSwitch
               checked={form.at_all}
               disabled={saving}
@@ -347,7 +347,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
             />
           </div>
         </div>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           @全体成员仅对群组生效；好友推送不支持 @全体，需机器人为群管理员时群组 @ 才生效
         </p>
 
@@ -376,29 +376,29 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
 
     return (
       <div className="flex h-full flex-col">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-700">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4 border-border">
           <div className="min-w-0 flex-1">
             <button
               type="button"
-              className="mb-2 text-sm text-brand-600 hover:underline dark:text-brand-400"
+              className="mb-2 text-sm text-primary hover:underline"
               onClick={clearSelection}
             >
               ← 返回列表
             </button>
-            <h3 className="truncate text-lg font-semibold text-slate-900 dark:text-white">
+            <h3 className="truncate text-lg font-semibold text-foreground">
               {displayName}
             </h3>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <span className="badge-neutral font-mono text-xs">{targetId}</span>
             </div>
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-xs text-muted-foreground">
               创建于 {formatDateTime(target.created_at)}
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-4">
             <div className="inline-flex items-center gap-2">
               <span
-                className={`text-xs ${target.enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}
+                className={`text-xs ${target.enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}
               >
                 {target.enabled ? '已启用' : '已禁用'}
               </span>
@@ -410,7 +410,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
             </div>
             <div className="inline-flex items-center gap-2">
               <span
-                className={`text-xs ${target.at_all ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}
+                className={`text-xs ${target.at_all ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}
               >
                 {target.at_all ? '@全体' : '不@全体'}
               </span>
@@ -430,7 +430,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
             </button>
             <button
               type="button"
-              className="btn-secondary text-sm text-red-600 hover:text-red-700"
+              className="btn-secondary text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
               disabled={rowBusy}
               onClick={() => handleDelete(target.id)}
             >
@@ -441,14 +441,14 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
 
         <div className="flex-1 space-y-6 pt-6">
           <div>
-            <h4 className="mb-3 text-sm font-medium text-slate-700 dark:text-slate-300">
+            <h4 className="mb-3 text-sm font-medium text-foreground">
               推送群组
-              <span className="ml-2 font-normal text-slate-500">
+              <span className="ml-2 font-normal text-muted-foreground">
                 （{target.group_ids.length} 个）
               </span>
             </h4>
             {target.group_ids.length === 0 ? (
-              <p className="text-sm text-slate-500">尚未配置推送群组</p>
+              <p className="text-sm text-muted-foreground">尚未配置推送群组</p>
             ) : (
               <ul className="space-y-2">
                 {target.group_ids.map((groupId) => {
@@ -458,18 +458,18 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
                   return (
                     <li
                       key={groupId}
-                      className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3 dark:border-slate-700"
+                      className="flex items-center justify-between rounded-lg border border-border px-4 py-3 border-border"
                     >
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-slate-900 dark:text-white">
+                        <p className="truncate font-medium text-foreground">
                           {hasName ? name : `群 ${groupId}`}
                         </p>
                         {hasName && (
-                          <p className="mt-0.5 font-mono text-xs text-slate-500">{groupId}</p>
+                          <p className="mt-0.5 font-mono text-xs text-muted-foreground">{groupId}</p>
                         )}
                       </div>
                       {group?.member_count != null && (
-                        <span className="shrink-0 text-xs text-slate-500">
+                        <span className="shrink-0 text-xs text-muted-foreground">
                           {group.member_count} 人
                         </span>
                       )}
@@ -481,14 +481,14 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
           </div>
 
           <div>
-            <h4 className="mb-3 text-sm font-medium text-slate-700 dark:text-slate-300">
+            <h4 className="mb-3 text-sm font-medium text-foreground">
               推送好友
-              <span className="ml-2 font-normal text-slate-500">
+              <span className="ml-2 font-normal text-muted-foreground">
                 （{target.user_ids.length} 个）
               </span>
             </h4>
             {target.user_ids.length === 0 ? (
-              <p className="text-sm text-slate-500">尚未配置推送好友</p>
+              <p className="text-sm text-muted-foreground">尚未配置推送好友</p>
             ) : (
               <ul className="space-y-2">
                 {target.user_ids.map((userId) => {
@@ -498,14 +498,14 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
                   return (
                     <li
                       key={userId}
-                      className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3 dark:border-slate-700"
+                      className="flex items-center justify-between rounded-lg border border-border px-4 py-3 border-border"
                     >
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-slate-900 dark:text-white">
+                        <p className="truncate font-medium text-foreground">
                           {hasName ? name : `QQ ${userId}`}
                         </p>
                         {hasName && (
-                          <p className="mt-0.5 font-mono text-xs text-slate-500">{userId}</p>
+                          <p className="mt-0.5 font-mono text-xs text-muted-foreground">{userId}</p>
                         )}
                       </div>
                     </li>
@@ -525,7 +525,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted-foreground">
           选择{targetLabel}查看推送目标，可同时订阅多个 QQ 群与好友
         </p>
         <button type="button" className="btn-primary" onClick={openCreate}>
@@ -536,26 +536,26 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
       {error && <LoadErrorBanner message={error} onRetry={load} />}
 
       {loading && targets.length === 0 && !error ? (
-        <p className="py-12 text-center text-sm text-slate-500">加载中…</p>
+        <p className="py-12 text-center text-sm text-muted-foreground">加载中…</p>
       ) : !loading && error && targets.length === 0 ? (
-        <p className="py-12 text-center text-sm text-slate-500">数据暂时无法加载</p>
+        <p className="py-12 text-center text-sm text-muted-foreground">数据暂时无法加载</p>
       ) : !loading && targets.length === 0 && !showForm ? (
-        <p className="py-12 text-center text-sm text-slate-500">暂无订阅，点击上方按钮添加</p>
+        <p className="py-12 text-center text-sm text-muted-foreground">暂无订阅，点击上方按钮添加</p>
       ) : (
         <div
-          className={`flex min-h-[28rem] overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 ${
-            showSplit ? 'divide-x divide-slate-200 dark:divide-slate-700' : ''
+          className={`flex min-h-[28rem] overflow-hidden rounded-lg border border-border ${
+            showSplit ? 'divide-x divide-border' : ''
           }`}
         >
           {/* 左侧条目列表 */}
           <aside
-            className={`shrink-0 bg-slate-50 dark:bg-slate-900/40 ${
+            className={`shrink-0 bg-muted/40 ${
               listHiddenOnMobile ? 'hidden lg:block' : ''
             } ${showSplit ? 'w-full lg:w-72' : 'w-full'}`}
           >
             <div className="flex h-full max-h-[32rem] flex-col lg:max-h-[36rem]">
-              <div className="border-b border-slate-200 px-3 py-2.5 dark:border-slate-700">
-                <p className="text-xs font-medium text-slate-500">
+              <div className="border-b border-border px-3 py-2.5 border-border">
+                <p className="text-xs font-medium text-muted-foreground">
                   {targetLabel}列表
                   <span className="ml-1">({targets.length})</span>
                 </p>
@@ -572,23 +572,23 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
                         onClick={() => selectTarget(target)}
                         className={`mb-1 w-full rounded-lg px-3 py-2.5 text-left transition-colors ${
                           isSelected
-                            ? 'bg-brand-50 text-brand-800 dark:bg-brand-950 dark:text-brand-200'
-                            : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                            ? 'bg-sidebar-accent text-sidebar-primary'
+                            : 'hover:bg-accent'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium">{displayName}</p>
-                            <p className="mt-0.5 font-mono text-xs text-slate-500">{targetId}</p>
+                            <p className="mt-0.5 font-mono text-xs text-muted-foreground">{targetId}</p>
                           </div>
                           <span
                             className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
-                              target.enabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'
+                              target.enabled ? 'bg-emerald-500' : 'bg-input'
                             }`}
                             title={target.enabled ? '已启用' : '已禁用'}
                           />
                         </div>
-                        <p className="mt-1 text-xs text-slate-500">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           {target.group_ids.length} 个群 · {target.user_ids.length} 个好友
                         </p>
                       </button>
@@ -602,7 +602,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
           {/* 右侧详情 / 表单 */}
           {(showSplit || showForm) && (
             <main
-              className={`min-w-0 flex-1 bg-white p-4 dark:bg-slate-900 ${
+              className={`min-w-0 flex-1 bg-card p-4 ${
                 showForm || selectedTarget ? 'block' : 'hidden lg:block'
               }`}
             >
@@ -611,7 +611,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
               ) : selectedTarget ? (
                 renderDetail(selectedTarget)
               ) : (
-                <div className="flex h-full min-h-[20rem] items-center justify-center text-sm text-slate-500">
+                <div className="flex h-full min-h-[20rem] items-center justify-center text-sm text-muted-foreground">
                   请从左侧选择一个{targetLabel}
                 </div>
               )}

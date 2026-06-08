@@ -144,8 +144,8 @@ export function PrivatePage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">好友</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <h2 className="text-2xl font-bold text-foreground">好友</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             管理好友消息响应范围、状态查询权限，以及链接解析的用户级开关
           </p>
         </div>
@@ -179,7 +179,7 @@ export function PrivatePage() {
 
           <div className="card">
             {users.length === 0 ? (
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-muted-foreground">
                 {error
                   ? '数据暂时无法加载'
                   : '暂无好友数据，请确保机器人已连接 OneBot 且协议端支持 get_friend_list。'}
@@ -188,7 +188,7 @@ export function PrivatePage() {
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[480px] text-left text-sm">
                   <thead>
-                    <tr className="border-b border-slate-200 text-slate-500 dark:border-slate-700">
+                    <tr className="border-b border-border text-muted-foreground border-border">
                       <th className="pb-3 pr-4 font-medium">昵称</th>
                       <th className="pb-3 pr-4 font-medium">QQ 号</th>
                       <th className="pb-3 font-medium text-right">处理好友消息</th>
@@ -201,18 +201,18 @@ export function PrivatePage() {
                       return (
                         <tr
                           key={user.user_id}
-                          className="border-b border-slate-100 last:border-0 dark:border-slate-800"
+                          className="border-b border-border last:border-0 border-border"
                         >
-                          <td className="py-3.5 pr-4 font-medium text-slate-900 dark:text-white">
+                          <td className="py-3.5 pr-4 font-medium text-foreground">
                             {user.nickname ?? '—'}
                           </td>
-                          <td className="py-3.5 pr-4 font-mono text-xs text-slate-500">
+                          <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">
                             {user.user_id}
                           </td>
                           <td className="py-3.5 text-right">
                             <div className="inline-flex items-center justify-end gap-2">
                               <span
-                                className={`text-xs ${enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}
+                                className={`text-xs ${enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}
                               >
                                 {enabled ? '已启用' : '已关闭'}
                               </span>

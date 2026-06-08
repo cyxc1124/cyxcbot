@@ -76,8 +76,8 @@ export function SettingsBotPage() {
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="card space-y-4">
         <div>
-          <h3 className="font-semibold text-slate-900 dark:text-white">NoneBot 超级用户</h3>
-          <p className="mt-1 text-sm text-slate-500">
+          <h3 className="font-semibold text-foreground">NoneBot 超级用户</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
             对应 NoneBot 的 <code className="font-mono text-xs">SUPERUSER</code>{' '}
             权限。超级用户可查询机器人状态，并在其他插件中享有更高权限。保存后会同步到运行中的机器人，无需重启。
           </p>
@@ -100,11 +100,11 @@ export function SettingsBotPage() {
 
       <div className="card space-y-4">
         <div>
-          <h3 className="font-semibold text-slate-900 dark:text-white">状态查询权限</h3>
-          <p className="mt-1 text-sm text-slate-500">
+          <h3 className="font-semibold text-foreground">状态查询权限</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
             允许非超级用户使用{' '}
-            <code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800">/status</code>{' '}
-            、<code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800">/状态</code>{' '}
+            <code className="rounded bg-secondary px-1 py-0.5 text-xs bg-secondary">/status</code>{' '}
+            、<code className="rounded bg-secondary px-1 py-0.5 text-xs bg-secondary">/状态</code>{' '}
             查询运行状态（任意群或好友均可触发）。超级用户已默认拥有此权限。按群/好友的细粒度开关请在「群组」或「好友」页的「状态查询」Tab 中配置。
           </p>
         </div>
@@ -121,7 +121,7 @@ export function SettingsBotPage() {
             disabled={formDisabled || saving}
             onChange={(e) => setStatusCheckText(e.target.value)}
           />
-          <p className="mt-2 text-xs text-slate-500">
+          <p className="mt-2 text-xs text-muted-foreground">
             也可使用逗号、分号或空格分隔。无权限用户发送命令时机器人不会回复。
           </p>
         </div>

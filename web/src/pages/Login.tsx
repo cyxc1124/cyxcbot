@@ -26,13 +26,13 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 to-brand-50 p-4 dark:from-slate-950 dark:to-slate-900">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-muted to-secondary p-4 dark:from-background dark:to-card">
       <div className="card w-full max-w-md">
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+          <h1 className="text-2xl font-bold text-foreground">
             登录 机器草
           </h1>
-          <p className="mt-2 text-sm text-slate-500">Web 管理面板</p>
+          <p className="mt-2 text-sm text-muted-foreground">Web 管理面板</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -65,7 +65,7 @@ export function LoginPage() {
           </div>
 
           {error && (
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            <p className="text-sm text-destructive">{error}</p>
           )}
 
           <button type="submit" className="btn-primary w-full" disabled={loading}>
@@ -74,9 +74,9 @@ export function LoginPage() {
         </form>
 
         {initialized === false && (
-          <p className="mt-6 text-center text-xs text-slate-500">
+          <p className="mt-6 text-center text-xs text-muted-foreground">
             首次使用？{' '}
-            <Link to="/setup" className="text-brand-600 hover:underline">
+            <Link to="/setup" className="text-primary hover:underline">
               前往初始化
             </Link>
           </p>

@@ -32,7 +32,7 @@ function bilibiliSettingsLink(action = '登录') {
   return (
     <>
       前往
-      <Link to="/settings/account" className="font-medium text-brand-600 hover:text-brand-700 hover:underline dark:text-brand-400">
+      <Link to="/settings/account" className="font-medium text-primary hover:opacity-80 hover:underline">
       系统设置
       </Link>
       {action}
@@ -110,8 +110,8 @@ export function DashboardPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white">仪表盘</h2>
-        <p className="mt-1 text-sm text-slate-500">系统运行状态总览</p>
+        <h2 className="text-2xl font-bold text-foreground">仪表盘</h2>
+        <p className="mt-1 text-sm text-muted-foreground">系统运行状态总览</p>
       </div>
 
       {error && <LoadErrorBanner message={error} onRetry={load} />}
@@ -137,11 +137,11 @@ export function DashboardPage() {
       <section>
         <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h3 className="font-semibold text-slate-900 dark:text-white">资源使用</h3>
-            <p className="mt-0.5 text-xs text-slate-500">每 30 秒自动刷新</p>
+            <h3 className="font-semibold text-foreground">资源使用</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">每 30 秒自动刷新</p>
           </div>
           {system && (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               {system.bot_version} · Python {system.python_version}
             </p>
           )}
@@ -162,24 +162,24 @@ export function DashboardPage() {
       </section>
 
       <div className="card">
-        <h3 className="mb-4 font-semibold text-slate-900 dark:text-white">最近事件</h3>
+        <h3 className="mb-4 font-semibold text-foreground">最近事件</h3>
         {error ? (
-          <p className="text-sm text-slate-500">数据暂时无法加载</p>
+          <p className="text-sm text-muted-foreground">数据暂时无法加载</p>
         ) : events.length === 0 ? (
-          <p className="text-sm text-slate-500">暂无事件记录</p>
+          <p className="text-sm text-muted-foreground">暂无事件记录</p>
         ) : (
           <ul className="space-y-3">
             {events.map((ev) => (
               <li
                 key={ev.id}
-                className="flex items-start gap-3 border-b border-slate-100 pb-3 last:border-0 dark:border-slate-800"
+                className="flex items-start gap-3 border-b border-border pb-3 last:border-0 border-border"
               >
                 <LevelBadge level={ev.level} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm text-slate-800 dark:text-slate-200">
+                  <p className="truncate text-sm text-foreground text-foreground">
                     {ev.message}
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-muted-foreground">
                     {ev.category} · {formatDateTime(ev.created_at)}
                   </p>
                 </div>

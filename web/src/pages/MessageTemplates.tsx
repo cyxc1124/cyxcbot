@@ -31,8 +31,8 @@ function VariablePanel({
   return (
     <aside className="flex min-h-0 w-full shrink-0 flex-col lg:w-52 lg:self-stretch">
       <div className="shrink-0">
-        <h4 className="text-sm font-medium text-slate-900 dark:text-white">可用变量</h4>
-        <p className="mt-1 text-xs text-slate-500">点击插入到光标位置</p>
+        <h4 className="text-sm font-medium text-foreground">可用变量</h4>
+        <p className="mt-1 text-xs text-muted-foreground">点击插入到光标位置</p>
       </div>
       <ul className="mt-3 min-h-0 max-h-48 flex-1 space-y-2 overflow-y-auto pr-1 lg:max-h-none">
         {field.variables.map((variable) => (
@@ -41,13 +41,13 @@ function VariablePanel({
               type="button"
               disabled={disabled}
               onClick={() => onInsert(`{${variable.key}}`)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-left transition-colors hover:border-brand-300 hover:bg-brand-50 disabled:opacity-50 dark:border-slate-700 dark:hover:border-brand-700 dark:hover:bg-brand-950/40"
+              className="w-full rounded-lg border border-border px-3 py-2 text-left transition-colors hover:border-primary hover:bg-accent disabled:opacity-50"
             >
-              <code className="text-xs font-semibold text-brand-700 dark:text-brand-300">
+              <code className="text-xs font-semibold text-primary">
                 {'{'}{variable.key}{'}'}
               </code>
-              <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">{variable.label}</p>
-              <p className="mt-0.5 text-[11px] text-slate-400">{variable.description}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{variable.label}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">{variable.description}</p>
             </button>
           </li>
         ))}
@@ -109,17 +109,17 @@ function TemplateDetailPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-700">
+      <div className="shrink-0 flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4 border-border">
         <div className="min-w-0 flex-1">
           <button
             type="button"
-            className="mb-2 text-sm text-brand-600 hover:underline dark:text-brand-400 lg:hidden"
+            className="mb-2 text-sm text-primary hover:underline lg:hidden"
             onClick={onBack}
           >
             ← 返回列表
           </button>
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{field.label}</h3>
-          <p className="mt-1 text-sm text-slate-500">{field.description}</p>
+          <h3 className="text-lg font-semibold text-foreground">{field.label}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">{field.description}</p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <button
@@ -158,17 +158,17 @@ function TemplateDetailPanel({
                 disabled={disabled || saving}
                 onChange={(e) => onChange(e.target.value)}
               />
-              <p className="mt-1 text-xs text-slate-400">{value.length}/500</p>
+              <p className="mt-1 text-xs text-muted-foreground">{value.length}/500</p>
             </div>
 
             <div>
-              <h4 className="mb-2 text-sm font-medium text-slate-900 dark:text-white">效果预览</h4>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/60">
-                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-800 dark:text-slate-200">
+              <h4 className="mb-2 text-sm font-medium text-foreground">效果预览</h4>
+              <div className="rounded-lg border border-border bg-muted px-4 py-3">
+                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
                   {preview}
                 </pre>
               </div>
-              <p className="mt-2 text-xs text-slate-500">
+              <p className="mt-2 text-xs text-muted-foreground">
                 预览严格按模板顺序渲染；{'{media}'}、{'{card}'}、{'{cover}'} 在推送时替换为实际图片。
               </p>
             </div>
@@ -313,8 +313,8 @@ export function MessageTemplatesPage() {
     return (
       <div className="flex h-[calc(100dvh-4rem-2rem)] flex-col gap-6 overflow-hidden lg:h-[calc(100dvh-4rem-4rem)]">
         <div className="shrink-0">
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">消息模板</h2>
-          <p className="mt-1 text-sm text-slate-500">自定义动态、直播推送与链接解析的文本内容</p>
+          <h2 className="text-2xl font-bold text-foreground">消息模板</h2>
+          <p className="mt-1 text-sm text-muted-foreground">自定义动态、直播推送与链接解析的文本内容</p>
         </div>
         <PageLoading />
       </div>
@@ -324,8 +324,8 @@ export function MessageTemplatesPage() {
   return (
     <div className="flex h-[calc(100dvh-4rem-2rem)] flex-col gap-6 overflow-hidden lg:h-[calc(100dvh-4rem-4rem)]">
       <div className="shrink-0">
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white">消息模板</h2>
-        <p className="mt-1 text-sm text-slate-500">选择模板进行编辑，支持变量插入与效果预览</p>
+        <h2 className="text-2xl font-bold text-foreground">消息模板</h2>
+        <p className="mt-1 text-sm text-muted-foreground">选择模板进行编辑，支持变量插入与效果预览</p>
       </div>
 
       {error && (
@@ -335,18 +335,18 @@ export function MessageTemplatesPage() {
       )}
 
       <div
-        className={`flex min-h-0 flex-1 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 ${
-          showSplit ? 'divide-x divide-slate-200 dark:divide-slate-700' : ''
+        className={`flex min-h-0 flex-1 overflow-hidden rounded-lg border border-border ${
+          showSplit ? 'divide-x divide-border' : ''
         }`}
       >
         <aside
-          className={`flex min-h-0 flex-col bg-slate-50 dark:bg-slate-900/40 ${
+          className={`flex min-h-0 flex-col bg-muted/40 ${
             listHiddenOnMobile ? 'hidden lg:flex' : ''
           } ${showSplit ? 'w-full lg:w-72' : 'w-full'}`}
         >
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="shrink-0 border-b border-slate-200 px-3 py-2.5 dark:border-slate-700">
-              <p className="text-xs font-medium text-slate-500">模板列表</p>
+            <div className="shrink-0 border-b border-border px-3 py-2.5 border-border">
+              <p className="text-xs font-medium text-muted-foreground">模板列表</p>
             </div>
             <nav className="min-h-0 flex-1 overflow-y-auto p-2">
               {(
@@ -357,7 +357,7 @@ export function MessageTemplatesPage() {
                 ] as const
               ).map(([category, fields]) => (
                 <div key={category} className="mb-3 last:mb-0">
-                  <p className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  <p className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     {templateCategoryLabels[category]}
                   </p>
                   <ul>
@@ -371,8 +371,8 @@ export function MessageTemplatesPage() {
                             onClick={() => selectTemplate(field.key)}
                             className={`mb-1 w-full rounded-lg px-3 py-2.5 text-left transition-colors ${
                               isSelected
-                                ? 'bg-brand-50 text-brand-800 dark:bg-brand-950 dark:text-brand-200'
-                                : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                                ? 'bg-sidebar-accent text-sidebar-primary'
+                                : 'hover:bg-accent'
                             }`}
                           >
                             <div className="flex items-start justify-between gap-2">
@@ -384,7 +384,7 @@ export function MessageTemplatesPage() {
                                 />
                               )}
                             </div>
-                            <p className="mt-0.5 line-clamp-2 font-mono text-xs text-slate-500">
+                            <p className="mt-0.5 line-clamp-2 font-mono text-xs text-muted-foreground">
                               {getCurrentValue(field.key)}
                             </p>
                           </button>
@@ -399,7 +399,7 @@ export function MessageTemplatesPage() {
         </aside>
 
         {showSplit && selectedField && (
-          <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-white p-4 dark:bg-slate-900 lg:p-6">
+          <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-card p-4 lg:p-6">
             <TemplateDetailPanel
               field={selectedField}
               value={getCurrentValue(selectedKey)}
@@ -415,7 +415,7 @@ export function MessageTemplatesPage() {
         )}
 
         {!showSplit && !error && (
-          <main className="hidden min-h-0 min-w-0 flex-1 items-center justify-center overflow-y-auto bg-white p-6 text-sm text-slate-500 dark:bg-slate-900 lg:flex">
+          <main className="hidden min-h-0 min-w-0 flex-1 items-center justify-center overflow-y-auto bg-card p-6 text-sm text-muted-foreground lg:flex">
             请从左侧选择一个模板
           </main>
         )}

@@ -7,7 +7,7 @@ interface SubPageTabsProps<T extends string> {
 export function SubPageTabs<T extends string>({ tabs, value, onChange }: SubPageTabsProps<T>) {
   return (
     <div
-      className="flex flex-wrap gap-1 border-b border-slate-200 dark:border-slate-700"
+      className="flex flex-wrap gap-1 border-b border-border"
       role="tablist"
     >
       {(Object.keys(tabs) as T[]).map((key) => {
@@ -21,8 +21,8 @@ export function SubPageTabs<T extends string>({ tabs, value, onChange }: SubPage
             onClick={() => onChange(key)}
             className={
               active
-                ? 'relative -mb-px rounded-t-lg border border-b-0 border-brand-300 bg-brand-50 px-4 py-2.5 text-sm font-semibold text-brand-800 shadow-sm dark:border-brand-700 dark:bg-brand-950/80 dark:text-brand-200'
-                : 'rounded-t-lg px-4 py-2.5 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800/60 dark:hover:text-slate-200'
+                ? 'relative -mb-px rounded-t-lg border border-b-0 border-primary bg-sidebar-accent px-4 py-2.5 text-sm font-semibold text-sidebar-primary shadow-sm'
+                : 'rounded-t-lg px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground'
             }
           >
             {tabs[key]}

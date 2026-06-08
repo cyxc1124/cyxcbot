@@ -144,8 +144,8 @@ export function GroupsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">群组</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <h2 className="text-2xl font-bold text-foreground">群组</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             管理群消息响应范围、状态查询权限，以及链接解析的群级开关
           </p>
         </div>
@@ -179,7 +179,7 @@ export function GroupsPage() {
 
       <div className="card">
         {groups.length === 0 ? (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             {error
               ? '数据暂时无法加载'
               : '暂无可用群组，请确保机器人已连接 OneBot 并在线。'}
@@ -188,7 +188,7 @@ export function GroupsPage() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-slate-500 dark:border-slate-700">
+                <tr className="border-b border-border text-muted-foreground border-border">
                   <th className="pb-3 pr-4 font-medium">群名称</th>
                   <th className="pb-3 pr-4 font-medium">群号</th>
                   <th className="pb-3 pr-4 font-medium">成员数</th>
@@ -202,21 +202,21 @@ export function GroupsPage() {
                   return (
                     <tr
                       key={group.group_id}
-                      className="border-b border-slate-100 last:border-0 dark:border-slate-800"
+                      className="border-b border-border last:border-0 border-border"
                     >
-                      <td className="py-3.5 pr-4 font-medium text-slate-900 dark:text-white">
+                      <td className="py-3.5 pr-4 font-medium text-foreground">
                         {group.group_name ?? '—'}
                       </td>
-                      <td className="py-3.5 pr-4 font-mono text-xs text-slate-500">
+                      <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">
                         {group.group_id}
                       </td>
-                      <td className="py-3.5 pr-4 text-slate-600 dark:text-slate-400">
+                      <td className="py-3.5 pr-4 text-muted-foreground">
                         {group.member_count ?? '—'}
                       </td>
                       <td className="py-3.5 text-right">
                         <div className="inline-flex items-center justify-end gap-2">
                           <span
-                            className={`text-xs ${enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}
+                            className={`text-xs ${enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}
                           >
                             {enabled ? '已启用' : '已关闭'}
                           </span>

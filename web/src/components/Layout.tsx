@@ -2,6 +2,15 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useSidebar } from '../contexts/SidebarContext'
+import {
+  applyTheme,
+  getSavedColorTheme,
+  getSavedFontFamily,
+  getSavedThemeMode,
+  type ColorTheme,
+  type FontFamily,
+  type ThemeMode,
+} from '../lib/theme'
 
 const navItems = [
   { to: '/', label: '仪表盘' },
@@ -24,9 +33,9 @@ export function Layout() {
   const { user, logout } = useAuth()
   const { navCollapsed, setNavCollapsed } = useSidebar()
   const location = useLocation()
-  const [dark, setDark] = useState(() =>
-    document.documentElement.classList.contains('dark'),
-  )
+  const [mode, setMode] = useState<ThemeMode>(() => getSavedThemeMode())
+  const [colorTheme, setColorTheme] = useState<ColorTheme>(() => getSavedColorTheme())
+  const [fontFamily, setFontFamily] = useState<FontFamily>(() => getSavedFontFamily())
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [navHoverExpanded, setNavHoverExpanded] = useState(false)
 
@@ -41,11 +50,20 @@ export function Layout() {
 
   const showFullNav = !navCollapsed || navHoverExpanded
 
-  const toggleDark = () => {
-    const next = !dark
-    setDark(next)
-    document.documentElement.classList.toggle('dark', next)
-    localStorage.setItem('cyxcbot_theme', next ? 'dark' : 'light')
+  const toggleMode = () => {
+    const next: ThemeMode = mode === 'dark' ? 'light' : 'dark'
+    setMode(next)
+    applyTheme(next, colorTheme, fontFamily)
+  }
+
+  const handleColorThemeChange = (next: ColorTheme) => {
+    setColorTheme(next)
+    applyTheme(mode, next, fontFamily)
+  }
+
+  const handleFontChange = (next: FontFamily) => {
+    setFontFamily(next)
+    applyTheme(mode, colorTheme, next)
   }
 
   const toggleNavCollapsed = () => {
@@ -70,7 +88,7 @@ export function Layout() {
       : '-translate-x-full lg:translate-x-0'
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-background">
       {sidebarOpen && !navCollapsed && (
         <button
           type="button"
@@ -81,7 +99,7 @@ export function Layout() {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex h-screen flex-col overflow-hidden border-r border-slate-200 bg-white transition-[width,transform,box-shadow] duration-200 dark:border-slate-700 dark:bg-slate-900 ${asideWidthClass} ${asideTranslateClass} ${
+        className={`fixed inset-y-0 left-0 z-50 flex h-screen flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width,transform,box-shadow] duration-200 ${asideWidthClass} ${asideTranslateClass} ${
           navCollapsed && navHoverExpanded ? 'shadow-xl' : ''
         }`}
         onMouseEnter={() => {
@@ -92,17 +110,17 @@ export function Layout() {
         }}
       >
         <div
-          className={`flex h-16 shrink-0 items-center border-b border-slate-200 dark:border-slate-700 ${
+          className={`flex h-16 shrink-0 items-center border-b border-sidebar-border ${
             showFullNav ? 'gap-3 px-6' : 'justify-center px-0'
           }`}
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
             C
           </span>
           {showFullNav && (
             <div className="min-w-0">
-              <h1 className="truncate text-sm font-bold text-slate-900 dark:text-white">机器草</h1>
-              <p className="truncate text-xs text-slate-500">Web 管理面板</p>
+              <h1 className="truncate text-sm font-bold text-sidebar-foreground">机器草</h1>
+              <p className="truncate text-xs text-muted-foreground">Web 管理面板</p>
             </div>
           )}
         </div>
@@ -120,11 +138,7 @@ export function Layout() {
                     setNavHoverExpanded(false)
                   }}
                   className={({ isActive }) =>
-                    `block rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                      isActive
-                        ? 'bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300'
-                        : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
-                    }`
+                    isActive ? 'nav-link nav-link-active' : 'nav-link'
                   }
                 >
                   {item.label}
@@ -132,10 +146,10 @@ export function Layout() {
               ))}
             </nav>
 
-            <div className="shrink-0 border-t border-slate-200 p-4 dark:border-slate-700">
+            <div className="shrink-0 border-t border-sidebar-border p-4">
               <div className="mb-3 text-sm">
-                <p className="font-medium text-slate-900 dark:text-white">{user?.username}</p>
-                <p className="text-xs text-slate-500">{user?.is_admin ? '管理员' : '用户'}</p>
+                <p className="font-medium text-sidebar-foreground">{user?.username}</p>
+                <p className="text-xs text-muted-foreground">{user?.is_admin ? '管理员' : '用户'}</p>
               </div>
               <button type="button" onClick={logout} className="btn-secondary w-full text-sm">
                 退出登录
@@ -145,7 +159,7 @@ export function Layout() {
         ) : (
           <div className="flex flex-1 items-center justify-center">
             <span
-              className="select-none text-[10px] tracking-widest text-slate-400 [writing-mode:vertical-rl]"
+              className="select-none text-[10px] tracking-widest text-muted-foreground [writing-mode:vertical-rl]"
               aria-hidden
             >
               导航
@@ -159,7 +173,7 @@ export function Layout() {
           navCollapsed ? 'lg:pl-12' : 'lg:pl-64'
         }`}
       >
-        <header className="sticky top-0 z-30 flex h-16 items-center border-b border-slate-200 bg-white/80 px-4 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80 lg:px-8">
+        <header className="sticky top-0 z-30 flex h-16 items-center border-b border-border bg-background/80 px-4 backdrop-blur lg:px-8">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -176,14 +190,40 @@ export function Layout() {
               菜单
             </button>
           </div>
-          <button
-            type="button"
-            onClick={toggleDark}
-            className="btn-ghost ml-auto text-sm"
-            title="切换主题"
-          >
-            {dark ? '浅色' : '深色'}
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span className="hidden sm:inline">字体</span>
+              <select
+                className="input w-auto min-w-[7rem] py-1.5 text-sm"
+                value={fontFamily}
+                onChange={(e) => handleFontChange(e.target.value as FontFamily)}
+                aria-label="字体"
+              >
+                <option value="maple">Maple Mono</option>
+                <option value="system">系统字体</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span className="hidden sm:inline">配色</span>
+              <select
+                className="input w-auto min-w-[7rem] py-1.5 text-sm"
+                value={colorTheme}
+                onChange={(e) => handleColorThemeChange(e.target.value as ColorTheme)}
+                aria-label="配色方案"
+              >
+                <option value="default">默认</option>
+                <option value="claude">Claude</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={toggleMode}
+              className="btn-ghost text-sm"
+              title="切换浅色/深色"
+            >
+              {mode === 'dark' ? '浅色' : '深色'}
+            </button>
+          </div>
         </header>
 
         <main className="flex-1 p-4 lg:p-8">

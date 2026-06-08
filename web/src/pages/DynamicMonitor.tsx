@@ -23,8 +23,8 @@ export function DynamicMonitorPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">动态订阅管理</h2>
-          <p className="mt-1 text-sm text-slate-500">管理 UP 主动态推送到 QQ 群的订阅</p>
+          <h2 className="text-2xl font-bold text-foreground">动态订阅管理</h2>
+          <p className="mt-1 text-sm text-muted-foreground">管理 UP 主动态推送到 QQ 群的订阅</p>
         </div>
         <button
           type="button"

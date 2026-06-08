@@ -11,7 +11,7 @@ export function Pagination({ page, pageSize, total, onPageChange }: PaginationPr
   const to = Math.min(page * pageSize, total)
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-slate-600 dark:text-slate-400">
+    <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
       <span>
         显示 {from}–{to}，共 {total} 条
       </span>

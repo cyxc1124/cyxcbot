@@ -13,12 +13,12 @@ export function StatCard({ title, value, subtitle }: StatCardProps) {
 
   return (
     <div className="card">
-      <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{title}</p>
-      <p className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">{value}</p>
+      <p className="text-sm font-medium text-muted-foreground">{title}</p>
+      <p className="mt-2 text-2xl font-bold text-foreground">{value}</p>
       {subtitles.length > 0 && (
         <div className="mt-1 space-y-0.5">
           {subtitles.map((line, index) => (
-            <p key={typeof line === 'string' ? line : index} className="text-xs text-slate-500 dark:text-slate-400">
+            <p key={typeof line === 'string' ? line : index} className="text-xs text-muted-foreground">
               {line}
             </p>
           ))}
