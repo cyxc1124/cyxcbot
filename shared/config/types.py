@@ -25,6 +25,8 @@ class AppConfigSnapshot:
 
     dynamic_monitor_mapping: Dict[str, List[str]] = field(default_factory=dict)
     dynamic_monitor_user_mapping: Dict[str, List[str]] = field(default_factory=dict)
+    dynamic_subscription_mapping: Dict[str, List[str]] = field(default_factory=dict)
+    dynamic_subscription_user_mapping: Dict[str, List[str]] = field(default_factory=dict)
     dynamic_at_all: Dict[str, bool] = field(default_factory=dict)
     dynamic_monitor_interval: int = 30
     dynamic_enable_screenshot: bool = True

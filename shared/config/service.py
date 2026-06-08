@@ -98,6 +98,10 @@ class ConfigService:
             settings = await self._load_settings(session)
             dynamic_mapping = await self._load_dynamic_mapping(session)
             dynamic_user_mapping = await self._load_dynamic_user_mapping(session)
+            (
+                dynamic_subscription_mapping,
+                dynamic_subscription_user_mapping,
+            ) = await self._load_dynamic_subscription_mappings(session)
             live_mapping = await self._load_live_mapping(session)
             live_user_mapping = await self._load_live_user_mapping(session)
             dynamic_at_all = await self._load_dynamic_at_all(session)
@@ -116,6 +120,8 @@ class ConfigService:
         self._snapshot = AppConfigSnapshot(
             dynamic_monitor_mapping=dynamic_mapping,
             dynamic_monitor_user_mapping=dynamic_user_mapping,
+            dynamic_subscription_mapping=dynamic_subscription_mapping,
+            dynamic_subscription_user_mapping=dynamic_subscription_user_mapping,
             dynamic_at_all=dynamic_at_all,
             dynamic_monitor_interval=settings.get("dynamic_monitor_interval", 30),
             dynamic_enable_screenshot=settings.get("dynamic_enable_screenshot", True),
@@ -241,6 +247,24 @@ class ConfigService:
         for target in targets:
             mapping[target.uid] = [u.user_id for u in target.users]
         return mapping
+
+    async def _load_dynamic_subscription_mappings(
+        self, session
+    ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+        """Load uid->group/user mappings for all targets, regardless of enabled."""
+        stmt = select(DynamicTarget).options(
+            selectinload(DynamicTarget.groups),
+            selectinload(DynamicTarget.users),
+        )
+        targets = (await session.scalars(stmt)).all()
+        group_mapping: dict[str, list[str]] = {}
+        user_mapping: dict[str, list[str]] = {}
+        for target in targets:
+            if target.groups:
+                group_mapping[target.uid] = [g.group_id for g in target.groups]
+            if target.users:
+                user_mapping[target.uid] = [u.user_id for u in target.users]
+        return group_mapping, user_mapping
 
     async def _load_dynamic_at_all(self, session) -> dict[str, bool]:
         stmt = select(DynamicTarget).where(DynamicTarget.enabled.is_(True))

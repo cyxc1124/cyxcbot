@@ -12,6 +12,7 @@ from nonebot.params import CommandArg
 from nonebot.adapters.onebot.v11.message import Message
 from . import dynamic_monitor
 from .config import Config
+from . import dynamic_extract  # noqa: F401
 
 # 注册生命周期事件
 driver = get_driver()
@@ -179,8 +180,8 @@ async def handle_dynamic_commands(event: GroupMessageEvent):
 
 __plugin_meta__ = {
     "name": "UP主动态监控",
-    "description": "监控B站UP主动态更新并在群组发送通知，支持主动查询",
-    "usage": "自动监控UP主动态更新，发送'最新动态'或'置顶动态'可主动查询",
-    "version": "1.1.0",
+    "description": "监控B站UP主动态更新并在群组发送通知，支持主动查询与动态图片提取",
+    "usage": "发送'最新动态'或'置顶动态'可主动查询；发送'#提取{动态ID}'可提取动态内全部图片",
+    "version": "1.2.0",
     "author": "cyxcbot"
 }

@@ -28,6 +28,24 @@ class DynamicFetcher:
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         }
 
+    def _effective_cookie(self, cookie: Optional[str] = None) -> Optional[str]:
+        value = (cookie or self.cookie or "").strip()
+        return value or None
+
+    def _request_headers(
+        self,
+        *,
+        cookie: Optional[str] = None,
+        referer: Optional[str] = None,
+    ) -> dict[str, str]:
+        headers = self.headers.copy()
+        effective_cookie = self._effective_cookie(cookie)
+        if effective_cookie:
+            headers["Cookie"] = effective_cookie
+        if referer:
+            headers["Referer"] = referer
+        return headers
+
     async def fetch_user_dynamics(self, uid: str, current_pinned_id: Optional[int] = None, cookie: Optional[str] = None) -> Optional[tuple[List[DynamicItem], Optional[int]]]:
         """直接调用B站API获取用户动态
 
@@ -69,12 +87,12 @@ class DynamicFetcher:
             logger.debug(f"请求B站动态API: {full_url}")
 
             # 动态设置请求头
-            request_headers = self.headers.copy()
-
-            # 添加Cookie（如果提供）
-            if cookie:
-                request_headers['Cookie'] = cookie
-                logger.debug(f"使用Cookie进行B站API请求: cookie={cookie}")
+            request_headers = self._request_headers(
+                cookie=cookie,
+                referer=f"https://space.bilibili.com/{uid}/dynamic",
+            )
+            if self._effective_cookie(cookie):
+                logger.debug(f"使用 Cookie 进行 B 站动态列表请求: uid={uid}")
 
             async with self.session.get(
                 api_url,
@@ -151,6 +169,68 @@ class DynamicFetcher:
             return None
         except Exception as e:
             logger.error(f"B站API请求异常 {uid}: {e}")
+            return None
+
+    async def fetch_dynamic_detail(
+        self,
+        dynamic_id: str,
+        cookie: Optional[str] = None,
+    ) -> Optional[DynamicItem]:
+        """Fetch a single dynamic by ID and parse images/text."""
+        if not self.session:
+            return None
+
+        dynamic_id = str(dynamic_id).strip()
+        if not dynamic_id.isdigit():
+            logger.warning(f"动态 ID 无效: {dynamic_id!r}")
+            return None
+
+        api_url = "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail"
+        params = {
+            "id": dynamic_id,
+            "timezone_offset": "-480",
+            "platform": "web",
+            "features": "itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote",
+        }
+
+        request_headers = self._request_headers(
+            cookie=cookie,
+            referer=f"https://t.bilibili.com/{dynamic_id}",
+        )
+        if self._effective_cookie(cookie):
+            logger.debug(f"使用 Cookie 进行 B 站动态详情请求: id={dynamic_id}")
+        else:
+            logger.warning(f"获取动态 {dynamic_id} 未配置 Cookie，部分动态可能无法访问")
+
+        try:
+            async with self.session.get(
+                api_url,
+                params=params,
+                headers=request_headers,
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as response:
+                if response.status != 200:
+                    logger.warning(f"获取动态 {dynamic_id} 失败: HTTP {response.status}")
+                    return None
+
+                data = await response.json()
+                if data.get("code") != 0:
+                    logger.warning(
+                        f"获取动态 {dynamic_id} 失败: {data.get('message', '未知错误')}"
+                    )
+                    return None
+
+                item = (data.get("data") or {}).get("item")
+                if not item:
+                    logger.warning(f"动态 {dynamic_id} 不存在或响应为空")
+                    return None
+
+                return await self._parse_dynamic_item(item, uid="0", is_pinned=False)
+        except asyncio.TimeoutError:
+            logger.warning(f"获取动态 {dynamic_id} 超时")
+            return None
+        except Exception as exc:
+            logger.error(f"获取动态 {dynamic_id} 异常: {exc}")
             return None
 
     async def _parse_dynamic_item(self, item: dict, uid: str, is_pinned: bool = False) -> Optional[DynamicItem]:
