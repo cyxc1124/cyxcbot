@@ -295,9 +295,6 @@ export const getConnectionsStatus = () =>
 export const triggerDynamicCheck = () =>
   request<MonitorActionResult>('/monitors/dynamic/check', { method: 'POST' })
 
-export const triggerDynamicFetch = () =>
-  request<MonitorActionResult>('/monitors/dynamic/fetch', { method: 'POST' })
-
 export const triggerLiveCheck = () =>
   request<MonitorActionResult>('/monitors/live/check', { method: 'POST' })
 

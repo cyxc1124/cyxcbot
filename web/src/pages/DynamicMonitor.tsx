@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   getDynamicMonitorStatus,
   triggerDynamicCheck,
-  triggerDynamicFetch,
 } from '../api/client'
 import type { DynamicMonitorStatus } from '../api/types'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
@@ -40,11 +39,10 @@ export function DynamicMonitorPage() {
     return () => clearInterval(timer)
   }, [load])
 
-  const runAction = async (action: 'check' | 'fetch') => {
-    setActionLoading(action)
+  const handleCheck = async () => {
+    setActionLoading('check')
     try {
-      const fn = action === 'check' ? triggerDynamicCheck : triggerDynamicFetch
-      const result = await fn()
+      const result = await triggerDynamicCheck()
       showToast(result.success ? 'success' : 'error', result.message)
       await load()
     } catch (err) {
@@ -63,24 +61,14 @@ export function DynamicMonitorPage() {
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white">动态监控</h2>
           <p className="mt-1 text-sm text-slate-500">UP 主动态检测、推送与映射管理</p>
         </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={!!actionLoading}
-            onClick={() => runAction('check')}
-          >
-            {actionLoading === 'check' ? '检查中…' : '立即检查'}
-          </button>
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={!!actionLoading}
-            onClick={() => runAction('fetch')}
-          >
-            {actionLoading === 'fetch' ? '拉取中…' : '强制拉取'}
-          </button>
-        </div>
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={!!actionLoading}
+          onClick={() => void handleCheck()}
+        >
+          {actionLoading ? '检查中…' : '立即检查'}
+        </button>
       </div>
 
       {error && <LoadErrorBanner message={error} onRetry={load} />}
@@ -112,10 +100,6 @@ export function DynamicMonitorPage() {
           <div>
             <dt className="text-sm text-slate-500">上次检查</dt>
             <dd className="mt-1 text-sm">{formatDateTime(status?.last_check_at)}</dd>
-          </div>
-          <div>
-            <dt className="text-sm text-slate-500">上次拉取</dt>
-            <dd className="mt-1 text-sm">{formatDateTime(status?.last_fetch_at)}</dd>
           </div>
           <div>
             <dt className="text-sm text-slate-500">监控模式</dt>

@@ -222,7 +222,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
                   className="input"
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="自定义名称"
+                  placeholder="留空将自动从 B 站获取"
                 />
               </div>
             </div>

@@ -16,7 +16,8 @@ const PANEL_HEIGHT =
   'h-[clamp(10rem,35dvh,16rem)] sm:h-[clamp(12rem,42dvh,24rem)] lg:h-[clamp(14rem,48dvh,32rem)]'
 
 export function GroupSelector({ groups, selected, onChange, disabled, helperText }: GroupSelectorProps) {
-  const [query, setQuery] = useState('')
+  const [availableQuery, setAvailableQuery] = useState('')
+  const [selectedQuery, setSelectedQuery] = useState('')
   const list = Array.isArray(groups) ? groups : []
 
   const groupMap = useMemo(() => {
@@ -28,7 +29,7 @@ export function GroupSelector({ groups, selected, onChange, disabled, helperText
   }, [list])
 
   const available = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = availableQuery.trim().toLowerCase()
     return list.filter((group) => {
       if (selected.includes(group.group_id)) return false
       if (!q) return true
@@ -36,13 +37,23 @@ export function GroupSelector({ groups, selected, onChange, disabled, helperText
       const id = group.group_id.toLowerCase()
       return name.includes(q) || id.includes(q)
     })
-  }, [list, selected, query])
+  }, [list, selected, availableQuery])
 
   const selectedGroups = useMemo((): GroupLike[] => {
     return selected.map(
       (id) => groupMap.get(id) ?? { group_id: id, group_name: null },
     )
   }, [selected, groupMap])
+
+  const filteredSelectedGroups = useMemo(() => {
+    const q = selectedQuery.trim().toLowerCase()
+    if (!q) return selectedGroups
+    return selectedGroups.filter((group) => {
+      const name = (group.group_name ?? '').toLowerCase()
+      const id = group.group_id.toLowerCase()
+      return name.includes(q) || id.includes(q)
+    })
+  }, [selectedGroups, selectedQuery])
 
   const addGroup = (groupId: string) => {
     if (disabled || selected.includes(groupId)) return
@@ -82,9 +93,9 @@ export function GroupSelector({ groups, selected, onChange, disabled, helperText
               type="search"
               className="input py-1.5 text-sm"
               placeholder="搜索群名或群号"
-              value={query}
+              value={availableQuery}
               disabled={disabled}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => setAvailableQuery(e.target.value)}
             />
           </div>
           <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-slate-800">
@@ -94,7 +105,7 @@ export function GroupSelector({ groups, selected, onChange, disabled, helperText
           <ul className="flex-1 overflow-y-auto p-1">
             {available.length === 0 ? (
               <li className="px-3 py-6 text-center text-sm text-slate-400">
-                {query.trim() ? '没有匹配的群组' : '已全部添加'}
+                {availableQuery.trim() ? '没有匹配的群组' : '已全部添加'}
               </li>
             ) : (
               available.map((group) => (
@@ -123,17 +134,35 @@ export function GroupSelector({ groups, selected, onChange, disabled, helperText
         <div
           className={`flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 ${PANEL_HEIGHT}`}
         >
-          <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2 dark:border-slate-700">
+          <div className="border-b border-slate-200 p-2 dark:border-slate-700">
+            <input
+              type="search"
+              className="input py-1.5 text-sm"
+              placeholder="搜索已选群名或群号"
+              value={selectedQuery}
+              disabled={disabled}
+              onChange={(e) => setSelectedQuery(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-slate-800">
             <span className="text-xs font-medium text-slate-500">已选群组</span>
-            <span className="text-xs text-slate-400">{selectedGroups.length} 个</span>
+            <span className="text-xs text-slate-400">
+              {selectedQuery.trim()
+                ? `${filteredSelectedGroups.length} / ${selectedGroups.length} 个`
+                : `${selectedGroups.length} 个`}
+            </span>
           </div>
           <ul className="flex-1 overflow-y-auto p-1">
             {selectedGroups.length === 0 ? (
               <li className="px-3 py-6 text-center text-sm text-slate-400">
                 点击左侧群组添加
               </li>
+            ) : filteredSelectedGroups.length === 0 ? (
+              <li className="px-3 py-6 text-center text-sm text-slate-400">
+                没有匹配的群组
+              </li>
             ) : (
-              selectedGroups.map((group) => (
+              filteredSelectedGroups.map((group) => (
                 <li
                   key={group.group_id}
                   className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800/50"
