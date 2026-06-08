@@ -36,9 +36,7 @@ export function LiveMonitorPage() {
         </button>
       </div>
 
-      <div className="card">
-        <TargetMappingSection type="live" />
-      </div>
+      <TargetMappingSection type="live" />
     </div>
   )
 }

@@ -36,9 +36,7 @@ export function DynamicMonitorPage() {
         </button>
       </div>
 
-      <div className="card">
-        <TargetMappingSection type="dynamic" />
-      </div>
+      <TargetMappingSection type="dynamic" />
     </div>
   )
 }

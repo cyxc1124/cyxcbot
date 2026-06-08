@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { ToastContainer } from './components/ToastContainer'
 import { AuthProvider } from './contexts/AuthContext'
+import { SidebarProvider } from './contexts/SidebarContext'
 import { ToastProvider } from './contexts/ToastContext'
 import { AboutPage } from './pages/About'
 import { AuditPage } from './pages/Audit'
@@ -30,7 +31,7 @@ export default function App() {
             </Route>
 
             <Route element={<AuthGuard />}>
-              <Route element={<Layout />}>
+              <Route element={<SidebarProvider><Layout /></SidebarProvider>}>
                 <Route index element={<DashboardPage />} />
                 <Route path="dynamic" element={<DynamicMonitorPage />} />
                 <Route path="live" element={<LiveMonitorPage />} />
