@@ -6,7 +6,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from shared.config.message_templates import DYNAMIC_TEMPLATE_KEYS, LIVE_TEMPLATE_KEYS
+from shared.config.message_templates import DYNAMIC_TEMPLATE_KEYS, LINK_TEMPLATE_KEYS, LIVE_TEMPLATE_KEYS
 
 
 class CookieStatusResponse(BaseModel):
@@ -30,6 +30,8 @@ class SettingsResponse(BaseModel):
     live_monitor_use_websocket: bool
     live_template_start: str = Field(default=LIVE_TEMPLATE_KEYS["live_template_start"])
     live_template_end: str = Field(default=LIVE_TEMPLATE_KEYS["live_template_end"])
+    link_template_video: str = Field(default=LINK_TEMPLATE_KEYS["link_template_video"])
+    link_template_live: str = Field(default=LINK_TEMPLATE_KEYS["link_template_live"])
     bilibili_cookie: CookieStatusResponse
     audit_log_retention_days: int
     event_retention_days: int
@@ -57,6 +59,8 @@ class SettingsUpdateRequest(BaseModel):
     live_monitor_use_websocket: Optional[bool] = None
     live_template_start: Optional[str] = Field(default=None, max_length=500)
     live_template_end: Optional[str] = Field(default=None, max_length=500)
+    link_template_video: Optional[str] = Field(default=None, max_length=500)
+    link_template_live: Optional[str] = Field(default=None, max_length=500)
     audit_log_retention_days: Optional[int] = Field(default=None, ge=0, le=3650)
     event_retention_days: Optional[int] = Field(default=None, ge=0, le=3650)
     status_check_allowed_qq: Optional[list[str]] = None

@@ -43,6 +43,8 @@ export interface Settings {
   live_monitor_use_websocket: boolean
   live_template_start: string
   live_template_end: string
+  link_template_video: string
+  link_template_live: string
   bilibili_cookie: CookieStatus
   audit_log_retention_days: number
   event_retention_days: number

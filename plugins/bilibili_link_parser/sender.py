@@ -1,30 +1,17 @@
 """链接解析结果消息构建。"""
 
 from datetime import datetime
+from typing import Iterable, Optional, Union
 
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.log import logger
 
+from shared.config.message_templates import LinkMessageTemplates
+from shared.notify.message_template import build_message_from_template
 from utils.bilibili_api import RoomInfo, UserInfo, VideoInfo
 from utils.bilibili_api.live_models import LiveStatus
 
-
-def build_video_link_message(video: VideoInfo) -> Message:
-    """构建视频卡片消息：封面、标题、发布时间、UP 主、链接。"""
-    message = Message()
-
-    if video.cover:
-        try:
-            message.append(MessageSegment.image(video.cover))
-        except Exception as exc:
-            logger.warning(f"添加视频封面失败: {exc}")
-
-    message.append(f"标题：{video.title}\n")
-    message.append(f"UP主：{video.author_name or '未知'}\n")
-    message.append(f"发布时间：{video.format_pub_date()}\n")
-    message.append(f"链接：{video.get_video_url()}")
-
-    return message
+SegmentPart = Union[MessageSegment, str]
 
 
 def _format_live_status(room: RoomInfo) -> str:
@@ -41,23 +28,56 @@ def _format_live_start_time(room: RoomInfo) -> str:
     return datetime.fromtimestamp(room.live_start_time).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def build_live_link_message(room: RoomInfo, user_info: UserInfo | None = None) -> Message:
-    """构建直播间卡片消息：封面、标题、主播、状态、开播时间、链接。"""
-    message = Message()
+def _cover_parts(cover_url: str | None) -> Iterable[SegmentPart]:
+    if not cover_url:
+        return []
+    try:
+        return [MessageSegment.image(cover_url)]
+    except Exception as exc:
+        logger.warning(f"添加封面失败: {exc}")
+        return []
+
+
+def build_video_link_message(
+    video: VideoInfo,
+    templates: Optional[LinkMessageTemplates] = None,
+) -> Message:
+    """严格按模板顺序构建视频链接解析消息。"""
+    tpl = templates or LinkMessageTemplates()
+    text_variables = {
+        "title": video.title or "暂无标题",
+        "author": video.author_name or "未知",
+        "pub_date": video.format_pub_date(),
+        "url": video.get_video_url(),
+        "bvid": video.bvid or "",
+        "aid": str(video.aid) if video.aid else "",
+    }
+    return build_message_from_template(
+        tpl.video,
+        text_variables,
+        {"cover": lambda: _cover_parts(video.cover)},
+    )
+
+
+def build_live_link_message(
+    room: RoomInfo,
+    user_info: UserInfo | None = None,
+    templates: Optional[LinkMessageTemplates] = None,
+) -> Message:
+    """严格按模板顺序构建直播间链接解析消息。"""
+    tpl = templates or LinkMessageTemplates()
     streamer_name = user_info.name if user_info and user_info.name else "未知"
-
-    if room.cover:
-        try:
-            message.append(MessageSegment.image(room.cover))
-        except Exception as exc:
-            logger.warning(f"添加直播封面失败: {exc}")
-
-    message.append(f"标题：{room.title or '暂无标题'}\n")
-    message.append(f"主播：{streamer_name}\n")
-    message.append(f"状态：{_format_live_status(room)}\n")
-    message.append(f"开播时间：{_format_live_start_time(room)}\n")
-    if room.area_name:
-        message.append(f"分区：{room.area_name}\n")
-    message.append(f"链接：{room.get_live_url()}")
-
-    return message
+    text_variables = {
+        "title": room.title or "暂无标题",
+        "streamer_name": streamer_name,
+        "status": _format_live_status(room),
+        "live_start_time": _format_live_start_time(room),
+        "area": room.area_name or "",
+        "url": room.get_live_url(),
+        "room_id": str(room.room_id),
+    }
+    return build_message_from_template(
+        tpl.live,
+        text_variables,
+        {"cover": lambda: _cover_parts(room.cover)},
+    )

@@ -5,8 +5,10 @@ export type TemplateKey =
   | 'dynamic_template_query_pinned'
   | 'live_template_start'
   | 'live_template_end'
+  | 'link_template_video'
+  | 'link_template_live'
 
-export type TemplateCategory = 'dynamic' | 'live'
+export type TemplateCategory = 'dynamic' | 'live' | 'link'
 
 export type TemplateVariable = {
   key: string
@@ -31,6 +33,9 @@ export const DEFAULT_MESSAGE_TEMPLATES: Record<TemplateKey, string> = {
   dynamic_template_query_pinned: '【{name} 的置顶动态】\n{media}\n{url}',
   live_template_start: '{streamer_name} 开播啦！\n{card}\n{url}',
   live_template_end: '【下播提醒】\n{streamer_name}下播啦！\n{card}\n直播时长：{duration}',
+  link_template_video: '{cover}标题：{title}\nUP主：{author}\n发布时间：{pub_date}\n链接：{url}',
+  link_template_live:
+    '{cover}标题：{title}\n主播：{streamer_name}\n状态：{status}\n开播时间：{live_start_time}\n分区：{area}\n链接：{url}',
 }
 
 const dynamicMediaVariable: TemplateVariable = {
@@ -124,17 +129,58 @@ export const liveTemplateFields: TemplateField[] = [
   },
 ]
 
-export const allTemplateFields = [...dynamicTemplateFields, ...liveTemplateFields]
+const linkVideoVariables: TemplateVariable[] = [
+  { key: 'cover', label: '视频封面', description: '视频封面图片', segment: true },
+  { key: 'title', label: '标题', description: '视频标题' },
+  { key: 'author', label: 'UP 主', description: 'UP 主显示名称' },
+  { key: 'pub_date', label: '发布时间', description: '视频发布时间' },
+  { key: 'url', label: '视频链接', description: 'bilibili.com/video 链接' },
+  { key: 'bvid', label: 'BV 号', description: '视频 BV 号' },
+  { key: 'aid', label: 'AV 号', description: '视频 AV 号（数字）' },
+]
+
+const linkLiveVariables: TemplateVariable[] = [
+  { key: 'cover', label: '直播封面', description: '直播间封面图片', segment: true },
+  { key: 'title', label: '标题', description: '直播间标题' },
+  { key: 'streamer_name', label: '主播名', description: '主播显示名称' },
+  { key: 'status', label: '直播状态', description: '直播中 / 未开播 / 轮播中' },
+  { key: 'live_start_time', label: '开播时间', description: '未开播时为 —' },
+  { key: 'area', label: '分区', description: '直播分区名称' },
+  { key: 'url', label: '直播间链接', description: 'live.bilibili.com 链接' },
+  { key: 'room_id', label: '房间号', description: '直播间 room_id' },
+]
+
+export const linkTemplateFields: TemplateField[] = [
+  {
+    key: 'link_template_video',
+    category: 'link',
+    label: '视频链接解析',
+    description: '群聊/私聊中识别到 B 站视频链接时的自动回复内容',
+    defaultValue: DEFAULT_MESSAGE_TEMPLATES.link_template_video,
+    variables: linkVideoVariables,
+  },
+  {
+    key: 'link_template_live',
+    category: 'link',
+    label: '直播链接解析',
+    description: '群聊/私聊中识别到 B 站直播间链接时的自动回复内容',
+    defaultValue: DEFAULT_MESSAGE_TEMPLATES.link_template_live,
+    variables: linkLiveVariables,
+  },
+]
+
+export const allTemplateFields = [...dynamicTemplateFields, ...liveTemplateFields, ...linkTemplateFields]
 
 export const templateCategoryLabels: Record<TemplateCategory, string> = {
   dynamic: '动态模板',
   live: '直播模板',
+  link: '链接解析',
 }
 
 export const PREVIEW_SEGMENT_LABELS: Record<string, string> = {
   media: '[动态截图或正文图片]',
   card: '[卡片图片]',
-  cover: '[直播封面]',
+  cover: '[封面图片]',
 }
 
 export const PREVIEW_SAMPLE_VALUES: Record<string, string> = {
@@ -147,6 +193,14 @@ export const PREVIEW_SAMPLE_VALUES: Record<string, string> = {
   streamer_name: '李四',
   title: '今天聊聊天~',
   duration: '1小时23分钟45秒',
+  author: '张三',
+  pub_date: '2026-06-08 14:30:00',
+  status: '直播中',
+  live_start_time: '2026-06-08 20:00:00',
+  area: '娱乐',
+  room_id: '12345',
+  bvid: 'BV1xx411c7mD',
+  aid: '170001',
 }
 
 export function createDefaultTemplateForm(): Record<TemplateKey, string> {

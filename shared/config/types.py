@@ -5,7 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List
 
-from shared.config.message_templates import DynamicMessageTemplates, LiveMessageTemplates
+from shared.config.message_templates import (
+    DynamicMessageTemplates,
+    LinkMessageTemplates,
+    LiveMessageTemplates,
+    dynamic_templates_from_settings,
+    link_templates_from_settings,
+    live_templates_from_settings,
+)
 
 
 @dataclass
@@ -25,6 +32,7 @@ class AppConfigSnapshot:
     live_monitor_include_info: bool = True
     live_monitor_use_websocket: bool = True
     live_message_templates: LiveMessageTemplates = field(default_factory=LiveMessageTemplates)
+    link_message_templates: LinkMessageTemplates = field(default_factory=LinkMessageTemplates)
     bilibili_cookie: str = ""
     bilibili_cookie_set: bool = False
     audit_log_retention_days: int = 90

@@ -16,7 +16,15 @@ LIVE_TEMPLATE_KEYS = {
     "live_template_end": "【下播提醒】\n{streamer_name}下播啦！\n{card}\n直播时长：{duration}",
 }
 
-MESSAGE_TEMPLATE_KEYS = {**DYNAMIC_TEMPLATE_KEYS, **LIVE_TEMPLATE_KEYS}
+LINK_TEMPLATE_KEYS = {
+    "link_template_video": "{cover}标题：{title}\nUP主：{author}\n发布时间：{pub_date}\n链接：{url}",
+    "link_template_live": (
+        "{cover}标题：{title}\n主播：{streamer_name}\n状态：{status}\n"
+        "开播时间：{live_start_time}\n分区：{area}\n链接：{url}"
+    ),
+}
+
+MESSAGE_TEMPLATE_KEYS = {**DYNAMIC_TEMPLATE_KEYS, **LIVE_TEMPLATE_KEYS, **LINK_TEMPLATE_KEYS}
 
 MAX_TEMPLATE_LENGTH = 500
 
@@ -33,6 +41,12 @@ class DynamicMessageTemplates:
 class LiveMessageTemplates:
     start: str = LIVE_TEMPLATE_KEYS["live_template_start"]
     end: str = LIVE_TEMPLATE_KEYS["live_template_end"]
+
+
+@dataclass
+class LinkMessageTemplates:
+    video: str = LINK_TEMPLATE_KEYS["link_template_video"]
+    live: str = LINK_TEMPLATE_KEYS["link_template_live"]
 
 
 def dynamic_templates_from_settings(settings: dict[str, str]) -> DynamicMessageTemplates:
@@ -71,4 +85,11 @@ def live_templates_from_settings(settings: dict[str, str]) -> LiveMessageTemplat
     return LiveMessageTemplates(
         start=settings.get("live_template_start", LIVE_TEMPLATE_KEYS["live_template_start"]),
         end=_resolve_live_end_template(settings),
+    )
+
+
+def link_templates_from_settings(settings: dict[str, str]) -> LinkMessageTemplates:
+    return LinkMessageTemplates(
+        video=settings.get("link_template_video", LINK_TEMPLATE_KEYS["link_template_video"]),
+        live=settings.get("link_template_live", LINK_TEMPLATE_KEYS["link_template_live"]),
     )

@@ -48,11 +48,11 @@ async def _resolve_reply(config: Config, message_text: str):
             if ref.kind == "video":
                 video = await video_api_manager.get_video_detail(bvid=ref.bvid, aid=ref.aid)
                 if video:
-                    return build_video_link_message(video)
+                    return build_video_link_message(video, config.message_templates)
             elif ref.room_id:
                 room_info, user_info = await live_api_manager.get_room_and_user_info(ref.room_id)
                 if room_info:
-                    return build_live_link_message(room_info, user_info)
+                    return build_live_link_message(room_info, user_info, config.message_templates)
         except Exception as exc:
             logger.warning(f"B 站链接解析失败 ref={ref}: {exc}")
 

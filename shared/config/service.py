@@ -14,6 +14,7 @@ from nonebot_plugin_orm import get_session
 from shared.config.message_templates import (
     MESSAGE_TEMPLATE_KEYS,
     dynamic_templates_from_settings,
+    link_templates_from_settings,
     live_templates_from_settings,
 )
 from shared.config.nonebot_superusers import apply_nonebot_superusers
@@ -112,6 +113,7 @@ class ConfigService:
             live_monitor_include_info=settings.get("live_monitor_include_info", True),
             live_monitor_use_websocket=settings.get("live_monitor_use_websocket", True),
             live_message_templates=live_templates_from_settings(settings),
+            link_message_templates=link_templates_from_settings(settings),
             bilibili_cookie=cookie,
             bilibili_cookie_set=bool(cookie_encrypted),
             audit_log_retention_days=settings.get("audit_log_retention_days", 90),
@@ -241,6 +243,7 @@ class ConfigService:
         masked = mask_secret(snap.bilibili_cookie) if snap.bilibili_cookie else ""
         dt = snap.dynamic_message_templates
         lt = snap.live_message_templates
+        link = snap.link_message_templates
         return {
             "dynamic_monitor_interval": snap.dynamic_monitor_interval,
             "dynamic_enable_screenshot": snap.dynamic_enable_screenshot,
@@ -253,6 +256,8 @@ class ConfigService:
             "live_monitor_use_websocket": snap.live_monitor_use_websocket,
             "live_template_start": lt.start,
             "live_template_end": lt.end,
+            "link_template_video": link.video,
+            "link_template_live": link.live,
             "bilibili_cookie": {
                 "configured": snap.bilibili_cookie_set,
                 "preview": masked or None,

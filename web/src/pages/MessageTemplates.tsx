@@ -5,6 +5,7 @@ import { PageLoading } from '../components/LoadingSpinner'
 import {
   allTemplateFields,
   dynamicTemplateFields,
+  linkTemplateFields,
   liveTemplateFields,
   PREVIEW_SAMPLE_VALUES,
   PREVIEW_SEGMENT_LABELS,
@@ -77,10 +78,18 @@ function TemplateDetailPanel({
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const dirty = value !== savedValue
-  const previewVariables =
-    field.category === 'live'
-      ? { ...PREVIEW_SAMPLE_VALUES, url: 'https://live.bilibili.com/12345' }
-      : PREVIEW_SAMPLE_VALUES
+  const previewVariables = (() => {
+    const base = { ...PREVIEW_SAMPLE_VALUES }
+    if (field.key === 'link_template_video') {
+      base.url = 'https://www.bilibili.com/video/BV1xx411c7mD'
+    } else if (
+      field.category === 'live' ||
+      field.key === 'link_template_live'
+    ) {
+      base.url = 'https://live.bilibili.com/12345'
+    }
+    return base
+  })()
   const preview = renderStrictTemplatePreview(value, previewVariables, PREVIEW_SEGMENT_LABELS)
 
   const handleInsert = (token: string) => {
@@ -281,7 +290,7 @@ export function MessageTemplatesPage() {
       <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white">消息模板</h2>
-          <p className="mt-1 text-sm text-slate-500">自定义动态与直播推送的文本内容</p>
+          <p className="mt-1 text-sm text-slate-500">自定义动态、直播推送与链接解析的文本内容</p>
         </div>
         <PageLoading />
       </div>
@@ -316,6 +325,7 @@ export function MessageTemplatesPage() {
                 [
                   ['dynamic', dynamicTemplateFields],
                   ['live', liveTemplateFields],
+                  ['link', linkTemplateFields],
                 ] as const
               ).map(([category, fields]) => (
                 <div key={category} className="mb-3 last:mb-0">
