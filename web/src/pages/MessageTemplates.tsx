@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getSettings, patchSettings } from '../api/client'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
 import {
@@ -180,6 +181,10 @@ function TemplateDetailPanel({
   )
 }
 
+type UnsavedPrompt =
+  | { kind: 'switch'; targetKey: TemplateKey; label: string }
+  | { kind: 'back'; label: string }
+
 export function MessageTemplatesPage() {
   const { showToast } = useToast()
   const [form, setForm] = useState(templatesFromSettings(null))
@@ -189,6 +194,7 @@ export function MessageTemplatesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [unsavedPrompt, setUnsavedPrompt] = useState<UnsavedPrompt | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -214,18 +220,24 @@ export function MessageTemplatesPage() {
 
   const isDirty = (key: TemplateKey) => getCurrentValue(key) !== savedForm[key]
 
+  const discardDraftForKey = (key: TemplateKey) => {
+    setDraftValues((current) => {
+      const next = { ...current }
+      delete next[key]
+      return next
+    })
+  }
+
   const selectTemplate = (key: TemplateKey) => {
+    if (key === selectedKey) return
     if (selectedKey && isDirty(selectedKey)) {
       const field = allTemplateFields.find((item) => item.key === selectedKey)
-      const confirmed = window.confirm(
-        `「${field?.label ?? '当前模板'}」有未保存的修改，确定切换吗？`,
-      )
-      if (!confirmed) return
-      setDraftValues((current) => {
-        const next = { ...current }
-        delete next[selectedKey]
-        return next
+      setUnsavedPrompt({
+        kind: 'switch',
+        targetKey: key,
+        label: field?.label ?? '当前模板',
       })
+      return
     }
     setSelectedKey(key)
   }
@@ -233,17 +245,27 @@ export function MessageTemplatesPage() {
   const clearSelection = () => {
     if (selectedKey && isDirty(selectedKey)) {
       const field = allTemplateFields.find((item) => item.key === selectedKey)
-      const confirmed = window.confirm(
-        `「${field?.label ?? '当前模板'}」有未保存的修改，确定返回吗？`,
-      )
-      if (!confirmed) return
-      setDraftValues((current) => {
-        const next = { ...current }
-        delete next[selectedKey]
-        return next
+      setUnsavedPrompt({
+        kind: 'back',
+        label: field?.label ?? '当前模板',
       })
+      return
     }
     setSelectedKey(null)
+  }
+
+  const handleUnsavedConfirm = () => {
+    if (!unsavedPrompt || !selectedKey) {
+      setUnsavedPrompt(null)
+      return
+    }
+    discardDraftForKey(selectedKey)
+    if (unsavedPrompt.kind === 'switch') {
+      setSelectedKey(unsavedPrompt.targetKey)
+    } else {
+      setSelectedKey(null)
+    }
+    setUnsavedPrompt(null)
   }
 
   const updateCurrent = (value: string) => {
@@ -398,6 +420,26 @@ export function MessageTemplatesPage() {
           </main>
         )}
       </div>
+
+      <ConfirmDialog
+        open={unsavedPrompt !== null}
+        title="未保存的修改"
+        message={
+          unsavedPrompt ? (
+            <>
+              「{unsavedPrompt.label}」有未保存的修改，
+              {unsavedPrompt.kind === 'switch' ? '切换模板' : '返回列表'}
+              后将丢失这些更改。
+            </>
+          ) : (
+            ''
+          )
+        }
+        confirmLabel={unsavedPrompt?.kind === 'switch' ? '仍要切换' : '仍要返回'}
+        cancelLabel="继续编辑"
+        onCancel={() => setUnsavedPrompt(null)}
+        onConfirm={handleUnsavedConfirm}
+      />
     </div>
   )
 }
