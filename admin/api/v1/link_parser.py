@@ -63,14 +63,14 @@ def _ensure_group_message_enabled(group_id: str, snap) -> None:
 
 
 def _group_policy_values(snap, group_id: str) -> tuple[bool, bool, bool]:
-    override = snap.link_parser_group_policies.get(group_id)
+    override = snap.link_parser_group_policies.get(str(group_id).strip())
     if override:
         return override.video_enabled, override.live_enabled, True
     return False, False, False
 
 
 def _user_policy_values(snap, user_id: str) -> tuple[bool, bool, bool]:
-    override = snap.link_parser_user_policies.get(user_id)
+    override = snap.link_parser_user_policies.get(str(user_id).strip())
     if override:
         return override.video_enabled, override.live_enabled, True
     return False, False, False

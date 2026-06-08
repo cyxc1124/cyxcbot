@@ -38,22 +38,22 @@ def resolve_link_parser_policy(
     is_private: bool = False,
 ) -> LinkParserScopePolicy:
     """Resolve effective link parser policy for a chat context."""
-    video_enabled = False
-    live_enabled = False
+    if is_private:
+        if user_id:
+            user_override = snapshot.link_parser_user_policies.get(str(user_id).strip())
+            if user_override:
+                return LinkParserScopePolicy(
+                    video_enabled=user_override.video_enabled,
+                    live_enabled=user_override.live_enabled,
+                )
+        return LinkParserScopePolicy()
 
     if group_id:
         group_override = snapshot.link_parser_group_policies.get(str(group_id).strip())
         if group_override:
-            video_enabled = group_override.video_enabled
-            live_enabled = group_override.live_enabled
+            return LinkParserScopePolicy(
+                video_enabled=group_override.video_enabled,
+                live_enabled=group_override.live_enabled,
+            )
 
-    if user_id:
-        user_override = snapshot.link_parser_user_policies.get(str(user_id).strip())
-        if user_override:
-            video_enabled = user_override.video_enabled
-            live_enabled = user_override.live_enabled
-
-    return LinkParserScopePolicy(
-        video_enabled=video_enabled,
-        live_enabled=live_enabled,
-    )
+    return LinkParserScopePolicy()
