@@ -1,32 +1,64 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getMessagePolicy, updateMessagePolicy } from '../api/client'
-import type { Group, GroupMessagePolicy } from '../api/types'
+import type { Group } from '../api/types'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
-import { GroupSelector } from '../components/GroupSelector'
 import { PageLoading } from '../components/LoadingSpinner'
+import { ToggleSwitch } from '../components/ToggleSwitch'
 import { useToast } from '../contexts/ToastContext'
 import { formatApiError } from '../utils/apiError'
 
-function isGroupEnabled(groupId: string, policy: GroupMessagePolicy): boolean {
-  if (!policy.restrict) return true
-  return policy.enabled_group_ids.includes(groupId)
+function isGroupEnabled(groupId: string, restrict: boolean, enabledIds: string[]): boolean {
+  if (!restrict) return true
+  return enabledIds.includes(groupId)
+}
+
+function computePolicyAfterToggle(
+  groupId: string,
+  enabled: boolean,
+  groups: Group[],
+  restrict: boolean,
+  enabledIds: string[],
+): { restrict: boolean; enabled_group_ids: string[] } {
+  const allIds = groups.map((g) => g.group_id)
+
+  if (enabled) {
+    if (!restrict) {
+      return { restrict: false, enabled_group_ids: [] }
+    }
+    const nextEnabled = [...new Set([...enabledIds, groupId])]
+    if (nextEnabled.length >= allIds.length) {
+      return { restrict: false, enabled_group_ids: [] }
+    }
+    return { restrict: true, enabled_group_ids: nextEnabled }
+  }
+
+  if (!restrict) {
+    return {
+      restrict: true,
+      enabled_group_ids: allIds.filter((id) => id !== groupId),
+    }
+  }
+  return {
+    restrict: true,
+    enabled_group_ids: enabledIds.filter((id) => id !== groupId),
+  }
 }
 
 export function GroupsPage() {
   const { showToast } = useToast()
-  const [policy, setPolicy] = useState<GroupMessagePolicy | null>(null)
+  const [groups, setGroups] = useState<Group[]>([])
   const [restrict, setRestrict] = useState(false)
   const [enabledIds, setEnabledIds] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
       const data = await getMessagePolicy()
-      setPolicy(data)
+      setGroups(data.groups)
       setRestrict(data.restrict)
       setEnabledIds(data.enabled_group_ids)
     } catch (err) {
@@ -40,101 +72,95 @@ export function GroupsPage() {
     void load()
   }, [load])
 
-  const handleSave = async () => {
-    setSaving(true)
+  const handleToggle = async (groupId: string, enabled: boolean) => {
+    const next = computePolicyAfterToggle(groupId, enabled, groups, restrict, enabledIds)
+
+    const prevRestrict = restrict
+    const prevEnabledIds = enabledIds
+    setRestrict(next.restrict)
+    setEnabledIds(next.enabled_group_ids)
+    setTogglingId(groupId)
+
     try {
-      const updated = await updateMessagePolicy({
-        restrict,
-        enabled_group_ids: enabledIds,
-      })
-      setPolicy(updated)
+      const updated = await updateMessagePolicy(next)
+      setGroups(updated.groups)
       setRestrict(updated.restrict)
       setEnabledIds(updated.enabled_group_ids)
-      showToast('success', '群组消息策略已保存')
     } catch (err) {
+      setRestrict(prevRestrict)
+      setEnabledIds(prevEnabledIds)
       showToast('error', err instanceof Error ? err.message : '保存失败')
     } finally {
-      setSaving(false)
+      setTogglingId(null)
     }
   }
 
-  const dirty =
-    policy !== null &&
-    (restrict !== policy.restrict ||
-      enabledIds.length !== policy.enabled_group_ids.length ||
-      enabledIds.some((id) => !policy.enabled_group_ids.includes(id)))
+  const handleToggleAll = async (enabled: boolean) => {
+    const next = enabled
+      ? { restrict: false, enabled_group_ids: [] as string[] }
+      : { restrict: true, enabled_group_ids: [] as string[] }
 
-  if (loading && !policy && !error) return <PageLoading />
+    const prevRestrict = restrict
+    const prevEnabledIds = enabledIds
+    setRestrict(next.restrict)
+    setEnabledIds(next.enabled_group_ids)
+    setTogglingId('__all__')
 
-  const groups: Group[] = policy?.groups ?? []
+    try {
+      const updated = await updateMessagePolicy(next)
+      setGroups(updated.groups)
+      setRestrict(updated.restrict)
+      setEnabledIds(updated.enabled_group_ids)
+      showToast('success', enabled ? '已启用全部群组' : '已关闭全部群组')
+    } catch (err) {
+      setRestrict(prevRestrict)
+      setEnabledIds(prevEnabledIds)
+      showToast('error', err instanceof Error ? err.message : '保存失败')
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
+  if (loading && groups.length === 0 && !error) return <PageLoading />
+
+  const allEnabled = !restrict
+  const noneEnabled = restrict && enabledIds.length === 0
+  const busy = togglingId !== null
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white">群组管理</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          查看机器人已加入的 QQ 群，并控制处理哪些群的消息
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">群组管理</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            控制机器人响应哪些 QQ 群的群消息，私聊不受影响
+          </p>
+        </div>
+        {groups.length > 0 && (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="btn-secondary text-sm"
+              disabled={busy || allEnabled}
+              onClick={() => void handleToggleAll(true)}
+            >
+              全部启用
+            </button>
+            <button
+              type="button"
+              className="btn-secondary text-sm"
+              disabled={busy || noneEnabled}
+              onClick={() => void handleToggleAll(false)}
+            >
+              全部关闭
+            </button>
+          </div>
+        )}
       </div>
 
       {error && <LoadErrorBanner message={error} onRetry={load} />}
 
-      <div className="card space-y-6">
-        <div>
-          <h3 className="text-lg font-semibold">消息处理策略</h3>
-          <p className="mt-1 text-sm text-slate-500">
-            关闭限制时，机器人会处理所有群的消息；开启后仅处理下方选定的群。
-          </p>
-        </div>
-
-        <label className="flex cursor-pointer items-start gap-3">
-          <input
-            type="checkbox"
-            className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-            checked={restrict}
-            onChange={(e) => setRestrict(e.target.checked)}
-            disabled={saving}
-          />
-          <span>
-            <span className="block text-sm font-medium text-slate-900 dark:text-white">
-              仅处理选定群组的消息
-            </span>
-            <span className="block text-xs text-slate-500">
-              私聊消息不受此设置影响
-            </span>
-          </span>
-        </label>
-
-        {restrict && (
-          <GroupSelector
-            groups={groups}
-            selected={enabledIds}
-            onChange={setEnabledIds}
-            disabled={saving}
-            helperText="选择需要机器人响应群消息的群组"
-          />
-        )}
-
-        <div className="flex justify-end">
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={saving || !dirty}
-            onClick={() => void handleSave()}
-          >
-            {saving ? '保存中…' : '保存策略'}
-          </button>
-        </div>
-      </div>
-
       <div className="card">
-        <div className="mb-4">
-          <h3 className="text-lg font-semibold">QQ 群列表</h3>
-          <p className="mt-1 text-sm text-slate-500">
-            来自 OneBot 接口，需机器人与 QQ 客户端在线
-          </p>
-        </div>
-
         {groups.length === 0 ? (
           <p className="text-sm text-slate-500">
             {error
@@ -143,38 +169,46 @@ export function GroupsPage() {
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[560px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500 dark:border-slate-700">
                   <th className="pb-3 pr-4 font-medium">群名称</th>
                   <th className="pb-3 pr-4 font-medium">群号</th>
                   <th className="pb-3 pr-4 font-medium">成员数</th>
-                  <th className="pb-3 font-medium">消息处理</th>
+                  <th className="pb-3 font-medium text-right">处理群消息</th>
                 </tr>
               </thead>
               <tbody>
                 {groups.map((group) => {
-                  const enabled = policy
-                    ? isGroupEnabled(group.group_id, { ...policy, restrict, enabled_group_ids: enabledIds })
-                    : false
+                  const enabled = isGroupEnabled(group.group_id, restrict, enabledIds)
+                  const rowBusy = busy && (togglingId === group.group_id || togglingId === '__all__')
                   return (
                     <tr
                       key={group.group_id}
                       className="border-b border-slate-100 last:border-0 dark:border-slate-800"
                     >
-                      <td className="py-3 pr-4">{group.group_name ?? '—'}</td>
-                      <td className="py-3 pr-4 font-mono text-xs">{group.group_id}</td>
-                      <td className="py-3 pr-4">{group.member_count ?? '—'}</td>
-                      <td className="py-3">
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                            enabled
-                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                          }`}
-                        >
-                          {enabled ? '已启用' : '已忽略'}
-                        </span>
+                      <td className="py-3.5 pr-4 font-medium text-slate-900 dark:text-white">
+                        {group.group_name ?? '—'}
+                      </td>
+                      <td className="py-3.5 pr-4 font-mono text-xs text-slate-500">
+                        {group.group_id}
+                      </td>
+                      <td className="py-3.5 pr-4 text-slate-600 dark:text-slate-400">
+                        {group.member_count ?? '—'}
+                      </td>
+                      <td className="py-3.5 text-right">
+                        <div className="inline-flex items-center justify-end gap-2">
+                          <span
+                            className={`text-xs ${enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}
+                          >
+                            {enabled ? '已启用' : '已关闭'}
+                          </span>
+                          <ToggleSwitch
+                            checked={enabled}
+                            disabled={rowBusy}
+                            onChange={(checked) => void handleToggle(group.group_id, checked)}
+                          />
+                        </div>
                       </td>
                     </tr>
                   )
