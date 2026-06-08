@@ -4,6 +4,7 @@ import type { Group } from '../api/types'
 import { LinkParserGroupPolicyTab } from '../components/LinkParserPolicyTabs'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
+import { SubPageTabs } from '../components/SubPageTabs'
 import { ToggleSwitch } from '../components/ToggleSwitch'
 import { useToast } from '../contexts/ToastContext'
 import { formatApiError } from '../utils/apiError'
@@ -168,22 +169,7 @@ export function GroupsPage() {
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-1 dark:border-slate-700">
-        {(Object.keys(tabLabels) as GroupsTab[]).map((key) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setTab(key)}
-            className={`rounded-t-lg px-4 py-2 text-sm font-medium transition-colors ${
-              tab === key
-                ? 'bg-white text-brand-700 shadow-sm dark:bg-slate-900 dark:text-brand-300'
-                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            {tabLabels[key]}
-          </button>
-        ))}
-      </div>
+      <SubPageTabs tabs={tabLabels} value={tab} onChange={setTab} />
 
       {tab === 'message' && (
       <>
