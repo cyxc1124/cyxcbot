@@ -30,7 +30,7 @@ export function LoginPage() {
       <div className="card w-full max-w-md">
         <div className="mb-8 text-center">
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            登录 cyxcbot
+            登录 机器草
           </h1>
           <p className="mt-2 text-sm text-slate-500">Web 管理面板</p>
         </div>

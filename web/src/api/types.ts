@@ -194,6 +194,14 @@ export interface ConnectionsStatus {
   qq: QqConnectionStatus
 }
 
+export interface AboutInfo {
+  app_name: string
+  web_frontend: string
+  backend_framework: string
+  build_version: string
+  python_version: string
+}
+
 export interface MonitorActionResult {
   success: boolean
   message: string

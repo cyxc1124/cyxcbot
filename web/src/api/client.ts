@@ -1,4 +1,5 @@
 import type {
+  AboutInfo,
   AuditLog,
   AuditLogQuery,
   BilibiliLogoutResult,
@@ -291,6 +292,8 @@ export const getSystemMonitorStatus = () =>
 
 export const getConnectionsStatus = () =>
   request<ConnectionsStatus>('/connections/status')
+
+export const getAbout = () => request<AboutInfo>('/about')
 
 export const triggerDynamicCheck = () =>
   request<MonitorActionResult>('/monitors/dynamic/check', { method: 'POST' })

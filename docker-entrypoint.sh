@@ -5,7 +5,7 @@ set -e
 
 # 显示构建信息
 echo "=========================================="
-echo "CyxcBot - Bilibili Live Notification Bot"
+echo "机器草 - Bilibili Live Notification Bot"
 echo "=========================================="
 echo "Git Tag: ${GIT_TAG:-N/A}"
 echo "Git Commit: ${GIT_COMMIT:-N/A}"

@@ -2,29 +2,25 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   getConnectionsStatus,
-  getDynamicMonitorStatus,
   getEvents,
-  getLiveMonitorStatus,
   getMonitorStatus,
   getSystemMonitorStatus,
 } from '../api/client'
 import type {
   BilibiliConnectionStatus,
   ConnectionsStatus,
-  DynamicMonitorStatus,
-  LiveMonitorStatus,
   QqConnectionStatus,
   SystemEvent,
   SystemMonitorStatus,
 } from '../api/types'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
+import { ResourceUsageCard } from '../components/ResourceUsageCard'
 import { StatCard } from '../components/StatCard'
-import { getLiveMonitorMode, MonitorModeBadge } from '../components/MonitorModeBadge'
-import { LevelBadge, StatusBadge } from '../components/StatusBadge'
+import { LevelBadge } from '../components/StatusBadge'
 import { useLiveUptime } from '../hooks/useLiveUptime'
 import { formatApiError } from '../utils/apiError'
-import { formatDateTime, formatPercent, formatUptime } from '../utils/format'
+import { formatDateTime, formatUptime } from '../utils/format'
 
 function bilibiliCardValue(b: BilibiliConnectionStatus | undefined): string {
   if (!b) return '—'
@@ -75,8 +71,6 @@ export function DashboardPage() {
   const [error, setError] = useState('')
   const [running, setRunning] = useState(false)
   const [uptime, setUptime] = useState(0)
-  const [dynamic, setDynamic] = useState<DynamicMonitorStatus | null>(null)
-  const [live, setLive] = useState<LiveMonitorStatus | null>(null)
   const [system, setSystem] = useState<SystemMonitorStatus | null>(null)
   const [connections, setConnections] = useState<ConnectionsStatus | null>(null)
   const [events, setEvents] = useState<SystemEvent[]>([])
@@ -85,18 +79,14 @@ export function DashboardPage() {
     setLoading(true)
     setError('')
     try {
-      const [status, dyn, liv, sys, conn, ev] = await Promise.all([
+      const [status, sys, conn, ev] = await Promise.all([
         getMonitorStatus(),
-        getDynamicMonitorStatus(),
-        getLiveMonitorStatus(),
         getSystemMonitorStatus(),
         getConnectionsStatus(),
         getEvents({ page: 1, page_size: 8 }),
       ])
       setRunning(status.running)
       setUptime(status.uptime_seconds)
-      setDynamic(dyn)
-      setLive(liv)
       setSystem(sys)
       setConnections(conn)
       setEvents(ev.items)
@@ -115,7 +105,7 @@ export function DashboardPage() {
 
   const liveUptime = useLiveUptime(uptime, running)
 
-  if (loading && !dynamic && !error) return <PageLoading />
+  if (loading && !connections && !error) return <PageLoading />
 
   return (
     <div className="space-y-8">
@@ -126,7 +116,7 @@ export function DashboardPage() {
 
       {error && <LoadErrorBanner message={error} onRetry={load} />}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
           title="机器人状态"
           value={running ? '运行中' : '已停止'}
@@ -142,97 +132,61 @@ export function DashboardPage() {
           value={qqCardValue(connections?.qq)}
           subtitle={connections?.qq.message}
         />
-        <StatCard
-          title="动态监控"
-          value={dynamic?.target_count ?? '—'}
-          subtitle={`间隔 ${dynamic?.interval_seconds ?? '—'} 秒 · 检查 ${dynamic?.checks_total ?? 0} 次`}
-        />
-        <StatCard
-          title="直播监控"
-          value={live?.live_rooms ?? 0}
-          subtitle={`${live?.target_count ?? 0} 个房间 · 检查 ${live?.checks_total ?? 0} 次`}
-        />
-        <StatCard
-          title="内存使用"
-          value={system ? formatPercent(system.memory_percent) : '—'}
-          subtitle={
-            system
-              ? `${system.memory_used_mb.toFixed(0)} / ${system.memory_total_mb.toFixed(0)} MB`
-              : undefined
-          }
-        />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="card">
-          <h3 className="mb-4 font-semibold text-slate-900 dark:text-white">监控概览</h3>
-          <dl className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <dt className="text-slate-500">动态监控</dt>
-              <dd className="flex items-center gap-2">
-                <StatusBadge active={dynamic?.enabled ?? false} />
-                <MonitorModeBadge mode="api-polling" />
-                <span className="text-slate-700 dark:text-slate-300">
-                  上次检查 {formatDateTime(dynamic?.last_check_at)}
-                </span>
-              </dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-slate-500">直播监控</dt>
-              <dd className="flex items-center gap-2">
-                <StatusBadge active={live?.enabled ?? false} />
-                {live && (
-                  <MonitorModeBadge mode={getLiveMonitorMode(live.use_websocket)} />
-                )}
-                <span className="text-slate-700 dark:text-slate-300">
-                  上次 {formatDateTime(live?.last_check_at)}
-                </span>
-              </dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-slate-500">CPU</dt>
-              <dd>{system ? formatPercent(system.cpu_percent) : '—'}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-slate-500">磁盘</dt>
-              <dd>{system ? formatPercent(system.disk_percent) : '—'}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-slate-500">版本</dt>
-              <dd className="text-slate-700 dark:text-slate-300">
-                {system?.bot_version ?? '—'} · Python {system?.python_version ?? '—'}
-              </dd>
-            </div>
-          </dl>
-        </div>
-
-        <div className="card">
-          <h3 className="mb-4 font-semibold text-slate-900 dark:text-white">最近事件</h3>
-          {error ? (
-            <p className="text-sm text-slate-500">数据暂时无法加载</p>
-          ) : events.length === 0 ? (
-            <p className="text-sm text-slate-500">暂无事件记录</p>
-          ) : (
-            <ul className="space-y-3">
-              {events.map((ev) => (
-                <li
-                  key={ev.id}
-                  className="flex items-start gap-3 border-b border-slate-100 pb-3 last:border-0 dark:border-slate-800"
-                >
-                  <LevelBadge level={ev.level} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-slate-800 dark:text-slate-200">
-                      {ev.message}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {ev.category} · {formatDateTime(ev.created_at)}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
+      <section>
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h3 className="font-semibold text-slate-900 dark:text-white">资源使用</h3>
+            <p className="mt-0.5 text-xs text-slate-500">每 30 秒自动刷新</p>
+          </div>
+          {system && (
+            <p className="text-xs text-slate-500">
+              {system.bot_version} · Python {system.python_version}
+            </p>
           )}
         </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <ResourceUsageCard label="CPU" percent={system?.cpu_percent} detail="处理器占用" />
+          <ResourceUsageCard
+            label="内存"
+            percent={system?.memory_percent}
+            detail={
+              system
+                ? `已用 ${system.memory_used_mb.toFixed(0)} / ${system.memory_total_mb.toFixed(0)} MB`
+                : undefined
+            }
+          />
+          <ResourceUsageCard label="磁盘" percent={system?.disk_percent} detail="根分区占用" />
+        </div>
+      </section>
+
+      <div className="card">
+        <h3 className="mb-4 font-semibold text-slate-900 dark:text-white">最近事件</h3>
+        {error ? (
+          <p className="text-sm text-slate-500">数据暂时无法加载</p>
+        ) : events.length === 0 ? (
+          <p className="text-sm text-slate-500">暂无事件记录</p>
+        ) : (
+          <ul className="space-y-3">
+            {events.map((ev) => (
+              <li
+                key={ev.id}
+                className="flex items-start gap-3 border-b border-slate-100 pb-3 last:border-0 dark:border-slate-800"
+              >
+                <LevelBadge level={ev.level} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-slate-800 dark:text-slate-200">
+                    {ev.message}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {ev.category} · {formatDateTime(ev.created_at)}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   )

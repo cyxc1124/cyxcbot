@@ -14,8 +14,8 @@ from admin.api.router import api_router
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="CyxcBot Web Admin",
-        description="Admin panel for cyxcbot Bilibili monitoring bot",
+        title="机器草 Web Admin",
+        description="Admin panel for 机器草 Bilibili monitoring bot",
         version="1.0.0",
     )
 

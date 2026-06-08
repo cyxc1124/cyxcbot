@@ -10,6 +10,7 @@ const navItems = [
   { to: '/settings', label: '系统设置' },
   { to: '/audit', label: '审计日志' },
   { to: '/events', label: '系统事件' },
+  { to: '/about', label: '关于' },
 ]
 
 export function Layout() {
@@ -47,7 +48,7 @@ export function Layout() {
             C
           </span>
           <div>
-            <h1 className="text-sm font-bold text-slate-900 dark:text-white">cyxcbot</h1>
+            <h1 className="text-sm font-bold text-slate-900 dark:text-white">机器草</h1>
             <p className="text-xs text-slate-500">Web 管理面板</p>
           </div>
         </div>
