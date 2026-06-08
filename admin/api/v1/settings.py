@@ -70,4 +70,7 @@ async def test_cookie(_: CurrentUser):
     return CookieTestResultResponse(
         success=bool(status.get("logged_in")),
         message=bilibili_status_message(status),
+        status=str(status.get("status") or ""),
+        username=status.get("username"),
+        uid=status.get("uid"),
     )

@@ -24,8 +24,13 @@ _NAV_HEADERS = {
 def bilibili_status_message(status: Dict[str, Any]) -> str:
     """Human-readable message for settings / login API responses."""
     if status.get("logged_in"):
+        username = status.get("username")
         uid = status.get("uid")
-        return f"已登录 · UID {uid}" if uid else "已登录"
+        if username and uid:
+            return f"已登录 · {username}（UID {uid}）"
+        if uid:
+            return f"已登录 · UID {uid}"
+        return "已登录"
 
     messages = {
         "not_configured": "尚未登录 B 站账号",

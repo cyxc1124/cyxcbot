@@ -26,6 +26,9 @@ class SettingsResponse(BaseModel):
 class CookieTestResultResponse(BaseModel):
     success: bool
     message: str
+    status: Optional[str] = None
+    username: Optional[str] = None
+    uid: Optional[str] = None
 
 
 class SettingsUpdateRequest(BaseModel):

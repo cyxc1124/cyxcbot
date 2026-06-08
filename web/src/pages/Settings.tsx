@@ -1,11 +1,31 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { getSettings, logoutBilibili, patchSettings, testCookie } from '../api/client'
-import type { Settings } from '../api/types'
+import { getConnectionsStatus, getSettings, logoutBilibili, patchSettings, testCookie } from '../api/client'
+import type { BilibiliConnectionStatus, Settings } from '../api/types'
+import { BilibiliAccountInfo } from '../components/BilibiliAccountInfo'
 import { BilibiliQrLogin } from '../components/BilibiliQrLogin'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { ErrorAlert } from '../components/ErrorAlert'
 import { PageLoading } from '../components/LoadingSpinner'
 import { useToast } from '../contexts/ToastContext'
+
+function formatVerifyToastMessage(result: {
+  success: boolean
+  message: string
+  username?: string | null
+  uid?: string | null
+}): string {
+  const profile =
+    result.username && result.uid
+      ? `${result.username}（UID ${result.uid}）`
+      : result.uid
+        ? `UID ${result.uid}`
+        : result.username || ''
+
+  if (result.success) {
+    return profile ? `登录有效 · ${profile}` : result.message
+  }
+  return profile ? `${result.message} · ${profile}` : result.message
+}
 
 export function SettingsPage() {
   const { showToast } = useToast()
@@ -16,13 +36,15 @@ export function SettingsPage() {
   const [testing, setTesting] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [bilibili, setBilibili] = useState<BilibiliConnectionStatus | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const data = await getSettings()
+      const [data, connections] = await Promise.all([getSettings(), getConnectionsStatus()])
       setSettings(data)
+      setBilibili(connections.bilibili)
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载失败')
     } finally {
@@ -62,7 +84,7 @@ export function SettingsPage() {
     setTesting(true)
     try {
       const result = await testCookie()
-      showToast(result.success ? 'success' : 'error', result.message)
+      showToast(result.success ? 'success' : 'error', formatVerifyToastMessage(result))
       await load()
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : '验证失败')
@@ -193,23 +215,21 @@ export function SettingsPage() {
 
         <div className="card space-y-4">
           <h3 className="font-semibold text-slate-900 dark:text-white">B 站账号</h3>
-          <BilibiliQrLogin
-            onSuccess={() => {
-              showToast('success', 'B 站扫码登录成功')
-              void load()
-            }}
-            onError={(msg) => showToast('error', msg)}
-          />
-          <p className="text-sm text-slate-500">
-            状态：
-            {settings.bilibili_cookie.configured ? (
-              <span className="ml-1 text-emerald-600">已登录</span>
-            ) : (
-              <span className="ml-1 text-amber-600">未登录</span>
-            )}
-          </p>
+
+          {bilibili && <BilibiliAccountInfo account={bilibili} />}
+
+          {!bilibili?.logged_in && (
+            <BilibiliQrLogin
+              onSuccess={() => {
+                showToast('success', 'B 站扫码登录成功')
+                void load()
+              }}
+              onError={(msg) => showToast('error', msg)}
+            />
+          )}
+
           {settings.bilibili_cookie.configured && (
-            <>
+            <div className="flex flex-wrap gap-3">
               <button
                 type="button"
                 className="btn-secondary"
@@ -226,7 +246,7 @@ export function SettingsPage() {
               >
                 退出 B 站登录
               </button>
-            </>
+            </div>
           )}
         </div>
 

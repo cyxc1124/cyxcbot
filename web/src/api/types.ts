@@ -47,6 +47,9 @@ export type SettingsUpdate = Partial<Omit<Settings, 'bilibili_cookie'>>
 export interface CookieTestResult {
   success: boolean
   message: string
+  status?: BilibiliConnectionStatusKind | ''
+  username?: string | null
+  uid?: string | null
 }
 
 export interface BilibiliQrcodeStart {
