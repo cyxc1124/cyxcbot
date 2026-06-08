@@ -7,6 +7,7 @@ import {
 import type { DynamicMonitorStatus } from '../api/types'
 import { ErrorAlert } from '../components/ErrorAlert'
 import { PageLoading } from '../components/LoadingSpinner'
+import { MonitorModeBadge } from '../components/MonitorModeBadge'
 import { StatusBadge } from '../components/StatusBadge'
 import { TargetMappingSection } from '../components/TargetMappingSection'
 import { useToast } from '../contexts/ToastContext'
@@ -87,6 +88,7 @@ export function DynamicMonitorPage() {
         <div className="mb-6 flex items-center gap-3">
           <h3 className="text-lg font-semibold">运行状态</h3>
           <StatusBadge active={status?.enabled ?? false} />
+          <MonitorModeBadge mode="api-polling" />
         </div>
 
         <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -113,6 +115,10 @@ export function DynamicMonitorPage() {
           <div>
             <dt className="text-sm text-slate-500">上次拉取</dt>
             <dd className="mt-1 text-sm">{formatDateTime(status?.last_fetch_at)}</dd>
+          </div>
+          <div>
+            <dt className="text-sm text-slate-500">监控模式</dt>
+            <dd className="mt-1 text-sm">API 轮询</dd>
           </div>
         </dl>
 

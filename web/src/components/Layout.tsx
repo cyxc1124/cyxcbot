@@ -3,12 +3,12 @@ import { Link, NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 const navItems = [
-  { to: '/', label: '仪表盘', icon: '📊' },
-  { to: '/dynamic', label: '动态监控', icon: '📰' },
-  { to: '/live', label: '直播监控', icon: '📺' },
-  { to: '/settings', label: '系统设置', icon: '⚙️' },
-  { to: '/audit', label: '审计日志', icon: '📋' },
-  { to: '/events', label: '系统事件', icon: '📡' },
+  { to: '/', label: '仪表盘' },
+  { to: '/dynamic', label: '动态监控' },
+  { to: '/live', label: '直播监控' },
+  { to: '/settings', label: '系统设置' },
+  { to: '/audit', label: '审计日志' },
+  { to: '/events', label: '系统事件' },
 ]
 
 export function Layout() {
@@ -41,8 +41,10 @@ export function Layout() {
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex h-16 items-center gap-2 border-b border-slate-200 px-6 dark:border-slate-700">
-          <span className="text-xl">🤖</span>
+        <div className="flex h-16 items-center gap-3 border-b border-slate-200 px-6 dark:border-slate-700">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">
+            C
+          </span>
           <div>
             <h1 className="text-sm font-bold text-slate-900 dark:text-white">cyxcbot</h1>
             <p className="text-xs text-slate-500">Web 管理面板</p>
@@ -57,14 +59,13 @@ export function Layout() {
               end={item.to === '/'}
               onClick={() => setSidebarOpen(false)}
               className={({ isActive }) =>
-                `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                `block rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                   isActive
                     ? 'bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300'
                     : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
                 }`
               }
             >
-              <span>{item.icon}</span>
               {item.label}
             </NavLink>
           ))}
@@ -85,15 +86,15 @@ export function Layout() {
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white/80 px-4 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80 lg:px-8">
           <button
             type="button"
-            className="btn-ghost lg:hidden"
+            className="btn-ghost text-sm lg:hidden"
             onClick={() => setSidebarOpen(true)}
           >
-            ☰
+            菜单
           </button>
           <div className="flex-1 lg:hidden" />
           <div className="flex items-center gap-2">
-            <button type="button" onClick={toggleDark} className="btn-ghost" title="切换主题">
-              {dark ? '☀️' : '🌙'}
+            <button type="button" onClick={toggleDark} className="btn-ghost text-sm" title="切换主题">
+              {dark ? '浅色' : '深色'}
             </button>
             <Link to="/" className="hidden text-sm text-slate-500 hover:text-brand-600 lg:block">
               返回首页

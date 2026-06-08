@@ -8,6 +8,8 @@ from pydantic import BaseModel
 
 
 class MonitorStatusResponse(BaseModel):
+    running: bool
+    uptime_seconds: int
     dynamic_running: bool
     live_running: bool
     dynamic_target_count: int
@@ -31,16 +33,27 @@ class LiveMonitorDetail(BaseModel):
 
 
 class DynamicMonitorStatusResponse(BaseModel):
-    running: bool
-    interval: int
-    targets: List[DynamicMonitorDetail]
+    enabled: bool
+    interval_seconds: int
+    target_count: int
+    last_check_at: Optional[str] = None
+    last_fetch_at: Optional[str] = None
+    last_error: Optional[str] = None
+    checks_total: int = 0
+    new_dynamics_total: int = 0
+    targets: List[DynamicMonitorDetail] = []
 
 
 class LiveMonitorStatusResponse(BaseModel):
-    running: bool
-    interval: int
+    enabled: bool
+    interval_seconds: int
     use_websocket: bool
-    targets: List[LiveMonitorDetail]
+    target_count: int
+    last_check_at: Optional[str] = None
+    last_error: Optional[str] = None
+    live_rooms: int = 0
+    checks_total: int = 0
+    targets: List[LiveMonitorDetail] = []
 
 
 class ManualCheckResponse(BaseModel):

@@ -40,8 +40,7 @@ export function SetupPage() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 to-brand-50 p-4 dark:from-slate-950 dark:to-slate-900">
       <div className="card w-full max-w-md">
         <div className="mb-8 text-center">
-          <span className="text-4xl">🤖</span>
-          <h1 className="mt-4 text-2xl font-bold text-slate-900 dark:text-white">
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
             欢迎使用 cyxcbot
           </h1>
           <p className="mt-2 text-sm text-slate-500">

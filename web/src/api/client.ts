@@ -23,6 +23,7 @@ import type {
   SetupStatus,
   SystemEvent,
   SystemMonitorStatus,
+  ConnectionsStatus,
   User,
 } from './types'
 
@@ -62,56 +63,89 @@ function buildQuery(params: Record<string, string | number | undefined>): string
   return qs ? `?${qs}` : ''
 }
 
+/** 合并开发模式下 StrictMode 触发的并发相同 GET 请求 */
+const inflightGetRequests = new Map<string, Promise<unknown>>()
+
+function getInflightKey(method: string, path: string, auth: boolean): string | null {
+  if (method !== 'GET') return null
+  const token = auth ? getToken() ?? '' : ''
+  return `${path}:${token}`
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
   auth = true,
 ): Promise<T> {
-  const headers = new Headers(options.headers)
-  if (!headers.has('Content-Type') && options.body) {
-    headers.set('Content-Type', 'application/json')
-  }
+  const method = (options.method ?? 'GET').toUpperCase()
+  const inflightKey = getInflightKey(method, path, auth)
 
-  if (auth) {
-    const token = getToken()
-    if (token) {
-      headers.set('Authorization', `Bearer ${token}`)
+  if (inflightKey) {
+    const existing = inflightGetRequests.get(inflightKey)
+    if (existing) {
+      return existing as Promise<T>
     }
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers,
-  })
-
-  if (response.status === 401 && auth) {
-    clearToken()
-    if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/setup')) {
-      window.location.href = '/login'
+  const execute = async (): Promise<T> => {
+    const headers = new Headers(options.headers)
+    if (!headers.has('Content-Type') && options.body) {
+      headers.set('Content-Type', 'application/json')
     }
-    throw new ApiClientError('未授权，请重新登录', 401)
-  }
 
-  if (!response.ok) {
-    let message = `请求失败 (${response.status})`
-    try {
-      const data = await response.json()
-      if (typeof data.detail === 'string') {
-        message = data.detail
-      } else if (Array.isArray(data.detail)) {
-        message = data.detail.map((d: { msg?: string }) => d.msg ?? '').join('; ')
+    if (auth) {
+      const token = getToken()
+      if (token) {
+        headers.set('Authorization', `Bearer ${token}`)
       }
-    } catch {
-      // ignore parse errors
     }
-    throw new ApiClientError(message, response.status)
+
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers,
+    })
+
+    if (response.status === 401 && auth) {
+      clearToken()
+      if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/setup')) {
+        window.location.href = '/login'
+      }
+      throw new ApiClientError('未授权，请重新登录', 401)
+    }
+
+    if (!response.ok) {
+      let message = `请求失败 (${response.status})`
+      try {
+        const data = await response.json()
+        if (typeof data.detail === 'string') {
+          message = data.detail
+        } else if (Array.isArray(data.detail)) {
+          message = data.detail.map((d: { msg?: string }) => d.msg ?? '').join('; ')
+        }
+      } catch {
+        // ignore parse errors
+      }
+      throw new ApiClientError(message, response.status)
+    }
+
+    if (response.status === 204) {
+      return undefined as T
+    }
+
+    return response.json() as Promise<T>
   }
 
-  if (response.status === 204) {
-    return undefined as T
+  if (!inflightKey) {
+    return execute()
   }
 
-  return response.json() as Promise<T>
+  const promise = execute()
+  inflightGetRequests.set(inflightKey, promise)
+  try {
+    return await promise
+  } finally {
+    inflightGetRequests.delete(inflightKey)
+  }
 }
 
 // Auth & Setup
@@ -176,6 +210,9 @@ export const getLiveMonitorStatus = () => request<LiveMonitorStatus>('/monitors/
 
 export const getSystemMonitorStatus = () =>
   request<SystemMonitorStatus>('/monitors/system')
+
+export const getConnectionsStatus = () =>
+  request<ConnectionsStatus>('/connections/status')
 
 export const triggerDynamicCheck = () =>
   request<MonitorActionResult>('/monitors/dynamic/check', { method: 'POST' })

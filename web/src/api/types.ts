@@ -134,6 +134,31 @@ export interface SystemMonitorStatus {
   bot_version: string
 }
 
+export interface BilibiliConnectionStatus {
+  configured: boolean
+  logged_in: boolean
+  username: string | null
+  uid: string | null
+  message: string
+}
+
+export interface QqBotInfo {
+  qq: string
+  nickname: string | null
+}
+
+export interface QqConnectionStatus {
+  connected: boolean
+  bot_count: number
+  bots: QqBotInfo[]
+  message: string
+}
+
+export interface ConnectionsStatus {
+  bilibili: BilibiliConnectionStatus
+  qq: QqConnectionStatus
+}
+
 export interface MonitorActionResult {
   success: boolean
   message: string

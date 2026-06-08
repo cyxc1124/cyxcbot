@@ -25,7 +25,7 @@ export function ToastContainer() {
             className="shrink-0 opacity-60 hover:opacity-100"
             aria-label="关闭"
           >
-            ✕
+            关闭
           </button>
         </div>
       ))}

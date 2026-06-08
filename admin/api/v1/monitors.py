@@ -15,8 +15,8 @@ from admin.schemas.monitors import (
     SystemMonitorStatusResponse,
 )
 from admin.services.monitor_bridge import (
-    get_dynamic_monitor_details,
-    get_live_monitor_details,
+    build_dynamic_monitor_status,
+    build_live_monitor_status,
     get_monitor_status,
     get_system_monitor_status,
     trigger_dynamic_check,
@@ -40,25 +40,12 @@ async def monitor_status(_: CurrentUser):
 
 @router.get("/dynamic", response_model=DynamicMonitorStatusResponse)
 async def dynamic_monitor_status(_: CurrentUser):
-    status = get_monitor_status()
-    snap = get_config_service().get_snapshot()
-    return DynamicMonitorStatusResponse(
-        running=status["dynamic_running"],
-        interval=snap.dynamic_monitor_interval,
-        targets=get_dynamic_monitor_details(),
-    )
+    return DynamicMonitorStatusResponse(**build_dynamic_monitor_status())
 
 
 @router.get("/live", response_model=LiveMonitorStatusResponse)
 async def live_monitor_status(_: CurrentUser):
-    status = get_monitor_status()
-    snap = get_config_service().get_snapshot()
-    return LiveMonitorStatusResponse(
-        running=status["live_running"],
-        interval=snap.live_monitor_interval,
-        use_websocket=snap.live_monitor_use_websocket,
-        targets=get_live_monitor_details(),
-    )
+    return LiveMonitorStatusResponse(**build_live_monitor_status())
 
 
 @router.get("/system", response_model=SystemMonitorStatusResponse)

@@ -14,12 +14,14 @@ export function formatDateTime(iso: string | null | undefined): string {
   }
 }
 
+/** 运行时长：天时分秒，秒位实时递增 */
 export function formatUptime(seconds: number): string {
-  if (seconds < 60) return `${seconds} 秒`
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟`
-  const hours = Math.floor(seconds / 3600)
-  const mins = Math.floor((seconds % 3600) / 60)
-  return mins > 0 ? `${hours} 小时 ${mins} 分钟` : `${hours} 小时`
+  const s = Math.max(0, Math.floor(seconds))
+  const days = Math.floor(s / 86400)
+  const hours = Math.floor((s % 86400) / 3600)
+  const mins = Math.floor((s % 3600) / 60)
+  const secs = s % 60
+  return `${days}天${hours}时${mins}分${secs}秒`
 }
 
 export function formatPercent(value: number): string {

@@ -53,14 +53,12 @@ export function GroupSelector({ groups, selected, onChange, disabled }: GroupSel
               }`}
             >
               <span
-                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
+                className={`h-4 w-4 shrink-0 rounded border ${
                   isSelected
-                    ? 'border-brand-500 bg-brand-500 text-white'
+                    ? 'border-brand-500 bg-brand-500'
                     : 'border-slate-300 dark:border-slate-500'
                 }`}
-              >
-                {isSelected ? '✓' : ''}
-              </span>
+              />
               <span className="truncate">{label}</span>
               {group.group_name && (
                 <span className="shrink-0 font-mono text-xs opacity-60">{group.group_id}</span>

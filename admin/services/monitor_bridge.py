@@ -106,14 +106,54 @@ async def trigger_live_check(room_id: Optional[str] = None) -> Dict[str, Any]:
 
 
 def get_monitor_status() -> Dict[str, Any]:
+    from shared.runtime import get_uptime_seconds
+
     dynamic = get_dynamic_monitor_instance()
     live = get_live_monitor_instance()
     snap = get_config_service().get_snapshot()
+    dynamic_running = bool(dynamic and dynamic.is_running)
+    live_running = bool(live and live.is_running)
     return {
-        "dynamic_running": bool(dynamic and dynamic.is_running),
-        "live_running": bool(live and live.is_running),
+        "running": True,
+        "uptime_seconds": get_uptime_seconds(),
+        "dynamic_running": dynamic_running,
+        "live_running": live_running,
         "dynamic_target_count": len(snap.dynamic_monitor_mapping),
         "live_target_count": len(snap.live_monitor_mapping),
+    }
+
+
+def build_dynamic_monitor_status() -> Dict[str, Any]:
+    status = get_monitor_status()
+    snap = get_config_service().get_snapshot()
+    return {
+        "enabled": status["dynamic_running"],
+        "interval_seconds": snap.dynamic_monitor_interval,
+        "target_count": len(snap.dynamic_monitor_mapping),
+        "last_check_at": None,
+        "last_fetch_at": None,
+        "last_error": None,
+        "checks_total": 0,
+        "new_dynamics_total": 0,
+        "targets": get_dynamic_monitor_details(),
+    }
+
+
+def build_live_monitor_status() -> Dict[str, Any]:
+    status = get_monitor_status()
+    snap = get_config_service().get_snapshot()
+    targets = get_live_monitor_details()
+    live_rooms = sum(1 for t in targets if t.get("is_living"))
+    return {
+        "enabled": status["live_running"],
+        "interval_seconds": snap.live_monitor_interval,
+        "use_websocket": snap.live_monitor_use_websocket,
+        "target_count": len(snap.live_monitor_mapping),
+        "last_check_at": None,
+        "last_error": None,
+        "live_rooms": live_rooms,
+        "checks_total": 0,
+        "targets": targets,
     }
 
 

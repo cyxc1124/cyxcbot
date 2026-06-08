@@ -3,6 +3,11 @@ import { getLiveMonitorStatus, triggerLiveCheck } from '../api/client'
 import type { LiveMonitorStatus } from '../api/types'
 import { ErrorAlert } from '../components/ErrorAlert'
 import { PageLoading } from '../components/LoadingSpinner'
+import {
+  getLiveMonitorMode,
+  getLiveMonitorModeLabel,
+  MonitorModeBadge,
+} from '../components/MonitorModeBadge'
 import { StatusBadge } from '../components/StatusBadge'
 import { TargetMappingSection } from '../components/TargetMappingSection'
 import { useToast } from '../contexts/ToastContext'
@@ -72,7 +77,9 @@ export function LiveMonitorPage() {
         <div className="mb-6 flex items-center gap-3">
           <h3 className="text-lg font-semibold">运行状态</h3>
           <StatusBadge active={status?.enabled ?? false} />
-          {status?.use_websocket && <span className="badge-success">WebSocket</span>}
+          {status && (
+            <MonitorModeBadge mode={getLiveMonitorMode(status.use_websocket)} />
+          )}
         </div>
 
         <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -101,7 +108,7 @@ export function LiveMonitorPage() {
           <div>
             <dt className="text-sm text-slate-500">监控模式</dt>
             <dd className="mt-1 text-sm">
-              {status?.use_websocket ? 'WebSocket 实时 + API 备用' : 'API 轮询'}
+              {status ? getLiveMonitorModeLabel(status.use_websocket) : '—'}
             </dd>
           </div>
         </dl>
