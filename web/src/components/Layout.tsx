@@ -4,8 +4,8 @@ import { useAuth } from '../contexts/AuthContext'
 
 const navItems = [
   { to: '/', label: '仪表盘' },
-  { to: '/dynamic', label: '动态监控' },
-  { to: '/live', label: '直播监控' },
+  { to: '/dynamic', label: '动态订阅' },
+  { to: '/live', label: '直播订阅' },
   { to: '/groups', label: '群组管理' },
   { to: '/settings', label: '系统设置' },
   { to: '/audit', label: '审计日志' },

@@ -123,7 +123,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
             at_all: form.at_all,
             group_ids: form.group_ids,
           })
-          showToast('success', '动态目标已更新')
+          showToast('success', '订阅已更新')
         } else {
           await createDynamicTarget({
             uid: idValue,
@@ -132,7 +132,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
             at_all: form.at_all,
             group_ids: form.group_ids,
           })
-          showToast('success', '动态目标已创建')
+          showToast('success', '订阅已创建')
         }
       } else if (editingId) {
         await updateLiveTarget(editingId, {
@@ -142,7 +142,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
           at_all: form.at_all,
           group_ids: form.group_ids,
         })
-        showToast('success', '直播目标已更新')
+        showToast('success', '订阅已更新')
       } else {
         await createLiveTarget({
           room_id: idValue,
@@ -151,7 +151,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
           at_all: form.at_all,
           group_ids: form.group_ids,
         })
-        showToast('success', '直播目标已创建')
+        showToast('success', '订阅已创建')
       }
 
       resetForm()
@@ -164,7 +164,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
   }
 
   const handleDelete = async (id: number) => {
-    if (!confirm('确定要删除此映射吗？')) return
+    if (!confirm('确定要删除此订阅吗？')) return
     try {
       if (isDynamic) {
         await deleteDynamicTarget(id)
@@ -199,13 +199,13 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold">推送映射</h3>
+          <h3 className="text-lg font-semibold">订阅列表</h3>
           <p className="mt-0.5 text-sm text-slate-500">
-            一个{targetLabel}可推送到多个 QQ 群
+            一个{targetLabel}可订阅多个 QQ 群
           </p>
         </div>
         <button type="button" className="btn-primary" onClick={openCreate}>
-          添加映射
+          添加订阅
         </button>
       </div>
 
@@ -214,7 +214,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
       {showForm && (
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
           <h4 className="mb-4 font-medium">
-            {editingId ? '编辑' : '新建'}映射
+            {editingId ? '编辑' : '新建'}订阅
           </h4>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -259,7 +259,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
             </div>
 
             <div>
-              <label className="label">推送群组</label>
+              <label className="label">订阅群组</label>
               <GroupSelector
                 groups={groups}
                 selected={form.group_ids}
@@ -275,7 +275,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
                 onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
                 className="rounded border-slate-300"
               />
-              启用监控
+              启用订阅
             </label>
 
             <label className="flex items-center gap-2 text-sm">
@@ -308,7 +308,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
       ) : !loading && error && targets.length === 0 ? (
         <p className="py-8 text-center text-sm text-slate-500">数据暂时无法加载</p>
       ) : !loading && targets.length === 0 ? (
-        <p className="py-8 text-center text-sm text-slate-500">暂无映射，点击上方按钮添加</p>
+        <p className="py-8 text-center text-sm text-slate-500">暂无订阅，点击上方按钮添加</p>
       ) : (
         <div className="space-y-3">
           {targets.map((target) => {
@@ -338,7 +338,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
                       )}
                     </div>
                     <p className="mt-2 text-xs text-slate-500">
-                      推送到 {groupCount} 个群 · 创建于 {formatDateTime(target.created_at)}
+                      已订阅 {groupCount} 个群 · 创建于 {formatDateTime(target.created_at)}
                     </p>
                   </div>
                   <div className="flex shrink-0 gap-2">
@@ -360,7 +360,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
                 </div>
 
                 <div className="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800">
-                  <p className="mb-2 text-xs font-medium text-slate-500">推送群组</p>
+                  <p className="mb-2 text-xs font-medium text-slate-500">订阅群组</p>
                   <GroupTags groupIds={target.group_ids} groups={groups} />
                 </div>
               </div>
