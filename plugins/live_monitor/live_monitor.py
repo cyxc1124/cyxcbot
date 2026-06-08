@@ -44,6 +44,8 @@ class LiveMonitor:
         self.is_running = False
         # 房间状态缓存: room_id -> LiveRoomState
         self.room_states: Dict[str, LiveRoomState] = {}
+        # 是否已完成首次基准记录（避免启动时已开播的房间误推送）
+        self.initialized_rooms: Dict[str, bool] = {}
         # WebSocket 客户端: room_id -> DanmakuClient
         self._danmaku_clients: Dict[str, DanmakuClient] = {}
         # aiohttp session for WebSocket
@@ -65,6 +67,8 @@ class LiveMonitor:
         for room_id in self.config.live_monitor_mapping.keys():
             if room_id not in self.room_states:
                 self.room_states[room_id] = LiveRoomState(room_id=int(room_id))
+            if room_id not in self.initialized_rooms:
+                self.initialized_rooms[room_id] = False
         
         await self._load_persisted_states()
         logger.info(f"直播监控已初始化，监控房间数: {len(self.room_states)}")
@@ -106,11 +110,19 @@ class LiveMonitor:
 
         await api_manager.init(self.config.bilibili_cookie)
 
+        new_room_ids: list[str] = []
         for room_id in self.config.live_monitor_mapping.keys():
             if room_id not in self.room_states:
                 self.room_states[room_id] = LiveRoomState(room_id=int(room_id))
+                self.initialized_rooms[room_id] = False
+                new_room_ids.append(room_id)
+            elif room_id not in self.initialized_rooms:
+                self.initialized_rooms[room_id] = False
 
         if self.is_running:
+            for room_id in new_room_ids:
+                await self._initialize_room(room_id)
+
             poll_interval = (
                 max(300, self.config.monitor_interval * 5)
                 if self.config.use_websocket
@@ -133,6 +145,9 @@ class LiveMonitor:
                     await self._start_danmaku_clients()
                 else:
                     await self._stop_danmaku_clients()
+            elif self.config.use_websocket:
+                for room_id in new_room_ids:
+                    await self._start_single_danmaku_client(room_id)
 
         self._sender.include_room_info = self.config.include_room_info
 
@@ -142,7 +157,11 @@ class LiveMonitor:
         
         # 初始化资源
         await self.init_resources()
-        
+
+        # 每次启动都重新建立基准，避免启动时已开播的房间误推送
+        for room_id in self.room_states:
+            self.initialized_rooms[room_id] = False
+
         # 首次检查，初始化各房间状态
         logger.info("正在初始化各直播间状态...")
         await self._init_room_states()
@@ -250,6 +269,10 @@ class LiveMonitor:
     async def _handle_live_signal(self, room_id: str):
         """处理开播信号（来自 WebSocket）"""
         logger.info(f"房间 {room_id} 收到开播信号")
+
+        if not self.initialized_rooms.get(room_id, False):
+            await self._initialize_room(room_id)
+            return
         
         state = self.room_states.get(room_id)
         if not state:
@@ -284,6 +307,10 @@ class LiveMonitor:
     async def _handle_preparing_signal(self, room_id: str, round_status: Optional[int]):
         """处理关播信号（来自 WebSocket）"""
         logger.info(f"房间 {room_id} 收到关播信号 (round={round_status})")
+
+        if not self.initialized_rooms.get(room_id, False):
+            await self._initialize_room(room_id)
+            return
         
         state = self.room_states.get(room_id)
         if not state:
@@ -319,32 +346,44 @@ class LiveMonitor:
         if 'title' in data:
             logger.debug(f"房间 {room_id} 标题变更: {data['title']}")
     
+    async def _initialize_room(self, room_id: str) -> bool:
+        """记录房间当前直播状态作为基准，不触发推送"""
+        state = self.room_states.get(room_id)
+        if not state:
+            return False
+
+        try:
+            room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
+
+            if room_info:
+                state.room_info = room_info
+                state.user_info = user_info
+                state.previous_status = room_info.live_status
+
+                if room_info.is_living():
+                    state.start_time = room_info.live_start_time or int(datetime.now().timestamp())
+                    streamer_name = user_info.name if user_info else f"房间{room_id}"
+                    logger.info(
+                        f"房间 {room_id} ({streamer_name}) 首次基准：当前正在直播，不推送"
+                    )
+                else:
+                    streamer_name = user_info.name if user_info else f"房间{room_id}"
+                    logger.info(f"房间 {room_id} ({streamer_name}) 首次基准：当前未开播")
+
+                self.initialized_rooms[room_id] = True
+                await self._persist_state(room_id)
+                return True
+
+            logger.warning(f"无法获取房间 {room_id} 的初始状态")
+        except Exception as e:
+            logger.error(f"初始化房间 {room_id} 状态失败: {e}")
+
+        return False
+
     async def _init_room_states(self):
         """初始化所有房间的状态（首次启动时）"""
-        for room_id, state in self.room_states.items():
-            try:
-                room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
-                
-                if room_info:
-                    # 初始化状态，不触发通知
-                    state.room_info = room_info
-                    state.user_info = user_info
-                    state.previous_status = room_info.live_status
-                    
-                    if room_info.is_living():
-                        state.start_time = room_info.live_start_time or int(datetime.now().timestamp())
-                        streamer_name = user_info.name if user_info else f"房间{room_id}"
-                        logger.info(f"房间 {room_id} ({streamer_name}) 当前正在直播")
-                    else:
-                        streamer_name = user_info.name if user_info else f"房间{room_id}"
-                        logger.info(f"房间 {room_id} ({streamer_name}) 当前未开播")
-                else:
-                    logger.warning(f"无法获取房间 {room_id} 的初始状态")
-                    
-            except Exception as e:
-                logger.error(f"初始化房间 {room_id} 状态失败: {e}")
-            
-            # 避免请求过快
+        for room_id in self.room_states.keys():
+            await self._initialize_room(room_id)
             await asyncio.sleep(0.5)
     
     async def _check_all_rooms(self):
@@ -368,6 +407,10 @@ class LiveMonitor:
     
     async def _check_room_status(self, room_id: str):
         """检查单个房间的直播状态"""
+        if not self.initialized_rooms.get(room_id, False):
+            await self._initialize_room(room_id)
+            return
+
         state = self.room_states.get(room_id)
         if not state:
             return
