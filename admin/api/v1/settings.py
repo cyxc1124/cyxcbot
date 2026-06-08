@@ -5,7 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from admin.deps import CurrentUser, RequireSetup
-from admin.schemas.settings import SettingsResponse, SettingsUpdateRequest
+from admin.schemas.settings import CookieTestResultResponse, SettingsResponse, SettingsUpdateRequest
+from admin.services.connection_status import get_bilibili_connection_status
 from admin.services.monitor_bridge import reload_all_monitors
 from shared.audit.service import write_audit
 from shared.config.service import get_config_service
@@ -68,3 +69,12 @@ async def update_settings(request: Request, body: SettingsUpdateRequest, user: C
     await write_system_event(SystemEventType.CONFIG_RELOAD, "Settings updated via Web Admin")
 
     return SettingsResponse(**svc.settings_for_api())
+
+
+@router.post("/test-cookie", response_model=CookieTestResultResponse)
+async def test_cookie(_: CurrentUser):
+    status = await get_bilibili_connection_status()
+    return CookieTestResultResponse(
+        success=bool(status.get("logged_in")),
+        message=str(status.get("message") or "未知状态"),
+    )

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { getSettings, patchSettings, testCookie } from '../api/client'
 import type { Settings } from '../api/types'
+import { BilibiliQrLogin } from '../components/BilibiliQrLogin'
 import { ErrorAlert } from '../components/ErrorAlert'
 import { PageLoading } from '../components/LoadingSpinner'
 import { useToast } from '../contexts/ToastContext'
@@ -184,6 +185,13 @@ export function SettingsPage() {
 
         <div className="card space-y-4">
           <h3 className="font-semibold text-slate-900 dark:text-white">B 站 Cookie</h3>
+          <BilibiliQrLogin
+            onSuccess={() => {
+              showToast('success', 'B 站扫码登录成功')
+              void load()
+            }}
+            onError={(msg) => showToast('error', msg)}
+          />
           <p className="text-sm text-slate-500">
             状态：
             {settings.bilibili_cookie.configured ? (

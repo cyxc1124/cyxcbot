@@ -51,6 +51,18 @@ export interface CookieTestResult {
   message: string
 }
 
+export interface BilibiliQrcodeStart {
+  url: string
+  qrcode: Record<string, unknown>
+}
+
+export interface BilibiliQrcodeLoginResult {
+  success: boolean
+  username: string | null
+  uid: string | null
+  message: string
+}
+
 // Targets / Mappings
 export interface DynamicTarget {
   id: number

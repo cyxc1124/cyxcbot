@@ -1,6 +1,8 @@
 import type {
   AuditLog,
   AuditLogQuery,
+  BilibiliQrcodeLoginResult,
+  BilibiliQrcodeStart,
   CookieTestResult,
   DynamicMonitorStatus,
   DynamicTarget,
@@ -168,6 +170,51 @@ export const patchSettings = (data: SettingsUpdate) =>
 
 export const testCookie = () =>
   request<CookieTestResult>('/settings/test-cookie', { method: 'POST' })
+
+// Bilibili login
+export const getBilibiliQrcode = () =>
+  request<BilibiliQrcodeStart>('/bilibili/login/qrcode')
+
+export async function pollBilibiliQrcodeLogin(
+  qrcode: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<BilibiliQrcodeLoginResult> {
+  const headers = new Headers({ 'Content-Type': 'application/json' })
+  const token = getToken()
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+
+  const response = await fetch(`${API_BASE}/bilibili/login/qrcode/poll`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ qrcode }),
+    signal,
+  })
+
+  if (response.status === 401) {
+    clearToken()
+    if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/setup')) {
+      window.location.href = '/login'
+    }
+    throw new ApiClientError('未授权，请重新登录', 401)
+  }
+
+  if (!response.ok) {
+    let message = `请求失败 (${response.status})`
+    try {
+      const data = await response.json()
+      if (typeof data.detail === 'string') {
+        message = data.detail
+      }
+    } catch {
+      // ignore parse errors
+    }
+    throw new ApiClientError(message, response.status)
+  }
+
+  return response.json() as Promise<BilibiliQrcodeLoginResult>
+}
 
 // Dynamic Targets
 export const getDynamicTargets = () =>

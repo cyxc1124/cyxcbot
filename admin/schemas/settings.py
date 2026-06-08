@@ -23,6 +23,11 @@ class SettingsResponse(BaseModel):
     event_retention_days: int
 
 
+class CookieTestResultResponse(BaseModel):
+    success: bool
+    message: str
+
+
 class SettingsUpdateRequest(BaseModel):
     dynamic_monitor_interval: Optional[int] = Field(default=None, ge=10, le=3600)
     dynamic_enable_screenshot: Optional[bool] = None
