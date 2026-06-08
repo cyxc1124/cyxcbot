@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import List
 
@@ -59,64 +58,29 @@ def _merge_user(
     users[uid] = {"user_id": uid, "nickname": label}
 
 
-async def _load_group_members(bot, group_id: str, self_ids: set[str]) -> dict[str, dict]:
-    members: dict[str, dict] = {}
-    api_gid = int(group_id) if group_id.isdigit() else group_id
-    try:
-        result = await bot.call_api("get_group_member_list", group_id=api_gid)
-    except Exception as exc:
-        logger.debug(f"get_group_member_list failed for {group_id} on {bot.self_id}: {exc}")
-        return members
-
-    for item in result:
-        uid = str(item.get("user_id", "")).strip()
-        nickname = item.get("card") or item.get("nickname")
-        if not uid or uid in self_ids:
-            continue
-        label = (str(nickname).strip() if nickname else "") or None
-        members[uid] = {"user_id": uid, "nickname": label}
-    return members
-
-
-async def _load_group_members_for_group(
-    bots: list,
-    group_id: str,
-    self_ids: set[str],
-) -> dict[str, dict]:
-    for bot in bots:
-        members = await _load_group_members(bot, group_id, self_ids)
-        if members:
-            return members
-    return {}
-
-
-_USER_LIST_CACHE: tuple[float, tuple[str, ...], list[dict]] | None = None
-_USER_LIST_CACHE_TTL_SECONDS = 120
+_FRIEND_LIST_CACHE: tuple[float, list[dict]] | None = None
+_FRIEND_LIST_CACHE_TTL_SECONDS = 120
 
 
 def invalidate_user_list_cache() -> None:
-    global _USER_LIST_CACHE
-    _USER_LIST_CACHE = None
+    global _FRIEND_LIST_CACHE
+    _FRIEND_LIST_CACHE = None
 
 
-async def get_user_list(group_ids: list[str] | None = None) -> List[dict]:
-    """Fetch QQ users from friend list and optional group member lists."""
-    global _USER_LIST_CACHE
-    normalized_group_ids = tuple(
-        sorted({str(gid).strip() for gid in (group_ids or []) if str(gid).strip()})
-    )
+async def get_friend_list() -> List[dict]:
+    """Fetch QQ users from the bot friend list only."""
+    global _FRIEND_LIST_CACHE
     now = time.time()
     if (
-        _USER_LIST_CACHE is not None
-        and now - _USER_LIST_CACHE[0] < _USER_LIST_CACHE_TTL_SECONDS
-        and _USER_LIST_CACHE[1] == normalized_group_ids
+        _FRIEND_LIST_CACHE is not None
+        and now - _FRIEND_LIST_CACHE[0] < _FRIEND_LIST_CACHE_TTL_SECONDS
     ):
-        return [dict(user) for user in _USER_LIST_CACHE[2]]
+        return [dict(user) for user in _FRIEND_LIST_CACHE[1]]
 
     users: dict[str, dict] = {}
     bots = get_bots()
     if not bots:
-        logger.warning("No OneBot bots connected for user list")
+        logger.warning("No OneBot bots connected for friend list")
         return []
 
     bot_list = list(bots.values())
@@ -131,18 +95,11 @@ async def get_user_list(group_ids: list[str] | None = None) -> List[dict]:
         except Exception as exc:
             logger.error(f"Failed to get friend list from bot {bot.self_id}: {exc}")
 
-    group_id_list = list(normalized_group_ids)
-    if group_id_list and bot_list:
-        member_chunks = await asyncio.gather(
-            *[
-                _load_group_members_for_group(bot_list, gid, self_ids)
-                for gid in group_id_list
-            ]
-        )
-        for chunk in member_chunks:
-            for uid, data in chunk.items():
-                _merge_user(users, uid, data.get("nickname"), self_ids=self_ids)
-
     result = sorted(users.values(), key=lambda item: item["user_id"])
-    _USER_LIST_CACHE = (now, normalized_group_ids, result)
+    _FRIEND_LIST_CACHE = (now, result)
     return [dict(user) for user in result]
+
+
+async def get_user_list() -> List[dict]:
+    """Backward-compatible alias for friend list."""
+    return await get_friend_list()

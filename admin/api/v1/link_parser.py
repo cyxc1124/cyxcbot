@@ -17,7 +17,7 @@ from admin.schemas.link_parser import (
     LinkParserUserPolicyMutationResponse,
     LinkParserUserPolicyUpdateRequest,
 )
-from admin.services.onebot_bridge import get_group_list, get_user_list, invalidate_user_list_cache
+from admin.services.onebot_bridge import get_friend_list, get_group_list, invalidate_user_list_cache
 from shared.audit.service import write_audit, write_system_event
 from shared.config.service import get_config_service
 from shared.db.enums import AuditAction, SystemEventType
@@ -159,9 +159,7 @@ async def _group_meta(group_id: str) -> dict:
 
 
 async def _user_meta(user_id: str, snap) -> dict:
-    groups = _message_enabled_groups(snap, await get_group_list())
-    group_ids = [str(group["group_id"]) for group in groups]
-    users = await get_user_list(group_ids=group_ids)
+    users = await get_friend_list()
     for user in users:
         if str(user["user_id"]) == str(user_id):
             return user
@@ -171,9 +169,7 @@ async def _user_meta(user_id: str, snap) -> dict:
 async def _list_user_policy_response(snap, *, refresh_users: bool = False) -> LinkParserUserPolicyListResponse:
     if refresh_users:
         invalidate_user_list_cache()
-    groups = _message_enabled_groups(snap, await get_group_list())
-    group_ids = [str(group["group_id"]) for group in groups]
-    users = await get_user_list(group_ids=group_ids)
+    users = await get_friend_list()
     return LinkParserUserPolicyListResponse(
         global_policy=_global_policy(snap),
         users=_build_user_items(snap, users),

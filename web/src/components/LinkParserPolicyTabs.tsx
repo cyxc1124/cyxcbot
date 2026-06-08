@@ -55,7 +55,7 @@ function GlobalPolicyHint({ policy, scope }: { policy: LinkParserGlobalPolicy; s
       )}
       {scope === 'user' && (
         <p className="text-sm text-slate-500">
-          列表包含好友，以及已启用「群消息」的群成员。
+          列表仅包含机器人好友；群内用户级策略仍对对应 QQ 号生效，但不会出现在此列表中。
         </p>
       )}
     </div>
@@ -366,7 +366,7 @@ export function LinkParserUserPolicyTab() {
 
       {users.length === 0 ? (
         <p className="text-sm text-slate-500">
-          暂无可用用户，请确保机器人已连接 OneBot（将拉取好友与已启用群消息的群成员）。
+          暂无好友数据，请确保机器人已连接 OneBot 且协议端支持 get_friend_list。
         </p>
       ) : (
         <div className="overflow-x-auto">
