@@ -233,6 +233,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
                 groups={groups}
                 selected={form.group_ids}
                 onChange={(ids) => setForm((f) => ({ ...f, group_ids: ids }))}
+                disabled={saving}
               />
             </div>
 
