@@ -105,7 +105,7 @@ export function SettingsBotPage() {
             允许非超级用户使用{' '}
             <code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800">/status</code>{' '}
             、<code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800">/状态</code>{' '}
-            查询运行状态。超级用户已默认拥有此权限，无需重复填写。
+            查询运行状态（任意群或好友均可触发）。超级用户已默认拥有此权限。按群/好友的细粒度开关请在「群组」或「好友」页的「状态查询」Tab 中配置。
           </p>
         </div>
 

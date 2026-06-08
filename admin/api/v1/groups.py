@@ -13,6 +13,11 @@ from admin.schemas.groups import (
     GroupMessagePolicyResponse,
     GroupMessagePolicyUpdateRequest,
 )
+from admin.schemas.status_check import (
+    GroupStatusPolicyResponse,
+    GroupStatusPolicyUpdateRequest,
+    StatusCheckDisplayOptions,
+)
 from admin.services.onebot_bridge import get_group_list
 from shared.audit.service import write_audit, write_system_event
 from shared.config.service import get_config_service
@@ -80,4 +85,70 @@ async def update_message_policy(
         restrict=snap.message_group_restrict,
         enabled_group_ids=snap.message_enabled_group_ids,
         groups=[GroupInfo(**g) for g in groups],
+    )
+
+
+def _status_display_options(snap) -> StatusCheckDisplayOptions:
+    return StatusCheckDisplayOptions(
+        show_detailed=snap.status_check_show_detailed,
+        show_uptime=snap.status_check_show_uptime,
+        show_memory=snap.status_check_show_memory,
+    )
+
+
+@router.get("/status-policy", response_model=GroupStatusPolicyResponse)
+async def get_status_policy(_: CurrentUser):
+    snap = get_config_service().get_snapshot()
+    groups = await get_group_list()
+    return GroupStatusPolicyResponse(
+        restrict=snap.status_check_group_restrict,
+        enabled_group_ids=snap.status_check_enabled_group_ids,
+        groups=[GroupInfo(**g) for g in groups],
+        display=_status_display_options(snap),
+    )
+
+
+@router.put("/status-policy", response_model=GroupStatusPolicyResponse)
+async def update_status_policy(
+    request: Request,
+    body: GroupStatusPolicyUpdateRequest,
+    user: CurrentUser,
+):
+    svc = get_config_service()
+    enabled_ids = [str(gid).strip() for gid in body.enabled_group_ids if str(gid).strip()]
+    updates: dict[str, str] = {
+        "status_check_group_restrict": str(body.restrict).lower(),
+        "status_check_enabled_group_ids": json.dumps(enabled_ids, ensure_ascii=False),
+    }
+    if body.display is not None:
+        updates["status_check_show_detailed"] = str(body.display.show_detailed).lower()
+        updates["status_check_show_uptime"] = str(body.display.show_uptime).lower()
+        updates["status_check_show_memory"] = str(body.display.show_memory).lower()
+
+    await svc.set_settings(updates)
+    await svc.reload()
+
+    ip = request.client.host if request.client else None
+    await write_audit(
+        AuditAction.SETTINGS_UPDATE,
+        actor_user_id=user.id,
+        actor_username=user.username,
+        ip_address=ip,
+        details=svc.serialize_details(
+            {
+                "status_check_group_restrict": body.restrict,
+                "status_check_enabled_group_ids": enabled_ids,
+                "source": "group_status_policy",
+            }
+        ),
+    )
+    await write_system_event(SystemEventType.CONFIG_RELOAD, "Group status policy updated")
+
+    snap = svc.get_snapshot()
+    groups = await get_group_list()
+    return GroupStatusPolicyResponse(
+        restrict=snap.status_check_group_restrict,
+        enabled_group_ids=snap.status_check_enabled_group_ids,
+        groups=[GroupInfo(**g) for g in groups],
+        display=_status_display_options(snap),
     )

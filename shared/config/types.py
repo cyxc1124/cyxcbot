@@ -47,6 +47,13 @@ class AppConfigSnapshot:
     message_enabled_group_ids: List[str] = field(default_factory=list)
     message_private_restrict: bool = True
     message_enabled_user_ids: List[str] = field(default_factory=list)
+    status_check_group_restrict: bool = True
+    status_check_enabled_group_ids: List[str] = field(default_factory=list)
+    status_check_private_restrict: bool = True
+    status_check_enabled_user_ids: List[str] = field(default_factory=list)
+    status_check_show_detailed: bool = True
+    status_check_show_uptime: bool = True
+    status_check_show_memory: bool = True
     status_check_allowed_qq: List[str] = field(default_factory=list)
     nonebot_superusers: List[str] = field(default_factory=list)
     bilibili_link_parser_enabled: bool = False

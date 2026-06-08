@@ -5,11 +5,12 @@ import { LinkParserUserPolicyTab } from '../components/LinkParserPolicyTabs'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
 import { SubPageTabs } from '../components/SubPageTabs'
+import { StatusCheckPolicyTab } from '../components/StatusCheckPolicyTab'
 import { ToggleSwitch } from '../components/ToggleSwitch'
 import { useToast } from '../contexts/ToastContext'
 import { formatApiError } from '../utils/apiError'
 
-type PrivateTab = 'message' | 'link-users'
+type PrivateTab = 'message' | 'link-users' | 'status'
 
 function isUserEnabled(userId: string, restrict: boolean, enabledIds: string[]): boolean {
   if (!restrict) return true
@@ -81,6 +82,7 @@ export function PrivatePage() {
   const tabLabels: Record<PrivateTab, string> = {
     message: '好友消息',
     'link-users': '好友链接解析',
+    status: '状态查询',
   }
 
   const handleToggle = async (userId: string, enabled: boolean) => {
@@ -144,7 +146,7 @@ export function PrivatePage() {
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white">好友</h2>
           <p className="mt-1 text-sm text-slate-500">
-            管理好友消息响应范围，以及链接解析的用户级开关
+            管理好友消息响应范围、状态查询权限，以及链接解析的用户级开关
           </p>
         </div>
         {tab === 'message' && users.length > 0 && (
@@ -237,6 +239,8 @@ export function PrivatePage() {
           <LinkParserUserPolicyTab />
         </div>
       )}
+
+      {tab === 'status' && <StatusCheckPolicyTab scope="friend" />}
     </div>
   )
 }

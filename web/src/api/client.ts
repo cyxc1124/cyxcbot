@@ -20,6 +20,9 @@ import type {
   LinkParserUserPolicyList,
   LinkParserUserPolicyMutation,
   PrivateMessagePolicy,
+  PrivateStatusPolicy,
+  GroupStatusPolicy,
+  StatusCheckDisplayOptions,
   LiveMonitorStatus,
   LiveTarget,
   LiveTargetCreate,
@@ -286,6 +289,18 @@ export const updateMessagePolicy = (payload: {
     body: JSON.stringify(payload),
   })
 
+export const getGroupStatusPolicy = () => request<GroupStatusPolicy>('/groups/status-policy')
+
+export const updateGroupStatusPolicy = (payload: {
+  restrict: boolean
+  enabled_group_ids: string[]
+  display?: StatusCheckDisplayOptions
+}) =>
+  request<GroupStatusPolicy>('/groups/status-policy', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+
 export const getPrivateMessagePolicy = () =>
   request<PrivateMessagePolicy>('/private/message-policy')
 
@@ -297,6 +312,18 @@ export const updatePrivateMessagePolicy = (payload: {
   enabled_user_ids: string[]
 }) =>
   request<PrivateMessagePolicy>('/private/message-policy', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+
+export const getPrivateStatusPolicy = () => request<PrivateStatusPolicy>('/private/status-policy')
+
+export const updatePrivateStatusPolicy = (payload: {
+  restrict: boolean
+  enabled_user_ids: string[]
+  display?: StatusCheckDisplayOptions
+}) =>
+  request<PrivateStatusPolicy>('/private/status-policy', {
     method: 'PUT',
     body: JSON.stringify(payload),
   })

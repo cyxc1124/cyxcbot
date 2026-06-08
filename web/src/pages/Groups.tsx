@@ -5,11 +5,12 @@ import { LinkParserGroupPolicyTab } from '../components/LinkParserPolicyTabs'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
 import { SubPageTabs } from '../components/SubPageTabs'
+import { StatusCheckPolicyTab } from '../components/StatusCheckPolicyTab'
 import { ToggleSwitch } from '../components/ToggleSwitch'
 import { useToast } from '../contexts/ToastContext'
 import { formatApiError } from '../utils/apiError'
 
-type GroupsTab = 'message' | 'link-groups'
+type GroupsTab = 'message' | 'link-groups' | 'status'
 
 function isGroupEnabled(groupId: string, restrict: boolean, enabledIds: string[]): boolean {
   if (!restrict) return true
@@ -81,6 +82,7 @@ export function GroupsPage() {
   const tabLabels: Record<GroupsTab, string> = {
     message: '群消息',
     'link-groups': '群链接解析',
+    status: '状态查询',
   }
 
   const handleToggle = async (groupId: string, enabled: boolean) => {
@@ -144,7 +146,7 @@ export function GroupsPage() {
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white">群组</h2>
           <p className="mt-1 text-sm text-slate-500">
-            管理群消息响应范围，以及链接解析的群级开关
+            管理群消息响应范围、状态查询权限，以及链接解析的群级开关
           </p>
         </div>
         {tab === 'message' && groups.length > 0 && (
@@ -241,6 +243,8 @@ export function GroupsPage() {
           <LinkParserGroupPolicyTab />
         </div>
       )}
+
+      {tab === 'status' && <StatusCheckPolicyTab scope="group" />}
     </div>
   )
 }

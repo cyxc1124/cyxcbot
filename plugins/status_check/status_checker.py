@@ -5,14 +5,14 @@ from datetime import datetime
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, PrivateMessageEvent
 from nonebot.permission import SUPERUSER
-from nonebot.rule import to_me
 from nonebot.log import logger
-from nonebot import get_plugin_config
 from nonebot.exception import FinishedException
-from .config import Config
 
-# 获取插件配置
-config = get_plugin_config(Config)
+from shared.config.service import get_config_service
+from shared.status_check_policy import (
+    is_status_check_enabled_for_group_from_snapshot,
+    is_status_check_enabled_for_user_from_snapshot,
+)
 
 # 记录机器人启动时间
 start_time = time.time()
@@ -45,8 +45,17 @@ async def check_status_permission(bot: Bot, event: GroupMessageEvent | PrivateMe
     if user_id in _get_allowed_qq_numbers():
         logger.info(f"允许的用户 {user_id} 查询机器人状态")
         return True
-    
-    # 无权限时记录警告并拒绝
+
+    snap = get_config_service().get_snapshot()
+    if isinstance(event, GroupMessageEvent):
+        if is_status_check_enabled_for_group_from_snapshot(str(event.group_id), snap):
+            logger.info(f"群组 {event.group_id} 内用户 {user_id} 查询机器人状态")
+            return True
+    elif isinstance(event, PrivateMessageEvent):
+        if is_status_check_enabled_for_user_from_snapshot(str(user_id), snap):
+            logger.info(f"好友 {user_id} 查询机器人状态")
+            return True
+
     logger.warning(f"用户 {user_id} 尝试查询机器人状态，但无权限")
     return False
 
@@ -81,6 +90,9 @@ async def handle_status_command(bot: Bot, event: GroupMessageEvent | PrivateMess
 async def get_bot_status() -> str:
     """获取机器人运行状态信息"""
     try:
+        from .config import Config
+
+        config = Config.from_service()
         # 计算运行时间
         uptime_seconds = int(time.time() - start_time)
         uptime_str = format_uptime(uptime_seconds)

@@ -153,6 +153,26 @@ export interface PrivateMessagePolicy {
   users: Friend[]
 }
 
+export interface StatusCheckDisplayOptions {
+  show_detailed: boolean
+  show_uptime: boolean
+  show_memory: boolean
+}
+
+export interface GroupStatusPolicy {
+  restrict: boolean
+  enabled_group_ids: string[]
+  groups: Group[]
+  display: StatusCheckDisplayOptions
+}
+
+export interface PrivateStatusPolicy {
+  restrict: boolean
+  enabled_user_ids: string[]
+  users: Friend[]
+  display: StatusCheckDisplayOptions
+}
+
 export interface LinkParserGlobalPolicy {
   enabled: boolean
   video_enabled: boolean
