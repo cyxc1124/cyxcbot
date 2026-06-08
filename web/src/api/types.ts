@@ -75,6 +75,7 @@ export interface DynamicTarget {
   uid: string
   name: string | null
   enabled: boolean
+  at_all: boolean
   group_ids: string[]
   created_at: string
 }
@@ -84,6 +85,7 @@ export interface LiveTarget {
   room_id: string
   name: string | null
   enabled: boolean
+  at_all: boolean
   group_ids: string[]
   created_at: string
 }
@@ -92,6 +94,7 @@ export interface DynamicTargetCreate {
   uid: string
   name?: string
   enabled?: boolean
+  at_all?: boolean
   group_ids: string[]
 }
 
@@ -99,6 +102,7 @@ export interface LiveTargetCreate {
   room_id: string
   name?: string
   enabled?: boolean
+  at_all?: boolean
   group_ids: string[]
 }
 

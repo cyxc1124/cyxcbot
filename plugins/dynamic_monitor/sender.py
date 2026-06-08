@@ -8,6 +8,7 @@ from nonebot.log import logger
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 
 from utils.bilibili_api import DynamicItem
+from shared.notify.at_all import DYNAMIC_AT_ALL_FALLBACK, resolve_at_all_prefix
 
 
 class DynamicSender:
@@ -79,16 +80,22 @@ class DynamicSender:
             except Exception as e:
                 logger.warning(f"添加动态图片失败: {image_url}, {e}")
 
-    async def send_to_groups(self, message: Message, group_ids: List[str]):
+    async def send_to_groups(
+        self,
+        message: Message,
+        group_ids: List[str],
+        *,
+        at_all_enabled: bool = False,
+    ):
         """发送消息到多个群组"""
         for group_id in group_ids:
             try:
-                await self._send_to_group(group_id, message)
+                await self._send_to_group(group_id, message, at_all_enabled=at_all_enabled)
                 logger.debug(f"成功发送动态到群组 {group_id}")
             except Exception as e:
                 logger.error(f"发送消息到群组 {group_id} 失败: {e}")
 
-    async def _send_to_group(self, group_id: str, message: Message):
+    async def _send_to_group(self, group_id: str, message: Message, *, at_all_enabled: bool = False):
         """发送消息到指定群组"""
         try:
             from nonebot import get_bot
@@ -98,10 +105,20 @@ class DynamicSender:
                 logger.warning(f"机器人未连接，跳过发送到群组 {group_id}")
                 return
 
-            # 发送群消息
+            if at_all_enabled:
+                prefix = await resolve_at_all_prefix(
+                    bot,
+                    group_id,
+                    enabled=True,
+                    fallback=DYNAMIC_AT_ALL_FALLBACK,
+                )
+                payload = prefix + message
+            else:
+                payload = message
+
             await bot.send_group_msg(
                 group_id=int(group_id),
-                message=message
+                message=payload
             )
         except Exception as e:
             logger.error(f"发送消息到群组 {group_id} 失败: {e}")

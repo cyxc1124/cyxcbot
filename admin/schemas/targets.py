@@ -12,6 +12,7 @@ class DynamicTargetBase(BaseModel):
     uid: str = Field(min_length=1, max_length=32)
     name: Optional[str] = Field(default=None, max_length=128)
     enabled: bool = True
+    at_all: bool = False
     group_ids: List[str] = Field(default_factory=list)
 
 
@@ -20,8 +21,10 @@ class DynamicTargetCreate(DynamicTargetBase):
 
 
 class DynamicTargetUpdate(BaseModel):
+    uid: Optional[str] = Field(default=None, min_length=1, max_length=32)
     name: Optional[str] = Field(default=None, max_length=128)
     enabled: Optional[bool] = None
+    at_all: Optional[bool] = None
     group_ids: Optional[List[str]] = None
 
 
@@ -30,6 +33,7 @@ class DynamicTargetResponse(BaseModel):
     uid: str
     name: Optional[str]
     enabled: bool
+    at_all: bool
     group_ids: List[str]
     created_at: datetime
     updated_at: datetime
@@ -39,6 +43,7 @@ class LiveTargetBase(BaseModel):
     room_id: str = Field(min_length=1, max_length=32)
     name: Optional[str] = Field(default=None, max_length=128)
     enabled: bool = True
+    at_all: bool = True
     group_ids: List[str] = Field(default_factory=list)
 
 
@@ -47,8 +52,10 @@ class LiveTargetCreate(LiveTargetBase):
 
 
 class LiveTargetUpdate(BaseModel):
+    room_id: Optional[str] = Field(default=None, min_length=1, max_length=32)
     name: Optional[str] = Field(default=None, max_length=128)
     enabled: Optional[bool] = None
+    at_all: Optional[bool] = None
     group_ids: Optional[List[str]] = None
 
 
@@ -57,6 +64,7 @@ class LiveTargetResponse(BaseModel):
     room_id: str
     name: Optional[str]
     enabled: bool
+    at_all: bool
     group_ids: List[str]
     created_at: datetime
     updated_at: datetime

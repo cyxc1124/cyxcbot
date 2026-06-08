@@ -11,9 +11,11 @@ class AppConfigSnapshot:
     """Full application configuration snapshot loaded from DB."""
 
     dynamic_monitor_mapping: Dict[str, List[str]] = field(default_factory=dict)
+    dynamic_at_all: Dict[str, bool] = field(default_factory=dict)
     dynamic_monitor_interval: int = 30
     dynamic_enable_screenshot: bool = True
     live_monitor_mapping: Dict[str, List[str]] = field(default_factory=dict)
+    live_at_all: Dict[str, bool] = field(default_factory=dict)
     live_monitor_interval: int = 60
     live_monitor_include_info: bool = True
     live_monitor_use_websocket: bool = True

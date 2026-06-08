@@ -14,6 +14,11 @@ class Config(BaseModel):
         description="房间号-群组ID映射配置"
     )
 
+    live_at_all: Dict[str, bool] = Field(
+        default_factory=dict,
+        description="房间号-是否@全体成员"
+    )
+
     monitor_interval: int = Field(
         default=60,
         description="直播状态检查间隔（秒）"
@@ -41,6 +46,7 @@ class Config(BaseModel):
         snap = get_config_service().get_snapshot()
         return cls(
             live_monitor_mapping=snap.live_monitor_mapping,
+            live_at_all=snap.live_at_all,
             monitor_interval=snap.live_monitor_interval,
             include_room_info=snap.live_monitor_include_info,
             bilibili_cookie=snap.bilibili_cookie or None,

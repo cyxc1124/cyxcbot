@@ -12,6 +12,7 @@ from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 
 from utils.bilibili_api import RoomInfo, UserInfo
+from shared.notify.at_all import LIVE_AT_ALL_FALLBACK, bot_can_at_all
 
 
 class LiveNotificationSender:
@@ -25,7 +26,9 @@ class LiveNotificationSender:
         streamer_name: str,
         room_info: Optional[RoomInfo],
         card_image: Optional[bytes] = None,
-        can_at_all: bool = False
+        *,
+        at_all_enabled: bool = False,
+        can_at_all: bool = False,
     ) -> Message:
         """
         构建开播通知消息
@@ -35,12 +38,14 @@ class LiveNotificationSender:
         """
         message = Message()
 
-        if can_at_all:
-            message.append(MessageSegment.at("all"))
-        else:
-            message.append("📢 请关注直播动态！")
+        if at_all_enabled:
+            if can_at_all:
+                message.append(MessageSegment.at("all"))
+            else:
+                message.append(LIVE_AT_ALL_FALLBACK)
+            message.append(" ")
 
-        message.append(f" {streamer_name} 开播啦！\n")
+        message.append(f"{streamer_name} 开播啦！\n")
 
         if card_image:
             try:
@@ -151,19 +156,6 @@ class LiveNotificationSender:
             logger.error(f"生成下播卡片失败，将降级为纯文本通知: {e}")
             return None
     
-    async def check_admin_permission(self, bot: Bot, group_id: str) -> bool:
-        try:
-            bot_info = await bot.get_group_member_info(
-                group_id=int(group_id),
-                user_id=int(bot.self_id),
-                no_cache=False
-            )
-            role = bot_info.get("role", "member")
-            return role in ["admin", "owner"]
-        except Exception as e:
-            logger.warning(f"检查机器人管理员权限失败: {e}")
-            return False
-    
     async def send_notification(
         self,
         status: str,
@@ -171,7 +163,8 @@ class LiveNotificationSender:
         room_info: Optional[RoomInfo],
         target_groups: List[str],
         user_info: Optional[UserInfo] = None,
-        duration_seconds: int = 0
+        duration_seconds: int = 0,
+        at_all_enabled: bool = False,
     ):
         """
         发送直播通知到指定群组
@@ -183,6 +176,7 @@ class LiveNotificationSender:
             target_groups: 目标群组ID列表
             user_info: 主播用户信息（头像等，开播卡片需要）
             duration_seconds: 直播时长（秒，仅关播时使用）
+            at_all_enabled: 是否尝试 @全体成员（需机器人管理员权限）
         """
         if not target_groups:
             logger.warning(f"没有配置目标群组，跳过发送通知")
@@ -212,14 +206,17 @@ class LiveNotificationSender:
 
             for group_id in target_groups:
                 try:
-                    can_at_all = await self.check_admin_permission(bot, group_id)
+                    can_at_all = False
+                    if status == "start" and at_all_enabled:
+                        can_at_all = await bot_can_at_all(bot, group_id)
 
                     if status == "start":
                         message = self.build_start_message(
                             streamer_name=streamer_name,
                             room_info=room_info,
                             card_image=card_image,
-                            can_at_all=can_at_all
+                            at_all_enabled=at_all_enabled,
+                            can_at_all=can_at_all,
                         )
                     else:
                         message = self.build_end_message(

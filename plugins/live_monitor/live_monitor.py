@@ -415,7 +415,8 @@ class LiveMonitor:
             room_info=state.room_info,
             target_groups=target_groups,
             user_info=state.user_info,
-            duration_seconds=duration_seconds
+            duration_seconds=duration_seconds,
+            at_all_enabled=self.config.live_at_all.get(room_id, True),
         )
 
         try:

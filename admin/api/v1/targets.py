@@ -41,6 +41,7 @@ def _dynamic_to_response(target: DynamicTarget) -> DynamicTargetResponse:
         uid=target.uid,
         name=target.name,
         enabled=target.enabled,
+        at_all=target.at_all,
         group_ids=[g.group_id for g in target.groups],
         created_at=target.created_at,
         updated_at=target.updated_at,
@@ -53,6 +54,7 @@ def _live_to_response(target: LiveTarget) -> LiveTargetResponse:
         room_id=target.room_id,
         name=target.name,
         enabled=target.enabled,
+        at_all=target.at_all,
         group_ids=[g.group_id for g in target.groups],
         created_at=target.created_at,
         updated_at=target.updated_at,
@@ -125,7 +127,12 @@ async def create_dynamic_target(request: Request, body: DynamicTargetCreate, use
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="UID already exists")
 
         resolved_name = await resolve_dynamic_target_name(body.uid, body.name)
-        target = DynamicTarget(uid=body.uid, name=resolved_name, enabled=body.enabled)
+        if not resolved_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="无法获取 UP 主信息，请检查 UID 是否正确，或手动填写显示名称",
+            )
+        target = DynamicTarget(uid=body.uid, name=resolved_name, enabled=body.enabled, at_all=body.at_all)
         await _sync_groups_dynamic(session, target, body.group_ids)
         session.add(target)
         await session.flush()
@@ -176,16 +183,41 @@ async def update_dynamic_target(
         if not target:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
 
+        if body.uid is not None:
+            new_uid = body.uid.strip()
+            if not new_uid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="UID 不能为空",
+                )
+            if new_uid != target.uid:
+                existing = await session.scalar(
+                    select(DynamicTarget).where(DynamicTarget.uid == new_uid)
+                )
+                if existing:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="UID already exists",
+                    )
+                target.uid = new_uid
+
         if body.name is not None:
-            target.name = body.name.strip() or target.name
+            stripped = body.name.strip()
+            target.name = stripped if stripped else None
         if body.enabled is not None:
             target.enabled = body.enabled
+        if body.at_all is not None:
+            target.at_all = body.at_all
         if body.group_ids is not None:
             await _sync_groups_dynamic(session, target, body.group_ids)
         if not target.name:
             resolved = await resolve_up_name(target.uid)
-            if resolved:
-                target.name = resolved
+            if not resolved:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="无法获取 UP 主信息，请检查 UID 是否正确，或手动填写显示名称",
+                )
+            target.name = resolved
         await session.flush()
         await session.refresh(target, ["groups"])
         response = _dynamic_to_response(target)
@@ -249,7 +281,12 @@ async def create_live_target(request: Request, body: LiveTargetCreate, user: Cur
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Room already exists")
 
         resolved_name = await resolve_live_target_name(body.room_id, body.name)
-        target = LiveTarget(room_id=body.room_id, name=resolved_name, enabled=body.enabled)
+        if not resolved_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="无法获取直播间信息，请检查房间号是否正确，或手动填写显示名称",
+            )
+        target = LiveTarget(room_id=body.room_id, name=resolved_name, enabled=body.enabled, at_all=body.at_all)
         await _sync_groups_live(session, target, body.group_ids)
         session.add(target)
         await session.flush()
@@ -300,16 +337,41 @@ async def update_live_target(
         if not target:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
 
+        if body.room_id is not None:
+            new_room_id = body.room_id.strip()
+            if not new_room_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="房间号不能为空",
+                )
+            if new_room_id != target.room_id:
+                existing = await session.scalar(
+                    select(LiveTarget).where(LiveTarget.room_id == new_room_id)
+                )
+                if existing:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Room already exists",
+                    )
+                target.room_id = new_room_id
+
         if body.name is not None:
-            target.name = body.name.strip() or target.name
+            stripped = body.name.strip()
+            target.name = stripped if stripped else None
         if body.enabled is not None:
             target.enabled = body.enabled
+        if body.at_all is not None:
+            target.at_all = body.at_all
         if body.group_ids is not None:
             await _sync_groups_live(session, target, body.group_ids)
         if not target.name:
             resolved = await resolve_live_streamer_name(target.room_id)
-            if resolved:
-                target.name = resolved
+            if not resolved:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="无法获取直播间信息，请检查房间号是否正确，或手动填写显示名称",
+                )
+            target.name = resolved
         await session.flush()
         await session.refresh(target, ["groups"])
         response = _live_to_response(target)

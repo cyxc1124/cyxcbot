@@ -289,7 +289,8 @@ class DynamicMonitor:
             return
 
         # 推送到每个群组
-        await self.sender.send_to_groups(message, group_ids)
+        at_all_enabled = self.config.dynamic_at_all.get(uid, False)
+        await self.sender.send_to_groups(message, group_ids, at_all_enabled=at_all_enabled)
 
         try:
             await write_audit(

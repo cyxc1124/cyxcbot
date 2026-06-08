@@ -71,6 +71,8 @@ class ConfigService:
             settings = await self._load_settings(session)
             dynamic_mapping = await self._load_dynamic_mapping(session)
             live_mapping = await self._load_live_mapping(session)
+            dynamic_at_all = await self._load_dynamic_at_all(session)
+            live_at_all = await self._load_live_at_all(session)
 
         cookie_encrypted = settings.get("bilibili_cookie_encrypted", "")
         cookie = ""
@@ -82,9 +84,11 @@ class ConfigService:
 
         self._snapshot = AppConfigSnapshot(
             dynamic_monitor_mapping=dynamic_mapping,
+            dynamic_at_all=dynamic_at_all,
             dynamic_monitor_interval=settings.get("dynamic_monitor_interval", 30),
             dynamic_enable_screenshot=settings.get("dynamic_enable_screenshot", True),
             live_monitor_mapping=live_mapping,
+            live_at_all=live_at_all,
             live_monitor_interval=settings.get("live_monitor_interval", 60),
             live_monitor_include_info=settings.get("live_monitor_include_info", True),
             live_monitor_use_websocket=settings.get("live_monitor_use_websocket", True),
@@ -172,6 +176,11 @@ class ConfigService:
             mapping[target.uid] = [g.group_id for g in target.groups]
         return mapping
 
+    async def _load_dynamic_at_all(self, session) -> dict[str, bool]:
+        stmt = select(DynamicTarget).where(DynamicTarget.enabled.is_(True))
+        targets = (await session.scalars(stmt)).all()
+        return {target.uid: target.at_all for target in targets}
+
     async def _load_live_mapping(self, session) -> dict[str, list[str]]:
         stmt = (
             select(LiveTarget)
@@ -183,6 +192,11 @@ class ConfigService:
         for target in targets:
             mapping[target.room_id] = [g.group_id for g in target.groups]
         return mapping
+
+    async def _load_live_at_all(self, session) -> dict[str, bool]:
+        stmt = select(LiveTarget).where(LiveTarget.enabled.is_(True))
+        targets = (await session.scalars(stmt)).all()
+        return {target.room_id: target.at_all for target in targets}
 
     def settings_for_api(self) -> dict:
         """Settings dict for API (cookie masked, never plaintext)."""

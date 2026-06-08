@@ -25,13 +25,15 @@ interface TargetFormState {
   id: string
   name: string
   enabled: boolean
+  at_all: boolean
   group_ids: string[]
 }
 
-const emptyForm = (): TargetFormState => ({
+const emptyForm = (isDynamic: boolean): TargetFormState => ({
   id: '',
   name: '',
   enabled: true,
+  at_all: !isDynamic,
   group_ids: [],
 })
 
@@ -47,7 +49,8 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
   const [error, setError] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
-  const [form, setForm] = useState(emptyForm)
+  const [form, setForm] = useState(() => emptyForm(type === 'dynamic'))
+  const [editOriginalId, setEditOriginalId] = useState('')
   const [saving, setSaving] = useState(false)
 
   const isDynamic = type === 'dynamic'
@@ -78,7 +81,8 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
   const resetForm = () => {
     setShowForm(false)
     setEditingId(null)
-    setForm(emptyForm())
+    setEditOriginalId('')
+    setForm(emptyForm(isDynamic))
   }
 
   const openCreate = () => {
@@ -87,11 +91,14 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
   }
 
   const openEdit = (target: DynamicTarget | LiveTarget) => {
+    const targetId = isDynamic ? (target as DynamicTarget).uid : (target as LiveTarget).room_id
     setEditingId(target.id)
+    setEditOriginalId(targetId)
     setForm({
-      id: isDynamic ? (target as DynamicTarget).uid : (target as LiveTarget).room_id,
+      id: targetId,
       name: target.name ?? '',
       enabled: target.enabled,
+      at_all: target.at_all,
       group_ids: [...target.group_ids],
     })
     setShowForm(true)
@@ -110,8 +117,10 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
       if (isDynamic) {
         if (editingId) {
           await updateDynamicTarget(editingId, {
-            name: form.name || undefined,
+            uid: idValue,
+            name: form.name,
             enabled: form.enabled,
+            at_all: form.at_all,
             group_ids: form.group_ids,
           })
           showToast('success', '动态目标已更新')
@@ -120,14 +129,17 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
             uid: idValue,
             name: form.name || undefined,
             enabled: form.enabled,
+            at_all: form.at_all,
             group_ids: form.group_ids,
           })
           showToast('success', '动态目标已创建')
         }
       } else if (editingId) {
         await updateLiveTarget(editingId, {
-          name: form.name || undefined,
+          room_id: idValue,
+          name: form.name,
           enabled: form.enabled,
+          at_all: form.at_all,
           group_ids: form.group_ids,
         })
         showToast('success', '直播目标已更新')
@@ -136,6 +148,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
           room_id: idValue,
           name: form.name || undefined,
           enabled: form.enabled,
+          at_all: form.at_all,
           group_ids: form.group_ids,
         })
         showToast('success', '直播目标已创建')
@@ -144,7 +157,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
       resetForm()
       await load()
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : '保存失败')
+      showToast('error', formatApiError(err, '保存失败'))
     } finally {
       setSaving(false)
     }
@@ -210,9 +223,16 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
                 <input
                   className="input"
                   value={form.id}
-                  onChange={(e) => setForm((f) => ({ ...f, id: e.target.value }))}
+                  onChange={(e) => {
+                    const id = e.target.value
+                    setForm((f) => ({
+                      ...f,
+                      id,
+                      name:
+                        editingId && id.trim() !== editOriginalId ? '' : f.name,
+                    }))
+                  }}
                   required
-                  readOnly={!!editingId}
                   placeholder="12345678"
                 />
               </div>
@@ -224,6 +244,17 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   placeholder="留空将自动从 B 站获取"
                 />
+                {!editingId ? (
+                  <p className="mt-1 text-xs text-slate-500">
+                    {isDynamic
+                      ? 'UID 无效且未填写名称时无法保存'
+                      : '房间号无效且未填写名称时无法保存'}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-slate-500">
+                    修改 {idLabel} 后将清空名称并重新从 B 站获取
+                  </p>
+                )}
               </div>
             </div>
 
@@ -245,6 +276,19 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
                 className="rounded border-slate-300"
               />
               启用监控
+            </label>
+
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.at_all}
+                onChange={(e) => setForm((f) => ({ ...f, at_all: e.target.checked }))}
+                className="rounded border-slate-300"
+              />
+              推送时 @全体成员
+              <span className="text-xs text-slate-500">
+                （需机器人为群管理员；否则使用提醒文案）
+              </span>
             </label>
 
             <div className="flex gap-2">
@@ -289,6 +333,9 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
                           inactiveLabel="已禁用"
                         />
                       </button>
+                      {target.at_all && (
+                        <span className="badge-neutral text-xs">@全体</span>
+                      )}
                     </div>
                     <p className="mt-2 text-xs text-slate-500">
                       推送到 {groupCount} 个群 · 创建于 {formatDateTime(target.created_at)}

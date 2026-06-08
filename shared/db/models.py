@@ -47,6 +47,7 @@ class DynamicTarget(Model):
     uid: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
     name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    at_all: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
@@ -86,6 +87,7 @@ class LiveTarget(Model):
     room_id: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
     name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    at_all: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
