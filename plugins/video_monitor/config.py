@@ -40,3 +40,19 @@ class Config(BaseModel):
 
 def get_config() -> Config:
     return Config.from_service()
+
+
+_config: Config | None = None
+
+
+def get_cached_config() -> Config:
+    global _config
+    if _config is None:
+        _config = Config.from_service()
+    return _config
+
+
+def reload_config() -> Config:
+    global _config
+    _config = Config.from_service()
+    return _config

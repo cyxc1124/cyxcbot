@@ -75,7 +75,7 @@ class VideoSender:
                 group_id=int(group_id),
                 message=message
             )
-            logger.debug(f"成功发送视频消息到群组 {group_id}")
+            logger.info(f"成功发送视频消息到群组 {group_id}")
         except Exception as e:
             logger.error(f"发送消息到群组 {group_id} 失败: {e}")
             raise

@@ -85,6 +85,7 @@ live_status_cmd = on_command("直播状态", aliases={"查直播", "live"}, prio
 async def handle_live_status(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
     """处理直播状态查询命令"""
     room_id = args.extract_plain_text().strip()
+    logger.info(f"直播状态查询: group={event.group_id} room={room_id or '(未指定)'}")
     
     if not room_id:
         await live_status_cmd.finish("请指定房间号，例如：直播状态 12345")

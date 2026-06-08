@@ -51,7 +51,10 @@ class DynamicMonitor:
             await init_screenshot_service()
             logger.info("动态截图服务已启动")
         else:
-            logger.info("动态截图已禁用（DYNAMIC_ENABLE_SCREENSHOT=false）")
+            logger.info("动态截图已关闭（可在 Web Admin 设置中开启）")
+
+        if not self.config.bilibili_cookie:
+            logger.warning("动态监控: 未登录 B 站，动态可能无法获取")
 
         await self._load_persisted_states()
 
@@ -121,6 +124,12 @@ class DynamicMonitor:
         if self.sender:
             self.sender.templates = self.config.message_templates
 
+        logger.info(
+            f"动态监控配置已热重载: {len(self.config.dynamic_monitor_mapping)} 个UP主, "
+            f"间隔 {self.config.monitor_interval}秒, "
+            f"截图={'开启' if self.config.enable_screenshot else '关闭'}"
+        )
+
     async def start_monitoring(self):
         """启动监控 - 使用APScheduler定时任务"""
         self.is_running = True
@@ -174,20 +183,33 @@ class DynamicMonitor:
         if not self.is_running:
             logger.debug("监控已停止，跳过本次检查")
             return
-            
+
+        uid_list = list(self.config.dynamic_monitor_mapping.keys())
+        total = len(uid_list)
+        failures: list[str] = []
+
         try:
-            logger.debug(f"开始检查所有UP主动态，共 {len(self.config.dynamic_monitor_mapping)} 个用户")
-            for uid in self.config.dynamic_monitor_mapping.keys():
+            for uid in uid_list:
                 try:
-                    await self._check_user_dynamic(uid)
+                    ok = await self._check_user_dynamic(uid)
+                    if ok is False:
+                        failures.append(uid)
                 except Exception as e:
+                    failures.append(uid)
                     logger.error(f"检查UP主 {uid} 动态失败: {e}")
-            logger.debug(f"完成本次动态检查")
+
+            if failures:
+                logger.warning(
+                    f"动态监控本轮检查完成: {total} 个UP主, "
+                    f"{len(failures)} 个失败 ({', '.join(failures)})"
+                )
+            else:
+                logger.info(f"动态监控本轮检查完成: {total} 个UP主")
         except Exception as e:
             logger.error(f"动态监控检查出错: {e}")
 
-    async def _check_user_dynamic(self, uid: str):
-        """检查单个UP主的动态"""
+    async def _check_user_dynamic(self, uid: str) -> bool:
+        """检查单个UP主的动态，成功返回 True，拉取失败返回 False。"""
         logger.debug(f"检查UP主 {uid} 的动态")
 
         # 获取用户的动态列表，传递当前置顶动态ID用于比较
@@ -198,7 +220,7 @@ class DynamicMonitor:
 
         if not result:
             logger.warning(f"获取UP主 {uid} 动态失败")
-            return
+            return False
 
         dynamics, new_pinned_id = result
 
@@ -225,7 +247,7 @@ class DynamicMonitor:
 
             self.initialized_uids[uid] = True
             await self._persist_state(uid)
-            return
+            return True
 
         # 处理置顶动态变化（只有在非首次启动时才推送置顶动态变化）
         if new_pinned_id != current_pinned_id:
@@ -250,6 +272,8 @@ class DynamicMonitor:
 
         if new_dynamics or new_pinned_id != current_pinned_id:
             await self._persist_state(uid)
+
+        return True
 
     async def _fetch_dynamic_screenshot(self, dynamic_id: int) -> Optional[bytes]:
         """获取动态截图，未启用时直接返回 None"""
@@ -295,6 +319,10 @@ class DynamicMonitor:
         at_all_enabled = self.config.dynamic_at_all.get(uid, False)
         await self.sender.send_to_groups(message, group_ids, at_all_enabled=at_all_enabled)
         await self.sender.send_to_users(message, user_ids)
+        logger.info(
+            f"动态通知已推送: uid={uid} dynamic_id={dynamic.id} "
+            f"groups={len(group_ids)} users={len(user_ids)} pinned={is_pinned}"
+        )
 
         try:
             await write_audit(
@@ -443,6 +471,14 @@ async def start_dynamic_monitor():
     if not config.dynamic_monitor_mapping:
         logger.warning("未配置任何UP主动态监控，跳过启动")
         return
+
+    group_count = sum(len(groups) for groups in config.dynamic_monitor_mapping.values())
+    user_count = sum(len(users) for users in config.dynamic_monitor_user_mapping.values())
+    logger.info(
+        f"准备启动动态监控: {len(config.dynamic_monitor_mapping)} 个UP主, "
+        f"{group_count} 个群推送目标, {user_count} 个好友推送目标, "
+        f"间隔 {config.monitor_interval}秒"
+    )
 
     try:
         # 创建监控实例

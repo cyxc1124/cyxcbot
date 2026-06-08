@@ -92,8 +92,8 @@ async def _handle_link_message(bot: Bot, event: GroupMessageEvent | PrivateMessa
         )
 
     if not scope.video_enabled and not scope.live_enabled:
-        logger.debug(
-            f"B 站链接解析：策略未启用 user={event.user_id} "
+        logger.info(
+            f"B 站链接解析: 策略未启用 user={event.user_id} "
             f"video={scope.video_enabled} live={scope.live_enabled}"
         )
         return
@@ -134,6 +134,10 @@ async def handle_private_link(bot: Bot, event: PrivateMessageEvent):
 
 async def _on_config_reload(_snapshot) -> None:
     reload_config()
+    config = get_config()
+    logger.info(
+        f"B 站链接解析: 配置已热重载, Cookie={'已配置' if config.bilibili_cookie else '未配置'}"
+    )
 
 
 def _register_config_reload() -> None:
@@ -151,3 +155,7 @@ driver = get_driver()
 @driver.on_startup
 async def _link_parser_startup() -> None:
     _register_config_reload()
+    config = get_config()
+    logger.info("B 站链接解析插件已就绪")
+    if not config.bilibili_cookie:
+        logger.warning("B 站链接解析: 未登录 B 站，api接口可能返回 -352 或解析失败")

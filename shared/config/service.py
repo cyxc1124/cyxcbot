@@ -163,12 +163,14 @@ class ConfigService:
 
     async def reload(self) -> AppConfigSnapshot:
         """Reload config and notify registered monitors."""
+        logger.info("正在从数据库热重载配置…")
         snapshot = await self.load()
         for callback in self._reload_callbacks:
             try:
                 await callback(snapshot)
             except Exception as exc:
                 logger.error(f"Config reload callback failed: {exc}")
+        logger.info("配置热重载完成")
         return snapshot
 
     async def get_setting(self, key: str) -> Optional[str]:

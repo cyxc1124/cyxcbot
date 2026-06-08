@@ -1,5 +1,6 @@
 """全局拦截已关闭「处理群消息」的 QQ 群，使其不再响应任何命令。"""
 
+from nonebot import get_driver
 from nonebot.adapters.onebot.v11 import GroupMessageEvent
 from nonebot.exception import IgnoredException
 from nonebot.log import logger
@@ -16,6 +17,19 @@ __plugin_meta__ = PluginMetadata(
     type="application",
     supported_adapters={"~onebot.v11"},
 )
+
+driver = get_driver()
+
+
+@driver.on_startup
+async def _log_group_guard_policy() -> None:
+    snap = get_config_service().get_snapshot()
+    if snap.message_group_restrict:
+        logger.info(
+            f"群组消息守卫: 白名单模式, 允许 {len(snap.message_enabled_group_ids)} 个群"
+        )
+    else:
+        logger.info("群组消息守卫: 未限制, 所有群消息均可处理")
 
 
 @event_preprocessor

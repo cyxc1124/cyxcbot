@@ -72,6 +72,10 @@ class LiveMonitor:
                 self.initialized_rooms[room_id] = False
         
         await self._load_persisted_states()
+
+        if not self.config.bilibili_cookie:
+            logger.warning("直播监控: 未登录 B 站 直播间信息可能无法获取")
+
         logger.info(f"直播监控已初始化，监控房间数: {len(self.room_states)}")
 
     async def _load_persisted_states(self):
@@ -152,6 +156,17 @@ class LiveMonitor:
 
         self._sender.include_room_info = self.config.include_room_info
         self._sender.templates = self.config.message_templates
+
+        poll_interval = (
+            max(300, self.config.monitor_interval * 5)
+            if self.config.use_websocket
+            else self.config.monitor_interval
+        )
+        logger.info(
+            f"直播监控配置已热重载: {len(self.config.live_monitor_mapping)} 个房间, "
+            f"轮询间隔 {poll_interval}秒, "
+            f"WebSocket={'开启' if self.config.use_websocket else '关闭'}"
+        )
 
     async def start_monitoring(self):
         """启动监控"""
@@ -393,36 +408,47 @@ class LiveMonitor:
         if not self.is_running:
             logger.debug("监控已停止，跳过本次检查")
             return
-        
-        logger.debug(f"开始检查所有直播间状态，共 {len(self.room_states)} 个房间")
-        
-        for room_id in self.room_states.keys():
+
+        room_list = list(self.room_states.keys())
+        total = len(room_list)
+        failures: list[str] = []
+
+        for room_id in room_list:
             try:
-                await self._check_room_status(room_id)
+                ok = await self._check_room_status(room_id)
+                if ok is False:
+                    failures.append(room_id)
             except Exception as e:
+                failures.append(room_id)
                 logger.error(f"检查房间 {room_id} 状态失败: {e}")
-            
+
             # 避免请求过快
             await asyncio.sleep(0.3)
-        
-        logger.debug("完成本次直播状态检查")
-    
-    async def _check_room_status(self, room_id: str):
-        """检查单个房间的直播状态"""
+
+        if failures:
+            logger.warning(
+                f"直播监控本轮检查完成: {total} 个房间, "
+                f"{len(failures)} 个失败 ({', '.join(failures)})"
+            )
+        else:
+            logger.info(f"直播监控本轮检查完成: {total} 个房间")
+
+    async def _check_room_status(self, room_id: str) -> bool:
+        """检查单个房间的直播状态，拉取失败返回 False。"""
         if not self.initialized_rooms.get(room_id, False):
             await self._initialize_room(room_id)
-            return
+            return True
 
         state = self.room_states.get(room_id)
         if not state:
-            return
-        
+            return True
+
         # 获取最新的房间信息
         room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
-        
+
         if not room_info:
             logger.warning(f"无法获取房间 {room_id} 的最新状态")
-            return
+            return False
         
         # 更新状态并检测变化
         is_live_began, is_live_ended = state.update_status(room_info, user_info)
@@ -438,6 +464,8 @@ class LiveMonitor:
             streamer_name = state.user_info.name if state.user_info else f"房间{room_id}"
             logger.info(f"检测到关播: {streamer_name} (房间 {room_id})")
             await self._send_live_notification(room_id, "end", state)
+
+        return True
     
     async def _send_live_notification(self, room_id: str, status: str, state: LiveRoomState):
         """发送直播通知"""
@@ -514,6 +542,15 @@ async def start_live_monitor():
     if not config.live_monitor_mapping:
         logger.warning("未配置任何直播间监控，跳过启动")
         return
+
+    group_count = sum(len(groups) for groups in config.live_monitor_mapping.values())
+    user_count = sum(len(users) for users in config.live_monitor_user_mapping.values())
+    mode = "WebSocket+轮询备用" if config.use_websocket else "仅轮询"
+    logger.info(
+        f"准备启动直播监控: {len(config.live_monitor_mapping)} 个房间, "
+        f"{group_count} 个群推送目标, {user_count} 个好友推送目标, "
+        f"模式 {mode}, 间隔 {config.monitor_interval}秒"
+    )
     
     try:
         # 创建监控实例

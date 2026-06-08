@@ -30,7 +30,7 @@ def _get_allowed_qq_numbers() -> set[int]:
                 allowed.add(int(qq_str))
         return allowed
     except Exception as exc:
-        logger.debug(f"读取状态查询权限配置失败: {exc}")
+        logger.warning(f"读取状态查询权限配置失败: {exc}")
         return set()
 
 

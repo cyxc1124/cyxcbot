@@ -4,7 +4,7 @@ B站视频查询插件
 
 功能特点：
 1. 响应用户命令查询UP主最新视频
-2. 和动态监控共用 DYNAMIC_MONITOR_MAPPING 配置
+2. 和动态监控共用订阅映射配置
 3. 只在配置的群组中响应命令
 
 命令：
@@ -12,11 +12,11 @@ B站视频查询插件
 - 最新投稿: 同上
 """
 
-from nonebot import on_message
+from nonebot import get_driver, on_message
 from nonebot.log import logger
 from nonebot.adapters.onebot.v11 import GroupMessageEvent
 
-from .config import Config
+from .config import get_cached_config, reload_config
 from .sender import VideoSender
 
 __plugin_meta__ = {
@@ -27,11 +27,39 @@ __plugin_meta__ = {
     "author": "cyxcbot"
 }
 
+driver = get_driver()
+
 # 全局发送器
 video_sender = VideoSender()
 
 # 创建消息处理器
 video_command = on_message(priority=5, block=False)
+
+
+@driver.on_startup
+async def _video_monitor_startup() -> None:
+    config = get_cached_config()
+    uid_count = len(config.dynamic_monitor_mapping)
+    logger.info(f"视频查询插件已就绪: 监控映射含 {uid_count} 个UP主")
+    if not config.bilibili_cookie:
+        logger.warning("视频查询: 未配置 B 站 Cookie，视频接口可能受限")
+
+
+async def _on_config_reload(_snapshot) -> None:
+    config = reload_config()
+    logger.info(f"视频查询: 配置已热重载, 监控映射含 {len(config.dynamic_monitor_mapping)} 个UP主")
+
+
+def _register_config_reload() -> None:
+    try:
+        from shared.config.service import get_config_service
+
+        get_config_service().register_reload_callback(_on_config_reload)
+    except Exception as exc:
+        logger.warning(f"视频查询: 配置热重载注册失败: {exc}")
+
+
+_register_config_reload()
 
 
 @video_command.handle()
@@ -40,8 +68,7 @@ async def handle_video_commands(event: GroupMessageEvent):
     message_text = event.get_plaintext().strip()
     logger.debug(f"收到群消息: {message_text}")
 
-    from .config import get_config
-    config = get_config()
+    config = get_cached_config()
 
     # 获取群组ID
     group_id = str(event.group_id)
@@ -85,7 +112,6 @@ async def handle_video_commands(event: GroupMessageEvent):
 
         # 初始化API（如果未初始化）
         try:
-            # 尝试调用，如果失败则初始化
             await video_api_manager.init(config.bilibili_cookie)
         except Exception:
             pass
@@ -95,15 +121,12 @@ async def handle_video_commands(event: GroupMessageEvent):
             try:
                 logger.info(f"为UP主 {uid} 获取最新视频")
 
-                # 获取最新5个视频
                 videos = await video_api_manager.get_user_videos(int(uid), page=1, page_size=5)
 
                 if videos:
-                    # 构建消息
                     message = video_sender.build_video_message(videos)
-                    # 发送到群组
                     await video_sender.send_to_group(group_id, message)
-                    logger.info(f"UP主 {uid} 最新视频获取完成")
+                    logger.info(f"UP主 {uid} 最新视频已回复到群 {group_id}")
                 else:
                     logger.warning(f"无法获取UP主 {uid} 的视频")
                     from nonebot import get_bot

@@ -89,7 +89,7 @@ class DynamicSender:
         for group_id in group_ids:
             try:
                 await self._send_to_group(group_id, message, at_all_enabled=at_all_enabled)
-                logger.debug(f"成功发送动态到群组 {group_id}")
+                logger.info(f"动态消息已发送到群组 {group_id}")
             except Exception as e:
                 logger.error(f"发送消息到群组 {group_id} 失败: {e}")
 
@@ -127,7 +127,7 @@ class DynamicSender:
         for user_id in user_ids:
             try:
                 await self._send_to_user(user_id, message)
-                logger.debug(f"成功发送动态到好友 {user_id}")
+                logger.info(f"动态消息已发送到好友 {user_id}")
             except Exception as e:
                 logger.error(f"发送消息到好友 {user_id} 失败: {e}")
 

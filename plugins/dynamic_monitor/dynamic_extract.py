@@ -31,6 +31,22 @@ group_dynamic_extract = on_message(priority=4, block=False)
 private_dynamic_extract = on_message(priority=4, block=False)
 
 
+def _register_extract_startup() -> None:
+    try:
+        from nonebot import get_driver
+
+        driver = get_driver()
+
+        @driver.on_startup
+        async def _dynamic_extract_startup() -> None:
+            logger.info("动态图片提取 (#提取/#获取) 已就绪，需存在订阅映射")
+    except Exception as exc:
+        logger.warning(f"动态图片提取: 启动日志注册失败: {exc}")
+
+
+_register_extract_startup()
+
+
 def parse_extract_dynamic_id(message_text: str) -> str | None:
     """Return dynamic ID from '#提取/#获取{id|url}' message, or None."""
     match = EXTRACT_PATTERN.match(message_text.strip())
