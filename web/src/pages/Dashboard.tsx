@@ -20,7 +20,7 @@ import { StatCard } from '../components/StatCard'
 import { LevelBadge } from '../components/StatusBadge'
 import { useLiveUptime } from '../hooks/useLiveUptime'
 import { formatApiError } from '../utils/apiError'
-import { formatDateTime, formatUptime } from '../utils/format'
+import { formatDateTime, formatMemoryUsage, formatUptime } from '../utils/format'
 
 function bilibiliCardValue(b: BilibiliConnectionStatus | undefined): string {
   if (!b) return '—'
@@ -153,7 +153,7 @@ export function DashboardPage() {
             percent={system?.memory_percent}
             detail={
               system
-                ? `已用 ${system.memory_used_mb.toFixed(0)} / ${system.memory_total_mb.toFixed(0)} MB`
+                ? formatMemoryUsage(system.memory_used_mb, system.memory_total_mb)
                 : undefined
             }
           />
