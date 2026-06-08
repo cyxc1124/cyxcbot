@@ -19,6 +19,7 @@ from admin.schemas.link_parser import (
 )
 from admin.services.onebot_bridge import get_friend_list, get_group_list, invalidate_user_list_cache
 from shared.audit.service import write_audit, write_system_event
+from shared.config.link_parser_policy import normalize_link_parser_toggles
 from shared.config.service import get_config_service
 from shared.db.enums import AuditAction, SystemEventType
 from shared.group_policy import is_group_message_enabled_from_snapshot
@@ -32,10 +33,15 @@ router = APIRouter(
 
 
 def _global_policy(snap) -> LinkParserGlobalPolicy:
+    enabled, video_enabled, live_enabled = normalize_link_parser_toggles(
+        snap.bilibili_link_parser_enabled,
+        snap.bilibili_link_parser_video_enabled,
+        snap.bilibili_link_parser_live_enabled,
+    )
     return LinkParserGlobalPolicy(
-        enabled=snap.bilibili_link_parser_enabled,
-        video_enabled=snap.bilibili_link_parser_video_enabled,
-        live_enabled=snap.bilibili_link_parser_live_enabled,
+        enabled=enabled,
+        video_enabled=video_enabled,
+        live_enabled=live_enabled,
     )
 
 
@@ -74,25 +80,35 @@ def _ensure_group_message_enabled(group_id: str, snap) -> None:
 def _group_policy_values(snap, group_id: str) -> tuple[bool, bool, bool, bool]:
     override = snap.link_parser_group_policies.get(group_id)
     if override:
-        return override.enabled, override.video_enabled, override.live_enabled, True
-    return (
+        enabled, video_enabled, live_enabled = normalize_link_parser_toggles(
+            override.enabled,
+            override.video_enabled,
+            override.live_enabled,
+        )
+        return enabled, video_enabled, live_enabled, True
+    enabled, video_enabled, live_enabled = normalize_link_parser_toggles(
         snap.bilibili_link_parser_enabled,
         snap.bilibili_link_parser_video_enabled,
         snap.bilibili_link_parser_live_enabled,
-        False,
     )
+    return enabled, video_enabled, live_enabled, False
 
 
 def _user_policy_values(snap, user_id: str) -> tuple[bool, bool, bool, bool]:
     override = snap.link_parser_user_policies.get(user_id)
     if override:
-        return override.enabled, override.video_enabled, override.live_enabled, True
-    return (
+        enabled, video_enabled, live_enabled = normalize_link_parser_toggles(
+            override.enabled,
+            override.video_enabled,
+            override.live_enabled,
+        )
+        return enabled, video_enabled, live_enabled, True
+    enabled, video_enabled, live_enabled = normalize_link_parser_toggles(
         snap.bilibili_link_parser_enabled,
         snap.bilibili_link_parser_video_enabled,
         snap.bilibili_link_parser_live_enabled,
-        False,
     )
+    return enabled, video_enabled, live_enabled, False
 
 
 def _build_group_item(snap, group: dict) -> LinkParserGroupPolicyItem:

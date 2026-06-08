@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import re
-from typing import Iterable
+from typing import Any, Iterable
 
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, PrivateMessageEvent
+
+from .miniapp import extract_bilibili_miniapp_urls, normalize_bilibili_url, parse_json_segment_data
 
 _URL_IN_TEXT = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 
@@ -17,8 +18,13 @@ def _urls_from_json_payload(payload: object) -> list[str]:
     def walk(value: object) -> None:
         if isinstance(value, str):
             if "bilibili.com" in value or "b23.tv" in value:
-                found.append(value)
-            found.extend(_URL_IN_TEXT.findall(value))
+                normalized = normalize_bilibili_url(value)
+                if normalized:
+                    found.append(normalized)
+            for url in _URL_IN_TEXT.findall(value):
+                normalized = normalize_bilibili_url(url)
+                if normalized:
+                    found.append(normalized)
         elif isinstance(value, dict):
             for item in value.values():
                 walk(item)
@@ -30,14 +36,18 @@ def _urls_from_json_payload(payload: object) -> list[str]:
     return found
 
 
-def _urls_from_json_segment(raw: str) -> list[str]:
-    if not raw:
+def _urls_from_json_segment(raw: str | dict[str, Any]) -> list[str]:
+    payload = parse_json_segment_data(raw)
+    if payload is None:
+        if isinstance(raw, str):
+            return _URL_IN_TEXT.findall(raw)
         return []
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        return _URL_IN_TEXT.findall(raw)
-    return _urls_from_json_payload(payload)
+
+    found: list[str] = []
+    if isinstance(payload, dict):
+        found.extend(extract_bilibili_miniapp_urls(payload))
+    found.extend(_urls_from_json_payload(payload))
+    return found
 
 
 def _urls_from_xml_segment(raw: str) -> list[str]:
@@ -56,8 +66,13 @@ def collect_message_text(event: GroupMessageEvent | PrivateMessageEvent) -> str:
 
     for segment in event.message:
         if segment.type == "json":
-            urls = _urls_from_json_segment(str(segment.data.get("data", "")))
-            parts.extend(urls)
+            segment_data = segment.data.get("data", segment.data)
+            payload = parse_json_segment_data(segment_data)
+            if isinstance(payload, dict):
+                prompt = str(payload.get("prompt", "")).strip()
+                if prompt and prompt not in parts:
+                    parts.append(prompt)
+            parts.extend(_urls_from_json_segment(segment_data))
         elif segment.type == "xml":
             parts.extend(_urls_from_xml_segment(str(segment.data.get("data", ""))))
 

@@ -17,6 +17,7 @@ import { PageLoading } from './LoadingSpinner'
 import { ToggleSwitch } from './ToggleSwitch'
 import { useToast } from '../contexts/ToastContext'
 import { formatApiError } from '../utils/apiError'
+import { applyLinkParserToggle } from '../utils/linkParserPolicy'
 
 function PolicyToggleRow({
   label,
@@ -37,15 +38,11 @@ function PolicyToggleRow({
   )
 }
 
-function GlobalPolicyHint({ policy, scope }: { policy: LinkParserGlobalPolicy; scope: 'group' | 'user' }) {
+function GlobalPolicyHint({ scope }: { scope: 'group' | 'user' }) {
   return (
     <div className="space-y-1">
       <p className="text-sm text-slate-500">
-        全局默认：
-        {policy.enabled ? '已启用' : '已关闭'} /
-        视频{policy.video_enabled ? '开' : '关'} /
-        直播{policy.live_enabled ? '开' : '关'}
-        。未单独配置的{scope === 'group' ? '群' : '用户'}将继承全局设置（在「系统设置 → 监控」中修改）。
+        在下方为每个{scope === 'group' ? '群' : '好友'}单独配置链接解析、视频与直播开关。文案可在「消息模板」中配置。
       </p>
       {scope === 'group' && (
         <p className="text-sm text-slate-500">
@@ -116,13 +113,13 @@ export function LinkParserGroupPolicyTab() {
     setGroups((current) =>
       current.map((row) => {
         if (row.group_id !== groupId) return row
-        const next = { ...row, ...patch, customized: true }
+        const next = applyLinkParserToggle(row, patch)
         payload = {
           enabled: next.enabled,
           video_enabled: next.video_enabled,
           live_enabled: next.live_enabled,
         }
-        return next
+        return { ...row, ...next, customized: true } as typeof row
       }),
     )
 
@@ -158,7 +155,7 @@ export function LinkParserGroupPolicyTab() {
 
   return (
     <div className="space-y-4">
-      {globalPolicy && <GlobalPolicyHint policy={globalPolicy} scope="group" />}
+      {globalPolicy && <GlobalPolicyHint scope="group" />}
       {error && <LoadErrorBanner message={error} onRetry={load} />}
 
       {groups.length === 0 ? (
@@ -210,7 +207,7 @@ export function LinkParserGroupPolicyTab() {
                       <PolicyToggleRow
                         label="视频"
                         checked={group.video_enabled}
-                        disabled={false}
+                        disabled={!group.enabled || saving}
                         onChange={(checked) => void patchGroup(group.group_id, { video_enabled: checked })}
                       />
                     </td>
@@ -218,7 +215,7 @@ export function LinkParserGroupPolicyTab() {
                       <PolicyToggleRow
                         label="直播"
                         checked={group.live_enabled}
-                        disabled={false}
+                        disabled={!group.enabled || saving}
                         onChange={(checked) => void patchGroup(group.group_id, { live_enabled: checked })}
                       />
                     </td>
@@ -307,14 +304,14 @@ export function LinkParserUserPolicyTab() {
     setUsers((current) =>
       current.map((row) => {
         if (row.user_id !== userId) return row
-        const next = { ...row, ...patch, customized: true }
+        const next = applyLinkParserToggle(row, patch)
         note = row.name
         saved = {
           enabled: next.enabled,
           video_enabled: next.video_enabled,
           live_enabled: next.live_enabled,
         }
-        return next
+        return { ...row, ...next, customized: true } as typeof row
       }),
     )
 
@@ -355,7 +352,7 @@ export function LinkParserUserPolicyTab() {
 
   return (
     <div className="space-y-4">
-      {globalPolicy && <GlobalPolicyHint policy={globalPolicy} scope="user" />}
+      {globalPolicy && <GlobalPolicyHint scope="user" />}
       {error && <LoadErrorBanner message={error} onRetry={load} />}
 
       {users.length === 0 ? (
@@ -408,7 +405,7 @@ export function LinkParserUserPolicyTab() {
                       <PolicyToggleRow
                         label="视频"
                         checked={user.video_enabled}
-                        disabled={false}
+                        disabled={!user.enabled || saving}
                         onChange={(checked) => void patchUser(user.user_id, { video_enabled: checked })}
                       />
                     </td>
@@ -416,7 +413,7 @@ export function LinkParserUserPolicyTab() {
                       <PolicyToggleRow
                         label="直播"
                         checked={user.live_enabled}
-                        disabled={false}
+                        disabled={!user.enabled || saving}
                         onChange={(checked) => void patchUser(user.user_id, { live_enabled: checked })}
                       />
                     </td>

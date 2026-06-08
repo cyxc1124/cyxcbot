@@ -14,6 +14,7 @@ from nonebot_plugin_orm import get_session
 from shared.config.link_parser_policy import (
     LinkParserGroupPolicyRecord,
     LinkParserUserPolicyRecord,
+    normalize_link_parser_toggles,
 )
 from shared.config.message_templates import (
     MESSAGE_TEMPLATE_KEYS,
@@ -412,6 +413,11 @@ class ConfigService:
         dt = snap.dynamic_message_templates
         lt = snap.live_message_templates
         link = snap.link_message_templates
+        link_enabled, link_video, link_live = normalize_link_parser_toggles(
+            snap.bilibili_link_parser_enabled,
+            snap.bilibili_link_parser_video_enabled,
+            snap.bilibili_link_parser_live_enabled,
+        )
         return {
             "dynamic_monitor_interval": snap.dynamic_monitor_interval,
             "dynamic_enable_screenshot": snap.dynamic_enable_screenshot,
@@ -434,10 +440,10 @@ class ConfigService:
             "event_retention_days": snap.event_retention_days,
             "status_check_allowed_qq": snap.status_check_allowed_qq,
             "nonebot_superusers": snap.nonebot_superusers,
-            "bilibili_link_parser_enabled": snap.bilibili_link_parser_enabled,
+            "bilibili_link_parser_enabled": link_enabled,
             "bilibili_link_parser_private_enabled": snap.bilibili_link_parser_private_enabled,
-            "bilibili_link_parser_video_enabled": snap.bilibili_link_parser_video_enabled,
-            "bilibili_link_parser_live_enabled": snap.bilibili_link_parser_live_enabled,
+            "bilibili_link_parser_video_enabled": link_video,
+            "bilibili_link_parser_live_enabled": link_live,
         }
 
     @staticmethod

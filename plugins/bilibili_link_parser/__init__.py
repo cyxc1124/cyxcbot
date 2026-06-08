@@ -1,7 +1,7 @@
 """
 B 站链接自动解析插件
 
-自动识别群聊/好友中的视频链接、直播间链接与 b23.tv 短链，
+自动识别群聊/好友中的视频链接、直播间链接、b23.tv 短链与 QQ 小程序分享，
 并回复封面、标题、UP 主/主播、时间信息与链接。
 """
 
@@ -22,8 +22,8 @@ from .sender import build_live_link_message, build_video_link_message
 
 __plugin_meta__ = PluginMetadata(
     name="B 站链接解析",
-    description="自动解析群聊/好友中的 B 站视频与直播链接",
-    usage="发送含 BV 号、直播间链接或 b23.tv 短链的消息即可触发",
+    description="自动解析群聊/好友中的 B 站视频、直播链接与 QQ 小程序分享",
+    usage="发送含 BV 号、直播间链接、b23.tv 短链或 B 站 QQ 小程序分享即可触发",
     type="application",
     config=Config,
     supported_adapters={"~onebot.v11"},
@@ -92,10 +92,15 @@ async def _handle_link_message(bot: Bot, event: GroupMessageEvent | PrivateMessa
         )
 
     if not scope.enabled or (not scope.video_enabled and not scope.live_enabled):
+        logger.debug(
+            f"B 站链接解析：策略未启用 user={event.user_id} "
+            f"enabled={scope.enabled} video={scope.video_enabled} live={scope.live_enabled}"
+        )
         return
 
     message_text = collect_message_text(event)
     if not message_text:
+        logger.debug(f"B 站链接解析：未提取到文本/链接 user={event.user_id}")
         return
 
     logger.info(f"B 站链接解析：收到消息 user={event.user_id} text={message_text[:120]!r}")

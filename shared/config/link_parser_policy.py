@@ -35,6 +35,19 @@ class LinkParserUserPolicyRecord:
     name: str | None = None
 
 
+def normalize_link_parser_toggles(
+    enabled: bool,
+    video_enabled: bool,
+    live_enabled: bool,
+) -> tuple[bool, bool, bool]:
+    """Master on with both sub-types off is treated as fully enabled."""
+    if not enabled:
+        return False, False, False
+    if not video_enabled and not live_enabled:
+        return True, True, True
+    return enabled, video_enabled, live_enabled
+
+
 def _disabled_policy() -> LinkParserScopePolicy:
     return LinkParserScopePolicy(
         enabled=False,
@@ -49,6 +62,22 @@ def _global_policy(snapshot: AppConfigSnapshot) -> LinkParserScopePolicy:
         enabled=snapshot.bilibili_link_parser_enabled,
         video_enabled=snapshot.bilibili_link_parser_video_enabled,
         live_enabled=snapshot.bilibili_link_parser_live_enabled,
+    )
+
+
+def _normalize_scope(policy: LinkParserScopePolicy) -> LinkParserScopePolicy:
+    enabled, video_enabled, live_enabled = normalize_link_parser_toggles(
+        policy.enabled,
+        policy.video_enabled,
+        policy.live_enabled,
+    )
+    if not enabled:
+        return _disabled_policy()
+    return LinkParserScopePolicy(
+        enabled=enabled,
+        video_enabled=video_enabled,
+        live_enabled=live_enabled,
+        private_enabled=policy.private_enabled,
     )
 
 
@@ -83,4 +112,4 @@ def resolve_link_parser_policy(
     if not policy.enabled:
         return _disabled_policy()
 
-    return policy
+    return _normalize_scope(policy)
