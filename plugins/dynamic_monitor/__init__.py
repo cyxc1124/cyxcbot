@@ -60,13 +60,6 @@ async def handle_dynamic_commands(event: GroupMessageEvent):
     # 获取群组ID
     group_id = str(event.group_id)
 
-    from shared.config.service import get_config_service
-    from shared.group_policy import is_group_message_enabled_from_snapshot
-
-    if not is_group_message_enabled_from_snapshot(group_id, get_config_service().get_snapshot()):
-        logger.debug(f"群组 {group_id} 未启用消息处理")
-        return
-
     # 查找该群对应的UP主
     uids = config.get_uids_by_group_id(group_id)
     if not uids:

@@ -12,7 +12,9 @@ def is_group_message_enabled(
     """Return whether the bot should process messages from this group."""
     if not restrict:
         return True
-    return str(group_id) in enabled_group_ids
+    gid = str(group_id).strip()
+    enabled = {str(item).strip() for item in enabled_group_ids if str(item).strip()}
+    return gid in enabled
 
 
 def is_group_message_enabled_from_snapshot(group_id: str, snapshot) -> bool:

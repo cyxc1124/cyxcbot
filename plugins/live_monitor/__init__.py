@@ -84,13 +84,6 @@ live_status_cmd = on_command("直播状态", aliases={"查直播", "live"}, prio
 @live_status_cmd.handle()
 async def handle_live_status(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
     """处理直播状态查询命令"""
-    group_id = str(event.group_id)
-    from shared.config.service import get_config_service
-    from shared.group_policy import is_group_message_enabled_from_snapshot
-
-    if not is_group_message_enabled_from_snapshot(group_id, get_config_service().get_snapshot()):
-        return
-
     room_id = args.extract_plain_text().strip()
     
     if not room_id:
@@ -156,12 +149,6 @@ list_monitor_cmd = on_command("监控列表", aliases={"直播监控列表"}, pr
 async def handle_list_monitor(bot: Bot, event: GroupMessageEvent):
     """列出当前监控的房间"""
     group_id = str(event.group_id)
-    from shared.config.service import get_config_service
-    from shared.group_policy import is_group_message_enabled_from_snapshot
-
-    if not is_group_message_enabled_from_snapshot(group_id, get_config_service().get_snapshot()):
-        return
-
     config = Config.from_service()
     
     # 找出当前群组监控的房间
