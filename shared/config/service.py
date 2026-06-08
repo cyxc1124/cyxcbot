@@ -11,6 +11,10 @@ from sqlalchemy.orm import selectinload
 
 from nonebot_plugin_orm import get_session
 
+from shared.config.link_parser_policy import (
+    LinkParserGroupPolicyRecord,
+    LinkParserUserPolicyRecord,
+)
 from shared.config.message_templates import (
     MESSAGE_TEMPLATE_KEYS,
     dynamic_templates_from_settings,
@@ -21,6 +25,8 @@ from shared.config.nonebot_superusers import apply_nonebot_superusers
 from shared.config.types import AppConfigSnapshot
 from shared.db.models import (
     DynamicTarget,
+    LinkParserGroupPolicy,
+    LinkParserUserPolicy,
     LiveTarget,
     SystemSetting,
 )
@@ -37,12 +43,14 @@ SETTING_KEYS = {
     "bilibili_cookie_encrypted": ("", str),
     "audit_log_retention_days": ("90", int),
     "event_retention_days": ("90", int),
-    "message_group_restrict": ("false", bool),
+    "message_group_restrict": ("true", bool),
     "message_enabled_group_ids": ("[]", "json_list"),
     "status_check_allowed_qq": ("[]", "json_list"),
     "nonebot_superusers": ("[]", "json_list"),
-    "bilibili_link_parser_enabled": ("true", bool),
-    "bilibili_link_parser_private_enabled": ("true", bool),
+    "bilibili_link_parser_enabled": ("false", bool),
+    "bilibili_link_parser_private_enabled": ("false", bool),
+    "bilibili_link_parser_video_enabled": ("false", bool),
+    "bilibili_link_parser_live_enabled": ("false", bool),
 }
 
 _LEGACY_SETTING_KEYS = {
@@ -92,6 +100,8 @@ class ConfigService:
             live_mapping = await self._load_live_mapping(session)
             dynamic_at_all = await self._load_dynamic_at_all(session)
             live_at_all = await self._load_live_at_all(session)
+            link_parser_group_policies = await self._load_link_parser_group_policies(session)
+            link_parser_user_policies = await self._load_link_parser_user_policies(session)
 
         cookie_encrypted = settings.get("bilibili_cookie_encrypted", "")
         cookie = ""
@@ -118,14 +128,22 @@ class ConfigService:
             bilibili_cookie_set=bool(cookie_encrypted),
             audit_log_retention_days=settings.get("audit_log_retention_days", 90),
             event_retention_days=settings.get("event_retention_days", 90),
-            message_group_restrict=settings.get("message_group_restrict", False),
+            message_group_restrict=settings.get("message_group_restrict", True),
             message_enabled_group_ids=settings.get("message_enabled_group_ids", []),
             status_check_allowed_qq=settings.get("status_check_allowed_qq", []),
             nonebot_superusers=settings.get("nonebot_superusers", []),
-            bilibili_link_parser_enabled=settings.get("bilibili_link_parser_enabled", True),
+            bilibili_link_parser_enabled=settings.get("bilibili_link_parser_enabled", False),
             bilibili_link_parser_private_enabled=settings.get(
-                "bilibili_link_parser_private_enabled", True
+                "bilibili_link_parser_private_enabled", False
             ),
+            bilibili_link_parser_video_enabled=settings.get(
+                "bilibili_link_parser_video_enabled", False
+            ),
+            bilibili_link_parser_live_enabled=settings.get(
+                "bilibili_link_parser_live_enabled", False
+            ),
+            link_parser_group_policies=link_parser_group_policies,
+            link_parser_user_policies=link_parser_user_policies,
         )
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
         logger.info(
@@ -235,6 +253,110 @@ class ConfigService:
         targets = (await session.scalars(stmt)).all()
         return {target.room_id: target.at_all for target in targets}
 
+    async def _load_link_parser_group_policies(
+        self, session
+    ) -> dict[str, LinkParserGroupPolicyRecord]:
+        rows = (await session.scalars(select(LinkParserGroupPolicy))).all()
+        return {
+            row.group_id: LinkParserGroupPolicyRecord(
+                group_id=row.group_id,
+                enabled=row.enabled,
+                video_enabled=row.video_enabled,
+                live_enabled=row.live_enabled,
+            )
+            for row in rows
+        }
+
+    async def _load_link_parser_user_policies(
+        self, session
+    ) -> dict[str, LinkParserUserPolicyRecord]:
+        rows = (await session.scalars(select(LinkParserUserPolicy))).all()
+        return {
+            row.user_id: LinkParserUserPolicyRecord(
+                user_id=row.user_id,
+                enabled=row.enabled,
+                video_enabled=row.video_enabled,
+                live_enabled=row.live_enabled,
+                private_enabled=row.private_enabled,
+                name=row.name,
+            )
+            for row in rows
+        }
+
+    async def upsert_link_parser_group_policy(
+        self,
+        group_id: str,
+        *,
+        enabled: bool,
+        video_enabled: bool,
+        live_enabled: bool,
+    ) -> None:
+        gid = str(group_id).strip()
+        session = get_session()
+        async with session.begin():
+            row = await session.get(LinkParserGroupPolicy, gid)
+            if row:
+                row.enabled = enabled
+                row.video_enabled = video_enabled
+                row.live_enabled = live_enabled
+            else:
+                session.add(
+                    LinkParserGroupPolicy(
+                        group_id=gid,
+                        enabled=enabled,
+                        video_enabled=video_enabled,
+                        live_enabled=live_enabled,
+                    )
+                )
+
+    async def delete_link_parser_group_policy(self, group_id: str) -> None:
+        gid = str(group_id).strip()
+        session = get_session()
+        async with session.begin():
+            row = await session.get(LinkParserGroupPolicy, gid)
+            if row:
+                await session.delete(row)
+
+    async def upsert_link_parser_user_policy(
+        self,
+        user_id: str,
+        *,
+        enabled: bool,
+        video_enabled: bool,
+        live_enabled: bool,
+        private_enabled: bool,
+        name: str | None = None,
+    ) -> None:
+        uid = str(user_id).strip()
+        session = get_session()
+        async with session.begin():
+            row = await session.get(LinkParserUserPolicy, uid)
+            if row:
+                row.enabled = enabled
+                row.video_enabled = video_enabled
+                row.live_enabled = live_enabled
+                row.private_enabled = private_enabled
+                row.name = name
+            else:
+                session.add(
+                    LinkParserUserPolicy(
+                        user_id=uid,
+                        name=name,
+                        enabled=enabled,
+                        video_enabled=video_enabled,
+                        live_enabled=live_enabled,
+                        private_enabled=private_enabled,
+                    )
+                )
+
+    async def delete_link_parser_user_policy(self, user_id: str) -> None:
+        uid = str(user_id).strip()
+        session = get_session()
+        async with session.begin():
+            row = await session.get(LinkParserUserPolicy, uid)
+            if row:
+                await session.delete(row)
+
     def settings_for_api(self) -> dict:
         """Settings dict for API (cookie masked, never plaintext)."""
         from shared.security.crypto import mask_secret
@@ -266,6 +388,10 @@ class ConfigService:
             "event_retention_days": snap.event_retention_days,
             "status_check_allowed_qq": snap.status_check_allowed_qq,
             "nonebot_superusers": snap.nonebot_superusers,
+            "bilibili_link_parser_enabled": snap.bilibili_link_parser_enabled,
+            "bilibili_link_parser_private_enabled": snap.bilibili_link_parser_private_enabled,
+            "bilibili_link_parser_video_enabled": snap.bilibili_link_parser_video_enabled,
+            "bilibili_link_parser_live_enabled": snap.bilibili_link_parser_live_enabled,
         }
 
     @staticmethod

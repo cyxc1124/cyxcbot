@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from admin.api.v1 import about, audit, auth, bilibili, connections, groups, monitors, settings, setup, targets
+from admin.api.v1 import about, audit, auth, bilibili, connections, groups, link_parser, monitors, settings, setup, targets
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -15,4 +15,5 @@ api_router.include_router(targets.router)
 api_router.include_router(monitors.router)
 api_router.include_router(connections.router)
 api_router.include_router(groups.router)
+api_router.include_router(link_parser.router)
 api_router.include_router(audit.router)

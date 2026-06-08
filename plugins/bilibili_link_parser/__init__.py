@@ -13,6 +13,9 @@ from nonebot.plugin import PluginMetadata
 from utils.bilibili_api import api_manager as live_api_manager
 from utils.bilibili_api import extract_bilibili_refs, video_api_manager
 
+from shared.config.link_parser_policy import LinkParserScopePolicy, resolve_link_parser_policy
+from shared.config.service import get_config_service
+
 from .config import Config, get_config, reload_config
 from .message_text import collect_message_text
 from .sender import build_live_link_message, build_video_link_message
@@ -30,7 +33,11 @@ group_link_parser = on_message(priority=4, block=False)
 private_link_parser = on_message(priority=4, block=False)
 
 
-async def _resolve_reply(config: Config, message_text: str):
+async def _resolve_reply(
+    config: Config,
+    message_text: str,
+    scope: LinkParserScopePolicy,
+):
     cookie = config.bilibili_cookie or None
     if not cookie:
         logger.warning("B 站链接解析：未配置 Cookie，直播接口可能返回 -352 或解析失败")
@@ -46,10 +53,14 @@ async def _resolve_reply(config: Config, message_text: str):
     for ref in refs:
         try:
             if ref.kind == "video":
+                if not scope.video_enabled:
+                    continue
                 video = await video_api_manager.get_video_detail(bvid=ref.bvid, aid=ref.aid)
                 if video:
                     return build_video_link_message(video, config.message_templates)
             elif ref.room_id:
+                if not scope.live_enabled:
+                    continue
                 room_info, user_info = await live_api_manager.get_room_and_user_info(ref.room_id)
                 if room_info:
                     return build_live_link_message(room_info, user_info, config.message_templates)
@@ -62,15 +73,26 @@ async def _resolve_reply(config: Config, message_text: str):
 
 async def _handle_link_message(bot: Bot, event: GroupMessageEvent | PrivateMessageEvent) -> None:
     config = get_config()
-    if not config.enabled:
-        return
+    snap = get_config_service().get_snapshot()
 
     if isinstance(event, PrivateMessageEvent):
-        if not config.enable_private:
-            return
-    elif isinstance(event, GroupMessageEvent):
+        scope = resolve_link_parser_policy(
+            snap,
+            user_id=str(event.user_id),
+            is_private=True,
+        )
+    else:
         if str(event.user_id) == str(event.self_id):
             return
+        scope = resolve_link_parser_policy(
+            snap,
+            group_id=str(event.group_id),
+            user_id=str(event.user_id),
+            is_private=False,
+        )
+
+    if not scope.enabled or (not scope.video_enabled and not scope.live_enabled):
+        return
 
     message_text = collect_message_text(event)
     if not message_text:
@@ -78,7 +100,7 @@ async def _handle_link_message(bot: Bot, event: GroupMessageEvent | PrivateMessa
 
     logger.info(f"B 站链接解析：收到消息 user={event.user_id} text={message_text[:120]!r}")
 
-    reply = await _resolve_reply(config, message_text)
+    reply = await _resolve_reply(config, message_text, scope)
     if reply is None:
         return
 

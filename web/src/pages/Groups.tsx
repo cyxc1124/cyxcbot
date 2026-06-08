@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getMessagePolicy, updateMessagePolicy } from '../api/client'
 import type { Group } from '../api/types'
+import { LinkParserGroupPolicyTab, LinkParserUserPolicyTab } from '../components/LinkParserPolicyTabs'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
 import { ToggleSwitch } from '../components/ToggleSwitch'
 import { useToast } from '../contexts/ToastContext'
 import { formatApiError } from '../utils/apiError'
+
+type GroupsTab = 'message' | 'link-groups' | 'link-users'
 
 function isGroupEnabled(groupId: string, restrict: boolean, enabledIds: string[]): boolean {
   if (!restrict) return true
@@ -46,14 +49,16 @@ function computePolicyAfterToggle(
 
 export function GroupsPage() {
   const { showToast } = useToast()
+  const [tab, setTab] = useState<GroupsTab>('message')
   const [groups, setGroups] = useState<Group[]>([])
-  const [restrict, setRestrict] = useState(false)
+  const [restrict, setRestrict] = useState(true)
   const [enabledIds, setEnabledIds] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
+    if (tab !== 'message') return
     setLoading(true)
     setError('')
     try {
@@ -66,11 +71,17 @@ export function GroupsPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [tab])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  const tabLabels: Record<GroupsTab, string> = {
+    message: '群消息',
+    'link-groups': '群链接解析',
+    'link-users': '用户链接解析',
+  }
 
   const handleToggle = async (groupId: string, enabled: boolean) => {
     const next = computePolicyAfterToggle(groupId, enabled, groups, restrict, enabledIds)
@@ -121,7 +132,7 @@ export function GroupsPage() {
     }
   }
 
-  if (loading && groups.length === 0 && !error) return <PageLoading />
+  if (tab === 'message' && loading && groups.length === 0 && !error) return <PageLoading />
 
   const allEnabled = !restrict
   const noneEnabled = restrict && enabledIds.length === 0
@@ -131,12 +142,12 @@ export function GroupsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">群组管理</h2>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">群组与用户</h2>
           <p className="mt-1 text-sm text-slate-500">
-            控制机器人响应哪些 QQ 群的群消息，私聊不受影响
+            管理群消息响应范围，以及链接解析的群级 / 用户级开关
           </p>
         </div>
-        {groups.length > 0 && (
+        {tab === 'message' && groups.length > 0 && (
           <div className="flex gap-2">
             <button
               type="button"
@@ -158,6 +169,25 @@ export function GroupsPage() {
         )}
       </div>
 
+      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-1 dark:border-slate-700">
+        {(Object.keys(tabLabels) as GroupsTab[]).map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={`rounded-t-lg px-4 py-2 text-sm font-medium transition-colors ${
+              tab === key
+                ? 'bg-white text-brand-700 shadow-sm dark:bg-slate-900 dark:text-brand-300'
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            {tabLabels[key]}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'message' && (
+      <>
       {error && <LoadErrorBanner message={error} onRetry={load} />}
 
       <div className="card">
@@ -218,6 +248,20 @@ export function GroupsPage() {
           </div>
         )}
       </div>
+      </>
+      )}
+
+      {tab === 'link-groups' && (
+        <div className="card">
+          <LinkParserGroupPolicyTab />
+        </div>
+      )}
+
+      {tab === 'link-users' && (
+        <div className="card">
+          <LinkParserUserPolicyTab />
+        </div>
+      )}
     </div>
   )
 }

@@ -174,3 +174,33 @@ class SystemEvent(Model):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False, index=True
     )
+
+
+class LinkParserGroupPolicy(Model):
+    """Per-group override for Bilibili link parser."""
+
+    __tablename__ = "shared_db_linkparsergrouppolicy"
+
+    group_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    video_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    live_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+
+class LinkParserUserPolicy(Model):
+    """Per-user override for Bilibili link parser."""
+
+    __tablename__ = "shared_db_linkparseruserpolicy"
+
+    user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    video_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    live_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    private_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )

@@ -37,6 +37,10 @@ class SettingsResponse(BaseModel):
     event_retention_days: int
     status_check_allowed_qq: list[str] = Field(default_factory=list)
     nonebot_superusers: list[str] = Field(default_factory=list)
+    bilibili_link_parser_enabled: bool = False
+    bilibili_link_parser_private_enabled: bool = False
+    bilibili_link_parser_video_enabled: bool = False
+    bilibili_link_parser_live_enabled: bool = False
 
 
 class CookieTestResultResponse(BaseModel):
@@ -65,3 +69,7 @@ class SettingsUpdateRequest(BaseModel):
     event_retention_days: Optional[int] = Field(default=None, ge=0, le=3650)
     status_check_allowed_qq: Optional[list[str]] = None
     nonebot_superusers: Optional[list[str]] = None
+    bilibili_link_parser_enabled: Optional[bool] = None
+    bilibili_link_parser_private_enabled: Optional[bool] = None
+    bilibili_link_parser_video_enabled: Optional[bool] = None
+    bilibili_link_parser_live_enabled: Optional[bool] = None

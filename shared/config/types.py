@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List
 
+from shared.config.link_parser_policy import (
+    LinkParserGroupPolicyRecord,
+    LinkParserUserPolicyRecord,
+)
 from shared.config.message_templates import (
     DynamicMessageTemplates,
     LinkMessageTemplates,
@@ -37,9 +41,17 @@ class AppConfigSnapshot:
     bilibili_cookie_set: bool = False
     audit_log_retention_days: int = 90
     event_retention_days: int = 90
-    message_group_restrict: bool = False
+    message_group_restrict: bool = True
     message_enabled_group_ids: List[str] = field(default_factory=list)
     status_check_allowed_qq: List[str] = field(default_factory=list)
     nonebot_superusers: List[str] = field(default_factory=list)
-    bilibili_link_parser_enabled: bool = True
-    bilibili_link_parser_private_enabled: bool = True
+    bilibili_link_parser_enabled: bool = False
+    bilibili_link_parser_private_enabled: bool = False
+    bilibili_link_parser_video_enabled: bool = False
+    bilibili_link_parser_live_enabled: bool = False
+    link_parser_group_policies: Dict[str, LinkParserGroupPolicyRecord] = field(
+        default_factory=dict
+    )
+    link_parser_user_policies: Dict[str, LinkParserUserPolicyRecord] = field(
+        default_factory=dict
+    )

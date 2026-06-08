@@ -108,6 +108,67 @@ export function SettingsMonitorPage() {
         </div>
       </div>
 
+      <div className="card space-y-4">
+        <div>
+          <h3 className="font-semibold text-slate-900 dark:text-white">链接解析</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            群聊/私聊中自动识别 B 站视频、直播间与 b23 短链并回复卡片。文案可在「消息模板」中配置。
+          </p>
+        </div>
+        <div className="divide-y divide-slate-100 border-t border-slate-100 pt-1 dark:divide-slate-800 dark:border-slate-800">
+          <SettingToggleRow
+            label="启用链接解析"
+            checked={settings?.bilibili_link_parser_enabled ?? false}
+            disabled={formDisabled || saving}
+            onChange={(checked) =>
+              setSettings((s) => (s ? { ...s, bilibili_link_parser_enabled: checked } : s))
+            }
+          />
+          <SettingToggleRow
+            label="启用视频链接解析"
+            checked={settings?.bilibili_link_parser_video_enabled ?? false}
+            disabled={
+              formDisabled ||
+              saving ||
+              !(settings?.bilibili_link_parser_enabled ?? false)
+            }
+            onChange={(checked) =>
+              setSettings((s) =>
+                s ? { ...s, bilibili_link_parser_video_enabled: checked } : s,
+              )
+            }
+          />
+          <SettingToggleRow
+            label="启用直播链接解析"
+            checked={settings?.bilibili_link_parser_live_enabled ?? false}
+            disabled={
+              formDisabled ||
+              saving ||
+              !(settings?.bilibili_link_parser_enabled ?? false)
+            }
+            onChange={(checked) =>
+              setSettings((s) =>
+                s ? { ...s, bilibili_link_parser_live_enabled: checked } : s,
+              )
+            }
+          />
+          <SettingToggleRow
+            label="私聊中响应"
+            checked={settings?.bilibili_link_parser_private_enabled ?? false}
+            disabled={
+              formDisabled ||
+              saving ||
+              !(settings?.bilibili_link_parser_enabled ?? false)
+            }
+            onChange={(checked) =>
+              setSettings((s) =>
+                s ? { ...s, bilibili_link_parser_private_enabled: checked } : s,
+              )
+            }
+          />
+        </div>
+      </div>
+
       <button type="submit" className="btn-primary" disabled={saving || formDisabled}>
         {saving ? '保存中…' : '保存设置'}
       </button>

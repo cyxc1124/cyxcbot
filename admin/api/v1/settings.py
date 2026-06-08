@@ -48,6 +48,20 @@ async def update_settings(request: Request, body: SettingsUpdateRequest, user: C
         updates["live_monitor_include_info"] = str(body.live_monitor_include_info).lower()
     if body.live_monitor_use_websocket is not None:
         updates["live_monitor_use_websocket"] = str(body.live_monitor_use_websocket).lower()
+    if body.bilibili_link_parser_enabled is not None:
+        updates["bilibili_link_parser_enabled"] = str(body.bilibili_link_parser_enabled).lower()
+    if body.bilibili_link_parser_private_enabled is not None:
+        updates["bilibili_link_parser_private_enabled"] = str(
+            body.bilibili_link_parser_private_enabled
+        ).lower()
+    if body.bilibili_link_parser_video_enabled is not None:
+        updates["bilibili_link_parser_video_enabled"] = str(
+            body.bilibili_link_parser_video_enabled
+        ).lower()
+    if body.bilibili_link_parser_live_enabled is not None:
+        updates["bilibili_link_parser_live_enabled"] = str(
+            body.bilibili_link_parser_live_enabled
+        ).lower()
     if body.audit_log_retention_days is not None:
         updates["audit_log_retention_days"] = str(body.audit_log_retention_days)
     if body.event_retention_days is not None:
