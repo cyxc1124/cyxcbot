@@ -9,7 +9,7 @@ const navItems = [
   { to: '/live', label: '直播订阅' },
   { to: '/templates', label: '消息模板' },
   { to: '/groups', label: '群组' },
-  { to: '/private', label: '私聊' },
+  { to: '/private', label: '好友' },
   { to: '/settings', label: '系统设置' },
   { to: '/audit', label: '审计日志' },
   { to: '/events', label: '系统事件' },

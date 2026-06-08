@@ -1,7 +1,7 @@
 """
 B 站链接自动解析插件
 
-自动识别群聊/私聊中的视频链接、直播间链接与 b23.tv 短链，
+自动识别群聊/好友中的视频链接、直播间链接与 b23.tv 短链，
 并回复封面、标题、UP 主/主播、时间信息与链接。
 """
 
@@ -22,7 +22,7 @@ from .sender import build_live_link_message, build_video_link_message
 
 __plugin_meta__ = PluginMetadata(
     name="B 站链接解析",
-    description="自动解析群聊/私聊中的 B 站视频与直播链接",
+    description="自动解析群聊/好友中的 B 站视频与直播链接",
     usage="发送含 BV 号、直播间链接或 b23.tv 短链的消息即可触发",
     type="application",
     config=Config,

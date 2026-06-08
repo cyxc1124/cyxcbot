@@ -59,7 +59,7 @@ def _ensure_private_message_enabled(user_id: str, snap) -> None:
     if not is_private_message_enabled_from_snapshot(user_id, snap):
         raise HTTPException(
             status_code=400,
-            detail="该用户未启用私聊消息，无法配置链接解析",
+            detail="该用户未启用好友消息，无法配置链接解析",
         )
 
 

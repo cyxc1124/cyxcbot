@@ -123,7 +123,7 @@ class DynamicSender:
             raise
 
     async def send_to_users(self, message: Message, user_ids: List[str]):
-        """发送消息到多个好友私聊"""
+        """发送消息到多个好友"""
         for user_id in user_ids:
             try:
                 await self._send_to_user(user_id, message)

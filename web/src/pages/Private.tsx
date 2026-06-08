@@ -78,8 +78,8 @@ export function PrivatePage() {
   }, [load])
 
   const tabLabels: Record<PrivateTab, string> = {
-    message: '私聊消息',
-    'link-users': '私聊链接解析',
+    message: '好友消息',
+    'link-users': '好友链接解析',
   }
 
   const handleToggle = async (userId: string, enabled: boolean) => {
@@ -121,7 +121,7 @@ export function PrivatePage() {
       setUsers(updated.users)
       setRestrict(updated.restrict)
       setEnabledIds(updated.enabled_user_ids)
-      showToast('success', enabled ? '已启用全部好友私聊' : '已关闭全部好友私聊')
+      showToast('success', enabled ? '已启用全部好友' : '已关闭全部好友')
     } catch (err) {
       setRestrict(prevRestrict)
       setEnabledIds(prevEnabledIds)
@@ -141,9 +141,9 @@ export function PrivatePage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">私聊</h2>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">好友</h2>
           <p className="mt-1 text-sm text-slate-500">
-            管理私聊消息响应范围，以及链接解析的用户级开关
+            管理好友消息响应范围，以及链接解析的用户级开关
           </p>
         </div>
         {tab === 'message' && users.length > 0 && (
@@ -203,7 +203,7 @@ export function PrivatePage() {
                     <tr className="border-b border-slate-200 text-slate-500 dark:border-slate-700">
                       <th className="pb-3 pr-4 font-medium">昵称</th>
                       <th className="pb-3 pr-4 font-medium">QQ 号</th>
-                      <th className="pb-3 font-medium text-right">处理私聊消息</th>
+                      <th className="pb-3 font-medium text-right">处理好友消息</th>
                     </tr>
                   </thead>
                   <tbody>

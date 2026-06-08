@@ -112,7 +112,7 @@ export function SettingsMonitorPage() {
         <div>
           <h3 className="font-semibold text-slate-900 dark:text-white">链接解析</h3>
           <p className="mt-1 text-sm text-slate-500">
-            群聊/私聊中自动识别 B 站视频、直播间与 b23 短链并回复卡片。文案可在「消息模板」中配置。
+            群聊/好友中自动识别 B 站视频、直播间与 b23 短链并回复卡片。文案可在「消息模板」中配置。
           </p>
         </div>
         <div className="divide-y divide-slate-100 border-t border-slate-100 pt-1 dark:divide-slate-800 dark:border-slate-800">

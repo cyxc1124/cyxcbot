@@ -320,7 +320,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
         </div>
 
         <div>
-          <label className="label">订阅好友（私聊推送）</label>
+          <label className="label">推送好友</label>
           <FriendSelector
             friends={friends}
             selected={form.user_ids}
@@ -348,7 +348,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
           </div>
         </div>
         <p className="text-xs text-slate-500">
-          @全体成员仅对群组生效；私聊推送不支持 @全体，需机器人为群管理员时群组 @ 才生效
+          @全体成员仅对群组生效；好友推送不支持 @全体，需机器人为群管理员时群组 @ 才生效
         </p>
 
         <div className="flex gap-2">
@@ -526,7 +526,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-500">
-          选择{targetLabel}查看推送目标，可同时订阅多个 QQ 群与好友私聊
+          选择{targetLabel}查看推送目标，可同时订阅多个 QQ 群与好友
         </p>
         <button type="button" className="btn-primary" onClick={openCreate}>
           添加订阅

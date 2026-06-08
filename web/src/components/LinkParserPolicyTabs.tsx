@@ -54,7 +54,7 @@ function GlobalPolicyHint({ policy, scope }: { policy: LinkParserGlobalPolicy; s
       )}
       {scope === 'user' && (
         <p className="text-sm text-slate-500">
-          仅显示已启用「私聊消息」的好友；关闭私聊消息的用户不会响应任何指令，也无法配置链接解析。
+          仅显示已启用「好友消息」的好友；关闭好友消息的用户不会响应任何指令，也无法配置链接解析。
         </p>
       )}
     </div>
@@ -360,7 +360,7 @@ export function LinkParserUserPolicyTab() {
 
       {users.length === 0 ? (
         <p className="text-sm text-slate-500">
-          暂无已启用私聊消息的好友。请先在「私聊消息」Tab 中启用对应好友，或确保机器人已连接 OneBot。
+          暂无已启用好友消息的好友。请先在「好友消息」Tab 中启用对应好友，或确保机器人已连接 OneBot。
         </p>
       ) : (
         <div className="overflow-x-auto">
