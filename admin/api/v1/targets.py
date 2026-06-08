@@ -73,7 +73,7 @@ async def list_dynamic_targets(_: CurrentUser):
     async with session.begin():
         stmt = select(DynamicTarget).options(selectinload(DynamicTarget.groups))
         targets = (await session.scalars(stmt)).all()
-    return [_dynamic_to_response(t) for t in targets]
+        return [_dynamic_to_response(t) for t in targets]
 
 
 @router.post("/dynamic-targets", response_model=DynamicTargetResponse, status_code=status.HTTP_201_CREATED)
@@ -191,7 +191,7 @@ async def list_live_targets(_: CurrentUser):
     async with session.begin():
         stmt = select(LiveTarget).options(selectinload(LiveTarget.groups))
         targets = (await session.scalars(stmt)).all()
-    return [_live_to_response(t) for t in targets]
+        return [_live_to_response(t) for t in targets]
 
 
 @router.post("/live-targets", response_model=LiveTargetResponse, status_code=status.HTTP_201_CREATED)
