@@ -47,6 +47,14 @@ status_cmd = on_command(
 @status_cmd.handle()
 async def handle_status_command(bot: Bot, event: GroupMessageEvent | PrivateMessageEvent):
     """处理状态查询命令"""
+    if isinstance(event, GroupMessageEvent):
+        group_id = str(event.group_id)
+        from shared.config.service import get_config_service
+        from shared.group_policy import is_group_message_enabled_from_snapshot
+
+        if not is_group_message_enabled_from_snapshot(group_id, get_config_service().get_snapshot()):
+            return
+
     # 检查权限
     if not await check_status_permission(bot, event):
         # 无权限时静默退出，不回复任何消息

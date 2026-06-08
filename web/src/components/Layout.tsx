@@ -6,6 +6,7 @@ const navItems = [
   { to: '/', label: '仪表盘' },
   { to: '/dynamic', label: '动态监控' },
   { to: '/live', label: '直播监控' },
+  { to: '/groups', label: '群组管理' },
   { to: '/settings', label: '系统设置' },
   { to: '/audit', label: '审计日志' },
   { to: '/events', label: '系统事件' },

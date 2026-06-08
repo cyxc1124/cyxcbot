@@ -7,6 +7,7 @@ import { AuditPage } from './pages/Audit'
 import { DashboardPage } from './pages/Dashboard'
 import { DynamicMonitorPage } from './pages/DynamicMonitor'
 import { EventsPage } from './pages/Events'
+import { GroupsPage } from './pages/Groups'
 import { LiveMonitorPage } from './pages/LiveMonitor'
 import { LoginPage } from './pages/Login'
 import { SettingsPage } from './pages/Settings'
@@ -32,6 +33,7 @@ export default function App() {
                 <Route index element={<DashboardPage />} />
                 <Route path="dynamic" element={<DynamicMonitorPage />} />
                 <Route path="live" element={<LiveMonitorPage />} />
+                <Route path="groups" element={<GroupsPage />} />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="audit" element={<AuditPage />} />
                 <Route path="events" element={<EventsPage />} />

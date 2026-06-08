@@ -111,6 +111,13 @@ export type LiveTargetUpdate = Partial<Omit<LiveTarget, 'id' | 'created_at'>>
 export interface Group {
   group_id: string
   group_name: string | null
+  member_count?: number | null
+}
+
+export interface GroupMessagePolicy {
+  restrict: boolean
+  enabled_group_ids: string[]
+  groups: Group[]
 }
 
 // Monitors

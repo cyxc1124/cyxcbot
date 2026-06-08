@@ -5,9 +5,10 @@ interface GroupSelectorProps {
   selected: string[]
   onChange: (ids: string[]) => void
   disabled?: boolean
+  helperText?: string
 }
 
-export function GroupSelector({ groups, selected, onChange, disabled }: GroupSelectorProps) {
+export function GroupSelector({ groups, selected, onChange, disabled, helperText }: GroupSelectorProps) {
   const list = Array.isArray(groups) ? groups : []
 
   const toggle = (groupId: string) => {
@@ -29,7 +30,7 @@ export function GroupSelector({ groups, selected, onChange, disabled }: GroupSel
   return (
     <div className="space-y-2">
       <p className="text-xs text-slate-500">
-        可多选，消息将推送到所有已选群组
+        {helperText ?? '可多选，消息将推送到所有已选群组'}
         {selected.length > 0 && (
           <span className="ml-1 font-medium text-brand-600 dark:text-brand-400">
             （已选 {selected.length} 个）

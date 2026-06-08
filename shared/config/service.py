@@ -30,6 +30,8 @@ SETTING_KEYS = {
     "bilibili_cookie_encrypted": ("", str),
     "audit_log_retention_days": ("90", int),
     "event_retention_days": ("90", int),
+    "message_group_restrict": ("false", bool),
+    "message_enabled_group_ids": ("[]", "json_list"),
 }
 
 
@@ -90,6 +92,8 @@ class ConfigService:
             bilibili_cookie_set=bool(cookie_encrypted),
             audit_log_retention_days=settings.get("audit_log_retention_days", 90),
             event_retention_days=settings.get("event_retention_days", 90),
+            message_group_restrict=settings.get("message_group_restrict", False),
+            message_enabled_group_ids=settings.get("message_enabled_group_ids", []),
         )
         logger.info(
             f"Config loaded from DB: {len(dynamic_mapping)} dynamic targets, "
@@ -143,6 +147,15 @@ class ConfigService:
                     result[key] = max(30, min(3600, parsed))
             elif typ is bool:
                 result[key] = _parse_bool(value)
+            elif typ == "json_list":
+                try:
+                    parsed = json.loads(value or "[]")
+                    if isinstance(parsed, list):
+                        result[key] = [str(item) for item in parsed if str(item)]
+                    else:
+                        result[key] = []
+                except json.JSONDecodeError:
+                    result[key] = []
             else:
                 result[key] = value
         return result

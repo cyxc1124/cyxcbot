@@ -15,3 +15,14 @@ class GroupInfo(BaseModel):
 
 class GroupListResponse(BaseModel):
     groups: List[GroupInfo]
+
+
+class GroupMessagePolicyResponse(BaseModel):
+    restrict: bool
+    enabled_group_ids: List[str]
+    groups: List[GroupInfo]
+
+
+class GroupMessagePolicyUpdateRequest(BaseModel):
+    restrict: bool
+    enabled_group_ids: List[str] = []

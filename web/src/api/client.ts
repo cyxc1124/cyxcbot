@@ -11,6 +11,7 @@ import type {
   DynamicTargetUpdate,
   EventQuery,
   Group,
+  GroupMessagePolicy,
   LiveMonitorStatus,
   LiveTarget,
   LiveTargetCreate,
@@ -250,6 +251,17 @@ export const getGroups = async (): Promise<Group[]> => {
   const data = await request<{ groups: Group[] }>('/groups')
   return data.groups ?? []
 }
+
+export const getMessagePolicy = () => request<GroupMessagePolicy>('/groups/message-policy')
+
+export const updateMessagePolicy = (payload: {
+  restrict: boolean
+  enabled_group_ids: string[]
+}) =>
+  request<GroupMessagePolicy>('/groups/message-policy', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
 
 // Monitors
 export const getMonitorStatus = () => request<MonitorStatus>('/monitors/status')

@@ -21,3 +21,5 @@ class AppConfigSnapshot:
     bilibili_cookie_set: bool = False
     audit_log_retention_days: int = 90
     event_retention_days: int = 90
+    message_group_restrict: bool = False
+    message_enabled_group_ids: List[str] = field(default_factory=list)
