@@ -18,6 +18,12 @@ from admin.schemas.targets import (
     LiveTargetUpdate,
 )
 from admin.services.monitor_bridge import reload_all_monitors
+from admin.services.target_metadata import (
+    resolve_dynamic_target_name,
+    resolve_live_streamer_name,
+    resolve_live_target_name,
+    resolve_up_name,
+)
 from shared.audit.service import write_audit, write_system_event
 from shared.config.service import get_config_service
 from shared.db.enums import AuditAction, SystemEventType
@@ -53,16 +59,49 @@ def _live_to_response(target: LiveTarget) -> LiveTargetResponse:
     )
 
 
-async def _sync_groups_dynamic(session, target: DynamicTarget, group_ids: list[str]) -> None:
-    target.groups.clear()
+def _normalize_group_ids(group_ids: list[str]) -> list[str]:
+    seen: set[str] = set()
+    normalized: list[str] = []
     for gid in group_ids:
-        target.groups.append(DynamicTargetGroup(group_id=str(gid)))
+        value = str(gid).strip()
+        if value and value not in seen:
+            seen.add(value)
+            normalized.append(value)
+    return normalized
+
+
+async def _sync_groups_dynamic(session, target: DynamicTarget, group_ids: list[str]) -> None:
+    normalized = _normalize_group_ids(group_ids)
+    for group in list(target.groups):
+        await session.delete(group)
+    await session.flush()
+    target.groups = [DynamicTargetGroup(group_id=gid) for gid in normalized]
 
 
 async def _sync_groups_live(session, target: LiveTarget, group_ids: list[str]) -> None:
-    target.groups.clear()
-    for gid in group_ids:
-        target.groups.append(LiveTargetGroup(group_id=str(gid)))
+    normalized = _normalize_group_ids(group_ids)
+    for group in list(target.groups):
+        await session.delete(group)
+    await session.flush()
+    target.groups = [LiveTargetGroup(group_id=gid) for gid in normalized]
+
+
+async def _refresh_missing_dynamic_names(targets: list[DynamicTarget]) -> None:
+    for target in targets:
+        if target.name:
+            continue
+        name = await resolve_up_name(target.uid)
+        if name:
+            target.name = name
+
+
+async def _refresh_missing_live_names(targets: list[LiveTarget]) -> None:
+    for target in targets:
+        if target.name:
+            continue
+        name = await resolve_live_streamer_name(target.room_id)
+        if name:
+            target.name = name
 
 
 # --- Dynamic targets ---
@@ -73,6 +112,7 @@ async def list_dynamic_targets(_: CurrentUser):
     async with session.begin():
         stmt = select(DynamicTarget).options(selectinload(DynamicTarget.groups))
         targets = (await session.scalars(stmt)).all()
+        await _refresh_missing_dynamic_names(targets)
         return [_dynamic_to_response(t) for t in targets]
 
 
@@ -84,7 +124,8 @@ async def create_dynamic_target(request: Request, body: DynamicTargetCreate, use
         if existing:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="UID already exists")
 
-        target = DynamicTarget(uid=body.uid, name=body.name, enabled=body.enabled)
+        resolved_name = await resolve_dynamic_target_name(body.uid, body.name)
+        target = DynamicTarget(uid=body.uid, name=resolved_name, enabled=body.enabled)
         await _sync_groups_dynamic(session, target, body.group_ids)
         session.add(target)
         await session.flush()
@@ -136,11 +177,15 @@ async def update_dynamic_target(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
 
         if body.name is not None:
-            target.name = body.name
+            target.name = body.name.strip() or target.name
         if body.enabled is not None:
             target.enabled = body.enabled
         if body.group_ids is not None:
             await _sync_groups_dynamic(session, target, body.group_ids)
+        if not target.name:
+            resolved = await resolve_up_name(target.uid)
+            if resolved:
+                target.name = resolved
         await session.flush()
         await session.refresh(target, ["groups"])
         response = _dynamic_to_response(target)
@@ -191,6 +236,7 @@ async def list_live_targets(_: CurrentUser):
     async with session.begin():
         stmt = select(LiveTarget).options(selectinload(LiveTarget.groups))
         targets = (await session.scalars(stmt)).all()
+        await _refresh_missing_live_names(targets)
         return [_live_to_response(t) for t in targets]
 
 
@@ -202,7 +248,8 @@ async def create_live_target(request: Request, body: LiveTargetCreate, user: Cur
         if existing:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Room already exists")
 
-        target = LiveTarget(room_id=body.room_id, name=body.name, enabled=body.enabled)
+        resolved_name = await resolve_live_target_name(body.room_id, body.name)
+        target = LiveTarget(room_id=body.room_id, name=resolved_name, enabled=body.enabled)
         await _sync_groups_live(session, target, body.group_ids)
         session.add(target)
         await session.flush()
@@ -254,11 +301,15 @@ async def update_live_target(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
 
         if body.name is not None:
-            target.name = body.name
+            target.name = body.name.strip() or target.name
         if body.enabled is not None:
             target.enabled = body.enabled
         if body.group_ids is not None:
             await _sync_groups_live(session, target, body.group_ids)
+        if not target.name:
+            resolved = await resolve_live_streamer_name(target.room_id)
+            if resolved:
+                target.name = resolved
         await session.flush()
         await session.refresh(target, ["groups"])
         response = _live_to_response(target)
