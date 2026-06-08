@@ -40,7 +40,7 @@ class DynamicMonitor:
         """初始化资源"""
         self.session = aiohttp.ClientSession()
         self.fetcher = DynamicFetcher(self.session, self.config.bilibili_cookie)
-        self.sender = DynamicSender(templates=config.message_templates)
+        self.sender = DynamicSender(templates=self.config.message_templates)
 
         # 初始化置顶动态ID记录
         for uid in self.config.dynamic_monitor_mapping.keys():

@@ -175,6 +175,52 @@ class VideoApi:
             return videos[0]
         return None
 
+    async def get_video_detail(
+        self,
+        *,
+        bvid: Optional[str] = None,
+        aid: Optional[int] = None,
+    ) -> Optional[VideoInfo]:
+        """获取单个视频详情（BV 或 AV）。"""
+        if not bvid and not aid:
+            return None
+
+        api_url = "https://api.bilibili.com/x/web-interface/view"
+        params: dict[str, str | int] = {}
+        if bvid:
+            params["bvid"] = bvid
+        else:
+            params["aid"] = aid
+
+        headers = {
+            **BASE_HEADERS,
+            "Referer": "https://www.bilibili.com/",
+        }
+        if self.cookie:
+            headers["Cookie"] = self.cookie
+
+        try:
+            async with self.session.get(
+                api_url,
+                params=params,
+                headers=headers,
+                timeout=15,
+            ) as response:
+                if response.status != 200:
+                    logger.warning(f"获取视频详情失败: HTTP {response.status}")
+                    return None
+
+                payload = await response.json()
+                if payload.get("code") != 0:
+                    logger.warning(f"获取视频详情失败: {payload.get('message', '未知错误')}")
+                    return None
+
+                data = payload.get("data") or {}
+                return VideoInfo.from_api_data(data)
+        except Exception as exc:
+            logger.error(f"获取视频详情异常: {exc}")
+            return None
+
 
 class VideoApiManager:
     """视频API管理器（单例模式）"""
@@ -192,7 +238,10 @@ class VideoApiManager:
         """初始化API管理器"""
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
-        self._api = VideoApi(self._session, cookie)
+        if self._api is None:
+            self._api = VideoApi(self._session, cookie)
+        else:
+            self._api.cookie = cookie
         logger.info("视频API管理器已初始化")
     
     async def close(self):
@@ -217,6 +266,15 @@ class VideoApiManager:
     async def get_latest_video(self, uid: int) -> Optional[VideoInfo]:
         """获取UP主最新视频"""
         return await self.api.get_latest_video(uid)
+
+    async def get_video_detail(
+        self,
+        *,
+        bvid: Optional[str] = None,
+        aid: Optional[int] = None,
+    ) -> Optional[VideoInfo]:
+        """获取单个视频详情"""
+        return await self.api.get_video_detail(bvid=bvid, aid=aid)
 
 
 # 全局API管理器实例

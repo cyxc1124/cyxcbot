@@ -47,7 +47,7 @@ async def _():
         logger.error(f"应用关闭时动态监控停止失败: {e}")
 
 # 创建消息处理器 - 支持@机器人和命令前缀
-dynamic_command = on_message(priority=5)
+dynamic_command = on_message(priority=5, block=False)
 
 @dynamic_command.handle()
 async def handle_dynamic_commands(event: GroupMessageEvent):

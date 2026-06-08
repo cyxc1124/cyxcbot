@@ -40,6 +40,13 @@ SETTING_KEYS = {
     "message_enabled_group_ids": ("[]", "json_list"),
     "status_check_allowed_qq": ("[]", "json_list"),
     "nonebot_superusers": ("[]", "json_list"),
+    "bilibili_link_parser_enabled": ("true", bool),
+    "bilibili_link_parser_private_enabled": ("true", bool),
+}
+
+_LEGACY_SETTING_KEYS = {
+    "bilibili_link_parser_enabled": "bv_link_parser_enabled",
+    "bilibili_link_parser_private_enabled": "bv_link_parser_private_enabled",
 }
 
 for key, default in MESSAGE_TEMPLATE_KEYS.items():
@@ -113,6 +120,10 @@ class ConfigService:
             message_enabled_group_ids=settings.get("message_enabled_group_ids", []),
             status_check_allowed_qq=settings.get("status_check_allowed_qq", []),
             nonebot_superusers=settings.get("nonebot_superusers", []),
+            bilibili_link_parser_enabled=settings.get("bilibili_link_parser_enabled", True),
+            bilibili_link_parser_private_enabled=settings.get(
+                "bilibili_link_parser_private_enabled", True
+            ),
         )
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
         logger.info(
@@ -181,6 +192,11 @@ class ConfigService:
                 result[key] = text[:500] if text else default
             else:
                 result[key] = value
+
+        for new_key, old_key in _LEGACY_SETTING_KEYS.items():
+            if old_key in raw and new_key not in raw:
+                result[new_key] = _parse_bool(raw[old_key])
+
         return result
 
     async def _load_dynamic_mapping(self, session) -> dict[str, list[str]]:

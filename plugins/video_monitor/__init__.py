@@ -31,7 +31,7 @@ __plugin_meta__ = {
 video_sender = VideoSender()
 
 # 创建消息处理器
-video_command = on_message(priority=5)
+video_command = on_message(priority=5, block=False)
 
 
 @video_command.handle()

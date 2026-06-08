@@ -67,7 +67,11 @@ class LiveApi:
             data = await self._get_info_by_room(room_id)
             return UserInfo.from_api_data(data)
         except Exception:
-            return None
+            try:
+                page_data = await self._get_room_page_data_via_html(room_id)
+                return UserInfo.from_api_data(page_data)
+            except Exception:
+                return None
     
     async def get_live_status(self, room_id: int) -> Optional[LiveStatus]:
         """
@@ -92,10 +96,15 @@ class LiveApi:
             user_info = UserInfo.from_api_data(data)
             return room_info, user_info
         except Exception:
-            # 尝试单独获取
-            room_info = await self.get_room_info(room_id)
-            user_info = await self.get_user_info(room_id) if room_info else None
-            return room_info, user_info
+            try:
+                page_data = await self._get_room_page_data_via_html(room_id)
+                room_info = RoomInfo.from_api_data(page_data['room_info'])
+                user_info = UserInfo.from_api_data(page_data)
+                return room_info, user_info
+            except Exception:
+                room_info = await self.get_room_info(room_id)
+                user_info = await self.get_user_info(room_id) if room_info else None
+                return room_info, user_info
     
     async def _get_info_by_room(self, room_id: int) -> dict:
         """调用 getInfoByRoom 接口获取房间完整信息"""
@@ -136,29 +145,31 @@ class LiveApi:
                 
                 return data['data']
     
-    async def _get_room_info_via_html(self, room_id: int) -> dict:
-        """通过HTML页面解析获取房间信息（备用方案）"""
+    async def _get_room_page_data_via_html(self, room_id: int) -> dict:
+        """通过 HTML 页面解析获取直播间完整数据（备用方案）。"""
         url = f'https://live.bilibili.com/{room_id}'
         headers = self._get_headers(room_id)
-        
+
         async with self.session.get(url, headers=headers, timeout=15) as response:
             if response.status != 200:
                 raise Exception(f"HTTP {response.status}")
-            
+
             html_data = await response.read()
-        
-        # 尝试从 __NEPTUNE_IS_MY_WAIFU__ 提取数据
+
         match = _INFO_PATTERN.search(html_data)
         if not match:
             raise Exception("无法从HTML页面提取数据")
-        
-        string = match.group(1).decode(encoding='utf8')
-        info = json.loads(string)
-        
+
+        info = json.loads(match.group(1).decode(encoding='utf8'))
         if info.get('roomInfoRes', {}).get('code') != 0:
             raise Exception(f"roomInfoRes 无效: {info.get('roomInfoRes')}")
-        
-        return info['roomInfoRes']['data']['room_info']
+
+        return info['roomInfoRes']['data']
+
+    async def _get_room_info_via_html(self, room_id: int) -> dict:
+        """通过HTML页面解析获取房间信息（备用方案）"""
+        page_data = await self._get_room_page_data_via_html(room_id)
+        return page_data['room_info']
     
     async def _get_live_status_via_html(self, room_id: int) -> int:
         """通过HTML页面正则匹配获取直播状态（最简备用方案）"""
@@ -194,7 +205,10 @@ class LiveApiManager:
         """初始化API管理器"""
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
-        self._api = LiveApi(self._session, cookie)
+        if self._api is None:
+            self._api = LiveApi(self._session, cookie)
+        else:
+            self._api.cookie = cookie
     
     async def close(self):
         """关闭API管理器"""

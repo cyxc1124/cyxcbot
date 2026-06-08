@@ -15,6 +15,7 @@ from .live_api import LiveApi, LiveApiManager, api_manager
 # 视频相关
 from .video_models import VideoInfo
 from .video_api import VideoApi, VideoApiManager, video_api_manager
+from .link_parser import BilibiliRef, extract_bilibili_refs, extract_video_refs
 
 __all__ = [
     # 动态相关
@@ -34,4 +35,7 @@ __all__ = [
     'VideoApi',
     'VideoApiManager',
     'video_api_manager',
+    'BilibiliRef',
+    'extract_bilibili_refs',
+    'extract_video_refs',
 ]
