@@ -56,10 +56,6 @@ class AppConfigSnapshot:
     status_check_show_memory: bool = True
     status_check_allowed_qq: List[str] = field(default_factory=list)
     nonebot_superusers: List[str] = field(default_factory=list)
-    bilibili_link_parser_enabled: bool = False
-    bilibili_link_parser_private_enabled: bool = False
-    bilibili_link_parser_video_enabled: bool = False
-    bilibili_link_parser_live_enabled: bool = False
     link_parser_group_policies: Dict[str, LinkParserGroupPolicyRecord] = field(
         default_factory=dict
     )

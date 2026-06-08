@@ -14,7 +14,6 @@ from nonebot_plugin_orm import get_session
 from shared.config.link_parser_policy import (
     LinkParserGroupPolicyRecord,
     LinkParserUserPolicyRecord,
-    normalize_link_parser_toggles,
 )
 from shared.config.message_templates import (
     MESSAGE_TEMPLATE_KEYS,
@@ -57,15 +56,6 @@ SETTING_KEYS = {
     "status_check_show_memory": ("true", bool),
     "status_check_allowed_qq": ("[]", "json_list"),
     "nonebot_superusers": ("[]", "json_list"),
-    "bilibili_link_parser_enabled": ("false", bool),
-    "bilibili_link_parser_private_enabled": ("false", bool),
-    "bilibili_link_parser_video_enabled": ("false", bool),
-    "bilibili_link_parser_live_enabled": ("false", bool),
-}
-
-_LEGACY_SETTING_KEYS = {
-    "bilibili_link_parser_enabled": "bv_link_parser_enabled",
-    "bilibili_link_parser_private_enabled": "bv_link_parser_private_enabled",
 }
 
 for key, default in MESSAGE_TEMPLATE_KEYS.items():
@@ -155,16 +145,6 @@ class ConfigService:
             status_check_show_memory=settings.get("status_check_show_memory", True),
             status_check_allowed_qq=settings.get("status_check_allowed_qq", []),
             nonebot_superusers=settings.get("nonebot_superusers", []),
-            bilibili_link_parser_enabled=settings.get("bilibili_link_parser_enabled", False),
-            bilibili_link_parser_private_enabled=settings.get(
-                "bilibili_link_parser_private_enabled", False
-            ),
-            bilibili_link_parser_video_enabled=settings.get(
-                "bilibili_link_parser_video_enabled", False
-            ),
-            bilibili_link_parser_live_enabled=settings.get(
-                "bilibili_link_parser_live_enabled", False
-            ),
             link_parser_group_policies=link_parser_group_policies,
             link_parser_user_policies=link_parser_user_policies,
         )
@@ -236,10 +216,6 @@ class ConfigService:
             else:
                 result[key] = value
 
-        for new_key, old_key in _LEGACY_SETTING_KEYS.items():
-            if old_key in raw and new_key not in raw:
-                result[new_key] = _parse_bool(raw[old_key])
-
         return result
 
     async def _load_dynamic_mapping(self, session) -> dict[str, list[str]]:
@@ -307,7 +283,6 @@ class ConfigService:
         return {
             row.group_id: LinkParserGroupPolicyRecord(
                 group_id=row.group_id,
-                enabled=row.enabled,
                 video_enabled=row.video_enabled,
                 live_enabled=row.live_enabled,
             )
@@ -321,10 +296,8 @@ class ConfigService:
         return {
             row.user_id: LinkParserUserPolicyRecord(
                 user_id=row.user_id,
-                enabled=row.enabled,
                 video_enabled=row.video_enabled,
                 live_enabled=row.live_enabled,
-                private_enabled=row.private_enabled,
                 name=row.name,
             )
             for row in rows
@@ -334,7 +307,6 @@ class ConfigService:
         self,
         group_id: str,
         *,
-        enabled: bool,
         video_enabled: bool,
         live_enabled: bool,
     ) -> None:
@@ -343,14 +315,12 @@ class ConfigService:
         async with session.begin():
             row = await session.get(LinkParserGroupPolicy, gid)
             if row:
-                row.enabled = enabled
                 row.video_enabled = video_enabled
                 row.live_enabled = live_enabled
             else:
                 session.add(
                     LinkParserGroupPolicy(
                         group_id=gid,
-                        enabled=enabled,
                         video_enabled=video_enabled,
                         live_enabled=live_enabled,
                     )
@@ -368,10 +338,8 @@ class ConfigService:
         self,
         user_id: str,
         *,
-        enabled: bool,
         video_enabled: bool,
         live_enabled: bool,
-        private_enabled: bool,
         name: str | None = None,
     ) -> None:
         uid = str(user_id).strip()
@@ -379,20 +347,16 @@ class ConfigService:
         async with session.begin():
             row = await session.get(LinkParserUserPolicy, uid)
             if row:
-                row.enabled = enabled
                 row.video_enabled = video_enabled
                 row.live_enabled = live_enabled
-                row.private_enabled = private_enabled
                 row.name = name
             else:
                 session.add(
                     LinkParserUserPolicy(
                         user_id=uid,
                         name=name,
-                        enabled=enabled,
                         video_enabled=video_enabled,
                         live_enabled=live_enabled,
-                        private_enabled=private_enabled,
                     )
                 )
 
@@ -413,11 +377,6 @@ class ConfigService:
         dt = snap.dynamic_message_templates
         lt = snap.live_message_templates
         link = snap.link_message_templates
-        link_enabled, link_video, link_live = normalize_link_parser_toggles(
-            snap.bilibili_link_parser_enabled,
-            snap.bilibili_link_parser_video_enabled,
-            snap.bilibili_link_parser_live_enabled,
-        )
         return {
             "dynamic_monitor_interval": snap.dynamic_monitor_interval,
             "dynamic_enable_screenshot": snap.dynamic_enable_screenshot,
@@ -440,10 +399,6 @@ class ConfigService:
             "event_retention_days": snap.event_retention_days,
             "status_check_allowed_qq": snap.status_check_allowed_qq,
             "nonebot_superusers": snap.nonebot_superusers,
-            "bilibili_link_parser_enabled": link_enabled,
-            "bilibili_link_parser_private_enabled": snap.bilibili_link_parser_private_enabled,
-            "bilibili_link_parser_video_enabled": link_video,
-            "bilibili_link_parser_live_enabled": link_live,
         }
 
     @staticmethod

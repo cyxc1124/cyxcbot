@@ -91,10 +91,10 @@ async def _handle_link_message(bot: Bot, event: GroupMessageEvent | PrivateMessa
             is_private=False,
         )
 
-    if not scope.enabled or (not scope.video_enabled and not scope.live_enabled):
+    if not scope.video_enabled and not scope.live_enabled:
         logger.debug(
             f"B 站链接解析：策略未启用 user={event.user_id} "
-            f"enabled={scope.enabled} video={scope.video_enabled} live={scope.live_enabled}"
+            f"video={scope.video_enabled} live={scope.live_enabled}"
         )
         return
 

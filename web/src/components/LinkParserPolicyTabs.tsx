@@ -9,7 +9,6 @@ import {
 } from '../api/client'
 import type {
   LinkParserGroupPolicyItem,
-  LinkParserGlobalPolicy,
   LinkParserUserPolicyItem,
 } from '../api/types'
 import { LoadErrorBanner } from './LoadErrorBanner'
@@ -17,7 +16,6 @@ import { PageLoading } from './LoadingSpinner'
 import { ToggleSwitch } from './ToggleSwitch'
 import { useToast } from '../contexts/ToastContext'
 import { formatApiError } from '../utils/apiError'
-import { applyLinkParserToggle } from '../utils/linkParserPolicy'
 
 function PolicyToggleRow({
   label,
@@ -42,7 +40,7 @@ function GlobalPolicyHint({ scope }: { scope: 'group' | 'user' }) {
   return (
     <div className="space-y-1">
       <p className="text-sm text-slate-500">
-        在下方为每个{scope === 'group' ? '群' : '好友'}单独配置链接解析、视频与直播开关。文案可在「消息模板」中配置。
+        在下方为每个{scope === 'group' ? '群' : '好友'}单独开启视频链接或直播链接解析；两者都关闭时不解析。文案可在「消息模板」中配置。
       </p>
       {scope === 'group' && (
         <p className="text-sm text-slate-500">
@@ -61,7 +59,6 @@ function GlobalPolicyHint({ scope }: { scope: 'group' | 'user' }) {
 export function LinkParserGroupPolicyTab() {
   const { showToast } = useToast()
   const [groups, setGroups] = useState<LinkParserGroupPolicyItem[]>([])
-  const [globalPolicy, setGlobalPolicy] = useState<LinkParserGlobalPolicy | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
@@ -75,7 +72,7 @@ export function LinkParserGroupPolicyTab() {
     })
   }
 
-  const applyGroupItem = (item: LinkParserGroupPolicyItem, policy: LinkParserGlobalPolicy) => {
+  const applyGroupItem = (item: LinkParserGroupPolicyItem) => {
     setGroups((current) =>
       current.map((row) =>
         row.group_id === item.group_id
@@ -83,7 +80,6 @@ export function LinkParserGroupPolicyTab() {
           : row,
       ),
     )
-    setGlobalPolicy(policy)
   }
 
   const load = useCallback(async () => {
@@ -92,7 +88,6 @@ export function LinkParserGroupPolicyTab() {
     try {
       const data = await getLinkParserGroupPolicies()
       setGroups(data.groups)
-      setGlobalPolicy(data.global_policy)
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
@@ -106,20 +101,19 @@ export function LinkParserGroupPolicyTab() {
 
   const patchGroup = async (
     groupId: string,
-    patch: Partial<Pick<LinkParserGroupPolicyItem, 'enabled' | 'video_enabled' | 'live_enabled'>>,
+    patch: Partial<Pick<LinkParserGroupPolicyItem, 'video_enabled' | 'live_enabled'>>,
   ) => {
-    let payload: Pick<LinkParserGroupPolicyItem, 'enabled' | 'video_enabled' | 'live_enabled'> | null = null
+    let payload: Pick<LinkParserGroupPolicyItem, 'video_enabled' | 'live_enabled'> | null = null
 
     setGroups((current) =>
       current.map((row) => {
         if (row.group_id !== groupId) return row
-        const next = applyLinkParserToggle(row, patch)
+        const next = { ...row, ...patch }
         payload = {
-          enabled: next.enabled,
           video_enabled: next.video_enabled,
           live_enabled: next.live_enabled,
         }
-        return { ...row, ...next, customized: true } as typeof row
+        return { ...next, customized: true }
       }),
     )
 
@@ -128,7 +122,7 @@ export function LinkParserGroupPolicyTab() {
     markSaving(groupId, true)
     try {
       const data = await updateLinkParserGroupPolicy(groupId, payload)
-      applyGroupItem(data.item, data.global_policy)
+      applyGroupItem(data.item)
     } catch (err) {
       void load()
       showToast('error', formatApiError(err, '保存失败'))
@@ -141,8 +135,8 @@ export function LinkParserGroupPolicyTab() {
     markSaving(groupId, true)
     try {
       const data = await resetLinkParserGroupPolicy(groupId)
-      applyGroupItem(data.item, data.global_policy)
-      showToast('success', '已恢复为全局默认')
+      applyGroupItem(data.item)
+      showToast('success', '已恢复为默认（全部关闭）')
     } catch (err) {
       showToast('error', formatApiError(err, '恢复失败'))
     } finally {
@@ -155,7 +149,7 @@ export function LinkParserGroupPolicyTab() {
 
   return (
     <div className="space-y-4">
-      {globalPolicy && <GlobalPolicyHint scope="group" />}
+      <GlobalPolicyHint scope="group" />
       {error && <LoadErrorBanner message={error} onRetry={load} />}
 
       {groups.length === 0 ? (
@@ -164,14 +158,13 @@ export function LinkParserGroupPolicyTab() {
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-slate-500 dark:border-slate-700">
                 <th className="pb-3 pr-4 font-medium">群名称</th>
                 <th className="pb-3 pr-4 font-medium">群号</th>
-                <th className="pb-3 pr-4 font-medium">链接解析</th>
-                <th className="pb-3 pr-4 font-medium">视频</th>
-                <th className="pb-3 pr-4 font-medium">直播</th>
+                <th className="pb-3 pr-4 font-medium">视频链接</th>
+                <th className="pb-3 pr-4 font-medium">直播链接</th>
                 <th className="pb-3 font-medium text-right">操作</th>
               </tr>
             </thead>
@@ -197,25 +190,17 @@ export function LinkParserGroupPolicyTab() {
                     <td className="py-3.5 pr-4 font-mono text-xs text-slate-500">{group.group_id}</td>
                     <td className="py-3.5 pr-4">
                       <PolicyToggleRow
-                        label="链接解析"
-                        checked={group.enabled}
-                        disabled={false}
-                        onChange={(checked) => void patchGroup(group.group_id, { enabled: checked })}
-                      />
-                    </td>
-                    <td className="py-3.5 pr-4">
-                      <PolicyToggleRow
-                        label="视频"
+                        label="视频链接"
                         checked={group.video_enabled}
-                        disabled={!group.enabled || saving}
+                        disabled={saving}
                         onChange={(checked) => void patchGroup(group.group_id, { video_enabled: checked })}
                       />
                     </td>
                     <td className="py-3.5 pr-4">
                       <PolicyToggleRow
-                        label="直播"
+                        label="直播链接"
                         checked={group.live_enabled}
-                        disabled={!group.enabled || saving}
+                        disabled={saving}
                         onChange={(checked) => void patchGroup(group.group_id, { live_enabled: checked })}
                       />
                     </td>
@@ -245,7 +230,6 @@ export function LinkParserGroupPolicyTab() {
 export function LinkParserUserPolicyTab() {
   const { showToast } = useToast()
   const [users, setUsers] = useState<LinkParserUserPolicyItem[]>([])
-  const [globalPolicy, setGlobalPolicy] = useState<LinkParserGlobalPolicy | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
@@ -259,7 +243,7 @@ export function LinkParserUserPolicyTab() {
     })
   }
 
-  const applyUserItem = (item: LinkParserUserPolicyItem, policy: LinkParserGlobalPolicy) => {
+  const applyUserItem = (item: LinkParserUserPolicyItem) => {
     setUsers((current) =>
       current.map((row) =>
         row.user_id === item.user_id
@@ -267,7 +251,6 @@ export function LinkParserUserPolicyTab() {
           : row,
       ),
     )
-    setGlobalPolicy(policy)
   }
 
   const load = useCallback(async () => {
@@ -276,7 +259,6 @@ export function LinkParserUserPolicyTab() {
     try {
       const data = await getLinkParserUserPolicies()
       setUsers(data.users)
-      setGlobalPolicy(data.global_policy)
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
@@ -290,28 +272,21 @@ export function LinkParserUserPolicyTab() {
 
   const patchUser = async (
     userId: string,
-    patch: Partial<Pick<LinkParserUserPolicyItem, 'enabled' | 'video_enabled' | 'live_enabled'>>,
+    patch: Partial<Pick<LinkParserUserPolicyItem, 'video_enabled' | 'live_enabled'>>,
   ) => {
-    let saved:
-      | {
-          enabled: boolean
-          video_enabled: boolean
-          live_enabled: boolean
-        }
-      | undefined
+    let saved: Pick<LinkParserUserPolicyItem, 'video_enabled' | 'live_enabled'> | undefined
     let note: string | null = null
 
     setUsers((current) =>
       current.map((row) => {
         if (row.user_id !== userId) return row
-        const next = applyLinkParserToggle(row, patch)
+        const next = { ...row, ...patch }
         note = row.name
         saved = {
-          enabled: next.enabled,
           video_enabled: next.video_enabled,
           live_enabled: next.live_enabled,
         }
-        return { ...row, ...next, customized: true } as typeof row
+        return { ...next, customized: true }
       }),
     )
 
@@ -321,11 +296,10 @@ export function LinkParserUserPolicyTab() {
     try {
       const data = await updateLinkParserUserPolicy(userId, {
         name: note ?? undefined,
-        enabled: saved.enabled,
         video_enabled: saved.video_enabled,
         live_enabled: saved.live_enabled,
       })
-      applyUserItem(data.item, data.global_policy)
+      applyUserItem(data.item)
     } catch (err) {
       void load()
       showToast('error', formatApiError(err, '保存失败'))
@@ -338,8 +312,8 @@ export function LinkParserUserPolicyTab() {
     markSaving(userId, true)
     try {
       const data = await resetLinkParserUserPolicy(userId)
-      applyUserItem(data.item, data.global_policy)
-      showToast('success', '已恢复为全局默认')
+      applyUserItem(data.item)
+      showToast('success', '已恢复为默认（全部关闭）')
     } catch (err) {
       showToast('error', formatApiError(err, '恢复失败'))
     } finally {
@@ -352,7 +326,7 @@ export function LinkParserUserPolicyTab() {
 
   return (
     <div className="space-y-4">
-      {globalPolicy && <GlobalPolicyHint scope="user" />}
+      <GlobalPolicyHint scope="user" />
       {error && <LoadErrorBanner message={error} onRetry={load} />}
 
       {users.length === 0 ? (
@@ -361,14 +335,13 @@ export function LinkParserUserPolicyTab() {
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-slate-500 dark:border-slate-700">
                 <th className="pb-3 pr-4 font-medium">昵称</th>
                 <th className="pb-3 pr-4 font-medium">QQ 号</th>
-                <th className="pb-3 pr-4 font-medium">链接解析</th>
-                <th className="pb-3 pr-4 font-medium">视频</th>
-                <th className="pb-3 pr-4 font-medium">直播</th>
+                <th className="pb-3 pr-4 font-medium">视频链接</th>
+                <th className="pb-3 pr-4 font-medium">直播链接</th>
                 <th className="pb-3 font-medium text-right">操作</th>
               </tr>
             </thead>
@@ -395,25 +368,17 @@ export function LinkParserUserPolicyTab() {
                     <td className="py-3.5 pr-4 font-mono text-xs text-slate-500">{user.user_id}</td>
                     <td className="py-3.5 pr-4">
                       <PolicyToggleRow
-                        label="链接解析"
-                        checked={user.enabled}
-                        disabled={false}
-                        onChange={(checked) => void patchUser(user.user_id, { enabled: checked })}
-                      />
-                    </td>
-                    <td className="py-3.5 pr-4">
-                      <PolicyToggleRow
-                        label="视频"
+                        label="视频链接"
                         checked={user.video_enabled}
-                        disabled={!user.enabled || saving}
+                        disabled={saving}
                         onChange={(checked) => void patchUser(user.user_id, { video_enabled: checked })}
                       />
                     </td>
                     <td className="py-3.5 pr-4">
                       <PolicyToggleRow
-                        label="直播"
+                        label="直播链接"
                         checked={user.live_enabled}
-                        disabled={!user.enabled || saving}
+                        disabled={saving}
                         onChange={(checked) => void patchUser(user.user_id, { live_enabled: checked })}
                       />
                     </td>

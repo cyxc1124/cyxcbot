@@ -50,10 +50,6 @@ export interface Settings {
   event_retention_days: number
   status_check_allowed_qq: string[]
   nonebot_superusers: string[]
-  bilibili_link_parser_enabled: boolean
-  bilibili_link_parser_private_enabled: boolean
-  bilibili_link_parser_video_enabled: boolean
-  bilibili_link_parser_live_enabled: boolean
 }
 
 export type SettingsUpdate = Partial<Omit<Settings, 'bilibili_cookie'>>
@@ -173,29 +169,20 @@ export interface PrivateStatusPolicy {
   display: StatusCheckDisplayOptions
 }
 
-export interface LinkParserGlobalPolicy {
-  enabled: boolean
-  video_enabled: boolean
-  live_enabled: boolean
-}
-
 export interface LinkParserGroupPolicyItem {
   group_id: string
   group_name: string | null
   member_count: number | null
   customized: boolean
-  enabled: boolean
   video_enabled: boolean
   live_enabled: boolean
 }
 
 export interface LinkParserGroupPolicyList {
-  global_policy: LinkParserGlobalPolicy
   groups: LinkParserGroupPolicyItem[]
 }
 
 export interface LinkParserGroupPolicyMutation {
-  global_policy: LinkParserGlobalPolicy
   item: LinkParserGroupPolicyItem
 }
 
@@ -204,25 +191,21 @@ export interface LinkParserUserPolicyItem {
   nickname: string | null
   name: string | null
   customized: boolean
-  enabled: boolean
   video_enabled: boolean
   live_enabled: boolean
 }
 
 export interface LinkParserUserPolicyList {
-  global_policy: LinkParserGlobalPolicy
   users: LinkParserUserPolicyItem[]
 }
 
 export interface LinkParserUserPolicyMutation {
-  global_policy: LinkParserGlobalPolicy
   item: LinkParserUserPolicyItem
 }
 
 export interface LinkParserUserPolicyInput {
   user_id: string
   name?: string
-  enabled: boolean
   video_enabled: boolean
   live_enabled: boolean
 }

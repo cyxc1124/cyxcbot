@@ -6,7 +6,6 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from admin.deps import CurrentUser, RequireSetup
 from admin.schemas.link_parser import (
-    LinkParserGlobalPolicy,
     LinkParserGroupPolicyItem,
     LinkParserGroupPolicyListResponse,
     LinkParserGroupPolicyMutationResponse,
@@ -19,7 +18,6 @@ from admin.schemas.link_parser import (
 )
 from admin.services.onebot_bridge import get_friend_list, get_group_list, invalidate_user_list_cache
 from shared.audit.service import write_audit, write_system_event
-from shared.config.link_parser_policy import normalize_link_parser_toggles
 from shared.config.service import get_config_service
 from shared.db.enums import AuditAction, SystemEventType
 from shared.group_policy import is_group_message_enabled_from_snapshot
@@ -30,19 +28,6 @@ router = APIRouter(
     tags=["link-parser"],
     dependencies=[RequireSetup],
 )
-
-
-def _global_policy(snap) -> LinkParserGlobalPolicy:
-    enabled, video_enabled, live_enabled = normalize_link_parser_toggles(
-        snap.bilibili_link_parser_enabled,
-        snap.bilibili_link_parser_video_enabled,
-        snap.bilibili_link_parser_live_enabled,
-    )
-    return LinkParserGlobalPolicy(
-        enabled=enabled,
-        video_enabled=video_enabled,
-        live_enabled=live_enabled,
-    )
 
 
 def _message_enabled_groups(snap, groups: list[dict]) -> list[dict]:
@@ -77,50 +62,28 @@ def _ensure_group_message_enabled(group_id: str, snap) -> None:
         )
 
 
-def _group_policy_values(snap, group_id: str) -> tuple[bool, bool, bool, bool]:
+def _group_policy_values(snap, group_id: str) -> tuple[bool, bool, bool]:
     override = snap.link_parser_group_policies.get(group_id)
     if override:
-        enabled, video_enabled, live_enabled = normalize_link_parser_toggles(
-            override.enabled,
-            override.video_enabled,
-            override.live_enabled,
-        )
-        return enabled, video_enabled, live_enabled, True
-    enabled, video_enabled, live_enabled = normalize_link_parser_toggles(
-        snap.bilibili_link_parser_enabled,
-        snap.bilibili_link_parser_video_enabled,
-        snap.bilibili_link_parser_live_enabled,
-    )
-    return enabled, video_enabled, live_enabled, False
+        return override.video_enabled, override.live_enabled, True
+    return False, False, False
 
 
-def _user_policy_values(snap, user_id: str) -> tuple[bool, bool, bool, bool]:
+def _user_policy_values(snap, user_id: str) -> tuple[bool, bool, bool]:
     override = snap.link_parser_user_policies.get(user_id)
     if override:
-        enabled, video_enabled, live_enabled = normalize_link_parser_toggles(
-            override.enabled,
-            override.video_enabled,
-            override.live_enabled,
-        )
-        return enabled, video_enabled, live_enabled, True
-    enabled, video_enabled, live_enabled = normalize_link_parser_toggles(
-        snap.bilibili_link_parser_enabled,
-        snap.bilibili_link_parser_video_enabled,
-        snap.bilibili_link_parser_live_enabled,
-    )
-    return enabled, video_enabled, live_enabled, False
+        return override.video_enabled, override.live_enabled, True
+    return False, False, False
 
 
 def _build_group_item(snap, group: dict) -> LinkParserGroupPolicyItem:
     group_id = str(group["group_id"])
-    enabled, video_enabled, live_enabled, customized = _group_policy_values(snap, group_id)
-    override = snap.link_parser_group_policies.get(group_id)
+    video_enabled, live_enabled, customized = _group_policy_values(snap, group_id)
     return LinkParserGroupPolicyItem(
         group_id=group_id,
         group_name=group.get("group_name"),
         member_count=group.get("member_count"),
         customized=customized,
-        enabled=enabled,
         video_enabled=video_enabled,
         live_enabled=live_enabled,
     )
@@ -132,14 +95,13 @@ def _build_group_items(snap, groups: list[dict]) -> list[LinkParserGroupPolicyIt
 
 def _build_user_item(snap, user: dict) -> LinkParserUserPolicyItem:
     user_id = str(user["user_id"])
-    enabled, video_enabled, live_enabled, customized = _user_policy_values(snap, user_id)
+    video_enabled, live_enabled, customized = _user_policy_values(snap, user_id)
     override = snap.link_parser_user_policies.get(user_id)
     return LinkParserUserPolicyItem(
         user_id=user_id,
         nickname=user.get("nickname"),
         name=override.name if override else None,
         customized=customized,
-        enabled=enabled,
         video_enabled=video_enabled,
         live_enabled=live_enabled,
     )
@@ -156,20 +118,8 @@ def _build_user_items(snap, users: list[dict]) -> list[LinkParserUserPolicyItem]
     return [_build_user_item(snap, by_id[user_id]) for user_id in sorted(by_id.keys(), key=lambda value: (not value.isdigit(), value))]
 
 
-def _group_matches_global(snap, body: LinkParserGroupPolicyUpdateRequest) -> bool:
-    return (
-        body.enabled == snap.bilibili_link_parser_enabled
-        and body.video_enabled == snap.bilibili_link_parser_video_enabled
-        and body.live_enabled == snap.bilibili_link_parser_live_enabled
-    )
-
-
-def _user_matches_global(snap, body: LinkParserUserPolicyUpdateRequest) -> bool:
-    return (
-        body.enabled == snap.bilibili_link_parser_enabled
-        and body.video_enabled == snap.bilibili_link_parser_video_enabled
-        and body.live_enabled == snap.bilibili_link_parser_live_enabled
-    )
+def _is_default_off(body: LinkParserGroupPolicyUpdateRequest | LinkParserUserPolicyUpdateRequest) -> bool:
+    return not body.video_enabled and not body.live_enabled
 
 
 async def _group_meta(group_id: str) -> dict:
@@ -193,7 +143,6 @@ async def _list_user_policy_response(snap, *, refresh_users: bool = False) -> Li
         invalidate_user_list_cache()
     users = _message_enabled_users(snap, await get_friend_list())
     return LinkParserUserPolicyListResponse(
-        global_policy=_global_policy(snap),
         users=_build_user_items(snap, users),
     )
 
@@ -204,7 +153,6 @@ async def list_group_policies(_: CurrentUser):
     snap = svc.get_snapshot()
     groups = _message_enabled_groups(snap, await get_group_list())
     return LinkParserGroupPolicyListResponse(
-        global_policy=_global_policy(snap),
         groups=_build_group_items(snap, groups),
     )
 
@@ -220,12 +168,11 @@ async def update_group_policy(
     snap = svc.get_snapshot()
     _ensure_group_message_enabled(group_id, snap)
 
-    if _group_matches_global(snap, body):
+    if _is_default_off(body):
         await svc.delete_link_parser_group_policy(group_id)
     else:
         await svc.upsert_link_parser_group_policy(
             group_id,
-            enabled=body.enabled,
             video_enabled=body.video_enabled,
             live_enabled=body.live_enabled,
         )
@@ -244,7 +191,6 @@ async def update_group_policy(
     snap = svc.get_snapshot()
     group = await _group_meta(group_id)
     return LinkParserGroupPolicyMutationResponse(
-        global_policy=_global_policy(snap),
         item=_build_group_item(snap, group),
     )
 
@@ -272,7 +218,6 @@ async def reset_group_policy(group_id: str, request: Request, user: CurrentUser)
     snap = svc.get_snapshot()
     group = await _group_meta(group_id)
     return LinkParserGroupPolicyMutationResponse(
-        global_policy=_global_policy(snap),
         item=_build_group_item(snap, group),
     )
 
@@ -299,14 +244,13 @@ async def create_user_policy(
     if user_id in snap.link_parser_user_policies:
         raise HTTPException(status_code=409, detail="该用户策略已存在")
 
-    await svc.upsert_link_parser_user_policy(
-        user_id,
-        enabled=body.enabled,
-        video_enabled=body.video_enabled,
-        live_enabled=body.live_enabled,
-        private_enabled=True,
-        name=body.name,
-    )
+    if not _is_default_off(body):
+        await svc.upsert_link_parser_user_policy(
+            user_id,
+            video_enabled=body.video_enabled,
+            live_enabled=body.live_enabled,
+            name=body.name,
+        )
     await svc.reload()
 
     ip = request.client.host if request.client else None
@@ -322,7 +266,6 @@ async def create_user_policy(
     snap = svc.get_snapshot()
     user_meta = await _user_meta(user_id, snap)
     return LinkParserUserPolicyMutationResponse(
-        global_policy=_global_policy(snap),
         item=_build_user_item(snap, user_meta),
     )
 
@@ -339,15 +282,13 @@ async def update_user_policy(
     _ensure_private_message_enabled(user_id, snap)
     existing = snap.link_parser_user_policies.get(user_id)
 
-    if _user_matches_global(snap, body):
+    if _is_default_off(body):
         await svc.delete_link_parser_user_policy(user_id)
     else:
         await svc.upsert_link_parser_user_policy(
             user_id,
-            enabled=body.enabled,
             video_enabled=body.video_enabled,
             live_enabled=body.live_enabled,
-            private_enabled=True,
             name=body.name if body.name is not None else (existing.name if existing else None),
         )
     await svc.reload()
@@ -365,7 +306,6 @@ async def update_user_policy(
     snap = svc.get_snapshot()
     user_meta = await _user_meta(user_id, snap)
     return LinkParserUserPolicyMutationResponse(
-        global_policy=_global_policy(snap),
         item=_build_user_item(snap, user_meta),
     )
 
@@ -391,6 +331,5 @@ async def reset_user_policy(user_id: str, request: Request, user: CurrentUser):
     snap = svc.get_snapshot()
     user_meta = await _user_meta(user_id, snap)
     return LinkParserUserPolicyMutationResponse(
-        global_policy=_global_policy(snap),
         item=_build_user_item(snap, user_meta),
     )

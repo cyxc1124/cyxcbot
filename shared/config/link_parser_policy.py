@@ -1,4 +1,4 @@
-"""Link parser policy resolution: global defaults with per-group / per-user overrides."""
+"""Link parser policy resolution: per-group / per-user video & live modes."""
 
 from __future__ import annotations
 
@@ -11,74 +11,23 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class LinkParserScopePolicy:
-    enabled: bool = True
-    video_enabled: bool = True
-    live_enabled: bool = True
-    private_enabled: bool = True
+    video_enabled: bool = False
+    live_enabled: bool = False
 
 
 @dataclass(frozen=True)
 class LinkParserGroupPolicyRecord:
     group_id: str
-    enabled: bool = True
-    video_enabled: bool = True
-    live_enabled: bool = True
+    video_enabled: bool = False
+    live_enabled: bool = False
 
 
 @dataclass(frozen=True)
 class LinkParserUserPolicyRecord:
     user_id: str
-    enabled: bool = True
-    video_enabled: bool = True
-    live_enabled: bool = True
-    private_enabled: bool = True
+    video_enabled: bool = False
+    live_enabled: bool = False
     name: str | None = None
-
-
-def normalize_link_parser_toggles(
-    enabled: bool,
-    video_enabled: bool,
-    live_enabled: bool,
-) -> tuple[bool, bool, bool]:
-    """Master on with both sub-types off is treated as fully enabled."""
-    if not enabled:
-        return False, False, False
-    if not video_enabled and not live_enabled:
-        return True, True, True
-    return enabled, video_enabled, live_enabled
-
-
-def _disabled_policy() -> LinkParserScopePolicy:
-    return LinkParserScopePolicy(
-        enabled=False,
-        video_enabled=False,
-        live_enabled=False,
-        private_enabled=False,
-    )
-
-
-def _global_policy(snapshot: AppConfigSnapshot) -> LinkParserScopePolicy:
-    return LinkParserScopePolicy(
-        enabled=snapshot.bilibili_link_parser_enabled,
-        video_enabled=snapshot.bilibili_link_parser_video_enabled,
-        live_enabled=snapshot.bilibili_link_parser_live_enabled,
-    )
-
-
-def _normalize_scope(policy: LinkParserScopePolicy) -> LinkParserScopePolicy:
-    enabled, video_enabled, live_enabled = normalize_link_parser_toggles(
-        policy.enabled,
-        policy.video_enabled,
-        policy.live_enabled,
-    )
-    if not enabled:
-        return _disabled_policy()
-    return LinkParserScopePolicy(
-        enabled=enabled,
-        video_enabled=video_enabled,
-        live_enabled=live_enabled,
-        private_enabled=policy.private_enabled,
-    )
 
 
 def resolve_link_parser_policy(
@@ -89,27 +38,22 @@ def resolve_link_parser_policy(
     is_private: bool = False,
 ) -> LinkParserScopePolicy:
     """Resolve effective link parser policy for a chat context."""
-    policy = _global_policy(snapshot)
+    video_enabled = False
+    live_enabled = False
 
     if group_id:
         group_override = snapshot.link_parser_group_policies.get(str(group_id).strip())
         if group_override:
-            policy = LinkParserScopePolicy(
-                enabled=group_override.enabled,
-                video_enabled=group_override.video_enabled,
-                live_enabled=group_override.live_enabled,
-            )
+            video_enabled = group_override.video_enabled
+            live_enabled = group_override.live_enabled
 
     if user_id:
         user_override = snapshot.link_parser_user_policies.get(str(user_id).strip())
         if user_override:
-            policy = LinkParserScopePolicy(
-                enabled=user_override.enabled,
-                video_enabled=user_override.video_enabled,
-                live_enabled=user_override.live_enabled,
-            )
+            video_enabled = user_override.video_enabled
+            live_enabled = user_override.live_enabled
 
-    if not policy.enabled:
-        return _disabled_policy()
-
-    return _normalize_scope(policy)
+    return LinkParserScopePolicy(
+        video_enabled=video_enabled,
+        live_enabled=live_enabled,
+    )

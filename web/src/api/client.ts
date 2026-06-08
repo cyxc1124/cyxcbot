@@ -333,7 +333,7 @@ export const getLinkParserGroupPolicies = () =>
 
 export const updateLinkParserGroupPolicy = (
   groupId: string,
-  payload: { enabled: boolean; video_enabled: boolean; live_enabled: boolean },
+  payload: { video_enabled: boolean; live_enabled: boolean },
 ) =>
   request<LinkParserGroupPolicyMutation>(`/link-parser/policies/groups/${encodeURIComponent(groupId)}`, {
     method: 'PUT',
@@ -350,7 +350,7 @@ export const getLinkParserUserPolicies = () =>
   request<LinkParserUserPolicyList>('/link-parser/policies/users')
 
 export const createLinkParserUserPolicy = (payload: LinkParserUserPolicyInput) =>
-  request<LinkParserUserPolicyList>('/link-parser/policies/users', {
+  request<LinkParserUserPolicyMutation>('/link-parser/policies/users', {
     method: 'POST',
     body: JSON.stringify(payload),
   })
