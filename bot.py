@@ -6,114 +6,85 @@ from nonebot.log import logger, LoguruHandler
 from nonebot.adapters.console import Adapter as ConsoleAdapter  # 避免重复命名
 from nonebot.adapters.onebot.v11 import Adapter as OneBotAdapter  # 添加OneBot适配器
 
-# 记录环境变量配置（用于调试）
-def log_environment_config():
-    """记录当前环境变量配置到日志"""
-    logger.info("环境变量配置信息")
+# 启动时记录仍通过环境变量生效的配置
+_SECRET_ENV_VARS = frozenset({"WEB_SECRET_KEY"})
+_OBSOLETE_ENV_EXACT = frozenset({"NOTIFY_GROUPS", "BILIBILI_COOKIE", "SUPERUSERS"})
+_OBSOLETE_ENV_PREFIXES = (
+    "DYNAMIC_MONITOR_",
+    "LIVE_MONITOR_",
+    "STATUS_CHECK_",
+)
 
-    # 检测运行环境
-    is_kubernetes = any(key.startswith(('KUBERNETES_', 'KUBE_')) for key in os.environ)
-    is_docker = os.getenv('DOCKER_CONTAINER', '').lower() == 'true' or os.path.exists('/.dockerenv')
 
-    if is_kubernetes:
-        logger.info("运行环境: Kubernetes")
-        logger.info("配置来源: ConfigMap/环境变量 (K8s)")
-    elif is_docker:
-        logger.info("运行环境: Docker容器")
-        logger.info("配置来源: Docker环境变量")
-    else:
-        logger.info("运行环境: 本地开发环境")
+def _detect_runtime() -> str:
+    if any(key.startswith(("KUBERNETES_", "KUBE_")) for key in os.environ):
+        return "Kubernetes"
+    if os.getenv("DOCKER_CONTAINER", "").lower() == "true" or os.path.exists("/.dockerenv"):
+        return "Docker"
+    return "本地"
 
-        # 在本地环境中尝试加载.env文件
-        try:
-            from dotenv import load_dotenv, dotenv_values
-            env_file = Path(".env")
-            if env_file.exists():
-                logger.info(f"配置文件: {env_file.absolute()}")
-                # 使用python-dotenv加载.env文件
-                env_values = dotenv_values(env_file)
-                loaded_count = 0
-                for key, value in env_values.items():
-                    if key and value is not None and key not in os.environ:
-                        os.environ[key] = str(value)
-                        loaded_count += 1
-                logger.info(f"已加载 {loaded_count} 个环境变量从 .env 文件")
-            else:
-                logger.info("未找到 .env 文件 - 使用系统环境变量")
-        except ImportError:
-            logger.warning("未安装 python-dotenv 库，使用手动解析")
-            try:
-                env_file = Path(".env")
-                if env_file.exists():
-                    logger.info(f"配置文件: {env_file.absolute()}")
-                    loaded_count = 0
-                    with open(env_file, 'r', encoding='utf-8') as f:
-                        for line_num, line in enumerate(f, 1):
-                            line = line.strip()
-                            if line and not line.startswith('#') and '=' in line:
-                                key, value = line.split('=', 1)
-                                key = key.strip()
-                                value = value.strip()
-                                if key not in os.environ:
-                                    os.environ[key] = value
-                                    loaded_count += 1
-                    logger.info(f"已加载 {loaded_count} 个环境变量从 .env 文件")
-                else:
-                    logger.info("未找到 .env 文件 - 使用系统环境变量")
-            except Exception as e:
-                logger.error(f"加载 .env 文件时出错: {e}")
-        except Exception as e:
-            logger.error(f"加载 .env 文件时出错: {e}")
 
-    # 统计环境变量
-    all_env_count = len(os.environ)
-    plugin_env_count = len([k for k in os.environ.keys()
-                           if any(prefix in k for prefix in ['HOST', 'PORT', 'NOTIFY_', 'STATUS_CHECK_', 'INCLUDE_ROOM', 'COMMAND_'])])
-    logger.info(f"环境变量统计: 总数 {all_env_count} 个, 插件相关 {plugin_env_count} 个")
+def _format_env_value(key: str, value: str | None) -> str:
+    if value is None or not str(value).strip():
+        return "(未设置)"
+    if key in _SECRET_ENV_VARS:
+        return "(已设置)" if value.strip() else "(未设置)"
+    if key == "SQLALCHEMY_DATABASE_URL":
+        return _mask_database_url(value)
+    return value
 
-    # 定义要检查的环境变量
-    plugin_vars = {
-        "基础配置": [
-            "HOST", "PORT", "COMMAND_START", "COMMAND_SEP", "LOG_LEVEL"
-        ],
-        "用户和群组": [
-            "NOTIFY_GROUPS"
-        ],
-        "动态监控": [
-            "DYNAMIC_MONITOR_MAPPING",
-            "DYNAMIC_MONITOR_INTERVAL",
-            "DYNAMIC_ENABLE_SCREENSHOT",
-            "BILIBILI_COOKIE"
-        ],
-        "直播监控": [
-            "LIVE_MONITOR_MAPPING",
-            "LIVE_MONITOR_INTERVAL",
-            "LIVE_MONITOR_INCLUDE_INFO",
-            "LIVE_MONITOR_USE_WEBSOCKET"
-        ],
-        "状态检查": [
-            "STATUS_CHECK_SHOW_DETAILED",
-            "STATUS_CHECK_SHOW_UPTIME",
-            "STATUS_CHECK_SHOW_MEMORY"
-        ]
+
+def _mask_database_url(url: str) -> str:
+    """Hide credentials in database URLs while keeping engine/host/db name visible."""
+    if "@" in url and "://" in url:
+        scheme, rest = url.split("://", 1)
+        if "@" in rest:
+            creds, host_part = rest.rsplit("@", 1)
+            if ":" in creds:
+                user = creds.split(":", 1)[0]
+                return f"{scheme}://{user}:***@{host_part}"
+            return f"{scheme}://***@{host_part}"
+    return url
+
+
+def _collect_obsolete_env_vars() -> list[str]:
+    obsolete: list[str] = []
+    for key in os.environ:
+        if key in _OBSOLETE_ENV_EXACT:
+            obsolete.append(key)
+        elif any(key.startswith(prefix) for prefix in _OBSOLETE_ENV_PREFIXES):
+            obsolete.append(key)
+    return sorted(obsolete)
+
+
+def log_startup_config() -> None:
+    """Log environment variables that still affect runtime; plugin config lives in Web Admin."""
+    runtime = _detect_runtime()
+    logger.info(f"运行环境: {runtime}")
+
+    env_file = Path(".env")
+    if runtime == "本地" and env_file.exists():
+        logger.info(f"本地配置文件: {env_file.resolve()}")
+
+    startup_vars = {
+        "NoneBot": ["HOST", "PORT", "COMMAND_START", "COMMAND_SEP", "LOG_LEVEL"],
+        "Web Admin": ["WEB_HOST", "WEB_PORT", "WEB_ADMIN_ENABLED", "WEB_SECRET_KEY"],
+        "数据库": ["SQLALCHEMY_DATABASE_URL"],
+        "构建信息": ["GIT_TAG", "GIT_COMMIT", "BUILD_VERSION"],
     }
 
-    # 记录所有插件相关环境变量
-    for category, vars_list in plugin_vars.items():
-        config_items = []
-        for var in vars_list:
-            value = os.getenv(var)
-            if value is not None:
-                display_value = value
-                config_items.append(f"{var}={display_value}")
-            else:
-                config_items.append(f"{var}=(未设置)")
+    for category, keys in startup_vars.items():
+        items = [f"{key}={_format_env_value(key, os.getenv(key))}" for key in keys]
+        logger.info(f"{category}: {' | '.join(items)}")
 
-        # 将同一类别的配置项合并成一条日志
-        if config_items:
-            logger.info(f"{category}: {' | '.join(config_items)}")
+    obsolete = _collect_obsolete_env_vars()
+    if obsolete:
+        logger.warning(
+            "检测到已弃用的环境变量（不再生效，请在 Web Admin 中配置）: "
+            + ", ".join(obsolete)
+        )
 
-    logger.info("环境配置加载完成")
+    logger.info("业务配置（监控、Cookie、模板、权限等）由 Web Admin / 数据库管理")
 
 # 配置日志级别
 def configure_logging():
@@ -175,8 +146,8 @@ import admin.startup  # noqa: F401
 log_level = configure_logging()
 logger.info(f"日志级别设置为: {log_level}")
 
-# 调用环境变量记录函数（在NoneBot初始化之后）
-log_environment_config()
+# 记录启动配置（在 NoneBot 初始化之后）
+log_startup_config()
 
 # 配置控制台适配器为无头模式
 nonebot.get_driver().config.console_headless_mode = True

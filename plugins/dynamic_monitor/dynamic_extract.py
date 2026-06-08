@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import re
+from typing import Literal
 
 import aiohttp
 from nonebot import on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageSegment, PrivateMessageEvent
 from nonebot.log import logger
 
+from shared.config.message_templates import DynamicMessageTemplates
 from shared.config.service import get_config_service
 from shared.dynamic_subscription import is_group_dynamic_subscribed, is_user_dynamic_subscribed
+from shared.notify.message_template import build_message_from_template, render_message_template
 from utils.bilibili_api import DynamicFetcher
 
 from .config import Config
@@ -36,15 +39,42 @@ def parse_extract_dynamic_id(message_text: str) -> str | None:
     return next((group for group in match.groups() if group), None)
 
 
-def build_extract_images_message(dynamic_id: str, images: list[str]) -> Message:
-    """Build reply: header, labeled images, dynamic URL."""
-    message = Message()
-    message.append(f"动态{dynamic_id}的图片\n")
-    for index, image_url in enumerate(images, start=1):
-        message.append(f"图片{index}\n")
-        message.append(MessageSegment.image(image_url))
-    message.append(f"\nhttps://t.bilibili.com/{dynamic_id}")
-    return message
+def build_extract_reply_message(
+    templates: DynamicMessageTemplates,
+    dynamic_id: str,
+    images: list[str],
+    *,
+    kind: Literal["success", "empty", "failed"],
+) -> Message:
+    """Build extract reply from configured templates."""
+    url = f"https://t.bilibili.com/{dynamic_id}"
+    text_variables = {"dynamic_id": dynamic_id, "url": url}
+
+    if kind == "success":
+        template = templates.extract
+    elif kind == "empty":
+        template = templates.extract_empty
+    else:
+        template = templates.extract_failed
+
+    segment_handlers = {}
+    if kind == "success" and images:
+        label_template = templates.extract_image_label
+
+        def images_handler():
+            parts: list[MessageSegment | str] = []
+            for index, image_url in enumerate(images, start=1):
+                label = render_message_template(
+                    label_template,
+                    {"index": str(index), "dynamic_id": dynamic_id},
+                )
+                parts.append(f"{label}\n")
+                parts.append(MessageSegment.image(image_url))
+            return parts
+
+        segment_handlers["images"] = images_handler
+
+    return build_message_from_template(template, text_variables, segment_handlers)
 
 
 async def _fetch_dynamic_images(dynamic_id: str, cookie: str | None) -> list[str]:
@@ -97,6 +127,7 @@ async def _handle_extract(bot: Bot, event: GroupMessageEvent | PrivateMessageEve
         return
 
     config = Config.from_service()
+    templates = config.message_templates
     cookie = config.bilibili_cookie or None
     if not cookie:
         logger.warning("提取动态图片：未配置 Cookie，部分动态可能无法访问")
@@ -107,19 +138,14 @@ async def _handle_extract(bot: Bot, event: GroupMessageEvent | PrivateMessageEve
         images = await _fetch_dynamic_images(dynamic_id, cookie)
     except Exception as exc:
         logger.error(f"提取动态 {dynamic_id} 图片失败: {exc}")
-        await _send_reply(
-            bot,
-            event,
-            Message(f"动态{dynamic_id}的图片\n提取失败，请稍后重试\n\nhttps://t.bilibili.com/{dynamic_id}"),
-        )
+        reply = build_extract_reply_message(templates, dynamic_id, [], kind="failed")
+        await _send_reply(bot, event, reply)
         return
 
     if not images:
-        reply = Message(
-            f"动态{dynamic_id}的图片\n该动态未找到可提取的图片\n\nhttps://t.bilibili.com/{dynamic_id}"
-        )
+        reply = build_extract_reply_message(templates, dynamic_id, [], kind="empty")
     else:
-        reply = build_extract_images_message(dynamic_id, images)
+        reply = build_extract_reply_message(templates, dynamic_id, images, kind="success")
 
     await _send_reply(bot, event, reply)
     logger.info(f"已回复动态 {dynamic_id} 图片提取: count={len(images)}")

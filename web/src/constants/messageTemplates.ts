@@ -3,6 +3,10 @@ export type TemplateKey =
   | 'dynamic_template_pinned'
   | 'dynamic_template_query_latest'
   | 'dynamic_template_query_pinned'
+  | 'dynamic_template_extract'
+  | 'dynamic_template_extract_empty'
+  | 'dynamic_template_extract_failed'
+  | 'dynamic_template_extract_image_label'
   | 'live_template_start'
   | 'live_template_end'
   | 'link_template_video'
@@ -31,6 +35,10 @@ export const DEFAULT_MESSAGE_TEMPLATES: Record<TemplateKey, string> = {
   dynamic_template_pinned: '{name} 置顶了动态\n{time}\n{media}\n{url}',
   dynamic_template_query_latest: '【{name} 的最新动态】\n{media}\n{url}',
   dynamic_template_query_pinned: '【{name} 的置顶动态】\n{media}\n{url}',
+  dynamic_template_extract: '动态{dynamic_id}的图片\n{images}\n{url}',
+  dynamic_template_extract_empty: '动态{dynamic_id}的图片\n该动态未找到可提取的图片\n{url}',
+  dynamic_template_extract_failed: '动态{dynamic_id}的图片\n提取失败，请稍后重试\n{url}',
+  dynamic_template_extract_image_label: '图片{index}',
   live_template_start: '{streamer_name} 开播啦！\n{card}\n{url}',
   live_template_end: '【下播提醒】\n{streamer_name}下播啦！\n{card}\n直播时长：{duration}',
   link_template_video: '{cover}标题：{title}\nUP主：{author}\n发布时间：{pub_date}\n链接：{url}',
@@ -53,6 +61,22 @@ const dynamicVariables: TemplateVariable[] = [
   { key: 'url', label: '动态链接', description: 't.bilibili.com 链接' },
   { key: 'dynamic_id', label: '动态 ID', description: 'B 站动态编号' },
   { key: 'uid', label: 'UID', description: 'UP 主 UID' },
+]
+
+const extractVariables: TemplateVariable[] = [
+  { key: 'dynamic_id', label: '动态 ID', description: 'B 站动态编号' },
+  { key: 'url', label: '动态链接', description: 't.bilibili.com 链接' },
+  {
+    key: 'images',
+    label: '动态图片列表',
+    description: '按顺序插入全部图片，每张前带单图标签',
+    segment: true,
+  },
+]
+
+const extractImageLabelVariables: TemplateVariable[] = [
+  { key: 'index', label: '图片序号', description: '从 1 开始的序号' },
+  { key: 'dynamic_id', label: '动态 ID', description: 'B 站动态编号' },
 ]
 
 const liveStartVariables: TemplateVariable[] = [
@@ -107,6 +131,38 @@ export const dynamicTemplateFields: TemplateField[] = [
     description: '群命令查询置顶动态时的完整回复内容',
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.dynamic_template_query_pinned,
     variables: dynamicVariables.filter((v) => !['type_desc', 'time'].includes(v.key)),
+  },
+  {
+    key: 'dynamic_template_extract',
+    category: 'dynamic',
+    label: '动态图片提取',
+    description: '发送 #提取/#获取{动态ID} 成功提取到图片时的完整回复内容',
+    defaultValue: DEFAULT_MESSAGE_TEMPLATES.dynamic_template_extract,
+    variables: extractVariables,
+  },
+  {
+    key: 'dynamic_template_extract_empty',
+    category: 'dynamic',
+    label: '动态图片提取（无图）',
+    description: '动态中未找到可提取图片时的回复内容',
+    defaultValue: DEFAULT_MESSAGE_TEMPLATES.dynamic_template_extract_empty,
+    variables: extractVariables.filter((v) => v.key !== 'images'),
+  },
+  {
+    key: 'dynamic_template_extract_failed',
+    category: 'dynamic',
+    label: '动态图片提取（失败）',
+    description: '拉取动态详情失败时的回复内容',
+    defaultValue: DEFAULT_MESSAGE_TEMPLATES.dynamic_template_extract_failed,
+    variables: extractVariables.filter((v) => v.key !== 'images'),
+  },
+  {
+    key: 'dynamic_template_extract_image_label',
+    category: 'dynamic',
+    label: '动态图片提取（单图标签）',
+    description: '每张图片前的标签文字，会按序号重复插入',
+    defaultValue: DEFAULT_MESSAGE_TEMPLATES.dynamic_template_extract_image_label,
+    variables: extractImageLabelVariables,
   },
 ]
 
@@ -181,6 +237,7 @@ export const PREVIEW_SEGMENT_LABELS: Record<string, string> = {
   media: '[动态截图或正文图片]',
   card: '[卡片图片]',
   cover: '[封面图片]',
+  images: '[图片1]\n[图片2]',
 }
 
 export const PREVIEW_SAMPLE_VALUES: Record<string, string> = {
@@ -201,6 +258,7 @@ export const PREVIEW_SAMPLE_VALUES: Record<string, string> = {
   room_id: '12345',
   bvid: 'BV1xx411c7mD',
   aid: '170001',
+  index: '1',
 }
 
 export function createDefaultTemplateForm(): Record<TemplateKey, string> {

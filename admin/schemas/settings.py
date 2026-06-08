@@ -25,6 +25,16 @@ class SettingsResponse(BaseModel):
     dynamic_template_query_pinned: str = Field(
         default=DYNAMIC_TEMPLATE_KEYS["dynamic_template_query_pinned"]
     )
+    dynamic_template_extract: str = Field(default=DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract"])
+    dynamic_template_extract_empty: str = Field(
+        default=DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract_empty"]
+    )
+    dynamic_template_extract_failed: str = Field(
+        default=DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract_failed"]
+    )
+    dynamic_template_extract_image_label: str = Field(
+        default=DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract_image_label"]
+    )
     live_monitor_interval: int
     live_monitor_include_info: bool
     live_monitor_use_websocket: bool
@@ -54,6 +64,10 @@ class SettingsUpdateRequest(BaseModel):
     dynamic_template_pinned: Optional[str] = Field(default=None, max_length=500)
     dynamic_template_query_latest: Optional[str] = Field(default=None, max_length=500)
     dynamic_template_query_pinned: Optional[str] = Field(default=None, max_length=500)
+    dynamic_template_extract: Optional[str] = Field(default=None, max_length=500)
+    dynamic_template_extract_empty: Optional[str] = Field(default=None, max_length=500)
+    dynamic_template_extract_failed: Optional[str] = Field(default=None, max_length=500)
+    dynamic_template_extract_image_label: Optional[str] = Field(default=None, max_length=500)
     live_monitor_interval: Optional[int] = Field(default=None, ge=30, le=3600)
     live_monitor_include_info: Optional[bool] = None
     live_monitor_use_websocket: Optional[bool] = None

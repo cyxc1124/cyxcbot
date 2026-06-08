@@ -38,6 +38,10 @@ export interface Settings {
   dynamic_template_pinned: string
   dynamic_template_query_latest: string
   dynamic_template_query_pinned: string
+  dynamic_template_extract: string
+  dynamic_template_extract_empty: string
+  dynamic_template_extract_failed: string
+  dynamic_template_extract_image_label: string
   live_monitor_interval: number
   live_monitor_include_info: boolean
   live_monitor_use_websocket: boolean

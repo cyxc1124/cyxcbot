@@ -9,6 +9,10 @@ DYNAMIC_TEMPLATE_KEYS = {
     "dynamic_template_pinned": "{name} 置顶了动态\n{time}\n{media}\n{url}",
     "dynamic_template_query_latest": "【{name} 的最新动态】\n{media}\n{url}",
     "dynamic_template_query_pinned": "【{name} 的置顶动态】\n{media}\n{url}",
+    "dynamic_template_extract": "动态{dynamic_id}的图片\n{images}\n{url}",
+    "dynamic_template_extract_empty": "动态{dynamic_id}的图片\n该动态未找到可提取的图片\n{url}",
+    "dynamic_template_extract_failed": "动态{dynamic_id}的图片\n提取失败，请稍后重试\n{url}",
+    "dynamic_template_extract_image_label": "图片{index}",
 }
 
 LIVE_TEMPLATE_KEYS = {
@@ -35,6 +39,10 @@ class DynamicMessageTemplates:
     pinned: str = DYNAMIC_TEMPLATE_KEYS["dynamic_template_pinned"]
     query_latest: str = DYNAMIC_TEMPLATE_KEYS["dynamic_template_query_latest"]
     query_pinned: str = DYNAMIC_TEMPLATE_KEYS["dynamic_template_query_pinned"]
+    extract: str = DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract"]
+    extract_empty: str = DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract_empty"]
+    extract_failed: str = DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract_failed"]
+    extract_image_label: str = DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract_image_label"]
 
 
 @dataclass
@@ -63,6 +71,22 @@ def dynamic_templates_from_settings(settings: dict[str, str]) -> DynamicMessageT
         query_pinned=settings.get(
             "dynamic_template_query_pinned",
             DYNAMIC_TEMPLATE_KEYS["dynamic_template_query_pinned"],
+        ),
+        extract=settings.get(
+            "dynamic_template_extract",
+            DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract"],
+        ),
+        extract_empty=settings.get(
+            "dynamic_template_extract_empty",
+            DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract_empty"],
+        ),
+        extract_failed=settings.get(
+            "dynamic_template_extract_failed",
+            DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract_failed"],
+        ),
+        extract_image_label=settings.get(
+            "dynamic_template_extract_image_label",
+            DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract_image_label"],
         ),
     )
 
