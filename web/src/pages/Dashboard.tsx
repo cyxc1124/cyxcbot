@@ -32,7 +32,7 @@ function bilibiliSettingsLink(action = '登录') {
   return (
     <>
       前往
-      <Link to="/settings" className="font-medium text-brand-600 hover:text-brand-700 hover:underline dark:text-brand-400">
+      <Link to="/settings/account" className="font-medium text-brand-600 hover:text-brand-700 hover:underline dark:text-brand-400">
       系统设置
       </Link>
       {action}

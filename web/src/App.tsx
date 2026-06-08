@@ -12,7 +12,10 @@ import { EventsPage } from './pages/Events'
 import { GroupsPage } from './pages/Groups'
 import { LiveMonitorPage } from './pages/LiveMonitor'
 import { LoginPage } from './pages/Login'
-import { SettingsPage } from './pages/Settings'
+import { SettingsLayout } from './pages/settings/SettingsLayout'
+import { SettingsAccountPage } from './pages/settings/SettingsAccount'
+import { SettingsDataPage } from './pages/settings/SettingsData'
+import { SettingsMonitorPage } from './pages/settings/SettingsMonitor'
 import { SetupPage } from './pages/Setup'
 import { AuthGuard, PublicGuard, SetupGuard } from './routes/Guards'
 
@@ -36,7 +39,12 @@ export default function App() {
                 <Route path="dynamic" element={<DynamicMonitorPage />} />
                 <Route path="live" element={<LiveMonitorPage />} />
                 <Route path="groups" element={<GroupsPage />} />
-                <Route path="settings" element={<SettingsPage />} />
+                <Route path="settings" element={<SettingsLayout />}>
+                  <Route index element={<Navigate to="monitor" replace />} />
+                  <Route path="monitor" element={<SettingsMonitorPage />} />
+                  <Route path="account" element={<SettingsAccountPage />} />
+                  <Route path="data" element={<SettingsDataPage />} />
+                </Route>
                 <Route path="audit" element={<AuditPage />} />
                 <Route path="events" element={<EventsPage />} />
                 <Route path="about" element={<AboutPage />} />
