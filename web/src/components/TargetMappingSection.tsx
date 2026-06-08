@@ -13,7 +13,7 @@ import {
 import type { DynamicTarget, Group, LiveTarget } from '../api/types'
 import { LoadErrorBanner } from './LoadErrorBanner'
 import { GroupSelector } from './GroupSelector'
-import { StatusBadge } from './StatusBadge'
+import { ToggleSwitch } from './ToggleSwitch'
 import { useToast } from '../contexts/ToastContext'
 import { useSidebar } from '../contexts/SidebarContext'
 import { formatApiError } from '../utils/apiError'
@@ -68,6 +68,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
   const [form, setForm] = useState(() => emptyForm(type === 'dynamic'))
   const [editOriginalId, setEditOriginalId] = useState('')
   const [saving, setSaving] = useState(false)
+  const [togglingId, setTogglingId] = useState<number | null>(null)
 
   const isDynamic = type === 'dynamic'
   const idLabel = isDynamic ? 'UP 主 UID' : '直播间房间号'
@@ -228,17 +229,37 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
     }
   }
 
-  const toggleEnabled = async (target: SubscriptionTarget) => {
+  const toggleEnabled = async (target: SubscriptionTarget, enabled: boolean) => {
+    setTogglingId(target.id)
     try {
       if (isDynamic) {
-        await updateDynamicTarget(target.id, { enabled: !target.enabled })
+        await updateDynamicTarget(target.id, { enabled })
       } else {
-        await updateLiveTarget(target.id, { enabled: !target.enabled })
+        await updateLiveTarget(target.id, { enabled })
       }
       showToast('success', '状态已更新')
       await load()
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : '更新失败')
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
+  const toggleAtAll = async (target: SubscriptionTarget, at_all: boolean) => {
+    setTogglingId(target.id)
+    try {
+      if (isDynamic) {
+        await updateDynamicTarget(target.id, { at_all })
+      } else {
+        await updateLiveTarget(target.id, { at_all })
+      }
+      showToast('success', '@全体 设置已更新')
+      await load()
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : '更新失败')
+    } finally {
+      setTogglingId(null)
     }
   }
 
@@ -298,28 +319,27 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
           />
         </div>
 
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={form.enabled}
-            onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
-            className="rounded border-slate-300"
-          />
-          启用订阅
-        </label>
-
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={form.at_all}
-            onChange={(e) => setForm((f) => ({ ...f, at_all: e.target.checked }))}
-            className="rounded border-slate-300"
-          />
-          推送时 @全体成员
-          <span className="text-xs text-slate-500">
-            （需机器人为群管理员；否则使用提醒文案）
-          </span>
-        </label>
+        <div className="flex flex-wrap items-center gap-6">
+          <div className="inline-flex items-center gap-2">
+            <span className="text-sm text-slate-600 dark:text-slate-400">启用订阅</span>
+            <ToggleSwitch
+              checked={form.enabled}
+              disabled={saving}
+              onChange={(checked) => setForm((f) => ({ ...f, enabled: checked }))}
+            />
+          </div>
+          <div className="inline-flex items-center gap-2">
+            <span className="text-sm text-slate-600 dark:text-slate-400">@全体成员</span>
+            <ToggleSwitch
+              checked={form.at_all}
+              disabled={saving}
+              onChange={(checked) => setForm((f) => ({ ...f, at_all: checked }))}
+            />
+          </div>
+        </div>
+        <p className="text-xs text-slate-500">
+          @全体成员需机器人为群管理员；否则将使用提醒文案
+        </p>
 
         <div className="flex gap-2">
           <button type="submit" className="btn-primary" disabled={saving}>
@@ -342,6 +362,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
   const renderDetail = (target: SubscriptionTarget) => {
     const targetId = getTargetId(target, isDynamic)
     const displayName = getTargetDisplayName(target, isDynamic, targetLabel)
+    const rowBusy = togglingId === target.id
 
     return (
       <div className="flex h-full flex-col">
@@ -359,28 +380,40 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
             </h3>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <span className="badge-neutral font-mono text-xs">{targetId}</span>
-              <StatusBadge
-                active={target.enabled}
-                activeLabel="已启用"
-                inactiveLabel="已禁用"
-              />
-              {target.at_all && <span className="badge-neutral text-xs">@全体</span>}
             </div>
             <p className="mt-2 text-xs text-slate-500">
               创建于 {formatDateTime(target.created_at)}
             </p>
           </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-4">
+            <div className="inline-flex items-center gap-2">
+              <span
+                className={`text-xs ${target.enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}
+              >
+                {target.enabled ? '已启用' : '已禁用'}
+              </span>
+              <ToggleSwitch
+                checked={target.enabled}
+                disabled={rowBusy}
+                onChange={(checked) => void toggleEnabled(target, checked)}
+              />
+            </div>
+            <div className="inline-flex items-center gap-2">
+              <span
+                className={`text-xs ${target.at_all ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}
+              >
+                {target.at_all ? '@全体' : '不@全体'}
+              </span>
+              <ToggleSwitch
+                checked={target.at_all}
+                disabled={rowBusy}
+                onChange={(checked) => void toggleAtAll(target, checked)}
+              />
+            </div>
             <button
               type="button"
               className="btn-secondary text-sm"
-              onClick={() => toggleEnabled(target)}
-            >
-              {target.enabled ? '禁用' : '启用'}
-            </button>
-            <button
-              type="button"
-              className="btn-secondary text-sm"
+              disabled={rowBusy}
               onClick={() => openEdit(target)}
             >
               编辑
@@ -388,6 +421,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
             <button
               type="button"
               className="btn-secondary text-sm text-red-600 hover:text-red-700"
+              disabled={rowBusy}
               onClick={() => handleDelete(target.id)}
             >
               删除
