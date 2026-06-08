@@ -184,11 +184,6 @@ export function LinkParserGroupPolicyTab() {
                   >
                     <td className="py-3.5 pr-4 font-medium text-foreground">
                       {group.group_name ?? '—'}
-                      {group.customized && (
-                        <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-                          自定义
-                        </span>
-                      )}
                       {saving && (
                         <span className="ml-2 text-[10px] text-muted-foreground">保存中…</span>
                       )}
@@ -364,11 +359,6 @@ export function LinkParserUserPolicyTab() {
                   >
                     <td className="py-3.5 pr-4 font-medium text-foreground">
                       {displayName ?? '—'}
-                      {user.customized && (
-                        <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-                          自定义
-                        </span>
-                      )}
                       {saving && (
                         <span className="ml-2 text-[10px] text-muted-foreground">保存中…</span>
                       )}
