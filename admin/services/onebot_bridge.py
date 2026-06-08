@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import List
 
 from nonebot import get_bots
@@ -89,8 +90,29 @@ async def _load_group_members_for_group(
     return {}
 
 
+_USER_LIST_CACHE: tuple[float, tuple[str, ...], list[dict]] | None = None
+_USER_LIST_CACHE_TTL_SECONDS = 120
+
+
+def invalidate_user_list_cache() -> None:
+    global _USER_LIST_CACHE
+    _USER_LIST_CACHE = None
+
+
 async def get_user_list(group_ids: list[str] | None = None) -> List[dict]:
     """Fetch QQ users from friend list and optional group member lists."""
+    global _USER_LIST_CACHE
+    normalized_group_ids = tuple(
+        sorted({str(gid).strip() for gid in (group_ids or []) if str(gid).strip()})
+    )
+    now = time.time()
+    if (
+        _USER_LIST_CACHE is not None
+        and now - _USER_LIST_CACHE[0] < _USER_LIST_CACHE_TTL_SECONDS
+        and _USER_LIST_CACHE[1] == normalized_group_ids
+    ):
+        return [dict(user) for user in _USER_LIST_CACHE[2]]
+
     users: dict[str, dict] = {}
     bots = get_bots()
     if not bots:
@@ -109,16 +131,18 @@ async def get_user_list(group_ids: list[str] | None = None) -> List[dict]:
         except Exception as exc:
             logger.error(f"Failed to get friend list from bot {bot.self_id}: {exc}")
 
-    normalized_group_ids = [str(gid).strip() for gid in (group_ids or []) if str(gid).strip()]
-    if normalized_group_ids and bot_list:
+    group_id_list = list(normalized_group_ids)
+    if group_id_list and bot_list:
         member_chunks = await asyncio.gather(
             *[
                 _load_group_members_for_group(bot_list, gid, self_ids)
-                for gid in normalized_group_ids
+                for gid in group_id_list
             ]
         )
         for chunk in member_chunks:
             for uid, data in chunk.items():
                 _merge_user(users, uid, data.get("nickname"), self_ids=self_ids)
 
-    return sorted(users.values(), key=lambda item: item["user_id"])
+    result = sorted(users.values(), key=lambda item: item["user_id"])
+    _USER_LIST_CACHE = (now, normalized_group_ids, result)
+    return [dict(user) for user in result]

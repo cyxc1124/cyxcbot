@@ -14,8 +14,10 @@ import type {
   Group,
   GroupMessagePolicy,
   LinkParserGroupPolicyList,
+  LinkParserGroupPolicyMutation,
   LinkParserUserPolicyInput,
   LinkParserUserPolicyList,
+  LinkParserUserPolicyMutation,
   LiveMonitorStatus,
   LiveTarget,
   LiveTargetCreate,
@@ -289,13 +291,13 @@ export const updateLinkParserGroupPolicy = (
   groupId: string,
   payload: { enabled: boolean; video_enabled: boolean; live_enabled: boolean },
 ) =>
-  request<LinkParserGroupPolicyList>(`/link-parser/policies/groups/${encodeURIComponent(groupId)}`, {
+  request<LinkParserGroupPolicyMutation>(`/link-parser/policies/groups/${encodeURIComponent(groupId)}`, {
     method: 'PUT',
     body: JSON.stringify(payload),
   })
 
 export const resetLinkParserGroupPolicy = (groupId: string) =>
-  request<LinkParserGroupPolicyList>(
+  request<LinkParserGroupPolicyMutation>(
     `/link-parser/policies/groups/${encodeURIComponent(groupId)}`,
     { method: 'DELETE' },
   )
@@ -313,7 +315,7 @@ export const updateLinkParserUserPolicy = (
   userId: string,
   payload: Omit<LinkParserUserPolicyInput, 'user_id'>,
 ) =>
-  request<LinkParserUserPolicyList>(
+  request<LinkParserUserPolicyMutation>(
     `/link-parser/policies/users/${encodeURIComponent(userId)}`,
     {
       method: 'PUT',
@@ -322,7 +324,7 @@ export const updateLinkParserUserPolicy = (
   )
 
 export const resetLinkParserUserPolicy = (userId: string) =>
-  request<LinkParserUserPolicyList>(
+  request<LinkParserUserPolicyMutation>(
     `/link-parser/policies/users/${encodeURIComponent(userId)}`,
     { method: 'DELETE' },
   )

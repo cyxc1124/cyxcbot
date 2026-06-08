@@ -63,12 +63,6 @@ def resolve_link_parser_policy(
     """Resolve effective link parser policy for a chat context."""
     policy = _global_policy(snapshot)
 
-    if is_private and not policy.private_enabled:
-        return _disabled_policy()
-
-    if not policy.enabled:
-        return _disabled_policy()
-
     if group_id:
         group_override = snapshot.link_parser_group_policies.get(str(group_id).strip())
         if group_override:

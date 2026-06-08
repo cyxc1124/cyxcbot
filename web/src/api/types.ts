@@ -160,6 +160,11 @@ export interface LinkParserGroupPolicyList {
   groups: LinkParserGroupPolicyItem[]
 }
 
+export interface LinkParserGroupPolicyMutation {
+  global_policy: LinkParserGlobalPolicy
+  item: LinkParserGroupPolicyItem
+}
+
 export interface LinkParserUserPolicyItem {
   user_id: string
   nickname: string | null
@@ -174,6 +179,11 @@ export interface LinkParserUserPolicyItem {
 export interface LinkParserUserPolicyList {
   global_policy: LinkParserGlobalPolicy
   users: LinkParserUserPolicyItem[]
+}
+
+export interface LinkParserUserPolicyMutation {
+  global_policy: LinkParserGlobalPolicy
+  item: LinkParserUserPolicyItem
 }
 
 export interface LinkParserUserPolicyInput {

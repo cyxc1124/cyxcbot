@@ -68,7 +68,27 @@ export function LinkParserGroupPolicyTab() {
   const [globalPolicy, setGlobalPolicy] = useState<LinkParserGlobalPolicy | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [busyId, setBusyId] = useState<string | null>(null)
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
+
+  const markSaving = (groupId: string, saving: boolean) => {
+    setSavingIds((current) => {
+      const next = new Set(current)
+      if (saving) next.add(groupId)
+      else next.delete(groupId)
+      return next
+    })
+  }
+
+  const applyGroupItem = (item: LinkParserGroupPolicyItem, policy: LinkParserGlobalPolicy) => {
+    setGroups((current) =>
+      current.map((row) =>
+        row.group_id === item.group_id
+          ? { ...item, group_name: item.group_name ?? row.group_name, member_count: item.member_count ?? row.member_count }
+          : row,
+      ),
+    )
+    setGlobalPolicy(policy)
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -89,36 +109,48 @@ export function LinkParserGroupPolicyTab() {
   }, [load])
 
   const patchGroup = async (
-    group: LinkParserGroupPolicyItem,
+    groupId: string,
     patch: Partial<Pick<LinkParserGroupPolicyItem, 'enabled' | 'video_enabled' | 'live_enabled'>>,
   ) => {
-    setBusyId(group.group_id)
+    let payload: Pick<LinkParserGroupPolicyItem, 'enabled' | 'video_enabled' | 'live_enabled'> | null = null
+
+    setGroups((current) =>
+      current.map((row) => {
+        if (row.group_id !== groupId) return row
+        const next = { ...row, ...patch, customized: true }
+        payload = {
+          enabled: next.enabled,
+          video_enabled: next.video_enabled,
+          live_enabled: next.live_enabled,
+        }
+        return next
+      }),
+    )
+
+    if (!payload) return
+
+    markSaving(groupId, true)
     try {
-      const data = await updateLinkParserGroupPolicy(group.group_id, {
-        enabled: patch.enabled ?? group.enabled,
-        video_enabled: patch.video_enabled ?? group.video_enabled,
-        live_enabled: patch.live_enabled ?? group.live_enabled,
-      })
-      setGroups(data.groups)
-      setGlobalPolicy(data.global_policy)
+      const data = await updateLinkParserGroupPolicy(groupId, payload)
+      applyGroupItem(data.item, data.global_policy)
     } catch (err) {
+      void load()
       showToast('error', formatApiError(err, '保存失败'))
     } finally {
-      setBusyId(null)
+      markSaving(groupId, false)
     }
   }
 
   const handleReset = async (groupId: string) => {
-    setBusyId(groupId)
+    markSaving(groupId, true)
     try {
       const data = await resetLinkParserGroupPolicy(groupId)
-      setGroups(data.groups)
-      setGlobalPolicy(data.global_policy)
+      applyGroupItem(data.item, data.global_policy)
       showToast('success', '已恢复为全局默认')
     } catch (err) {
       showToast('error', formatApiError(err, '恢复失败'))
     } finally {
-      setBusyId(null)
+      markSaving(groupId, false)
     }
   }
 
@@ -149,7 +181,7 @@ export function LinkParserGroupPolicyTab() {
             </thead>
             <tbody>
               {groups.map((group) => {
-                const busy = busyId === group.group_id
+                const saving = savingIds.has(group.group_id)
                 return (
                   <tr
                     key={group.group_id}
@@ -162,30 +194,33 @@ export function LinkParserGroupPolicyTab() {
                           自定义
                         </span>
                       )}
+                      {saving && (
+                        <span className="ml-2 text-[10px] text-slate-400">保存中…</span>
+                      )}
                     </td>
                     <td className="py-3.5 pr-4 font-mono text-xs text-slate-500">{group.group_id}</td>
                     <td className="py-3.5 pr-4">
                       <PolicyToggleRow
                         label="链接解析"
                         checked={group.enabled}
-                        disabled={busy}
-                        onChange={(checked) => void patchGroup(group, { enabled: checked })}
+                        disabled={false}
+                        onChange={(checked) => void patchGroup(group.group_id, { enabled: checked })}
                       />
                     </td>
                     <td className="py-3.5 pr-4">
                       <PolicyToggleRow
                         label="视频"
                         checked={group.video_enabled}
-                        disabled={busy || !group.enabled}
-                        onChange={(checked) => void patchGroup(group, { video_enabled: checked })}
+                        disabled={false}
+                        onChange={(checked) => void patchGroup(group.group_id, { video_enabled: checked })}
                       />
                     </td>
                     <td className="py-3.5 pr-4">
                       <PolicyToggleRow
                         label="直播"
                         checked={group.live_enabled}
-                        disabled={busy || !group.enabled}
-                        onChange={(checked) => void patchGroup(group, { live_enabled: checked })}
+                        disabled={false}
+                        onChange={(checked) => void patchGroup(group.group_id, { live_enabled: checked })}
                       />
                     </td>
                     <td className="py-3.5 text-right">
@@ -193,7 +228,7 @@ export function LinkParserGroupPolicyTab() {
                         <button
                           type="button"
                           className="btn-secondary text-xs"
-                          disabled={busy}
+                          disabled={saving}
                           onClick={() => void handleReset(group.group_id)}
                         >
                           恢复默认
@@ -217,7 +252,27 @@ export function LinkParserUserPolicyTab() {
   const [globalPolicy, setGlobalPolicy] = useState<LinkParserGlobalPolicy | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [busyId, setBusyId] = useState<string | null>(null)
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
+
+  const markSaving = (userId: string, saving: boolean) => {
+    setSavingIds((current) => {
+      const next = new Set(current)
+      if (saving) next.add(userId)
+      else next.delete(userId)
+      return next
+    })
+  }
+
+  const applyUserItem = (item: LinkParserUserPolicyItem, policy: LinkParserGlobalPolicy) => {
+    setUsers((current) =>
+      current.map((row) =>
+        row.user_id === item.user_id
+          ? { ...item, nickname: item.nickname ?? row.nickname, name: item.name ?? row.name }
+          : row,
+      ),
+    )
+    setGlobalPolicy(policy)
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -238,40 +293,66 @@ export function LinkParserUserPolicyTab() {
   }, [load])
 
   const patchUser = async (
-    user: LinkParserUserPolicyItem,
+    userId: string,
     patch: Partial<
       Pick<LinkParserUserPolicyItem, 'enabled' | 'video_enabled' | 'live_enabled' | 'private_enabled'>
     >,
   ) => {
-    setBusyId(user.user_id)
+    let saved:
+      | {
+          enabled: boolean
+          video_enabled: boolean
+          live_enabled: boolean
+          private_enabled: boolean
+        }
+      | undefined
+    let note: string | null = null
+
+    setUsers((current) =>
+      current.map((row) => {
+        if (row.user_id !== userId) return row
+        const next = { ...row, ...patch, customized: true }
+        note = row.name
+        saved = {
+          enabled: next.enabled,
+          video_enabled: next.video_enabled,
+          live_enabled: next.live_enabled,
+          private_enabled: next.private_enabled,
+        }
+        return next
+      }),
+    )
+
+    if (!saved) return
+
+    markSaving(userId, true)
     try {
-      const data = await updateLinkParserUserPolicy(user.user_id, {
-        name: user.name ?? undefined,
-        enabled: patch.enabled ?? user.enabled,
-        video_enabled: patch.video_enabled ?? user.video_enabled,
-        live_enabled: patch.live_enabled ?? user.live_enabled,
-        private_enabled: patch.private_enabled ?? user.private_enabled,
+      const data = await updateLinkParserUserPolicy(userId, {
+        name: note ?? undefined,
+        enabled: saved.enabled,
+        video_enabled: saved.video_enabled,
+        live_enabled: saved.live_enabled,
+        private_enabled: saved.private_enabled,
       })
-      setUsers(data.users)
-      setGlobalPolicy(data.global_policy)
+      applyUserItem(data.item, data.global_policy)
     } catch (err) {
+      void load()
       showToast('error', formatApiError(err, '保存失败'))
     } finally {
-      setBusyId(null)
+      markSaving(userId, false)
     }
   }
 
   const handleReset = async (userId: string) => {
-    setBusyId(userId)
+    markSaving(userId, true)
     try {
       const data = await resetLinkParserUserPolicy(userId)
-      setUsers(data.users)
-      setGlobalPolicy(data.global_policy)
+      applyUserItem(data.item, data.global_policy)
       showToast('success', '已恢复为全局默认')
     } catch (err) {
       showToast('error', formatApiError(err, '恢复失败'))
     } finally {
-      setBusyId(null)
+      markSaving(userId, false)
     }
   }
 
@@ -303,7 +384,7 @@ export function LinkParserUserPolicyTab() {
             </thead>
             <tbody>
               {users.map((user) => {
-                const busy = busyId === user.user_id
+                const saving = savingIds.has(user.user_id)
                 const displayName = user.nickname ?? user.name
                 return (
                   <tr
@@ -317,38 +398,41 @@ export function LinkParserUserPolicyTab() {
                           自定义
                         </span>
                       )}
+                      {saving && (
+                        <span className="ml-2 text-[10px] text-slate-400">保存中…</span>
+                      )}
                     </td>
                     <td className="py-3.5 pr-4 font-mono text-xs text-slate-500">{user.user_id}</td>
                     <td className="py-3.5 pr-4">
                       <PolicyToggleRow
                         label="链接解析"
                         checked={user.enabled}
-                        disabled={busy}
-                        onChange={(checked) => void patchUser(user, { enabled: checked })}
+                        disabled={false}
+                        onChange={(checked) => void patchUser(user.user_id, { enabled: checked })}
                       />
                     </td>
                     <td className="py-3.5 pr-4">
                       <PolicyToggleRow
                         label="视频"
                         checked={user.video_enabled}
-                        disabled={busy || !user.enabled}
-                        onChange={(checked) => void patchUser(user, { video_enabled: checked })}
+                        disabled={false}
+                        onChange={(checked) => void patchUser(user.user_id, { video_enabled: checked })}
                       />
                     </td>
                     <td className="py-3.5 pr-4">
                       <PolicyToggleRow
                         label="直播"
                         checked={user.live_enabled}
-                        disabled={busy || !user.enabled}
-                        onChange={(checked) => void patchUser(user, { live_enabled: checked })}
+                        disabled={false}
+                        onChange={(checked) => void patchUser(user.user_id, { live_enabled: checked })}
                       />
                     </td>
                     <td className="py-3.5 pr-4">
                       <PolicyToggleRow
                         label="私聊"
                         checked={user.private_enabled}
-                        disabled={busy || !user.enabled}
-                        onChange={(checked) => void patchUser(user, { private_enabled: checked })}
+                        disabled={false}
+                        onChange={(checked) => void patchUser(user.user_id, { private_enabled: checked })}
                       />
                     </td>
                     <td className="py-3.5 text-right">
@@ -356,7 +440,7 @@ export function LinkParserUserPolicyTab() {
                         <button
                           type="button"
                           className="btn-secondary text-xs"
-                          disabled={busy}
+                          disabled={saving}
                           onClick={() => void handleReset(user.user_id)}
                         >
                           恢复默认

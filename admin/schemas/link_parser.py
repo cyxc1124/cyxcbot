@@ -29,6 +29,11 @@ class LinkParserGroupPolicyListResponse(BaseModel):
     groups: List[LinkParserGroupPolicyItem]
 
 
+class LinkParserGroupPolicyMutationResponse(BaseModel):
+    global_policy: LinkParserGlobalPolicy
+    item: LinkParserGroupPolicyItem
+
+
 class LinkParserGroupPolicyUpdateRequest(BaseModel):
     enabled: bool
     video_enabled: bool
@@ -49,6 +54,11 @@ class LinkParserUserPolicyItem(BaseModel):
 class LinkParserUserPolicyListResponse(BaseModel):
     global_policy: LinkParserGlobalPolicy
     users: List[LinkParserUserPolicyItem]
+
+
+class LinkParserUserPolicyMutationResponse(BaseModel):
+    global_policy: LinkParserGlobalPolicy
+    item: LinkParserUserPolicyItem
 
 
 class LinkParserUserPolicyCreateRequest(BaseModel):
