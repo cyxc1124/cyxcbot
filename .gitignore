@@ -186,6 +186,9 @@ test_*.py
 *.backup
 *~
 
+# Web Admin (frontend)
+web/node_modules/
+
 # 系统文件
 .DS_Store
 Thumbs.db

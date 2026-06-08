@@ -85,8 +85,8 @@ RUN playwright install chromium
 # 复制项目文件
 COPY . .
 
-# 暴露端口
-EXPOSE 8080
+# 暴露端口（OneBot + Web Admin）
+EXPOSE 8080 8081
 
 # 设置默认 shell 为 bash
 SHELL ["/bin/bash", "-c"]

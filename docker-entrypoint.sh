@@ -23,6 +23,13 @@ if [ -z "$PORT" ]; then
     export PORT="8080"
 fi
 
-# 启动应用
-echo "Starting CyxcBot..."
-exec python bot.py 
+if [ -z "$WEB_PORT" ]; then
+    export WEB_PORT="8081"
+fi
+
+# 确保数据目录存在（SQLite 默认路径）
+mkdir -p /app/data
+
+# 数据库迁移/初始化在 bot.py 启动时自动完成
+echo "Starting CyxcBot (OneBot: ${PORT}, Web Admin: ${WEB_PORT})..."
+exec python bot.py

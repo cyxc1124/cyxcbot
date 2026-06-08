@@ -147,8 +147,34 @@ def configure_logging():
 
     return log_level
 
+# 尽早加载 .env（供 SQLALCHEMY_DATABASE_URL、WEB_SECRET_KEY 等使用）
+_env_path = Path(".env")
+if _env_path.exists():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_env_path)
+    except ImportError:
+        pass
+
+# 默认 SQLite 路径（与 env.example 一致）
+if not os.getenv("SQLALCHEMY_DATABASE_URL"):
+    Path("data").mkdir(parents=True, exist_ok=True)
+    os.environ["SQLALCHEMY_DATABASE_URL"] = "sqlite+aiosqlite:///data/cyxcbot.db"
+
+_db_url = os.getenv("SQLALCHEMY_DATABASE_URL", "sqlite+aiosqlite:///data/cyxcbot.db")
+_migrations_dir = Path(__file__).resolve().parent / "shared" / "db" / "migrations"
+
 # 初始化 NoneBot
-nonebot.init()
+# alembic_startup_check=False：启动时自动同步数据库 schema（建表/更新），无需额外脚本
+nonebot.init(
+    sqlalchemy_database_url=_db_url,
+    alembic_startup_check=False,
+    alembic_version_locations=_migrations_dir,
+)
+
+nonebot.load_plugin("nonebot_plugin_orm")
+import shared.db.models  # noqa: F401
+import admin.startup  # noqa: F401
 
 # 配置日志级别
 log_level = configure_logging()

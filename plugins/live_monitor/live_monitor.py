@@ -14,8 +14,13 @@ from typing import Dict, Optional
 from datetime import datetime
 from nonebot.log import logger
 from nonebot_plugin_apscheduler import scheduler
+from nonebot_plugin_orm import get_session
 
 from .config import Config
+from shared.audit.service import write_audit
+from shared.config.service import get_config_service
+from shared.db.enums import AuditAction
+from shared.db.models import LiveMonitorState
 from .models import LiveRoomState
 from .danmaku_client import DanmakuClient
 from .sender import LiveNotificationSender
@@ -61,8 +66,76 @@ class LiveMonitor:
             if room_id not in self.room_states:
                 self.room_states[room_id] = LiveRoomState(room_id=int(room_id))
         
+        await self._load_persisted_states()
         logger.info(f"直播监控已初始化，监控房间数: {len(self.room_states)}")
-    
+
+    async def _load_persisted_states(self):
+        session = get_session()
+        async with session.begin():
+            for room_id in self.config.live_monitor_mapping.keys():
+                row = await session.get(LiveMonitorState, room_id)
+                if row and room_id in self.room_states:
+                    state = self.room_states[room_id]
+                    if row.previous_status:
+                        from utils.bilibili_api import LiveStatus
+                        try:
+                            state.previous_status = LiveStatus[row.previous_status]
+                        except KeyError:
+                            pass
+                    if row.start_time:
+                        state.start_time = row.start_time
+
+    async def _persist_state(self, room_id: str):
+        state = self.room_states.get(room_id)
+        if not state:
+            return
+        session = get_session()
+        async with session.begin():
+            row = await session.get(LiveMonitorState, room_id)
+            if not row:
+                row = LiveMonitorState(room_id=room_id)
+                session.add(row)
+            row.previous_status = state.previous_status.name if state.previous_status else None
+            row.start_time = state.start_time or None
+            row.streamer_name = state.user_info.name if state.user_info else None
+
+    async def reload_config(self):
+        old_interval = self.config.monitor_interval
+        old_ws = self.config.use_websocket
+        self.config = Config.from_service()
+
+        await api_manager.init(self.config.bilibili_cookie)
+
+        for room_id in self.config.live_monitor_mapping.keys():
+            if room_id not in self.room_states:
+                self.room_states[room_id] = LiveRoomState(room_id=int(room_id))
+
+        if self.is_running:
+            poll_interval = (
+                max(300, self.config.monitor_interval * 5)
+                if self.config.use_websocket
+                else self.config.monitor_interval
+            )
+            if old_interval != self.config.monitor_interval or old_ws != self.config.use_websocket:
+                scheduler.add_job(
+                    self._check_all_rooms,
+                    "interval",
+                    seconds=poll_interval,
+                    id="live_monitor_check",
+                    replace_existing=True,
+                    max_instances=1,
+                    misfire_grace_time=60,
+                )
+                logger.info(f"直播监控轮询间隔已更新为 {poll_interval}秒")
+
+            if old_ws != self.config.use_websocket:
+                if self.config.use_websocket:
+                    await self._start_danmaku_clients()
+                else:
+                    await self._stop_danmaku_clients()
+
+        self._sender.include_room_info = self.config.include_room_info
+
     async def start_monitoring(self):
         """启动监控"""
         self.is_running = True
@@ -344,7 +417,22 @@ class LiveMonitor:
             user_info=state.user_info,
             duration_seconds=duration_seconds
         )
-    
+
+        try:
+            await write_audit(
+                AuditAction.LIVE_PUSH,
+                details=get_config_service().serialize_details({
+                    "room_id": room_id,
+                    "status": status,
+                    "streamer": streamer_name,
+                    "groups": target_groups,
+                }),
+            )
+        except Exception as exc:
+            logger.warning(f"写入直播推送审计日志失败: {exc}")
+
+        await self._persist_state(room_id)
+
     async def check_room_now(self, room_id: str) -> Optional[Dict]:
         """立即检查指定房间的状态（用于手动触发）"""
         room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
@@ -371,9 +459,8 @@ async def start_live_monitor():
         logger.warning("直播监控已在运行中")
         return
     
-    from nonebot import get_plugin_config
-    config = get_plugin_config(Config)
-    
+    config = Config.from_service()
+
     # 检查是否有配置的房间
     if not config.live_monitor_mapping:
         logger.warning("未配置任何直播间监控，跳过启动")
@@ -385,7 +472,13 @@ async def start_live_monitor():
         
         # 启动监控
         await live_monitor_instance.start_monitoring()
-        
+
+        async def _on_config_reload(_snapshot):
+            if live_monitor_instance:
+                await live_monitor_instance.reload_config()
+
+        get_config_service().register_reload_callback(_on_config_reload)
+
         logger.info("B站直播监控已启动")
         
     except Exception as e:

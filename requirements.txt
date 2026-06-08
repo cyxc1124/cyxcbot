@@ -1,15 +1,38 @@
+# NoneBot 核心框架
 nonebot2[fastapi]==2.4.2
 nonebot-adapter-console==0.7.1
 nonebot-adapter-onebot==2.4.6
 nonebot-plugin-apscheduler==0.5.0
+nonebot-plugin-orm[sqlite]==0.8.3
+
+# 配置
 python-dotenv==1.2.1
-psutil==5.9.6
-pytest==7.4.3
-pytest-asyncio==0.21.1
-flake8==6.1.0
+
+# Admin 后台 API
+fastapi==0.115.6
+uvicorn==0.34.0
+python-multipart==0.0.20
+
+# 认证与安全
+bcrypt==4.2.1
+python-jose[cryptography]==3.3.0
+cryptography==44.0.0
+passlib[bcrypt]==1.7.4
+
+# HTTP 客户端
 aiohttp==3.9.1
+
+# B 站监控与内容抓取
 feedparser==6.0.10
 playwright==1.57.0
 playwright-stealth==2.0.2
 brotli==1.2.0
 Pillow==12.1.1
+
+# 系统状态
+psutil==5.9.6
+
+# 开发与测试
+pytest==7.4.3
+pytest-asyncio==0.21.1
+flake8==6.1.0

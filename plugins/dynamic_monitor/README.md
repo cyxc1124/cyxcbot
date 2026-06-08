@@ -212,8 +212,9 @@ DYNAMIC_ENABLE_SCREENSHOT=false
 启用截图功能需要安装Playwright：
 
 ```bash
-pip install playwright==1.40.0
-playwright install chromium
+# 依赖已在根目录 requirements.txt；请在项目 venv 中执行
+./venv/bin/pip install -r requirements.txt
+./venv/bin/playwright install chromium
 ```
 
 ### 注意事项

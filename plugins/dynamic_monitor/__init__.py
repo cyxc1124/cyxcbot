@@ -55,9 +55,7 @@ async def handle_dynamic_commands(event: GroupMessageEvent):
     message_text = event.get_plaintext().strip()
     logger.debug(f"收到群消息: {message_text}")
 
-    # 获取配置
-    from nonebot import get_plugin_config
-    config = get_plugin_config(Config)
+    config = Config.from_service()
 
     # 获取群组ID
     group_id = str(event.group_id)

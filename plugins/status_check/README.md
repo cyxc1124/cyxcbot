@@ -78,9 +78,9 @@ class Config(BaseModel):
 
 ## 安装
 
-1. 确保已安装 `psutil`：
+1. `psutil` 已包含在根目录 `requirements.txt` 中；本地请使用 venv 安装依赖：
    ```bash
-   pip install psutil
+   ./venv/bin/pip install -r requirements.txt
    ```
 
 2. 插件会自动被NoneBot2加载

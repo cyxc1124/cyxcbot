@@ -148,8 +148,7 @@ list_monitor_cmd = on_command("监控列表", aliases={"直播监控列表"}, pr
 @list_monitor_cmd.handle()
 async def handle_list_monitor(bot: Bot, event: GroupMessageEvent):
     """列出当前监控的房间"""
-    from nonebot import get_plugin_config
-    config = get_plugin_config(Config)
+    config = Config.from_service()
     
     group_id = str(event.group_id)
     

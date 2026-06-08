@@ -8,11 +8,16 @@ from typing import Dict, List, Optional
 from nonebot.log import logger
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot_plugin_apscheduler import scheduler
+from nonebot_plugin_orm import get_session
 
 from .config import Config
 from utils.bilibili_api import DynamicFetcher
 from .sender import DynamicSender
 from utils.screenshot import init_screenshot_service, close_screenshot_service, get_dynamic_screenshot
+from shared.audit.service import write_audit
+from shared.config.service import get_config_service
+from shared.db.enums import AuditAction
+from shared.db.models import DynamicMonitorState
 
 # 全局监控实例
 dynamic_monitor_instance: Optional['DynamicMonitor'] = None
@@ -48,10 +53,70 @@ class DynamicMonitor:
         else:
             logger.info("动态截图已禁用（DYNAMIC_ENABLE_SCREENSHOT=false）")
 
-        # 初始化最后动态ID与首次检查标记
+        await self._load_persisted_states()
+
+    async def _load_persisted_states(self):
+        """从 DB 恢复监控状态"""
         for uid in self.config.dynamic_monitor_mapping.keys():
-            self.last_dynamic_ids[uid] = 0
-            self.initialized_uids[uid] = False
+            if uid not in self.pinned_dynamic_ids:
+                self.pinned_dynamic_ids[uid] = None
+
+        session = get_session()
+        async with session.begin():
+            for uid in self.config.dynamic_monitor_mapping.keys():
+                row = await session.get(DynamicMonitorState, uid)
+                if row:
+                    self.last_dynamic_ids[uid] = row.last_dynamic_id
+                    self.initialized_uids[uid] = row.initialized
+                    self.pinned_dynamic_ids[uid] = row.pinned_dynamic_id
+                else:
+                    self.last_dynamic_ids[uid] = 0
+                    self.initialized_uids[uid] = False
+
+    async def _persist_state(self, uid: str):
+        """持久化单个 UID 的监控状态"""
+        session = get_session()
+        async with session.begin():
+            row = await session.get(DynamicMonitorState, uid)
+            if not row:
+                row = DynamicMonitorState(uid=uid)
+                session.add(row)
+            row.last_dynamic_id = self.last_dynamic_ids.get(uid, 0)
+            row.initialized = self.initialized_uids.get(uid, False)
+            row.pinned_dynamic_id = self.pinned_dynamic_ids.get(uid)
+
+    async def reload_config(self):
+        """热重载配置并调整调度任务"""
+        old_interval = self.config.monitor_interval
+        old_screenshot = self.config.enable_screenshot
+        self.config = Config.from_service()
+
+        if self.fetcher:
+            self.fetcher.cookie = self.config.bilibili_cookie
+
+        for uid in self.config.dynamic_monitor_mapping.keys():
+            if uid not in self.last_dynamic_ids:
+                self.last_dynamic_ids[uid] = 0
+                self.initialized_uids[uid] = False
+                self.pinned_dynamic_ids[uid] = None
+
+        if self.is_running and old_interval != self.config.monitor_interval:
+            scheduler.add_job(
+                self._check_all_dynamics,
+                "interval",
+                seconds=self.config.monitor_interval,
+                id="dynamic_monitor_check",
+                replace_existing=True,
+                max_instances=1,
+                misfire_grace_time=60,
+            )
+            logger.info(f"动态监控间隔已更新为 {self.config.monitor_interval}秒")
+
+        if old_screenshot != self.config.enable_screenshot:
+            if self.config.enable_screenshot:
+                await init_screenshot_service()
+            else:
+                await close_screenshot_service()
 
     async def start_monitoring(self):
         """启动监控 - 使用APScheduler定时任务"""
@@ -156,6 +221,7 @@ class DynamicMonitor:
                 logger.info(f"UP主 {uid} 首次监控，已记录置顶动态ID: {new_pinned_id}")
 
             self.initialized_uids[uid] = True
+            await self._persist_state(uid)
             return
 
         # 处理置顶动态变化（只有在非首次启动时才推送置顶动态变化）
@@ -178,6 +244,9 @@ class DynamicMonitor:
             # 对每个新动态进行推送
             for dynamic in sorted(new_dynamics, key=lambda x: x.timestamp):
                 await self._send_dynamic_notification(uid, dynamic)
+
+        if new_dynamics or new_pinned_id != current_pinned_id:
+            await self._persist_state(uid)
 
     async def _fetch_dynamic_screenshot(self, dynamic_id: int) -> Optional[bytes]:
         """获取动态截图，未启用时直接返回 None"""
@@ -221,6 +290,19 @@ class DynamicMonitor:
 
         # 推送到每个群组
         await self.sender.send_to_groups(message, group_ids)
+
+        try:
+            await write_audit(
+                AuditAction.DYNAMIC_PUSH,
+                details=get_config_service().serialize_details({
+                    "uid": uid,
+                    "dynamic_id": dynamic.id,
+                    "is_pinned": is_pinned,
+                    "groups": group_ids,
+                }),
+            )
+        except Exception as exc:
+            logger.warning(f"写入动态推送审计日志失败: {exc}")
 
     async def get_latest_dynamic(self, uid: str, group_id: str):
         """获取并发送指定UP主的最新动态"""
@@ -349,8 +431,7 @@ async def start_dynamic_monitor():
         logger.warning("动态监控已在运行中")
         return
 
-    from nonebot import get_plugin_config
-    config = get_plugin_config(Config)
+    config = Config.from_service()
 
     # 检查是否有配置的用户
     if not config.dynamic_monitor_mapping:
@@ -363,6 +444,12 @@ async def start_dynamic_monitor():
 
         # 启动监控（会添加APScheduler定时任务）
         await dynamic_monitor_instance.start_monitoring()
+
+        async def _on_config_reload(_snapshot):
+            if dynamic_monitor_instance:
+                await dynamic_monitor_instance.reload_config()
+
+        get_config_service().register_reload_callback(_on_config_reload)
 
         logger.info("UP主动态监控已启动")
 
