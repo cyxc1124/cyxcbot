@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { getEvents } from '../api/client'
 import type { SystemEvent } from '../api/types'
-import { ErrorAlert } from '../components/ErrorAlert'
+import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
 import { Pagination } from '../components/Pagination'
 import { LevelBadge } from '../components/StatusBadge'
+import { formatApiError } from '../utils/apiError'
 import { formatDateTime } from '../utils/format'
 
 const PAGE_SIZE = 20
@@ -32,7 +33,7 @@ export function EventsPage() {
       setEvents(data.items)
       setTotal(data.total)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载失败')
+      setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
@@ -91,11 +92,13 @@ export function EventsPage() {
         </button>
       </form>
 
-      {error && <ErrorAlert message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={load} />}
 
       <div className="card">
         {loading ? (
           <PageLoading />
+        ) : error ? (
+          <p className="py-8 text-center text-sm text-slate-500">数据暂时无法加载</p>
         ) : events.length === 0 ? (
           <p className="py-8 text-center text-sm text-slate-500">暂无事件记录</p>
         ) : (

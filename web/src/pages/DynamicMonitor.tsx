@@ -5,12 +5,13 @@ import {
   triggerDynamicFetch,
 } from '../api/client'
 import type { DynamicMonitorStatus } from '../api/types'
-import { ErrorAlert } from '../components/ErrorAlert'
+import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
 import { MonitorModeBadge } from '../components/MonitorModeBadge'
 import { StatusBadge } from '../components/StatusBadge'
 import { TargetMappingSection } from '../components/TargetMappingSection'
 import { useToast } from '../contexts/ToastContext'
+import { formatApiError } from '../utils/apiError'
 import { formatDateTime } from '../utils/format'
 
 export function DynamicMonitorPage() {
@@ -27,7 +28,7 @@ export function DynamicMonitorPage() {
       const data = await getDynamicMonitorStatus()
       setStatus(data)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载失败')
+      setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
@@ -53,7 +54,7 @@ export function DynamicMonitorPage() {
     }
   }
 
-  if (loading && !status) return <PageLoading />
+  if (loading && !status && !error) return <PageLoading />
 
   return (
     <div className="space-y-6">
@@ -82,7 +83,7 @@ export function DynamicMonitorPage() {
         </div>
       </div>
 
-      {error && <ErrorAlert message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={load} />}
 
       <div className="card">
         <div className="mb-6 flex items-center gap-3">

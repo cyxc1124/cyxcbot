@@ -104,10 +104,15 @@ async function request<T>(
       }
     }
 
-    const response = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers,
-    })
+    let response: Response
+    try {
+      response = await fetch(`${API_BASE}${path}`, {
+        ...options,
+        headers,
+      })
+    } catch {
+      throw new ApiClientError('后端服务暂不可用，数据暂时无法加载', 0)
+    }
 
     if (response.status === 401 && auth) {
       clearToken()
@@ -119,15 +124,19 @@ async function request<T>(
 
     if (!response.ok) {
       let message = `请求失败 (${response.status})`
-      try {
-        const data = await response.json()
-        if (typeof data.detail === 'string') {
-          message = data.detail
-        } else if (Array.isArray(data.detail)) {
-          message = data.detail.map((d: { msg?: string }) => d.msg ?? '').join('; ')
+      if (response.status === 502 || response.status === 503 || response.status === 504) {
+        message = '后端服务暂不可用，数据暂时无法加载'
+      } else {
+        try {
+          const data = await response.json()
+          if (typeof data.detail === 'string') {
+            message = data.detail
+          } else if (Array.isArray(data.detail)) {
+            message = data.detail.map((d: { msg?: string }) => d.msg ?? '').join('; ')
+          }
+        } catch {
+          // ignore parse errors
         }
-      } catch {
-        // ignore parse errors
       }
       throw new ApiClientError(message, response.status)
     }
@@ -192,6 +201,8 @@ export async function pollBilibiliQrcodeLogin(
     headers,
     body: JSON.stringify({ qrcode }),
     signal,
+  }).catch(() => {
+    throw new ApiClientError('后端服务暂不可用，数据暂时无法加载', 0)
   })
 
   if (response.status === 401) {
@@ -204,13 +215,17 @@ export async function pollBilibiliQrcodeLogin(
 
   if (!response.ok) {
     let message = `请求失败 (${response.status})`
-    try {
-      const data = await response.json()
-      if (typeof data.detail === 'string') {
-        message = data.detail
+    if (response.status === 502 || response.status === 503 || response.status === 504) {
+      message = '后端服务暂不可用，数据暂时无法加载'
+    } else {
+      try {
+        const data = await response.json()
+        if (typeof data.detail === 'string') {
+          message = data.detail
+        }
+      } catch {
+        // ignore parse errors
       }
-    } catch {
-      // ignore parse errors
     }
     throw new ApiClientError(message, response.status)
   }

@@ -4,9 +4,10 @@ import type { BilibiliConnectionStatus, Settings } from '../api/types'
 import { BilibiliAccountInfo } from '../components/BilibiliAccountInfo'
 import { BilibiliQrLogin } from '../components/BilibiliQrLogin'
 import { ConfirmDialog } from '../components/ConfirmDialog'
-import { ErrorAlert } from '../components/ErrorAlert'
+import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
 import { useToast } from '../contexts/ToastContext'
+import { formatApiError } from '../utils/apiError'
 
 function formatVerifyToastMessage(result: {
   success: boolean
@@ -46,7 +47,7 @@ export function SettingsPage() {
       setSettings(data)
       setBilibili(connections.bilibili)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载失败')
+      setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
@@ -107,10 +108,9 @@ export function SettingsPage() {
     }
   }
 
-  if (loading && !settings) return <PageLoading />
-  if (!settings?.bilibili_cookie) {
-    return <ErrorAlert message={error || '无法加载设置'} onRetry={load} />
-  }
+  if (loading && !settings && !error) return <PageLoading />
+
+  const formDisabled = !settings
 
   return (
     <div className="space-y-6">
@@ -119,7 +119,7 @@ export function SettingsPage() {
         <p className="mt-1 text-sm text-slate-500">监控间隔、功能开关与 B 站账号</p>
       </div>
 
-      {error && <ErrorAlert message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={load} />}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="card space-y-4">
@@ -135,7 +135,8 @@ export function SettingsPage() {
                 min={30}
                 max={3600}
                 className="input"
-                value={settings.dynamic_monitor_interval}
+                value={settings?.dynamic_monitor_interval ?? ''}
+                disabled={formDisabled}
                 onChange={(e) =>
                   setSettings((s) =>
                     s ? { ...s, dynamic_monitor_interval: Number(e.target.value) } : s,
@@ -147,7 +148,8 @@ export function SettingsPage() {
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
-                  checked={settings.dynamic_enable_screenshot}
+                  checked={settings?.dynamic_enable_screenshot ?? false}
+                  disabled={formDisabled}
                   onChange={(e) =>
                     setSettings((s) =>
                       s ? { ...s, dynamic_enable_screenshot: e.target.checked } : s,
@@ -174,7 +176,8 @@ export function SettingsPage() {
                 min={30}
                 max={3600}
                 className="input"
-                value={settings.live_monitor_interval}
+                value={settings?.live_monitor_interval ?? ''}
+                disabled={formDisabled}
                 onChange={(e) =>
                   setSettings((s) =>
                     s ? { ...s, live_monitor_interval: Number(e.target.value) } : s,
@@ -186,7 +189,8 @@ export function SettingsPage() {
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
-                  checked={settings.live_monitor_include_info}
+                  checked={settings?.live_monitor_include_info ?? false}
+                  disabled={formDisabled}
                   onChange={(e) =>
                     setSettings((s) =>
                       s ? { ...s, live_monitor_include_info: e.target.checked } : s,
@@ -199,7 +203,8 @@ export function SettingsPage() {
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
-                  checked={settings.live_monitor_use_websocket}
+                  checked={settings?.live_monitor_use_websocket ?? false}
+                  disabled={formDisabled}
                   onChange={(e) =>
                     setSettings((s) =>
                       s ? { ...s, live_monitor_use_websocket: e.target.checked } : s,
@@ -218,7 +223,7 @@ export function SettingsPage() {
 
           {bilibili && <BilibiliAccountInfo account={bilibili} />}
 
-          {!bilibili?.logged_in && (
+          {!bilibili?.logged_in && !formDisabled && (
             <BilibiliQrLogin
               onSuccess={() => {
                 showToast('success', 'B 站扫码登录成功')
@@ -228,7 +233,7 @@ export function SettingsPage() {
             />
           )}
 
-          {settings.bilibili_cookie.configured && (
+          {settings?.bilibili_cookie?.configured && (
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
@@ -263,7 +268,8 @@ export function SettingsPage() {
                 min={1}
                 max={365}
                 className="input"
-                value={settings.audit_log_retention_days}
+                value={settings?.audit_log_retention_days ?? ''}
+                disabled={formDisabled}
                 onChange={(e) =>
                   setSettings((s) =>
                     s ? { ...s, audit_log_retention_days: Number(e.target.value) } : s,
@@ -281,7 +287,8 @@ export function SettingsPage() {
                 min={1}
                 max={365}
                 className="input"
-                value={settings.event_retention_days}
+                value={settings?.event_retention_days ?? ''}
+                disabled={formDisabled}
                 onChange={(e) =>
                   setSettings((s) =>
                     s ? { ...s, event_retention_days: Number(e.target.value) } : s,
@@ -292,7 +299,7 @@ export function SettingsPage() {
           </div>
         </div>
 
-        <button type="submit" className="btn-primary" disabled={saving}>
+        <button type="submit" className="btn-primary" disabled={saving || formDisabled}>
           {saving ? '保存中…' : '保存设置'}
         </button>
       </form>

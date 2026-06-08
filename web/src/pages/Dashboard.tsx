@@ -17,12 +17,13 @@ import type {
   SystemEvent,
   SystemMonitorStatus,
 } from '../api/types'
-import { ErrorAlert } from '../components/ErrorAlert'
+import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
 import { StatCard } from '../components/StatCard'
 import { getLiveMonitorMode, MonitorModeBadge } from '../components/MonitorModeBadge'
 import { LevelBadge, StatusBadge } from '../components/StatusBadge'
 import { useLiveUptime } from '../hooks/useLiveUptime'
+import { formatApiError } from '../utils/apiError'
 import { formatDateTime, formatPercent, formatUptime } from '../utils/format'
 
 function bilibiliCardValue(b: BilibiliConnectionStatus | undefined): string {
@@ -100,7 +101,7 @@ export function DashboardPage() {
       setConnections(conn)
       setEvents(ev.items)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载失败')
+      setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
@@ -114,7 +115,7 @@ export function DashboardPage() {
 
   const liveUptime = useLiveUptime(uptime, running)
 
-  if (loading && !dynamic) return <PageLoading />
+  if (loading && !dynamic && !error) return <PageLoading />
 
   return (
     <div className="space-y-8">
@@ -123,7 +124,7 @@ export function DashboardPage() {
         <p className="mt-1 text-sm text-slate-500">系统运行状态总览</p>
       </div>
 
-      {error && <ErrorAlert message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={load} />}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatCard
@@ -207,7 +208,9 @@ export function DashboardPage() {
 
         <div className="card">
           <h3 className="mb-4 font-semibold text-slate-900 dark:text-white">最近事件</h3>
-          {events.length === 0 ? (
+          {error ? (
+            <p className="text-sm text-slate-500">数据暂时无法加载</p>
+          ) : events.length === 0 ? (
             <p className="text-sm text-slate-500">暂无事件记录</p>
           ) : (
             <ul className="space-y-3">

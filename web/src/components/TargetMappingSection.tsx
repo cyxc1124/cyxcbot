@@ -11,11 +11,12 @@ import {
   updateLiveTarget,
 } from '../api/client'
 import type { DynamicTarget, Group, LiveTarget } from '../api/types'
-import { ErrorAlert } from './ErrorAlert'
+import { LoadErrorBanner } from './LoadErrorBanner'
 import { GroupSelector } from './GroupSelector'
 import { GroupTags } from './GroupTags'
 import { StatusBadge } from './StatusBadge'
 import { useToast } from '../contexts/ToastContext'
+import { formatApiError } from '../utils/apiError'
 import { formatDateTime } from '../utils/format'
 
 type TargetType = 'dynamic' | 'live'
@@ -64,7 +65,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
       setGroups(g)
       setTargets(items)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载失败')
+      setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
@@ -195,7 +196,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
         </button>
       </div>
 
-      {error && <ErrorAlert message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={load} />}
 
       {showForm && (
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
@@ -257,8 +258,10 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
         </div>
       )}
 
-      {loading && targets.length === 0 ? (
+      {loading && targets.length === 0 && !error ? (
         <p className="py-6 text-center text-sm text-slate-500">加载中…</p>
+      ) : !loading && error && targets.length === 0 ? (
+        <p className="py-8 text-center text-sm text-slate-500">数据暂时无法加载</p>
       ) : !loading && targets.length === 0 ? (
         <p className="py-8 text-center text-sm text-slate-500">暂无映射，点击上方按钮添加</p>
       ) : (

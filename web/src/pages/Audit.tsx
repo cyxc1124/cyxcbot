@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { getAuditLogs } from '../api/client'
 import type { AuditLog } from '../api/types'
-import { ErrorAlert } from '../components/ErrorAlert'
+import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
 import { Pagination } from '../components/Pagination'
+import { formatApiError } from '../utils/apiError'
 import { formatDateTime } from '../utils/format'
 
 const PAGE_SIZE = 20
@@ -32,7 +33,7 @@ export function AuditPage() {
       setLogs(data.items)
       setTotal(data.total)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载失败')
+      setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
@@ -97,7 +98,7 @@ export function AuditPage() {
         </button>
       </form>
 
-      {error && <ErrorAlert message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={load} />}
 
       <div className="card overflow-x-auto">
         {loading ? (
@@ -140,7 +141,9 @@ export function AuditPage() {
               </tbody>
             </table>
             {logs.length === 0 && (
-              <p className="py-8 text-center text-sm text-slate-500">暂无审计记录</p>
+              <p className="py-8 text-center text-sm text-slate-500">
+                {error ? '数据暂时无法加载' : '暂无审计记录'}
+              </p>
             )}
             <div className="mt-4">
               <Pagination

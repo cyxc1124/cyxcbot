@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getMessagePolicy, updateMessagePolicy } from '../api/client'
 import type { Group, GroupMessagePolicy } from '../api/types'
-import { ErrorAlert } from '../components/ErrorAlert'
+import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { GroupSelector } from '../components/GroupSelector'
 import { PageLoading } from '../components/LoadingSpinner'
 import { useToast } from '../contexts/ToastContext'
+import { formatApiError } from '../utils/apiError'
 
 function isGroupEnabled(groupId: string, policy: GroupMessagePolicy): boolean {
   if (!policy.restrict) return true
@@ -29,7 +30,7 @@ export function GroupsPage() {
       setRestrict(data.restrict)
       setEnabledIds(data.enabled_group_ids)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载失败')
+      setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
@@ -63,7 +64,7 @@ export function GroupsPage() {
       enabledIds.length !== policy.enabled_group_ids.length ||
       enabledIds.some((id) => !policy.enabled_group_ids.includes(id)))
 
-  if (loading && !policy) return <PageLoading />
+  if (loading && !policy && !error) return <PageLoading />
 
   const groups: Group[] = policy?.groups ?? []
 
@@ -76,7 +77,7 @@ export function GroupsPage() {
         </p>
       </div>
 
-      {error && <ErrorAlert message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={load} />}
 
       <div className="card space-y-6">
         <div>
@@ -136,7 +137,9 @@ export function GroupsPage() {
 
         {groups.length === 0 ? (
           <p className="text-sm text-slate-500">
-            暂无可用群组，请确保机器人已连接 OneBot 并在线。
+            {error
+              ? '数据暂时无法加载'
+              : '暂无可用群组，请确保机器人已连接 OneBot 并在线。'}
           </p>
         ) : (
           <div className="overflow-x-auto">
