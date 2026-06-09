@@ -46,6 +46,7 @@ const emptyForm = (isDynamic: boolean): TargetFormState => ({
 
 interface TargetMappingSectionProps {
   type: TargetType
+  onTargetsChanged?: () => void | Promise<void>
 }
 
 function getTargetId(target: SubscriptionTarget, isDynamic: boolean) {
@@ -61,7 +62,7 @@ function getTargetDisplayName(
   return target.name || `${targetLabel} ${id}`
 }
 
-export function TargetMappingSection({ type }: TargetMappingSectionProps) {
+export function TargetMappingSection({ type, onTargetsChanged }: TargetMappingSectionProps) {
   const { showToast } = useToast()
   const [groups, setGroups] = useState<Group[]>([])
   const [friends, setFriends] = useState<Friend[]>([])
@@ -103,6 +104,12 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
   }, [isDynamic, setLoading])
 
   const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
+
+  const notifyTargetsChanged = useCallback(async () => {
+    if (onTargetsChanged) {
+      await onTargetsChanged()
+    }
+  }, [onTargetsChanged])
 
   useMountAsync(load)
 
@@ -208,6 +215,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
 
       resetForm()
       await load()
+      await notifyTargetsChanged()
     } catch (err) {
       showToast('error', formatApiError(err, '保存失败'))
     } finally {
@@ -226,6 +234,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
       if (selectedId === id) clearSelection()
       showToast('success', '已删除')
       await load()
+      await notifyTargetsChanged()
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : '删除失败')
     }
@@ -241,6 +250,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
       }
       showToast('success', '状态已更新')
       await load()
+      await notifyTargetsChanged()
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : '更新失败')
     } finally {

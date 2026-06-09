@@ -221,10 +221,27 @@ export interface MonitorStatus {
   last_check_at: string | null
 }
 
+export interface MonitorPollSchedule {
+  strategy: string
+  target_count: number
+  configured_interval_seconds: number
+  min_tick_interval_seconds?: number | null
+  poll_interval_seconds?: number | null
+  batch_gap_seconds?: number | null
+  use_websocket?: boolean | null
+  tick_interval_seconds: number
+  per_target_cycle_seconds: number
+  requests_per_second_avg: number
+  requests_per_second_peak: number
+  meets_configured_interval: boolean
+  warning?: string | null
+}
+
 export interface DynamicMonitorStatus {
   enabled: boolean
   interval_seconds: number
   target_count: number
+  poll_schedule: MonitorPollSchedule
   last_check_at: string | null
   last_fetch_at: string | null
   last_error: string | null
@@ -237,6 +254,7 @@ export interface LiveMonitorStatus {
   interval_seconds: number
   use_websocket: boolean
   target_count: number
+  poll_schedule: MonitorPollSchedule
   last_check_at: string | null
   last_error: string | null
   live_rooms: number

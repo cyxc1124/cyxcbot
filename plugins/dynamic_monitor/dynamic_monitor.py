@@ -18,6 +18,7 @@ from shared.audit.service import write_audit
 from shared.config.service import get_config_service
 from shared.db.enums import AuditAction
 from shared.db.models import DynamicMonitorState
+from shared.monitor.poll_schedule import compute_dynamic_poll_schedule
 
 # 全局监控实例
 dynamic_monitor_instance: Optional['DynamicMonitor'] = None
@@ -35,6 +36,38 @@ class DynamicMonitor:
         self.session: Optional[aiohttp.ClientSession] = None
         self.fetcher: Optional[DynamicFetcher] = None
         self.sender: Optional[DynamicSender] = None
+        self._stagger_index = 0
+
+    def _uid_list(self) -> List[str]:
+        return list(self.config.dynamic_monitor_mapping.keys())
+
+    def _schedule_poll_job(self) -> None:
+        uid_list = self._uid_list()
+        if not uid_list:
+            return
+
+        schedule = compute_dynamic_poll_schedule(
+            len(uid_list),
+            self.config.monitor_interval,
+        )
+        tick = schedule["tick_interval_seconds"]
+
+        scheduler.add_job(
+            self._check_next_dynamic,
+            "interval",
+            seconds=tick,
+            id="dynamic_monitor_check",
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=60,
+        )
+        logger.info(
+            f"动态监控调度: {len(uid_list)} 个UP主, 每次间隔 {tick:.1f}秒, "
+            f"每人周期约 {schedule['per_target_cycle_seconds']:.0f}秒, "
+            f"峰值约 {schedule['requests_per_second_peak']:.2f} 次/秒"
+        )
+        if schedule.get("warning"):
+            logger.warning(schedule["warning"])
 
     async def init_resources(self):
         """初始化资源"""
@@ -92,7 +125,9 @@ class DynamicMonitor:
         """热重载配置并调整调度任务"""
         old_interval = self.config.monitor_interval
         old_screenshot = self.config.enable_screenshot
+        old_uids = set(self.config.dynamic_monitor_mapping.keys())
         self.config = Config.from_service()
+        new_uids_set = set(self.config.dynamic_monitor_mapping.keys())
 
         if self.fetcher:
             self.fetcher.cookie = self.config.bilibili_cookie
@@ -112,17 +147,12 @@ class DynamicMonitor:
                 except Exception as e:
                     logger.error(f"初始化UP主 {uid} 动态监控失败: {e}")
 
-        if self.is_running and old_interval != self.config.monitor_interval:
-            scheduler.add_job(
-                self._check_all_dynamics,
-                "interval",
-                seconds=self.config.monitor_interval,
-                id="dynamic_monitor_check",
-                replace_existing=True,
-                max_instances=1,
-                misfire_grace_time=60,
-            )
-            logger.info(f"动态监控间隔已更新为 {self.config.monitor_interval}秒")
+        if self.is_running and (
+            old_interval != self.config.monitor_interval or old_uids != new_uids_set
+        ):
+            if old_uids != new_uids_set:
+                self._stagger_index = 0
+            self._schedule_poll_job()
 
         if old_screenshot != self.config.enable_screenshot:
             if self.config.enable_screenshot:
@@ -146,19 +176,11 @@ class DynamicMonitor:
         # 初始化资源
         await self.init_resources()
         
-        logger.info(f"UP主动态监控已启动，直接调用B站API，监控间隔: {self.config.monitor_interval}秒")
-
-        # 使用APScheduler添加定时任务
-        scheduler.add_job(
-            self._check_all_dynamics,
-            "interval",
-            seconds=self.config.monitor_interval,
-            id="dynamic_monitor_check",
-            replace_existing=True,
-            max_instances=1,  # 确保同一时间只有一个任务在执行
-            misfire_grace_time=60  # 允许60秒的容错时间
+        logger.info(
+            f"UP主动态监控已启动，分散检查模式，目标周期: {self.config.monitor_interval}秒"
         )
-        
+
+        self._schedule_poll_job()
         logger.info("动态监控定时任务已添加到调度器")
 
     async def _cleanup_resources(self):
@@ -187,13 +209,36 @@ class DynamicMonitor:
         await self._cleanup_resources()
         logger.info("UP主动态监控已完全停止")
 
-    async def _check_all_dynamics(self):
-        """检查所有UP主的动态 - 由APScheduler定时调用"""
+    async def _check_next_dynamic(self):
+        """分散检查下一个 UP 主的动态 - 由 APScheduler 定时调用"""
         if not self.is_running:
             logger.debug("监控已停止，跳过本次检查")
             return
 
-        uid_list = list(self.config.dynamic_monitor_mapping.keys())
+        uid_list = self._uid_list()
+        if not uid_list:
+            return
+
+        if self._stagger_index >= len(uid_list):
+            self._stagger_index = 0
+
+        uid = uid_list[self._stagger_index]
+        self._stagger_index = (self._stagger_index + 1) % len(uid_list)
+
+        try:
+            ok = await self._check_user_dynamic(uid)
+            if ok is False:
+                logger.warning(f"动态监控检查失败: uid={uid}")
+        except Exception as e:
+            logger.error(f"检查UP主 {uid} 动态失败: {e}")
+
+    async def _check_all_dynamics(self):
+        """检查所有 UP 主的动态（手动触发时使用）"""
+        if not self.is_running:
+            logger.debug("监控已停止，跳过本次检查")
+            return
+
+        uid_list = self._uid_list()
         total = len(uid_list)
         failures: list[str] = []
 

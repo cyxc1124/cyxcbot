@@ -7,6 +7,22 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 
+class MonitorPollSchedule(BaseModel):
+    strategy: str
+    target_count: int
+    configured_interval_seconds: int
+    min_tick_interval_seconds: Optional[float] = None
+    poll_interval_seconds: Optional[int] = None
+    batch_gap_seconds: Optional[float] = None
+    use_websocket: Optional[bool] = None
+    tick_interval_seconds: float
+    per_target_cycle_seconds: float
+    requests_per_second_avg: float
+    requests_per_second_peak: float
+    meets_configured_interval: bool
+    warning: Optional[str] = None
+
+
 class MonitorStatusResponse(BaseModel):
     running: bool
     uptime_seconds: int
@@ -36,6 +52,7 @@ class DynamicMonitorStatusResponse(BaseModel):
     enabled: bool
     interval_seconds: int
     target_count: int
+    poll_schedule: MonitorPollSchedule
     last_check_at: Optional[str] = None
     last_fetch_at: Optional[str] = None
     last_error: Optional[str] = None
@@ -49,6 +66,7 @@ class LiveMonitorStatusResponse(BaseModel):
     interval_seconds: int
     use_websocket: bool
     target_count: int
+    poll_schedule: MonitorPollSchedule
     last_check_at: Optional[str] = None
     last_error: Optional[str] = None
     live_rooms: int = 0

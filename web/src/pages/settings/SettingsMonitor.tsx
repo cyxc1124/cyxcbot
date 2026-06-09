@@ -1,4 +1,12 @@
+import { useCallback, useMemo, useState } from 'react'
+import { MonitorPollScheduleCard } from '../../components/MonitorPollScheduleCard'
 import { ToggleSwitch } from '../../components/ToggleSwitch'
+import { useMountAsync } from '../../hooks/useMountAsync'
+import { getDynamicMonitorStatus, getLiveMonitorStatus } from '../../api/client'
+import {
+  computeDynamicPollSchedule,
+  computeLivePollSchedule,
+} from '../../utils/monitorPollSchedule'
 import { useSettingsForm } from './SettingsContext'
 
 function SettingToggleRow({
@@ -31,6 +39,39 @@ function SettingToggleRow({
 
 export function SettingsMonitorPage() {
   const { settings, setSettings, formDisabled, saving, handleSubmit } = useSettingsForm()
+  const [dynamicTargetCount, setDynamicTargetCount] = useState(0)
+  const [liveTargetCount, setLiveTargetCount] = useState(0)
+
+  const loadTargetCounts = useCallback(async () => {
+    const [dynamicStatus, liveStatus] = await Promise.all([
+      getDynamicMonitorStatus(),
+      getLiveMonitorStatus(),
+    ])
+    setDynamicTargetCount(dynamicStatus.target_count)
+    setLiveTargetCount(liveStatus.target_count)
+  }, [])
+
+  useMountAsync(loadTargetCounts)
+
+  const dynamicSchedule = useMemo(() => {
+    const interval = settings?.dynamic_monitor_interval
+    if (!interval || interval < 10) return null
+    return computeDynamicPollSchedule(dynamicTargetCount, interval)
+  }, [dynamicTargetCount, settings?.dynamic_monitor_interval])
+
+  const liveSchedule = useMemo(() => {
+    const interval = settings?.live_monitor_interval
+    if (!interval || interval < 30) return null
+    return computeLivePollSchedule(
+      liveTargetCount,
+      interval,
+      settings?.live_monitor_use_websocket ?? true,
+    )
+  }, [
+    liveTargetCount,
+    settings?.live_monitor_interval,
+    settings?.live_monitor_use_websocket,
+  ])
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -54,7 +95,16 @@ export function SettingsMonitorPage() {
               )
             }
           />
+          <p className="mt-1 text-xs text-muted-foreground">
+            期望每个 UP 主约每 N 秒检查一次；目标较多时会自动分散请求，且单次间隔不低于 3 秒。
+          </p>
         </div>
+        {dynamicSchedule ? (
+          <MonitorPollScheduleCard
+            title="API 请求频率预估（动态）"
+            schedule={dynamicSchedule}
+          />
+        ) : null}
         <div className="border-t border-border pt-1 border-border">
           <SettingToggleRow
             label="启用动态截图（Playwright）"
@@ -87,7 +137,13 @@ export function SettingsMonitorPage() {
               )
             }
           />
+          <p className="mt-1 text-xs text-muted-foreground">
+            启用 WebSocket 时此间隔主要影响 API 备用轮询；未启用时即为批量轮询周期。
+          </p>
         </div>
+        {liveSchedule ? (
+          <MonitorPollScheduleCard title="API 请求频率预估（直播）" schedule={liveSchedule} />
+        ) : null}
         <div className="divide-y divide-border border-t border-border pt-1">
           <SettingToggleRow
             label="通知包含详细房间信息"

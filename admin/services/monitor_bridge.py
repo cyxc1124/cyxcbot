@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from nonebot.log import logger
 
 from shared.config.service import get_config_service
+from shared.monitor.poll_schedule import compute_dynamic_poll_schedule, compute_live_poll_schedule
 
 
 def get_dynamic_monitor_instance():
@@ -178,10 +179,16 @@ def get_monitor_status() -> Dict[str, Any]:
 def build_dynamic_monitor_status() -> Dict[str, Any]:
     status = get_monitor_status()
     snap = get_config_service().get_snapshot()
+    target_count = len(snap.dynamic_monitor_mapping)
+    poll_schedule = compute_dynamic_poll_schedule(
+        target_count,
+        snap.dynamic_monitor_interval,
+    )
     return {
         "enabled": status["dynamic_running"],
         "interval_seconds": snap.dynamic_monitor_interval,
-        "target_count": len(snap.dynamic_monitor_mapping),
+        "target_count": target_count,
+        "poll_schedule": poll_schedule,
         "last_check_at": None,
         "last_fetch_at": None,
         "last_error": None,
@@ -196,11 +203,18 @@ def build_live_monitor_status() -> Dict[str, Any]:
     snap = get_config_service().get_snapshot()
     targets = get_live_monitor_details()
     live_rooms = sum(1 for t in targets if t.get("is_living"))
+    target_count = len(snap.live_monitor_mapping)
+    poll_schedule = compute_live_poll_schedule(
+        target_count,
+        snap.live_monitor_interval,
+        use_websocket=snap.live_monitor_use_websocket,
+    )
     return {
         "enabled": status["live_running"],
         "interval_seconds": snap.live_monitor_interval,
         "use_websocket": snap.live_monitor_use_websocket,
-        "target_count": len(snap.live_monitor_mapping),
+        "target_count": target_count,
+        "poll_schedule": poll_schedule,
         "last_check_at": None,
         "last_error": None,
         "live_rooms": live_rooms,

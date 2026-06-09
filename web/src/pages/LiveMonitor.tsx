@@ -1,17 +1,29 @@
-import { useState } from 'react'
-import { triggerLiveCheck } from '../api/client'
+import { useCallback, useState } from 'react'
+import { getLiveMonitorStatus, triggerLiveCheck } from '../api/client'
+import type { MonitorPollSchedule } from '../api/types'
+import { MonitorPollScheduleCard } from '../components/MonitorPollScheduleCard'
 import { TargetMappingSection } from '../components/TargetMappingSection'
 import { useToast } from '../contexts/ToastContext'
+import { useMountAsync } from '../hooks/useMountAsync'
 
 export function LiveMonitorPage() {
   const { showToast } = useToast()
   const [checking, setChecking] = useState(false)
+  const [pollSchedule, setPollSchedule] = useState<MonitorPollSchedule | null>(null)
+
+  const loadStatus = useCallback(async () => {
+    const status = await getLiveMonitorStatus()
+    setPollSchedule(status.poll_schedule)
+  }, [])
+
+  useMountAsync(loadStatus)
 
   const handleCheck = async () => {
     setChecking(true)
     try {
       const result = await triggerLiveCheck()
       showToast(result.success ? 'success' : 'error', result.message)
+      await loadStatus()
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : '操作失败')
     } finally {
@@ -36,7 +48,11 @@ export function LiveMonitorPage() {
         </button>
       </div>
 
-      <TargetMappingSection type="live" />
+      {pollSchedule ? (
+        <MonitorPollScheduleCard title="当前 API 请求频率（直播）" schedule={pollSchedule} />
+      ) : null}
+
+      <TargetMappingSection type="live" onTargetsChanged={loadStatus} />
     </div>
   )
 }
