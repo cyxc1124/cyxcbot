@@ -6,7 +6,7 @@ import json
 
 from fastapi import APIRouter, Request
 
-from admin.deps import CurrentUser, RequireSetup
+from admin.deps import AdminUser, RequireSetup
 from admin.schemas.settings import CookieTestResultResponse, SettingsResponse, SettingsUpdateRequest
 from admin.services.connection_status import bilibili_status_message, get_bilibili_connection_status
 from admin.services.monitor_bridge import reload_all_monitors
@@ -23,14 +23,14 @@ router = APIRouter(
 
 
 @router.get("", response_model=SettingsResponse)
-async def get_settings(_: CurrentUser):
+async def get_settings(_: AdminUser):
     svc = get_config_service()
     data = svc.settings_for_api()
     return SettingsResponse(**data)
 
 
 @router.patch("", response_model=SettingsResponse)
-async def update_settings(request: Request, body: SettingsUpdateRequest, user: CurrentUser):
+async def update_settings(request: Request, body: SettingsUpdateRequest, user: AdminUser):
     svc = get_config_service()
     updates: dict[str, str] = {}
 
@@ -89,7 +89,7 @@ async def update_settings(request: Request, body: SettingsUpdateRequest, user: C
 
 
 @router.post("/test-cookie", response_model=CookieTestResultResponse)
-async def test_cookie(_: CurrentUser):
+async def test_cookie(_: AdminUser):
     status = await get_bilibili_connection_status()
     return CookieTestResultResponse(
         success=bool(status.get("logged_in")),

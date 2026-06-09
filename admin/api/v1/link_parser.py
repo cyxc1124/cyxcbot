@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from admin.deps import CurrentUser, RequireSetup
+from admin.deps import AdminUser, RequireSetup
 from admin.schemas.link_parser import (
     LinkParserGroupPolicyItem,
     LinkParserGroupPolicyListResponse,
@@ -148,7 +148,7 @@ async def _list_user_policy_response(snap, *, refresh_users: bool = False) -> Li
 
 
 @router.get("/groups", response_model=LinkParserGroupPolicyListResponse)
-async def list_group_policies(_: CurrentUser):
+async def list_group_policies(_: AdminUser):
     svc = get_config_service()
     snap = svc.get_snapshot()
     groups = _message_enabled_groups(snap, await get_group_list())
@@ -162,7 +162,7 @@ async def update_group_policy(
     group_id: str,
     body: LinkParserGroupPolicyUpdateRequest,
     request: Request,
-    user: CurrentUser,
+    user: AdminUser,
 ):
     svc = get_config_service()
     snap = svc.get_snapshot()
@@ -196,7 +196,7 @@ async def update_group_policy(
 
 
 @router.delete("/groups/{group_id}", response_model=LinkParserGroupPolicyMutationResponse)
-async def reset_group_policy(group_id: str, request: Request, user: CurrentUser):
+async def reset_group_policy(group_id: str, request: Request, user: AdminUser):
     svc = get_config_service()
     snap = svc.get_snapshot()
     _ensure_group_message_enabled(group_id, snap)
@@ -223,7 +223,7 @@ async def reset_group_policy(group_id: str, request: Request, user: CurrentUser)
 
 
 @router.get("/users", response_model=LinkParserUserPolicyListResponse)
-async def list_user_policies(_: CurrentUser):
+async def list_user_policies(_: AdminUser):
     svc = get_config_service()
     return await _list_user_policy_response(svc.get_snapshot(), refresh_users=True)
 
@@ -232,7 +232,7 @@ async def list_user_policies(_: CurrentUser):
 async def create_user_policy(
     body: LinkParserUserPolicyCreateRequest,
     request: Request,
-    user: CurrentUser,
+    user: AdminUser,
 ):
     user_id = body.user_id.strip()
     if not user_id.isdigit():
@@ -275,7 +275,7 @@ async def update_user_policy(
     user_id: str,
     body: LinkParserUserPolicyUpdateRequest,
     request: Request,
-    user: CurrentUser,
+    user: AdminUser,
 ):
     svc = get_config_service()
     snap = svc.get_snapshot()
@@ -311,7 +311,7 @@ async def update_user_policy(
 
 
 @router.delete("/users/{user_id}", response_model=LinkParserUserPolicyMutationResponse)
-async def reset_user_policy(user_id: str, request: Request, user: CurrentUser):
+async def reset_user_policy(user_id: str, request: Request, user: AdminUser):
     svc = get_config_service()
     await svc.delete_link_parser_user_policy(user_id)
     await svc.reload()

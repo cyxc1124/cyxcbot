@@ -40,6 +40,14 @@ async def get_current_user(
     return user
 
 
+async def get_admin_user(
+    user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    if not user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin required")
+    return user
+
+
 async def require_setup_complete() -> None:
     session = get_session()
     async with session.begin():
@@ -49,4 +57,5 @@ async def require_setup_complete() -> None:
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+AdminUser = Annotated[User, Depends(get_admin_user)]
 RequireSetup = Depends(require_setup_complete)

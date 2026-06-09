@@ -6,7 +6,7 @@ import json
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from admin.deps import CurrentUser, RequireSetup
+from admin.deps import AdminUser, RequireSetup
 from admin.schemas.private import (
     FriendInfo,
     FriendListResponse,
@@ -32,13 +32,13 @@ router = APIRouter(
 
 
 @router.get("/friends", response_model=FriendListResponse)
-async def list_friends(_: CurrentUser):
+async def list_friends(_: AdminUser):
     users = await get_friend_list()
     return FriendListResponse(friends=[FriendInfo(**user) for user in users])
 
 
 @router.get("/message-policy", response_model=PrivateMessagePolicyResponse)
-async def get_message_policy(_: CurrentUser):
+async def get_message_policy(_: AdminUser):
     snap = get_config_service().get_snapshot()
     users = await get_friend_list()
     return PrivateMessagePolicyResponse(
@@ -52,7 +52,7 @@ async def get_message_policy(_: CurrentUser):
 async def update_message_policy(
     request: Request,
     body: PrivateMessagePolicyUpdateRequest,
-    user: CurrentUser,
+    user: AdminUser,
 ):
     svc = get_config_service()
     enabled_ids = [str(uid).strip() for uid in body.enabled_user_ids if str(uid).strip()]
@@ -120,7 +120,7 @@ def _filter_status_enabled_user_ids(enabled_ids: list[str], users: list[dict]) -
 
 
 @router.get("/status-policy", response_model=PrivateStatusPolicyResponse)
-async def get_status_policy(_: CurrentUser):
+async def get_status_policy(_: AdminUser):
     snap = get_config_service().get_snapshot()
     users = _message_enabled_users(snap, await get_friend_list())
     return PrivateStatusPolicyResponse(
@@ -137,7 +137,7 @@ async def get_status_policy(_: CurrentUser):
 async def update_status_policy(
     request: Request,
     body: PrivateStatusPolicyUpdateRequest,
-    user: CurrentUser,
+    user: AdminUser,
 ):
     svc = get_config_service()
     snap = svc.get_snapshot()

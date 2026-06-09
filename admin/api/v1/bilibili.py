@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from admin.deps import CurrentUser, RequireSetup
+from admin.deps import AdminUser, RequireSetup
 from admin.schemas.bilibili import (
     LogoutResponse,
     QrcodeLoginResponse,
@@ -32,7 +32,7 @@ router = APIRouter(
 
 
 @router.get("/login/qrcode", response_model=QrcodeStartResponse)
-async def start_qrcode_login(_: CurrentUser):
+async def start_qrcode_login(_: AdminUser):
     try:
         qrcode = await get_tv_qrcode()
     except BilibiliQrcodeError as exc:
@@ -43,7 +43,7 @@ async def start_qrcode_login(_: CurrentUser):
 
 
 @router.post("/login/qrcode/poll", response_model=QrcodeLoginResponse)
-async def poll_qrcode_login(request: Request, body: QrcodePollRequest, user: CurrentUser):
+async def poll_qrcode_login(request: Request, body: QrcodePollRequest, user: AdminUser):
     try:
         login_data = await poll_tv_qrcode_login(body.qrcode)
         cookie_header = cookie_info_to_header(login_data["cookie_info"])
@@ -90,7 +90,7 @@ async def poll_qrcode_login(request: Request, body: QrcodePollRequest, user: Cur
 
 
 @router.post("/logout", response_model=LogoutResponse)
-async def logout_bilibili(request: Request, user: CurrentUser):
+async def logout_bilibili(request: Request, user: AdminUser):
     svc = get_config_service()
     snap = svc.get_snapshot()
     if not snap.bilibili_cookie_set:

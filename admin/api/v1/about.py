@@ -7,7 +7,7 @@ import platform
 
 from fastapi import APIRouter
 
-from admin.deps import RequireSetup
+from admin.deps import AdminUser, RequireSetup
 from admin.schemas.about import AboutResponse
 
 router = APIRouter(
@@ -34,7 +34,7 @@ def _nonebot_version() -> str | None:
 
 
 @router.get("/about", response_model=AboutResponse)
-async def get_about():
+async def get_about(_: AdminUser):
     nonebot_version = _nonebot_version()
     framework = "FastAPI + NoneBot2"
     if nonebot_version:

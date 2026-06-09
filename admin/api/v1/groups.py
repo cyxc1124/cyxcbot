@@ -6,7 +6,7 @@ import json
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from admin.deps import CurrentUser, RequireSetup
+from admin.deps import AdminUser, RequireSetup
 from admin.schemas.groups import (
     GroupInfo,
     GroupListResponse,
@@ -32,13 +32,13 @@ router = APIRouter(
 
 
 @router.get("", response_model=GroupListResponse)
-async def list_groups(_: CurrentUser):
+async def list_groups(_: AdminUser):
     groups = await get_group_list()
     return GroupListResponse(groups=[GroupInfo(**g) for g in groups])
 
 
 @router.get("/message-policy", response_model=GroupMessagePolicyResponse)
-async def get_message_policy(_: CurrentUser):
+async def get_message_policy(_: AdminUser):
     snap = get_config_service().get_snapshot()
     groups = await get_group_list()
     return GroupMessagePolicyResponse(
@@ -52,7 +52,7 @@ async def get_message_policy(_: CurrentUser):
 async def update_message_policy(
     request: Request,
     body: GroupMessagePolicyUpdateRequest,
-    user: CurrentUser,
+    user: AdminUser,
 ):
     svc = get_config_service()
     enabled_ids = [str(gid).strip() for gid in body.enabled_group_ids if str(gid).strip()]
@@ -119,7 +119,7 @@ def _filter_status_enabled_group_ids(enabled_ids: list[str], groups: list[dict])
 
 
 @router.get("/status-policy", response_model=GroupStatusPolicyResponse)
-async def get_status_policy(_: CurrentUser):
+async def get_status_policy(_: AdminUser):
     snap = get_config_service().get_snapshot()
     groups = _message_enabled_groups(snap, await get_group_list())
     return GroupStatusPolicyResponse(
@@ -136,7 +136,7 @@ async def get_status_policy(_: CurrentUser):
 async def update_status_policy(
     request: Request,
     body: GroupStatusPolicyUpdateRequest,
-    user: CurrentUser,
+    user: AdminUser,
 ):
     svc = get_config_service()
     snap = svc.get_snapshot()

@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from nonebot_plugin_orm import get_session
 
-from admin.deps import CurrentUser, RequireSetup
+from admin.deps import AdminUser, RequireSetup
 from admin.schemas.targets import (
     DynamicTargetCreate,
     DynamicTargetResponse,
@@ -150,7 +150,7 @@ async def _refresh_missing_live_names(targets: list[LiveTarget]) -> None:
 # --- Dynamic targets ---
 
 @router.get("/dynamic-targets", response_model=list[DynamicTargetResponse])
-async def list_dynamic_targets(_: CurrentUser):
+async def list_dynamic_targets(_: AdminUser):
     session = get_session()
     async with session.begin():
         stmt = select(DynamicTarget).options(
@@ -163,7 +163,7 @@ async def list_dynamic_targets(_: CurrentUser):
 
 
 @router.post("/dynamic-targets", response_model=DynamicTargetResponse, status_code=status.HTTP_201_CREATED)
-async def create_dynamic_target(request: Request, body: DynamicTargetCreate, user: CurrentUser):
+async def create_dynamic_target(request: Request, body: DynamicTargetCreate, user: AdminUser):
     session = get_session()
     async with session.begin():
         existing = await session.scalar(select(DynamicTarget).where(DynamicTarget.uid == body.uid))
@@ -201,7 +201,7 @@ async def create_dynamic_target(request: Request, body: DynamicTargetCreate, use
 
 
 @router.get("/dynamic-targets/{target_id}", response_model=DynamicTargetResponse)
-async def get_dynamic_target(target_id: int, _: CurrentUser):
+async def get_dynamic_target(target_id: int, _: AdminUser):
     session = get_session()
     async with session.begin():
         target = await session.scalar(
@@ -220,7 +220,7 @@ async def get_dynamic_target(target_id: int, _: CurrentUser):
 
 @router.patch("/dynamic-targets/{target_id}", response_model=DynamicTargetResponse)
 async def update_dynamic_target(
-    target_id: int, request: Request, body: DynamicTargetUpdate, user: CurrentUser
+    target_id: int, request: Request, body: DynamicTargetUpdate, user: AdminUser
 ):
     session = get_session()
     async with session.begin():
@@ -296,7 +296,7 @@ async def update_dynamic_target(
 
 
 @router.delete("/dynamic-targets/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_dynamic_target(target_id: int, request: Request, user: CurrentUser):
+async def delete_dynamic_target(target_id: int, request: Request, user: AdminUser):
     session = get_session()
     async with session.begin():
         target = await session.get(DynamicTarget, target_id)
@@ -322,7 +322,7 @@ async def delete_dynamic_target(target_id: int, request: Request, user: CurrentU
 # --- Live targets ---
 
 @router.get("/live-targets", response_model=list[LiveTargetResponse])
-async def list_live_targets(_: CurrentUser):
+async def list_live_targets(_: AdminUser):
     session = get_session()
     async with session.begin():
         stmt = select(LiveTarget).options(
@@ -335,7 +335,7 @@ async def list_live_targets(_: CurrentUser):
 
 
 @router.post("/live-targets", response_model=LiveTargetResponse, status_code=status.HTTP_201_CREATED)
-async def create_live_target(request: Request, body: LiveTargetCreate, user: CurrentUser):
+async def create_live_target(request: Request, body: LiveTargetCreate, user: AdminUser):
     session = get_session()
     async with session.begin():
         existing = await session.scalar(select(LiveTarget).where(LiveTarget.room_id == body.room_id))
@@ -373,7 +373,7 @@ async def create_live_target(request: Request, body: LiveTargetCreate, user: Cur
 
 
 @router.get("/live-targets/{target_id}", response_model=LiveTargetResponse)
-async def get_live_target(target_id: int, _: CurrentUser):
+async def get_live_target(target_id: int, _: AdminUser):
     session = get_session()
     async with session.begin():
         target = await session.scalar(
@@ -392,7 +392,7 @@ async def get_live_target(target_id: int, _: CurrentUser):
 
 @router.patch("/live-targets/{target_id}", response_model=LiveTargetResponse)
 async def update_live_target(
-    target_id: int, request: Request, body: LiveTargetUpdate, user: CurrentUser
+    target_id: int, request: Request, body: LiveTargetUpdate, user: AdminUser
 ):
     session = get_session()
     async with session.begin():
@@ -468,7 +468,7 @@ async def update_live_target(
 
 
 @router.delete("/live-targets/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_live_target(target_id: int, request: Request, user: CurrentUser):
+async def delete_live_target(target_id: int, request: Request, user: AdminUser):
     session = get_session()
     async with session.begin():
         target = await session.get(LiveTarget, target_id)

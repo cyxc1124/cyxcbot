@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 
 from nonebot_plugin_orm import get_session
 
-from admin.deps import CurrentUser, RequireSetup
+from admin.deps import AdminUser, RequireSetup
 from admin.schemas.audit import AuditLogResponse, SystemEventResponse
 from admin.schemas.common import PaginatedResponse
 from shared.db.models import AuditLog, SystemEvent
@@ -20,7 +20,7 @@ router = APIRouter(
 
 @router.get("/audit-logs", response_model=PaginatedResponse[AuditLogResponse])
 async def list_audit_logs(
-    _: CurrentUser,
+    _: AdminUser,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
@@ -46,7 +46,7 @@ async def list_audit_logs(
 
 @router.get("/events", response_model=PaginatedResponse[SystemEventResponse])
 async def list_system_events(
-    _: CurrentUser,
+    _: AdminUser,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):

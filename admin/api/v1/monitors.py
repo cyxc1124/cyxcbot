@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Request
 
-from admin.deps import CurrentUser, RequireSetup
+from admin.deps import AdminUser, RequireSetup
 from admin.schemas.monitors import (
     DynamicMonitorStatusResponse,
     LiveMonitorStatusResponse,
@@ -34,28 +34,28 @@ router = APIRouter(
 
 
 @router.get("/status", response_model=MonitorStatusResponse)
-async def monitor_status(_: CurrentUser):
+async def monitor_status(_: AdminUser):
     return MonitorStatusResponse(**get_monitor_status())
 
 
 @router.get("/dynamic", response_model=DynamicMonitorStatusResponse)
-async def dynamic_monitor_status(_: CurrentUser):
+async def dynamic_monitor_status(_: AdminUser):
     return DynamicMonitorStatusResponse(**build_dynamic_monitor_status())
 
 
 @router.get("/live", response_model=LiveMonitorStatusResponse)
-async def live_monitor_status(_: CurrentUser):
+async def live_monitor_status(_: AdminUser):
     return LiveMonitorStatusResponse(**build_live_monitor_status())
 
 
 @router.get("/system", response_model=SystemMonitorStatusResponse)
-async def system_monitor_status(_: CurrentUser):
+async def system_monitor_status(_: AdminUser):
     return SystemMonitorStatusResponse(**get_system_monitor_status())
 
 
 @router.post("/dynamic/check", response_model=ManualCheckResponse)
 async def manual_dynamic_check(
-    request: Request, user: CurrentUser, uid: Optional[str] = None
+    request: Request, user: AdminUser, uid: Optional[str] = None
 ):
     result = await trigger_dynamic_check(uid)
     ip = request.client.host if request.client else None
@@ -71,7 +71,7 @@ async def manual_dynamic_check(
 
 @router.post("/live/check", response_model=ManualCheckResponse)
 async def manual_live_check(
-    request: Request, user: CurrentUser, room_id: Optional[str] = None
+    request: Request, user: AdminUser, room_id: Optional[str] = None
 ):
     result = await trigger_live_check(room_id)
     ip = request.client.host if request.client else None

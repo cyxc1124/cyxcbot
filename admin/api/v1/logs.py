@@ -10,7 +10,7 @@ from sqlalchemy import select
 from nonebot_plugin_orm import get_session
 
 from admin.auth.jwt import decode_access_token
-from admin.deps import CurrentUser, RequireSetup
+from admin.deps import AdminUser, RequireSetup
 from admin.schemas.logs import LogEntryResponse, RecentLogsResponse
 from shared.db.models import User
 from shared.logging.broadcast import LEVEL_RANK, LogEntry, get_log_hub
@@ -54,7 +54,7 @@ def _serialize(entries: list[LogEntry]) -> list[LogEntryResponse]:
 
 @router.get("/logs/recent", response_model=RecentLogsResponse)
 async def recent_logs(
-    _: CurrentUser,
+    _: AdminUser,
     limit: int = Query(500, ge=1, le=2000),
     min_level: str = Query("DEBUG"),
 ):
@@ -70,7 +70,7 @@ async def stream_logs(
 ):
     token = _token_from_subprotocol(websocket.headers.get("sec-websocket-protocol"))
     user = await _user_from_token(token) if token else None
-    if not user:
+    if not user or not user.is_admin:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
         return
 

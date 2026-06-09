@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from admin.deps import CurrentUser, RequireSetup
+from admin.deps import AdminUser, RequireSetup
 from admin.schemas.connections import ConnectionsStatusResponse
 from admin.services.connection_status import get_connections_status
 
@@ -16,5 +16,5 @@ router = APIRouter(
 
 
 @router.get("/status", response_model=ConnectionsStatusResponse)
-async def connections_status(_: CurrentUser):
+async def connections_status(_: AdminUser):
     return ConnectionsStatusResponse(**await get_connections_status())
