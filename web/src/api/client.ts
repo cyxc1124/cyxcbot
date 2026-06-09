@@ -412,12 +412,18 @@ export const getRecentLogs = (params: { limit?: number; min_level?: string } = {
     `/logs/recent${buildQuery(params as Record<string, string | number | undefined>)}`,
   )
 
+const LOGS_WS_AUTH_PROTOCOL = 'access_token'
+
 export function buildLogsWebSocketUrl(minLevel = 'INFO'): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const params = new URLSearchParams({ min_level: minLevel })
+  return `${protocol}//${window.location.host}/api/v1/ws/logs?${params}`
+}
+
+export function createLogsWebSocket(minLevel = 'INFO'): WebSocket {
   const token = getToken()
   if (!token) {
     throw new Error('Not authenticated')
   }
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const params = new URLSearchParams({ token, min_level: minLevel })
-  return `${protocol}//${window.location.host}/api/v1/ws/logs?${params}`
+  return new WebSocket(buildLogsWebSocketUrl(minLevel), [LOGS_WS_AUTH_PROTOCOL, token])
 }

@@ -20,6 +20,18 @@ router = APIRouter(
     dependencies=[RequireSetup],
 )
 
+_WS_AUTH_PROTOCOL = "access_token"
+
+
+def _token_from_subprotocol(header: str | None) -> str | None:
+    if not header:
+        return None
+    parts = [part.strip() for part in header.split(",")]
+    for index, part in enumerate(parts):
+        if part == _WS_AUTH_PROTOCOL and index + 1 < len(parts):
+            return parts[index + 1]
+    return None
+
 
 async def _user_from_token(token: str) -> User | None:
     payload = decode_access_token(token)
@@ -54,15 +66,15 @@ async def recent_logs(
 @router.websocket("/ws/logs")
 async def stream_logs(
     websocket: WebSocket,
-    token: str = Query(default=""),
     min_level: str = Query(default="DEBUG"),
 ):
-    user = await _user_from_token(token)
+    token = _token_from_subprotocol(websocket.headers.get("sec-websocket-protocol"))
+    user = await _user_from_token(token) if token else None
     if not user:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
         return
 
-    await websocket.accept()
+    await websocket.accept(subprotocol=_WS_AUTH_PROTOCOL)
     hub = get_log_hub()
 
     try:

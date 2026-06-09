@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { buildLogsWebSocketUrl, getRecentLogs } from '../api/client'
+import { createLogsWebSocket, getRecentLogs } from '../api/client'
 import type { RuntimeLogEntry } from '../api/types'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { formatApiError } from '../utils/apiError'
@@ -82,7 +82,7 @@ export function LogsPage() {
       setError('')
 
       try {
-        const ws = new WebSocket(buildLogsWebSocketUrl(minLevel))
+        const ws = createLogsWebSocket(minLevel)
         wsRef.current = ws
 
         ws.onopen = () => {
