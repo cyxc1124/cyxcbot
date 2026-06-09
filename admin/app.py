@@ -35,6 +35,7 @@ def create_app() -> FastAPI:
 
     web_dist = Path(__file__).resolve().parent.parent / "web" / "dist"
     if web_dist.is_dir():
+        web_dist = web_dist.resolve()
         assets_dir = web_dist / "assets"
         if assets_dir.is_dir():
             app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
@@ -43,7 +44,9 @@ def create_app() -> FastAPI:
         async def serve_spa(full_path: str):
             if full_path.startswith("api/"):
                 raise HTTPException(status_code=404, detail="Not found")
-            file_path = web_dist / full_path
+            file_path = (web_dist / full_path).resolve()
+            if not file_path.is_relative_to(web_dist):
+                raise HTTPException(status_code=404, detail="Not found")
             if file_path.is_file():
                 return FileResponse(file_path)
             index = web_dist / "index.html"
