@@ -27,6 +27,7 @@ MANIFEST
 # PyInstaller
 *.manifest
 *.spec
+!cyxcbot.spec
 
 # Installer logs
 pip-log.txt
