@@ -114,13 +114,21 @@ hiddenimports = [
     "pyee",
     "msgpack",
     "nonestorage",
+    # 顶层 shared 模块（防止 collect_submodules 漏扫新文件）
+    "shared.status_check_policy",
+    "shared.private_policy",
+    "shared.group_policy",
+    "shared.dynamic_subscription",
 ]
 
 for package in _collect_packages:
     hiddenimports += collect_submodules(package)
 
 datas = [
-    ("shared/db/migrations", "shared/db/migrations"),
+    # 项目源码目录：插件经 SourceFileLoader 从磁盘加载，依赖模块也须在 _internal 可导入
+    ("shared", "shared"),
+    ("admin", "admin"),
+    ("utils", "utils"),
     ("plugins", "plugins"),
     ("web/dist", "web/dist"),
     ("env.example", "."),

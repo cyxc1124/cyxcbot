@@ -115,6 +115,20 @@ def configure_logging():
 
     return log_level
 
+
+def _ensure_sqlite_parent_dir(url: str) -> None:
+    """为相对路径的 SQLite 数据库自动创建父目录（如 data/）。"""
+    if not url.lower().startswith("sqlite") or "///" not in url:
+        return
+    db_part = url.split("///", 1)[1].split("?", 1)[0]
+    if not db_part or db_part == ":memory:":
+        return
+    db_path = Path(db_part)
+    if not db_path.is_absolute():
+        db_path = Path.cwd() / db_path
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+
 # 尽早加载 .env（供 SQLALCHEMY_DATABASE_URL、WEB_SECRET_KEY 等使用）
 _env_path = Path(".env")
 if _env_path.exists():
@@ -126,10 +140,10 @@ if _env_path.exists():
 
 # 默认 SQLite 路径（与 env.example 一致）
 if not os.getenv("SQLALCHEMY_DATABASE_URL"):
-    Path("data").mkdir(parents=True, exist_ok=True)
     os.environ["SQLALCHEMY_DATABASE_URL"] = "sqlite+aiosqlite:///data/cyxcbot.db"
 
 _db_url = os.getenv("SQLALCHEMY_DATABASE_URL", "sqlite+aiosqlite:///data/cyxcbot.db")
+_ensure_sqlite_parent_dir(_db_url)
 _app_base = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 _migrations_dir = _app_base / "shared" / "db" / "migrations"
 
