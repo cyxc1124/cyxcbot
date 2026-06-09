@@ -164,7 +164,7 @@ class DanmakuClient:
                 item = item.strip()
                 if item.startswith('DedeUserID='):
                     return int(item.split('=')[1])
-        except:
+        except (ValueError, IndexError):
             pass
         return 0
     
@@ -176,7 +176,7 @@ class DanmakuClient:
                 item = item.strip()
                 if item.startswith('buvid3='):
                     return item.split('=')[1]
-        except:
+        except IndexError:
             pass
         return ''
     

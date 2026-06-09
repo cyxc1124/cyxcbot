@@ -176,7 +176,7 @@ async def handle_list_monitor(bot: Bot, event: GroupMessageEvent):
             
             status_emoji = "🔴" if is_living else "⚫"
             message += f"{status_emoji} {name} ({room_id})\n"
-        except:
+        except (AttributeError, TypeError, KeyError):
             message += f"⚫ 房间{room_id}\n"
     
     await list_monitor_cmd.finish(message)
