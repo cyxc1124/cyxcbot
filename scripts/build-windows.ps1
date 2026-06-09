@@ -25,7 +25,7 @@ Pop-Location
 # Python dependencies
 Write-Host "Installing Python dependencies..."
 pip install -r requirements.txt
-pip install "pyinstaller>=6.0"
+pip install "pyinstaller>=6.0" tzdata
 
 # Playwright browser (bundled into dist after PyInstaller)
 Write-Host "Installing Playwright Chromium..."
