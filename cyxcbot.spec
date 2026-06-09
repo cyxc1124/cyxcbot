@@ -1,9 +1,36 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for CyxcBot Windows distribution."""
 
+import importlib.util
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
+
+
+def collect_package_dir(package_name: str) -> list[tuple[str, str]]:
+    """Copy an installed package tree as source files.
+
+    NoneBot PluginLoader uses SourceFileLoader and requires .py files on disk;
+    modules stored only in the PYZ archive will raise FileNotFoundError at runtime.
+    """
+    spec = importlib.util.find_spec(package_name)
+    if spec is None or not spec.submodule_search_locations:
+        return []
+    return [(spec.submodule_search_locations[0], package_name)]
+
+
+def collect_nonebot_builtin_plugins() -> list[tuple[str, str]]:
+    """Copy nonebot/plugins for load_builtin_plugins (e.g. echo)."""
+    spec = importlib.util.find_spec("nonebot")
+    if spec is None or not spec.submodule_search_locations:
+        return []
+    from pathlib import Path
+
+    plugins_dir = Path(spec.submodule_search_locations[0]) / "plugins"
+    if plugins_dir.is_dir():
+        return [(str(plugins_dir), "nonebot/plugins")]
+    return []
 
 # 需完整收集子模块的包（含 __getattr__ 懒加载或动态依赖）
 _collect_packages = (
@@ -94,9 +121,21 @@ for package in _collect_packages:
 
 datas = [
     ("shared/db/migrations", "shared/db/migrations"),
+    ("plugins", "plugins"),
     ("web/dist", "web/dist"),
     ("env.example", "."),
 ]
+
+# NoneBot 通过 SourceFileLoader 加载插件，必须把包源码放进 _internal
+for _plugin_pkg in (
+    "nonebot_plugin_orm",
+    "nonebot_plugin_apscheduler",
+    "nonebot_plugin_localstore",
+    # stealth.py 在 import 时从包内 js/ 目录读取脚本
+    "playwright_stealth",
+):
+    datas += collect_package_dir(_plugin_pkg)
+datas += collect_nonebot_builtin_plugins()
 
 _data_packages = (
     "alembic",
@@ -122,6 +161,7 @@ a = Analysis(
     hookspath=["hooks"],
     hooksconfig={},
     runtime_hooks=[
+        "hooks/pyi_rth_nonebot.py",
         "hooks/pyi_rth_build_info.py",
         "hooks/pyi_rth_playwright.py",
     ],

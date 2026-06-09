@@ -1,5 +1,6 @@
 import nonebot
 import os
+import sys
 import logging
 from pathlib import Path
 from nonebot.log import logger, LoguruHandler
@@ -128,7 +129,8 @@ if not os.getenv("SQLALCHEMY_DATABASE_URL"):
     os.environ["SQLALCHEMY_DATABASE_URL"] = "sqlite+aiosqlite:///data/cyxcbot.db"
 
 _db_url = os.getenv("SQLALCHEMY_DATABASE_URL", "sqlite+aiosqlite:///data/cyxcbot.db")
-_migrations_dir = Path(__file__).resolve().parent / "shared" / "db" / "migrations"
+_app_base = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+_migrations_dir = _app_base / "shared" / "db" / "migrations"
 
 # 初始化 NoneBot
 # alembic_startup_check=False：启动时自动同步数据库 schema（建表/更新），无需额外脚本
@@ -164,7 +166,12 @@ driver.register_adapter(OneBotAdapter)
 # 加载插件
 try:
     nonebot.load_builtin_plugins("echo")  # 内置插件
-    nonebot.load_plugins("plugins")  # 加载本地插件
+    _plugins_path = (
+        str(Path(sys._MEIPASS) / "plugins")
+        if getattr(sys, "frozen", False)
+        else "plugins"
+    )
+    nonebot.load_plugins(_plugins_path)  # 加载本地插件
     logger.info("插件加载完成")
 except Exception as e:
     logger.error(f"插件加载失败: {e}")
