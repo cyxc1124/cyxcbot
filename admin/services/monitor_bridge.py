@@ -22,9 +22,35 @@ def get_live_monitor_instance():
 
 
 async def reload_dynamic_monitor() -> bool:
+    from plugins.dynamic_monitor.dynamic_monitor import (
+        start_dynamic_monitor,
+        stop_dynamic_monitor,
+    )
+
+    snap = get_config_service().get_snapshot()
+    has_targets = bool(snap.dynamic_monitor_mapping)
     instance = get_dynamic_monitor_instance()
+
     if instance is None:
-        return False
+        if not has_targets:
+            return False
+        try:
+            await start_dynamic_monitor()
+            logger.info("动态监控已从空配置状态启动")
+            return True
+        except Exception as exc:
+            logger.error(f"Failed to start dynamic monitor: {exc}")
+            return False
+
+    if not has_targets:
+        try:
+            await stop_dynamic_monitor()
+            logger.info("动态监控目标已清空，监控已停止")
+            return True
+        except Exception as exc:
+            logger.error(f"Failed to stop dynamic monitor: {exc}")
+            return False
+
     try:
         await instance.reload_config()
         return True
@@ -34,9 +60,35 @@ async def reload_dynamic_monitor() -> bool:
 
 
 async def reload_live_monitor() -> bool:
+    from plugins.live_monitor.live_monitor import (
+        start_live_monitor,
+        stop_live_monitor,
+    )
+
+    snap = get_config_service().get_snapshot()
+    has_targets = bool(snap.live_monitor_mapping)
     instance = get_live_monitor_instance()
+
     if instance is None:
-        return False
+        if not has_targets:
+            return False
+        try:
+            await start_live_monitor()
+            logger.info("直播监控已从空配置状态启动")
+            return True
+        except Exception as exc:
+            logger.error(f"Failed to start live monitor: {exc}")
+            return False
+
+    if not has_targets:
+        try:
+            await stop_live_monitor()
+            logger.info("直播监控目标已清空，监控已停止")
+            return True
+        except Exception as exc:
+            logger.error(f"Failed to stop live monitor: {exc}")
+            return False
+
     try:
         await instance.reload_config()
         return True

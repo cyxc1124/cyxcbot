@@ -97,11 +97,20 @@ class DynamicMonitor:
         if self.fetcher:
             self.fetcher.cookie = self.config.bilibili_cookie
 
+        new_uids: list[str] = []
         for uid in self.config.dynamic_monitor_mapping.keys():
             if uid not in self.last_dynamic_ids:
                 self.last_dynamic_ids[uid] = 0
                 self.initialized_uids[uid] = False
                 self.pinned_dynamic_ids[uid] = None
+                new_uids.append(uid)
+
+        if self.is_running:
+            for uid in new_uids:
+                try:
+                    await self._check_user_dynamic(uid)
+                except Exception as e:
+                    logger.error(f"初始化UP主 {uid} 动态监控失败: {e}")
 
         if self.is_running and old_interval != self.config.monitor_interval:
             scheduler.add_job(
