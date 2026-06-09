@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useSidebar } from '../contexts/SidebarContext'
@@ -38,15 +38,13 @@ export function Layout() {
   const [fontFamily, setFontFamily] = useState<FontFamily>(() => getSavedFontFamily())
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [navHoverExpanded, setNavHoverExpanded] = useState(false)
+  const [prevPathname, setPrevPathname] = useState(location.pathname)
 
-  useEffect(() => {
-    setNavCollapsed(false)
+  if (location.pathname !== prevPathname) {
+    setPrevPathname(location.pathname)
     setNavHoverExpanded(false)
-  }, [location.pathname, setNavCollapsed])
-
-  useEffect(() => {
-    if (!navCollapsed) setNavHoverExpanded(false)
-  }, [navCollapsed])
+    setNavCollapsed(false)
+  }
 
   const showFullNav = !navCollapsed || navHoverExpanded
 

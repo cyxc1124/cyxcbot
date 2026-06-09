@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
+import { useMountAsync } from '../hooks/useMountAsync'
+import { createRetryHandler } from '../utils/retryLoad'
 import { getAbout } from '../api/client'
 import type { AboutInfo } from '../api/types'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
@@ -24,25 +27,24 @@ function InfoRow({ label, value, hint }: InfoRowProps) {
 }
 
 export function AboutPage() {
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useLoadingOnKeyChange('about')
   const [error, setError] = useState('')
   const [about, setAbout] = useState<AboutInfo | null>(null)
 
   const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
     try {
       setAbout(await getAbout())
+      setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [setLoading])
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
+
+  useMountAsync(load)
 
   if (loading && !about && !error) return <PageLoading />
 
@@ -53,7 +55,7 @@ export function AboutPage() {
         <p className="mt-1 text-sm text-muted-foreground">机器草 Web 管理面板</p>
       </div>
 
-      {error && <LoadErrorBanner message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       <div className="card">
         <div className="mb-6 flex items-center gap-4">

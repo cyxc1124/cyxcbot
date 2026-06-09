@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
+import { createRetryHandler } from '../utils/retryLoad'
 import { Link } from 'react-router-dom'
 import {
   getConnectionsStatus,
@@ -19,6 +21,7 @@ import { ResourceUsageCard } from '../components/ResourceUsageCard'
 import { StatCard } from '../components/StatCard'
 import { LevelBadge } from '../components/StatusBadge'
 import { useLiveUptime } from '../hooks/useLiveUptime'
+import { useMountAsync } from '../hooks/useMountAsync'
 import { formatApiError } from '../utils/apiError'
 import { formatDateTime, formatMemoryUsage, formatUptime } from '../utils/format'
 
@@ -67,7 +70,7 @@ function qqCardValue(q: QqConnectionStatus | undefined): string {
 }
 
 export function DashboardPage() {
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useLoadingOnKeyChange('dashboard')
   const [error, setError] = useState('')
   const [running, setRunning] = useState(false)
   const [uptime, setUptime] = useState(0)
@@ -76,8 +79,6 @@ export function DashboardPage() {
   const [events, setEvents] = useState<SystemEvent[]>([])
 
   const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
     try {
       const [status, sys, conn, ev] = await Promise.all([
         getMonitorStatus(),
@@ -90,15 +91,19 @@ export function DashboardPage() {
       setSystem(sys)
       setConnections(conn)
       setEvents(ev.items)
+      setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [setLoading])
+
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
+
+  useMountAsync(load)
 
   useEffect(() => {
-    void load()
     const timer = setInterval(load, 30000)
     return () => clearInterval(timer)
   }, [load])
@@ -114,7 +119,7 @@ export function DashboardPage() {
         <p className="mt-1 text-sm text-muted-foreground">系统运行状态总览</p>
       </div>
 
-      {error && <LoadErrorBanner message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard

@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
+import { useMountAsync } from '../hooks/useMountAsync'
+import { createRetryHandler } from '../utils/retryLoad'
 import { getSettings, patchSettings } from '../api/client'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
@@ -191,30 +194,29 @@ export function MessageTemplatesPage() {
   const [savedForm, setSavedForm] = useState(templatesFromSettings(null))
   const [selectedKey, setSelectedKey] = useState<TemplateKey | null>(null)
   const [draftValues, setDraftValues] = useState<Partial<Record<TemplateKey, string>>>({})
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useLoadingOnKeyChange('message-templates')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [unsavedPrompt, setUnsavedPrompt] = useState<UnsavedPrompt | null>(null)
 
   const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
     try {
       const settings = await getSettings()
       const next = templatesFromSettings(settings)
       setForm(next)
       setSavedForm(next)
       setDraftValues({})
+      setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [setLoading])
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
+
+  useMountAsync(load)
 
   const getCurrentValue = (key: TemplateKey) => draftValues[key] ?? form[key]
 
@@ -330,7 +332,7 @@ export function MessageTemplatesPage() {
 
       {error && (
         <div className="shrink-0">
-          <LoadErrorBanner message={error} onRetry={load} />
+          <LoadErrorBanner message={error} onRetry={retryLoad} />
         </div>
       )}
 

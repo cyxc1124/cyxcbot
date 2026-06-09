@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useMemo, useState, type FormEvent } from 'react'
+import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
+import { useMountAsync } from '../hooks/useMountAsync'
+import { createRetryHandler } from '../utils/retryLoad'
 import { getAuditLogs } from '../api/client'
 import type { AuditLog } from '../api/types'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
@@ -16,12 +19,11 @@ export function AuditPage() {
   const [action, setAction] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
-  const [loading, setLoading] = useState(true)
+  const loadKey = `${page}|${action}|${from}|${to}`
+  const [loading, setLoading] = useLoadingOnKeyChange(loadKey)
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
     try {
       const data = await getAuditLogs({
         page,
@@ -32,21 +34,22 @@ export function AuditPage() {
       })
       setLogs(data.items)
       setTotal(data.total)
+      setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [page, action, from, to])
+  }, [page, action, from, to, setLoading])
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
+
+  useMountAsync(load)
 
   const handleFilter = (e: FormEvent) => {
     e.preventDefault()
+    setLoading(true)
     setPage(1)
-    void load()
   }
 
   return (
@@ -98,7 +101,7 @@ export function AuditPage() {
         </button>
       </form>
 
-      {error && <LoadErrorBanner message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       <div className="card overflow-x-auto">
         {loading ? (

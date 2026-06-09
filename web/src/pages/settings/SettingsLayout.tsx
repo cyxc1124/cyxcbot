@@ -15,7 +15,7 @@ function SettingsLayoutContent() {
   const {
     loading,
     error,
-    load,
+    retryLoad,
     settings,
     loggingOut,
     showLogoutConfirm,
@@ -32,7 +32,7 @@ function SettingsLayoutContent() {
         <p className="mt-1 text-sm text-muted-foreground">按类别管理监控、账号与数据相关配置</p>
       </div>
 
-      {error && <LoadErrorBanner message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         <aside className="shrink-0 lg:w-52">

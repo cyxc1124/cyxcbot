@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useMemo, useState, type FormEvent } from 'react'
+import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
+import { useMountAsync } from '../hooks/useMountAsync'
+import { createRetryHandler } from '../utils/retryLoad'
 import { getEvents } from '../api/client'
 import type { SystemEvent } from '../api/types'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
@@ -17,12 +20,11 @@ export function EventsPage() {
   const [page, setPage] = useState(1)
   const [level, setLevel] = useState('')
   const [category, setCategory] = useState('')
-  const [loading, setLoading] = useState(true)
+  const loadKey = `${page}|${level}|${category}`
+  const [loading, setLoading] = useLoadingOnKeyChange(loadKey)
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
     try {
       const data = await getEvents({
         page,
@@ -32,21 +34,22 @@ export function EventsPage() {
       })
       setEvents(data.items)
       setTotal(data.total)
+      setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [page, level, category])
+  }, [page, level, category, setLoading])
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
+
+  useMountAsync(load)
 
   const handleFilter = (e: FormEvent) => {
     e.preventDefault()
+    setLoading(true)
     setPage(1)
-    void load()
   }
 
   return (
@@ -92,7 +95,7 @@ export function EventsPage() {
         </button>
       </form>
 
-      {error && <LoadErrorBanner message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       <div className="card">
         {loading ? (

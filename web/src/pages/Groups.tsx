@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { useMountAsync } from '../hooks/useMountAsync'
+import { createRetryHandler } from '../utils/retryLoad'
 import { getMessagePolicy, updateMessagePolicy } from '../api/client'
 import type { Group } from '../api/types'
 import { LinkParserGroupPolicyTab } from '../components/LinkParserPolicyTabs'
@@ -58,16 +60,21 @@ export function GroupsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [trackedTab, setTrackedTab] = useState(tab)
+
+  if (tab !== trackedTab) {
+    setTrackedTab(tab)
+    if (tab === 'message') setLoading(true)
+  }
 
   const load = useCallback(async () => {
     if (tab !== 'message') return
-    setLoading(true)
-    setError('')
     try {
       const data = await getMessagePolicy()
       setGroups(data.groups)
       setRestrict(data.restrict)
       setEnabledIds(data.enabled_group_ids)
+      setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
@@ -75,9 +82,9 @@ export function GroupsPage() {
     }
   }, [tab])
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load])
+
+  useMountAsync(load)
 
   const tabLabels: Record<GroupsTab, string> = {
     message: '群消息',
@@ -175,7 +182,7 @@ export function GroupsPage() {
 
       {tab === 'message' && (
       <>
-      {error && <LoadErrorBanner message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       <div className="card">
         {groups.length === 0 ? (

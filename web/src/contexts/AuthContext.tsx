@@ -2,11 +2,12 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react'
+import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
+import { useMountAsync } from '../hooks/useMountAsync'
 import {
   clearToken,
   getMe,
@@ -37,10 +38,9 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [initialized, setInitialized] = useState<boolean | null>(null)
   const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useLoadingOnKeyChange('auth')
 
   const refresh = useCallback(async () => {
-    setLoading(true)
     try {
       const status = await getSetupStatus()
       setInitialized(status.initialized)
@@ -63,11 +63,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [setLoading])
 
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
+  useMountAsync(refresh)
 
   const login = useCallback(async (data: LoginRequest) => {
     const { access_token } = await postLogin(data)

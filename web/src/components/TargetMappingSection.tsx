@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useMemo, useState, type FormEvent } from 'react'
+import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
+import { useMountAsync } from '../hooks/useMountAsync'
+import { createRetryHandler } from '../utils/retryLoad'
 import {
   createDynamicTarget,
   createLiveTarget,
@@ -63,7 +66,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
   const [groups, setGroups] = useState<Group[]>([])
   const [friends, setFriends] = useState<Friend[]>([])
   const [targets, setTargets] = useState<SubscriptionTarget[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useLoadingOnKeyChange(type)
   const [error, setError] = useState('')
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [showForm, setShowForm] = useState(false)
@@ -78,8 +81,6 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
   const targetLabel = isDynamic ? 'UP 主' : '直播间'
 
   const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
     try {
       const [g, f, items] = await Promise.all([
         getGroups(),
@@ -93,16 +94,17 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
         if (prev !== null && !items.some((t) => t.id === prev)) return null
         return prev
       })
+      setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [isDynamic])
+  }, [isDynamic, setLoading])
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
+
+  useMountAsync(load)
 
   const selectedTarget =
     selectedId !== null ? targets.find((t) => t.id === selectedId) ?? null : null
@@ -533,7 +535,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
         </button>
       </div>
 
-      {error && <LoadErrorBanner message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       {loading && targets.length === 0 && !error ? (
         <p className="py-12 text-center text-sm text-muted-foreground">加载中…</p>

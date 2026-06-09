@@ -18,7 +18,10 @@ const PANEL_HEIGHT =
 export function GroupSelector({ groups, selected, onChange, disabled, helperText }: GroupSelectorProps) {
   const [availableQuery, setAvailableQuery] = useState('')
   const [selectedQuery, setSelectedQuery] = useState('')
-  const list = Array.isArray(groups) ? groups : []
+  const list = useMemo(
+    () => (Array.isArray(groups) ? groups : []),
+    [groups],
+  )
 
   const groupMap = useMemo(() => {
     const map = new Map<string, Group>()

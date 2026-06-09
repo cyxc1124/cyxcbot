@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
+import { useMountAsync } from '../hooks/useMountAsync'
+import { createRetryHandler } from '../utils/retryLoad'
 import {
   getLinkParserGroupPolicies,
   getLinkParserUserPolicies,
@@ -59,7 +62,7 @@ function GlobalPolicyHint({ scope }: { scope: 'group' | 'user' }) {
 export function LinkParserGroupPolicyTab() {
   const { showToast } = useToast()
   const [groups, setGroups] = useState<LinkParserGroupPolicyItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useLoadingOnKeyChange('link-parser-groups')
   const [error, setError] = useState('')
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
   const [togglingAll, setTogglingAll] = useState(false)
@@ -84,21 +87,20 @@ export function LinkParserGroupPolicyTab() {
   }
 
   const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
     try {
       const data = await getLinkParserGroupPolicies()
       setGroups(data.groups)
+      setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [setLoading])
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  useMountAsync(load)
+
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
 
   const patchGroup = async (
     groupId: string,
@@ -188,7 +190,7 @@ export function LinkParserGroupPolicyTab() {
   const busy = togglingAll || savingIds.size > 0
 
   if (loading && groups.length === 0 && !error) return <PageLoading />
-  if (error && groups.length === 0) return <LoadErrorBanner message={error} onRetry={load} />
+  if (error && groups.length === 0) return <LoadErrorBanner message={error} onRetry={retryLoad} />
 
   return (
     <div className="space-y-4">
@@ -217,7 +219,7 @@ export function LinkParserGroupPolicyTab() {
           </div>
         )}
       </div>
-      {error && <LoadErrorBanner message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       {groups.length === 0 ? (
         <p className="text-sm text-muted-foreground">
@@ -290,7 +292,7 @@ export function LinkParserGroupPolicyTab() {
 export function LinkParserUserPolicyTab() {
   const { showToast } = useToast()
   const [users, setUsers] = useState<LinkParserUserPolicyItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useLoadingOnKeyChange('link-parser-users')
   const [error, setError] = useState('')
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
   const [togglingAll, setTogglingAll] = useState(false)
@@ -315,21 +317,20 @@ export function LinkParserUserPolicyTab() {
   }
 
   const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
     try {
       const data = await getLinkParserUserPolicies()
       setUsers(data.users)
+      setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [setLoading])
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  useMountAsync(load)
+
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
 
   const patchUser = async (
     userId: string,
@@ -426,7 +427,7 @@ export function LinkParserUserPolicyTab() {
   const busy = togglingAll || savingIds.size > 0
 
   if (loading && users.length === 0 && !error) return <PageLoading />
-  if (error && users.length === 0) return <LoadErrorBanner message={error} onRetry={load} />
+  if (error && users.length === 0) return <LoadErrorBanner message={error} onRetry={retryLoad} />
 
   return (
     <div className="space-y-4">
@@ -455,7 +456,7 @@ export function LinkParserUserPolicyTab() {
           </div>
         )}
       </div>
-      {error && <LoadErrorBanner message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       {users.length === 0 ? (
         <p className="text-sm text-muted-foreground">
