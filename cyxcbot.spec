@@ -70,7 +70,6 @@ _collect_packages = (
     "aiohttp",
     "loguru",
     "jose",
-    "passlib",
 )
 
 hiddenimports = [
@@ -84,7 +83,6 @@ hiddenimports = [
     "bcrypt",
     "brotli",
     "cryptography.hazmat.primitives.kdf.pbkdf2",
-    "passlib.handlers.bcrypt",
     "PIL",
     "PIL.Image",
     "PIL.ImageDraw",
