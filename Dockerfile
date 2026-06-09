@@ -1,4 +1,18 @@
-# 使用官方 Python 基础镜像
+# Web Admin 前端构建阶段
+FROM node:22-slim AS web-builder
+
+ARG GIT_TAG=""
+ARG GIT_COMMIT=""
+
+WORKDIR /app/web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+ENV GIT_TAG=${GIT_TAG} \
+    GIT_COMMIT=${GIT_COMMIT}
+RUN npm run build
+
+# Python 运行时镜像
 FROM python:3.11-slim
 
 # 构建参数（由GitHub Action传入）
@@ -81,6 +95,9 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # 安装 Playwright Chromium 浏览器
 RUN playwright install chromium
+
+# 复制 Web Admin 前端构建产物（web/dist 不入库，须在镜像构建时生成）
+COPY --from=web-builder /app/web/dist ./web/dist
 
 # 复制项目文件
 COPY . .

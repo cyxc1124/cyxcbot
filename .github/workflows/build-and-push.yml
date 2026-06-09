@@ -118,4 +118,7 @@ jobs:
           echo "### Docker 镜像" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY 
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Web Admin 前端" >> $GITHUB_STEP_SUMMARY
+          echo "- 已在 Docker 多阶段构建中通过 \`npm run build\` 生成 \`web/dist\`" >> $GITHUB_STEP_SUMMARY 

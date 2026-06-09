@@ -59,4 +59,8 @@ README.md
 # 构建产物
 build/
 dist/
-*.egg-info/ 
+*.egg-info/
+
+# Web 前端（在 Docker 多阶段构建中编译，避免使用本地过时产物）
+web/node_modules/
+web/dist/ 
