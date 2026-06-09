@@ -1,5 +1,6 @@
 import nonebot
 import os
+import pkgutil
 import sys
 import logging
 from pathlib import Path
@@ -166,12 +167,15 @@ driver.register_adapter(OneBotAdapter)
 # 加载插件
 try:
     nonebot.load_builtin_plugins("echo")  # 内置插件
-    _plugins_path = (
-        str(Path(sys._MEIPASS) / "plugins")
-        if getattr(sys, "frozen", False)
-        else "plugins"
-    )
-    nonebot.load_plugins(_plugins_path)  # 加载本地插件
+    if getattr(sys, "frozen", False):
+        # PyInstaller 下插件在 _MEIPASS/plugins；load_plugins(绝对路径) 会被
+        # nonebot 相对 CWD 转成 _internal.plugins.*，故按模块名显式加载。
+        _plugins_dir = Path(sys._MEIPASS) / "plugins"
+        for _module in pkgutil.iter_modules([str(_plugins_dir)]):
+            if not _module.name.startswith("_"):
+                nonebot.load_plugin(f"plugins.{_module.name}")
+    else:
+        nonebot.load_plugins("plugins")
     logger.info("插件加载完成")
 except Exception as e:
     logger.error(f"插件加载失败: {e}")
