@@ -46,6 +46,8 @@ export function LoginPage() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
+              minLength={3}
+              maxLength={64}
               autoComplete="username"
             />
           </div>
@@ -60,6 +62,8 @@ export function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              minLength={8}
+              maxLength={128}
               autoComplete="current-password"
             />
           </div>

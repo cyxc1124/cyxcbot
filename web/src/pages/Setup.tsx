@@ -60,6 +60,7 @@ export function SetupPage() {
               onChange={(e) => setUsername(e.target.value)}
               required
               minLength={3}
+              maxLength={64}
               autoComplete="username"
               placeholder="admin"
             />
@@ -76,6 +77,7 @@ export function SetupPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={8}
+              maxLength={128}
               autoComplete="new-password"
             />
           </div>
