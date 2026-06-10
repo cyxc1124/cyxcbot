@@ -23,7 +23,7 @@ from shared.db.models import LiveMonitorState
 from .models import LiveRoomState
 from .danmaku_client import DanmakuClient
 from .sender import LiveNotificationSender
-from utils.bilibili_api import LiveStatus, RoomInfo, UserInfo, api_manager
+from utils.bilibili_api import LiveStatus, api_manager
 
 
 # 全局监控实例

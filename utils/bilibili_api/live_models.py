@@ -5,7 +5,6 @@ B站直播数据模型
 
 from enum import IntEnum
 from dataclasses import dataclass
-from typing import Optional
 from datetime import datetime
 
 

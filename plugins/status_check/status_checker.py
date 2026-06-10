@@ -100,12 +100,6 @@ async def get_bot_status() -> str:
         # 获取系统信息
         system_info = get_system_info()
         
-        # 获取内存使用情况
-        memory_info = get_memory_info()
-        
-        # 获取机器人连接状态
-        bot_status = get_bot_connection_status()
-        
         # 构建状态消息
         status_msg = "机器草 运行状态\n"
         status_msg += "=" * 35 + "\n"
@@ -134,7 +128,7 @@ async def get_bot_status() -> str:
             status_msg += f"进程内存: {process_memory:.1f}MB\n"
         except Exception as e:
             logger.debug(f"获取进程内存失败: {e}")
-            status_msg += f"进程内存: 无法获取\n"
+            status_msg += "进程内存: 无法获取\n"
         
         if config.show_detailed_status:
             status_msg += "\n" + "详细技术信息" + "\n"

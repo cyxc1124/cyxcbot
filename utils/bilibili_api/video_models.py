@@ -4,7 +4,6 @@ B站视频数据模型
 """
 
 from dataclasses import dataclass
-from typing import Optional
 from datetime import datetime
 
 

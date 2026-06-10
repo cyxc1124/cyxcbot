@@ -4,12 +4,11 @@
 基于HarukaBot的实现
 """
 
-import asyncio
 from typing import Optional, Tuple
 from nonebot.log import logger
 
 try:
-    from playwright.async_api import async_playwright, Browser, Page, BrowserContext
+    from playwright.async_api import async_playwright, Page, BrowserContext
     from playwright_stealth import Stealth
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
@@ -184,7 +183,7 @@ class DynamicScreenshot:
                     continue
 
             if not dynamic_found:
-                logger.warning(f"未找到动态内容元素，继续执行截图")
+                logger.warning("未找到动态内容元素，继续执行截图")
 
             # 轻微滚动页面以触发懒加载内容
             try:

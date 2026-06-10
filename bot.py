@@ -4,7 +4,7 @@ import pkgutil
 import sys
 import logging
 from pathlib import Path
-from nonebot.log import logger, LoguruHandler
+from nonebot.log import logger
 from nonebot.adapters.console import Adapter as ConsoleAdapter  # 避免重复命名
 from nonebot.adapters.onebot.v11 import Adapter as OneBotAdapter  # 添加OneBot适配器
 

@@ -53,7 +53,7 @@ class LiveApi:
             # 优先尝试 API
             room_info_data = await self._get_room_info_via_api(room_id)
             return RoomInfo.from_api_data(room_info_data)
-        except Exception as e:
+        except Exception:
             try:
                 # 备用方案：从HTML页面解析
                 room_info_data = await self._get_room_info_via_html(room_id)
@@ -109,7 +109,7 @@ class LiveApi:
     async def _get_info_by_room(self, room_id: int) -> dict:
         """调用 getInfoByRoom 接口获取房间完整信息"""
         # Web API
-        url = f"https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom"
+        url = "https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom"
         params = {'room_id': room_id}
         headers = self._get_headers(room_id)
         
@@ -131,7 +131,7 @@ class LiveApi:
             return data['room_info']
         except Exception:
             # 备用：使用 get_info
-            url = f"https://api.live.bilibili.com/room/v1/Room/get_info"
+            url = "https://api.live.bilibili.com/room/v1/Room/get_info"
             params = {'room_id': room_id}
             headers = self._get_headers(room_id)
             

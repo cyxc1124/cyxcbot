@@ -23,7 +23,7 @@ class DynamicFetcher:
         # B站API请求头
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
-            'Referer': f'https://space.bilibili.com/',
+            'Referer': 'https://space.bilibili.com/',
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         }
@@ -260,8 +260,6 @@ class DynamicFetcher:
             # 暂时不获取用户名，只保存UID，在需要推送时再获取
             name = f"UP主_{author_uid}"  # 临时占位符，推送时会被替换
 
-            author_type = author_info.get('type', 'AUTHOR_TYPE_UNKNOWN')
-            author_type_desc = self._get_author_type_description(author_type)
             author_type = author_info.get('type', 'AUTHOR_TYPE_NORMAL')
 
             # 提取时间戳
@@ -383,7 +381,7 @@ class DynamicFetcher:
             else:
                 # 降级：不使用签名
                 url = user_info_url
-                logger.debug(f"无法获取WBI签名，尝试无签名请求")
+                logger.debug("无法获取WBI签名，尝试无签名请求")
 
             # 请求头
             user_headers = {

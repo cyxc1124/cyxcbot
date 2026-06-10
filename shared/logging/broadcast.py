@@ -8,7 +8,7 @@ import threading
 from collections import deque
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any
 
 from nonebot.log import logger as nb_logger
 

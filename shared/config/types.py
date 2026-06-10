@@ -13,9 +13,6 @@ from shared.config.message_templates import (
     DynamicMessageTemplates,
     LinkMessageTemplates,
     LiveMessageTemplates,
-    dynamic_templates_from_settings,
-    link_templates_from_settings,
-    live_templates_from_settings,
 )
 
 

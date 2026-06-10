@@ -7,9 +7,6 @@ UP主动态监控插件
 from nonebot import get_driver, on_message
 from nonebot.log import logger
 from nonebot.adapters.onebot.v11 import GroupMessageEvent
-from nonebot.rule import to_me
-from nonebot.params import CommandArg
-from nonebot.adapters.onebot.v11.message import Message
 from . import dynamic_monitor
 from .config import Config
 from . import dynamic_extract  # noqa: F401

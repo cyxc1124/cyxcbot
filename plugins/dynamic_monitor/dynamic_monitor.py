@@ -7,7 +7,7 @@ import aiohttp
 from datetime import datetime
 from typing import Dict, List, Optional
 from nonebot.log import logger
-from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot_plugin_apscheduler import scheduler
 from nonebot_plugin_orm import get_session
 

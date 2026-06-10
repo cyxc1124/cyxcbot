@@ -3,7 +3,7 @@
 负责构建和发送视频通知消息
 """
 
-from typing import List, Optional
+from typing import List
 from nonebot.log import logger
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 

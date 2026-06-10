@@ -8,7 +8,7 @@ from nonebot.log import logger
 
 from shared.config.service import get_config_service
 
-from . import status_checker
+from . import status_checker  # noqa: F401
 
 __plugin_meta__ = {
     "name": "机器人状态查询",
