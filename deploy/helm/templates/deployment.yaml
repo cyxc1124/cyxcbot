@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cyxcbot.fullname" . }}
+  labels:
+    {{- include "cyxcbot.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "cyxcbot.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cyxcbot.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "cyxcbot.serviceAccountName" . }}
+      containers:
+      - name: {{ .Chart.Name }}
+        image: "{{ .Values.image.repository }}:{{ include "cyxcbot.imageTag" . }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - name: onebot       # 对应 service.onebot.targetPort
+          containerPort: {{ .Values.service.onebot.targetPort }}
+          protocol: TCP
+        - name: web-admin    # 对应 service.webAdmin.targetPort，健康检查也走此端口
+          containerPort: {{ .Values.service.webAdmin.targetPort }}
+          protocol: TCP
+        env:
+        # 启动级环境变量，均来自 ConfigMap（templates/configmap.yaml）
+        # NoneBot / OneBot
+        - name: HOST
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "cyxcbot.fullname" . }}-config
+              key: host
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "cyxcbot.fullname" . }}-config
+              key: port
+        - name: COMMAND_START
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "cyxcbot.fullname" . }}-config
+              key: command_start
+        - name: COMMAND_SEP
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "cyxcbot.fullname" . }}-config
+              key: command_sep
+        # Web Admin
+        - name: WEB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "cyxcbot.fullname" . }}-config
+              key: web_host
+        - name: WEB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "cyxcbot.fullname" . }}-config
+              key: web_port
+        - name: WEB_ADMIN_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "cyxcbot.fullname" . }}-config
+              key: web_admin_enabled
+        # 数据库
+        - name: SQLALCHEMY_DATABASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "cyxcbot.fullname" . }}-config
+              key: sqlalchemy_database_url
+        # 日志
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "cyxcbot.fullname" . }}-config
+              key: log_level
+        # 密钥（方式 A/B 均从 secret.name 或 <release>-secret 读取 values.secret.key）
+        - name: WEB_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "cyxcbot.secretName" . }}
+              key: {{ .Values.secret.key }}
+        volumeMounts:
+        # SQLite 与持久化数据目录（对应 persistence.* 配置）
+        - name: data
+          mountPath: /app/data
+        {{- if .Values.probes.enabled }}
+        # 存活 / 就绪探测：Web Admin GET /health
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: web-admin
+          initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
+          periodSeconds: {{ .Values.probes.periodSeconds }}
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: web-admin
+          initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
+          periodSeconds: {{ .Values.probes.periodSeconds }}
+        {{- end }}
+        {{- with .Values.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      volumes:
+      - name: data
+        {{- if .Values.persistence.enabled }}
+        # PVC（templates/pvc.yaml）或 existingClaim
+        persistentVolumeClaim:
+          claimName: {{ include "cyxcbot.dataClaimName" . }}
+        {{- else }}
+        # persistence.enabled=false 时数据不持久化
+        emptyDir: {}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

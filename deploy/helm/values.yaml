@@ -1,0 +1,103 @@
+# Default values for cyxcbot
+# 2.0+ 仅保留启动级环境变量；业务配置请在 Web Admin 面板中管理。
+
+replicaCount: 1  # Pod 副本数（机器人通常保持 1）
+
+# 容器镜像（见 templates/deployment.yaml）
+image:
+  repository: ghcr.io/cyxc1124/cyxcbot
+  pullPolicy: IfNotPresent
+  tag: "v2.1.0"  # 留空则使用 v + Chart.appVersion
+
+# 拉取私有镜像时使用（如 GHCR 需认证）
+imagePullSecrets: []
+  # - name: ghcr-pull-token
+
+# 覆盖 K8s 资源命名（一般无需修改）
+nameOverride: ""
+fullnameOverride: ""
+
+# Service 暴露（见 templates/service.yaml）
+service:
+  type: LoadBalancer       # LoadBalancer / ClusterIP / NodePort
+  onebot:
+    port: 8080             # Service 对外端口（OneBot 协议端连接此端口）
+    targetPort: 8080       # 容器内 NoneBot 监听端口
+  webAdmin:
+    port: 8081             # Service 对外端口（浏览器访问 Web Admin）
+    targetPort: 8081       # 容器内 Web Admin 监听端口
+  loadBalancerIP: ""       # 可选，申请固定 LoadBalancer IP
+
+# NoneBot / OneBot 监听（→ 环境变量 HOST / PORT / COMMAND_*，见 templates/configmap.yaml）
+nonebot:
+  host: "0.0.0.0"
+  port: 8080
+  commandStart: ["/"]
+  commandSep: ["."]
+
+# Web Admin 监听（→ 环境变量 WEB_*，见 templates/configmap.yaml）
+webAdmin:
+  host: "0.0.0.0"
+  port: 8081
+  enabled: true
+
+# WEB_SECRET_KEY（必填，二选一）
+#
+# 方式 A — 引用已有 Secret（推荐生产环境）：
+#   kubectl create secret generic cyxcbot-secret --from-literal=web-secret-key='...'
+#   然后填写 secret.name: cyxcbot-secret
+#
+# 方式 B — 由 Chart 创建 Secret（测试 / 快速体验）：
+#   secret.name 留空，填写 secret.value
+#   Chart 会创建名为 <release>-secret 的 Secret
+#
+# secret.key 为 Secret 内部的 key 名：
+#   - 方式 A：须与 kubectl --from-literal=<key> 一致，Deployment 据此读取
+#   - 方式 B：Chart 写入 Secret 时使用此 key，Deployment 也据此读取
+secret:
+  name: ""              # 方式 A：已有 Secret 名称；方式 B：留空
+  key: web-secret-key   # Secret 内的 key 名（见 templates/secret.yaml、deployment.yaml）
+  value: ""             # 方式 B：密钥值；方式 A：留空（勿提交 Git）
+
+# 数据库连接（→ 环境变量 SQLALCHEMY_DATABASE_URL）
+# 默认 SQLite，路径相对容器工作目录 /app，即 /app/data/cyxcbot.db
+database:
+  url: "sqlite+aiosqlite:///data/cyxcbot.db"
+
+# 日志级别（→ 环境变量 LOG_LEVEL）
+logging:
+  level: "INFO"  # DEBUG / INFO / WARNING / ERROR / CRITICAL
+
+# SQLite 数据持久化（见 templates/pvc.yaml、deployment.yaml volumeMounts）
+persistence:
+  enabled: true            # false 时使用 emptyDir，Pod 重启后数据丢失
+  storageClass: ""         # 留空使用集群默认 StorageClass
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  existingClaim: ""        # 复用已有 PVC 名称，填写后跳过 PVC 创建
+
+# 容器资源限制（Playwright 截图建议 memory limit ≥ 2Gi）
+resources:
+  limits:
+    cpu: 2
+    memory: 2048Mi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+# 健康检查（探测 Web Admin GET /health，见 templates/deployment.yaml）
+probes:
+  enabled: true
+  initialDelaySeconds: 15  # 容器启动后首次探测延迟
+  periodSeconds: 20        # 探测间隔
+
+# Pod 调度（按需配置，留空表示不限制）
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ServiceAccount（默认使用集群 default，一般无需修改）
+serviceAccount:
+  create: false
+  annotations: {}
+  name: ""
