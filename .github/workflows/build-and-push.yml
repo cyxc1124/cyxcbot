@@ -37,7 +37,7 @@ jobs:
           npm run lint && npm run build
 
   python:
-    name: Python Lint & Format
+    name: Python Lint, Format & Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -50,14 +50,19 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
 
-      - name: Install Ruff
-        run: pip install ruff==0.15.16
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
       - name: Lint
         run: ruff check .
 
       - name: Format check
         run: ruff format --check .
+
+      - name: Run tests
+        env:
+          WEB_SECRET_KEY: ci-test-secret-key-not-for-production-use
+        run: pytest -v
 
   build-and-push:
     name: Build Docker Image
