@@ -183,6 +183,7 @@ bot.db
 /*_test.py
 !tests/
 !tests/**
+tests/__pycache__/
 
 # 备份文件
 *.bak
