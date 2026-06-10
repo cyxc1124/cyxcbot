@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import func, select
-
 from nonebot_plugin_orm import get_session
+from sqlalchemy import func, select
 
 from admin.auth.jwt import create_access_token
 from admin.auth.password import hash_password
@@ -29,7 +28,9 @@ async def setup(body: SetupRequest):
     async with session.begin():
         count = await session.scalar(select(func.count()).select_from(User)) or 0
         if count > 0:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Setup already completed")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Setup already completed"
+            )
 
         user = User(
             username=body.username,

@@ -52,7 +52,9 @@ async def update_message_policy(
     _: AdminUser,
 ):
     svc = get_config_service()
-    enabled_ids = [str(gid).strip() for gid in body.enabled_group_ids if str(gid).strip()]
+    enabled_ids = [
+        str(gid).strip() for gid in body.enabled_group_ids if str(gid).strip()
+    ]
     await svc.set_settings(
         {
             "message_group_restrict": str(body.restrict).lower(),
@@ -94,7 +96,9 @@ def _ensure_group_message_enabled(group_id: str, snap) -> None:
         )
 
 
-def _filter_status_enabled_group_ids(enabled_ids: list[str], groups: list[dict]) -> list[str]:
+def _filter_status_enabled_group_ids(
+    enabled_ids: list[str], groups: list[dict]
+) -> list[str]:
     allowed = {str(group["group_id"]) for group in groups}
     return [gid for gid in enabled_ids if gid in allowed]
 
@@ -122,9 +126,7 @@ async def update_status_policy(
     snap = svc.get_snapshot()
     message_groups = _message_enabled_groups(snap, await get_group_list())
     enabled_ids = [
-        str(gid).strip()
-        for gid in body.enabled_group_ids
-        if str(gid).strip()
+        str(gid).strip() for gid in body.enabled_group_ids if str(gid).strip()
     ]
     for group_id in enabled_ids:
         _ensure_group_message_enabled(group_id, snap)

@@ -32,6 +32,7 @@ async def start_web_admin_server():
 
     try:
         import uvicorn
+
         from admin.app import create_app
         from admin.config import get_web_host, get_web_port
 

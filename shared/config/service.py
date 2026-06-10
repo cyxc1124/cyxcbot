@@ -6,10 +6,9 @@ import json
 from typing import Awaitable, Callable, List, Optional
 
 from nonebot.log import logger
+from nonebot_plugin_orm import get_session
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-
-from nonebot_plugin_orm import get_session
 
 from shared.config.link_parser_policy import (
     LinkParserGroupPolicyRecord,
@@ -104,8 +103,12 @@ class ConfigService:
             live_user_mapping = await self._load_live_user_mapping(session)
             dynamic_at_all = await self._load_dynamic_at_all(session)
             live_at_all = await self._load_live_at_all(session)
-            link_parser_group_policies = await self._load_link_parser_group_policies(session)
-            link_parser_user_policies = await self._load_link_parser_user_policies(session)
+            link_parser_group_policies = await self._load_link_parser_group_policies(
+                session
+            )
+            link_parser_user_policies = await self._load_link_parser_user_policies(
+                session
+            )
 
         cookie_encrypted = settings.get("bilibili_cookie_encrypted", "")
         cookie = ""
@@ -138,10 +141,18 @@ class ConfigService:
             message_enabled_group_ids=settings.get("message_enabled_group_ids", []),
             message_private_restrict=settings.get("message_private_restrict", True),
             message_enabled_user_ids=settings.get("message_enabled_user_ids", []),
-            status_check_group_restrict=settings.get("status_check_group_restrict", True),
-            status_check_enabled_group_ids=settings.get("status_check_enabled_group_ids", []),
-            status_check_private_restrict=settings.get("status_check_private_restrict", True),
-            status_check_enabled_user_ids=settings.get("status_check_enabled_user_ids", []),
+            status_check_group_restrict=settings.get(
+                "status_check_group_restrict", True
+            ),
+            status_check_enabled_group_ids=settings.get(
+                "status_check_enabled_group_ids", []
+            ),
+            status_check_private_restrict=settings.get(
+                "status_check_private_restrict", True
+            ),
+            status_check_enabled_user_ids=settings.get(
+                "status_check_enabled_user_ids", []
+            ),
             status_check_show_detailed=settings.get("status_check_show_detailed", True),
             status_check_show_uptime=settings.get("status_check_show_uptime", True),
             status_check_show_memory=settings.get("status_check_show_memory", True),
@@ -424,6 +435,7 @@ class ConfigService:
             "status_check_allowed_qq": snap.status_check_allowed_qq,
             "nonebot_superusers": snap.nonebot_superusers,
         }
+
 
 def get_config_service() -> ConfigService:
     return ConfigService.get_instance()

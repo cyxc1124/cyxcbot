@@ -15,7 +15,7 @@ __plugin_meta__ = {
     "description": "仅允许特定QQ号查询机器人运行状态",
     "usage": "/status - 查询机器人运行状态",
     "version": "1.0.0",
-    "author": "cyxcbot"
+    "author": "cyxcbot",
 }
 
 driver = get_driver()

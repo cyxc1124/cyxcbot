@@ -5,7 +5,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Model
@@ -77,7 +85,9 @@ class DynamicTargetGroup(Model):
     target: Mapped["DynamicTarget"] = relationship(back_populates="groups")
 
     __table_args__ = (
-        UniqueConstraint("dynamic_target_id", "group_id", name="uq_dynamic_target_group"),
+        UniqueConstraint(
+            "dynamic_target_id", "group_id", name="uq_dynamic_target_group"
+        ),
     )
 
 

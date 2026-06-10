@@ -52,7 +52,9 @@ async def update_message_policy(
     _: AdminUser,
 ):
     svc = get_config_service()
-    enabled_ids = [str(uid).strip() for uid in body.enabled_user_ids if str(uid).strip()]
+    enabled_ids = [
+        str(uid).strip() for uid in body.enabled_user_ids if str(uid).strip()
+    ]
     await svc.set_settings(
         {
             "message_private_restrict": str(body.restrict).lower(),
@@ -95,7 +97,9 @@ def _ensure_private_message_enabled(user_id: str, snap) -> None:
         )
 
 
-def _filter_status_enabled_user_ids(enabled_ids: list[str], users: list[dict]) -> list[str]:
+def _filter_status_enabled_user_ids(
+    enabled_ids: list[str], users: list[dict]
+) -> list[str]:
     allowed = {str(user["user_id"]) for user in users}
     return [uid for uid in enabled_ids if uid in allowed]
 
@@ -123,9 +127,7 @@ async def update_status_policy(
     snap = svc.get_snapshot()
     message_users = _message_enabled_users(snap, await get_friend_list())
     enabled_ids = [
-        str(uid).strip()
-        for uid in body.enabled_user_ids
-        if str(uid).strip()
+        str(uid).strip() for uid in body.enabled_user_ids if str(uid).strip()
     ]
     for user_id in enabled_ids:
         _ensure_private_message_enabled(user_id, snap)

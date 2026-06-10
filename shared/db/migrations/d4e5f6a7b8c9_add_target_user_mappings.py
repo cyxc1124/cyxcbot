@@ -33,7 +33,9 @@ def upgrade(name: str = "") -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("dynamic_target_id", "user_id", name="uq_dynamic_target_user"),
+        sa.UniqueConstraint(
+            "dynamic_target_id", "user_id", name="uq_dynamic_target_user"
+        ),
     )
     op.create_table(
         "shared_db_livetargetuser",

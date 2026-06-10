@@ -23,7 +23,9 @@ class AppConfigSnapshot:
     dynamic_monitor_mapping: Dict[str, List[str]] = field(default_factory=dict)
     dynamic_monitor_user_mapping: Dict[str, List[str]] = field(default_factory=dict)
     dynamic_subscription_mapping: Dict[str, List[str]] = field(default_factory=dict)
-    dynamic_subscription_user_mapping: Dict[str, List[str]] = field(default_factory=dict)
+    dynamic_subscription_user_mapping: Dict[str, List[str]] = field(
+        default_factory=dict
+    )
     dynamic_at_all: Dict[str, bool] = field(default_factory=dict)
     dynamic_monitor_interval: int = 30
     dynamic_enable_screenshot: bool = True
@@ -36,8 +38,12 @@ class AppConfigSnapshot:
     live_monitor_interval: int = 60
     live_monitor_include_info: bool = True
     live_monitor_use_websocket: bool = True
-    live_message_templates: LiveMessageTemplates = field(default_factory=LiveMessageTemplates)
-    link_message_templates: LinkMessageTemplates = field(default_factory=LinkMessageTemplates)
+    live_message_templates: LiveMessageTemplates = field(
+        default_factory=LiveMessageTemplates
+    )
+    link_message_templates: LinkMessageTemplates = field(
+        default_factory=LinkMessageTemplates
+    )
     bilibili_cookie: str = ""
     bilibili_cookie_set: bool = False
     message_group_restrict: bool = True

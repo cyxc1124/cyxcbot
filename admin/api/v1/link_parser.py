@@ -16,7 +16,11 @@ from admin.schemas.link_parser import (
     LinkParserUserPolicyMutationResponse,
     LinkParserUserPolicyUpdateRequest,
 )
-from admin.services.onebot_bridge import get_friend_list, get_group_list, invalidate_user_list_cache
+from admin.services.onebot_bridge import (
+    get_friend_list,
+    get_group_list,
+    invalidate_user_list_cache,
+)
 from shared.config.service import get_config_service
 from shared.group_policy import is_group_message_enabled_from_snapshot
 from shared.private_policy import is_private_message_enabled_from_snapshot
@@ -113,10 +117,17 @@ def _build_user_items(snap, users: list[dict]) -> list[LinkParserUserPolicyItem]
         if user_id not in by_id:
             by_id[user_id] = {"user_id": user_id, "nickname": record.name}
 
-    return [_build_user_item(snap, by_id[user_id]) for user_id in sorted(by_id.keys(), key=lambda value: (not value.isdigit(), value))]
+    return [
+        _build_user_item(snap, by_id[user_id])
+        for user_id in sorted(
+            by_id.keys(), key=lambda value: (not value.isdigit(), value)
+        )
+    ]
 
 
-def _is_default_off(body: LinkParserGroupPolicyUpdateRequest | LinkParserUserPolicyUpdateRequest) -> bool:
+def _is_default_off(
+    body: LinkParserGroupPolicyUpdateRequest | LinkParserUserPolicyUpdateRequest,
+) -> bool:
     return not body.video_enabled and not body.live_enabled
 
 
@@ -136,7 +147,9 @@ async def _user_meta(user_id: str, snap) -> dict:
     return {"user_id": str(user_id)}
 
 
-async def _list_user_policy_response(snap, *, refresh_users: bool = False) -> LinkParserUserPolicyListResponse:
+async def _list_user_policy_response(
+    snap, *, refresh_users: bool = False
+) -> LinkParserUserPolicyListResponse:
     if refresh_users:
         invalidate_user_list_cache()
     users = _message_enabled_users(snap, await get_friend_list())
@@ -182,7 +195,9 @@ async def update_group_policy(
     )
 
 
-@router.delete("/groups/{group_id}", response_model=LinkParserGroupPolicyMutationResponse)
+@router.delete(
+    "/groups/{group_id}", response_model=LinkParserGroupPolicyMutationResponse
+)
 async def reset_group_policy(group_id: str, _: AdminUser):
     svc = get_config_service()
     snap = svc.get_snapshot()
@@ -203,7 +218,11 @@ async def list_user_policies(_: AdminUser):
     return await _list_user_policy_response(svc.get_snapshot(), refresh_users=True)
 
 
-@router.post("/users", response_model=LinkParserUserPolicyMutationResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/users",
+    response_model=LinkParserUserPolicyMutationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_user_policy(
     body: LinkParserUserPolicyCreateRequest,
     _: AdminUser,
@@ -252,7 +271,9 @@ async def update_user_policy(
             user_id,
             video_enabled=body.video_enabled,
             live_enabled=body.live_enabled,
-            name=body.name if body.name is not None else (existing.name if existing else None),
+            name=body.name
+            if body.name is not None
+            else (existing.name if existing else None),
         )
     await svc.reload()
 

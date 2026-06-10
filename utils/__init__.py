@@ -7,6 +7,6 @@
 from .bilibili_api import DynamicFetcher, DynamicItem
 
 __all__ = [
-    'DynamicFetcher',
-    'DynamicItem',
+    "DynamicFetcher",
+    "DynamicItem",
 ]

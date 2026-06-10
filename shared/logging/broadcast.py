@@ -55,7 +55,9 @@ class LogEntry:
 
     @classmethod
     def from_logging_record(cls, record: logging.LogRecord) -> LogEntry:
-        ts = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        ts = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S.%f")[
+            :-3
+        ]
         return cls(
             ts=ts,
             level=record.levelname,
@@ -99,7 +101,9 @@ class LogBroadcastHub:
         return filtered[-limit:]
 
     def subscribe(self) -> asyncio.Queue[LogEntry | None]:
-        queue: asyncio.Queue[LogEntry | None] = asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_SIZE)
+        queue: asyncio.Queue[LogEntry | None] = asyncio.Queue(
+            maxsize=SUBSCRIBER_QUEUE_SIZE
+        )
         with self._lock:
             self._subscribers.add(queue)
         return queue

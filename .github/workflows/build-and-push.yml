@@ -36,9 +36,32 @@ jobs:
           npm ci
           npm run lint && npm run build
 
+  python:
+    name: Python Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Ruff
+        run: pip install ruff==0.15.16
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Format check
+        run: ruff format --check .
+
   build-and-push:
     name: Build Docker Image
-    needs: web
+    needs: [web, python]
     runs-on: ubuntu-latest
     permissions:
       contents: read

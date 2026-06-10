@@ -5,14 +5,18 @@ UP主动态监控插件
 """
 
 from nonebot import get_driver, on_message
-from nonebot.log import logger
 from nonebot.adapters.onebot.v11 import GroupMessageEvent
-from . import dynamic_monitor
+from nonebot.log import logger
+
+from . import (
+    dynamic_extract,  # noqa: F401
+    dynamic_monitor,
+)
 from .config import Config
-from . import dynamic_extract  # noqa: F401
 
 # 注册生命周期事件
 driver = get_driver()
+
 
 @driver.on_bot_connect
 async def _(bot):
@@ -24,6 +28,7 @@ async def _(bot):
     except Exception as e:
         logger.error(f"动态监控初始化失败: {e}")
 
+
 @driver.on_bot_disconnect
 async def _(bot):
     """机器人断开连接时停止监控"""
@@ -33,6 +38,7 @@ async def _(bot):
         logger.info("动态监控已停止")
     except Exception as e:
         logger.error(f"动态监控停止失败: {e}")
+
 
 @driver.on_shutdown
 async def _():
@@ -44,8 +50,10 @@ async def _():
     except Exception as e:
         logger.error(f"应用关闭时动态监控停止失败: {e}")
 
+
 # 创建消息处理器 - 支持@机器人和命令前缀
 dynamic_command = on_message(priority=5, block=False)
+
 
 @dynamic_command.handle()
 async def handle_dynamic_commands(event: GroupMessageEvent):
@@ -68,7 +76,9 @@ async def handle_dynamic_commands(event: GroupMessageEvent):
     # 检查动态监控实例是否运行 - 动态导入以获取最新的实例状态
     from .dynamic_monitor import dynamic_monitor_instance
 
-    logger.debug(f"检查动态监控实例: instance={dynamic_monitor_instance is not None}, is_running={dynamic_monitor_instance.is_running if dynamic_monitor_instance else 'N/A'}")
+    logger.debug(
+        f"检查动态监控实例: instance={dynamic_monitor_instance is not None}, is_running={dynamic_monitor_instance.is_running if dynamic_monitor_instance else 'N/A'}"
+    )
 
     if not dynamic_monitor_instance:
         logger.debug("动态监控实例不存在")
@@ -122,14 +132,16 @@ async def handle_dynamic_commands(event: GroupMessageEvent):
                 except Exception as e:
                     logger.error(f"获取UP主 {uid} 最新动态失败: {e}")
                     import traceback
+
                     logger.error(f"最新动态详细错误信息: {traceback.format_exc()}")
                     try:
                         from nonebot import get_bot
+
                         bot = get_bot()
                         if bot:
                             await bot.send_group_msg(
                                 group_id=int(group_id),
-                                message=f"UP主 {uid} 查询失败，请稍后重试"
+                                message=f"UP主 {uid} 查询失败，请稍后重试",
                             )
                             logger.info(f"已发送失败提示消息给UP主 {uid}")
                     except Exception as send_e:
@@ -145,14 +157,16 @@ async def handle_dynamic_commands(event: GroupMessageEvent):
                 except Exception as e:
                     logger.error(f"获取UP主 {uid} 置顶动态失败: {e}")
                     import traceback
+
                     logger.error(f"置顶动态详细错误信息: {traceback.format_exc()}")
                     try:
                         from nonebot import get_bot
+
                         bot = get_bot()
                         if bot:
                             await bot.send_group_msg(
                                 group_id=int(group_id),
-                                message=f"UP主 {uid} 查询失败，请稍后重试"
+                                message=f"UP主 {uid} 查询失败，请稍后重试",
                             )
                             logger.info(f"已发送失败提示消息给UP主 {uid}")
                     except Exception as send_e:
@@ -163,22 +177,24 @@ async def handle_dynamic_commands(event: GroupMessageEvent):
     except Exception as e:
         logger.error(f"处理动态查询命令失败: {e}")
         import traceback
+
         logger.error(f"全局异常详细错误信息: {traceback.format_exc()}")
         try:
             from nonebot import get_bot
+
             bot = get_bot()
             if bot:
                 await bot.send_group_msg(
-                    group_id=int(group_id),
-                    message="系统错误，请稍后重试"
+                    group_id=int(group_id), message="系统错误，请稍后重试"
                 )
         except Exception as send_e:
             logger.error(f"发送系统错误消息失败: {send_e}")
+
 
 __plugin_meta__ = {
     "name": "UP主动态监控",
     "description": "监控B站UP主动态更新并在群组发送通知，支持主动查询与动态图片提取",
     "usage": "发送'最新动态'或'置顶动态'可主动查询；发送'#提取{动态ID}'可提取动态内全部图片",
     "version": "1.2.0",
-    "author": "cyxcbot"
+    "author": "cyxcbot",
 }

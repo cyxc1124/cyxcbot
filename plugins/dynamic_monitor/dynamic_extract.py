@@ -7,13 +7,25 @@ from typing import Literal
 
 import aiohttp
 from nonebot import on_message
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageSegment, PrivateMessageEvent
+from nonebot.adapters.onebot.v11 import (
+    Bot,
+    GroupMessageEvent,
+    Message,
+    MessageSegment,
+    PrivateMessageEvent,
+)
 from nonebot.log import logger
 
 from shared.config.message_templates import DynamicMessageTemplates
 from shared.config.service import get_config_service
-from shared.dynamic_subscription import is_group_dynamic_subscribed, is_user_dynamic_subscribed
-from shared.notify.message_template import build_message_from_template, render_message_template
+from shared.dynamic_subscription import (
+    is_group_dynamic_subscribed,
+    is_user_dynamic_subscribed,
+)
+from shared.notify.message_template import (
+    build_message_from_template,
+    render_message_template,
+)
 from utils.bilibili_api import DynamicFetcher
 
 from .config import Config
@@ -120,8 +132,12 @@ def _subscription_allowed(event: GroupMessageEvent | PrivateMessageEvent) -> boo
     return is_user_dynamic_subscribed(str(event.user_id), snap)
 
 
-async def _handle_extract(bot: Bot, event: GroupMessageEvent | PrivateMessageEvent) -> None:
-    if isinstance(event, GroupMessageEvent) and str(event.user_id) == str(event.self_id):
+async def _handle_extract(
+    bot: Bot, event: GroupMessageEvent | PrivateMessageEvent
+) -> None:
+    if isinstance(event, GroupMessageEvent) and str(event.user_id) == str(
+        event.self_id
+    ):
         return
 
     message_text = event.get_plaintext().strip()
@@ -161,7 +177,9 @@ async def _handle_extract(bot: Bot, event: GroupMessageEvent | PrivateMessageEve
     if not images:
         reply = build_extract_reply_message(templates, dynamic_id, [], kind="empty")
     else:
-        reply = build_extract_reply_message(templates, dynamic_id, images, kind="success")
+        reply = build_extract_reply_message(
+            templates, dynamic_id, images, kind="success"
+        )
 
     await _send_reply(bot, event, reply)
     logger.info(f"已回复动态 {dynamic_id} 图片提取: count={len(images)}")

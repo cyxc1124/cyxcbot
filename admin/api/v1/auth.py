@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import select
-
 from nonebot_plugin_orm import get_session
+from sqlalchemy import select
 
 from admin.auth.jwt import create_access_token
 from admin.auth.password import verify_password
@@ -22,7 +21,9 @@ async def login(body: LoginRequest):
     async with session.begin():
         user = await session.scalar(select(User).where(User.username == body.username))
         if not user:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
+            )
         # Read attributes inside session — lazy load fails after block exits
         password_hash = user.password_hash
         user_id = user.id
@@ -30,7 +31,9 @@ async def login(body: LoginRequest):
         is_admin = user.is_admin
 
     if not verify_password(body.password, password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
+        )
 
     token = create_access_token(username, {"uid": user_id, "is_admin": is_admin})
     return TokenResponse(access_token=token)

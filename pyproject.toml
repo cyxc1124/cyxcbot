@@ -1,0 +1,30 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+exclude = [
+    "venv",
+    ".venv",
+    "web",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"bot.py" = ["E402"]  # imports must run after nonebot.init()
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

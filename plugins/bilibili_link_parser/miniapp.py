@@ -151,7 +151,9 @@ def _unwrap_qqdocurl(raw: str) -> list[str]:
 
     if cleaned.startswith(("http://", "https://")):
         normalized = normalize_bilibili_url(cleaned)
-        return [normalized] if normalized and _looks_bilibili_related(normalized) else []
+        return (
+            [normalized] if normalized and _looks_bilibili_related(normalized) else []
+        )
 
     if cleaned.startswith("b23.tv/"):
         normalized = normalize_bilibili_url(cleaned)

@@ -5,11 +5,13 @@
 """
 
 from typing import Optional, Tuple
+
 from nonebot.log import logger
 
 try:
-    from playwright.async_api import async_playwright, Page, BrowserContext
+    from playwright.async_api import BrowserContext, Page, async_playwright
     from playwright_stealth import Stealth
+
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
@@ -18,6 +20,7 @@ except ImportError:
 
 class Notfound(Exception):
     """动态不存在异常"""
+
     pass
 
 
@@ -27,12 +30,14 @@ def _parse_cookie_string(cookie_str: str) -> list:
     for item in cookie_str.split("; "):
         if "=" in item:
             name, value = item.split("=", 1)
-            cookies.append({
-                "name": name.strip(),
-                "value": value.strip(),
-                "domain": ".bilibili.com",
-                "path": "/",
-            })
+            cookies.append(
+                {
+                    "name": name.strip(),
+                    "value": value.strip(),
+                    "domain": ".bilibili.com",
+                    "path": "/",
+                }
+            )
     return cookies
 
 
@@ -44,22 +49,22 @@ async def init_browser(proxy=None, **kwargs) -> BrowserContext:
 
     # 优化的浏览器启动参数
     browser_args = [
-        '--no-sandbox',                    # 禁用沙盒（Docker环境必需）
-        '--disable-setuid-sandbox',        # 禁用setuid沙盒
-        '--disable-dev-shm-usage',         # 禁用/dev/shm使用
-        '--disable-accelerated-2d-canvas', # 禁用硬件加速画布
-        '--no-first-run',                  # 跳过首次运行设置
-        '--no-zygote',                     # 禁用zygote进程
-        '--disable-gpu',                   # 禁用GPU硬件加速
-        '--disable-web-security',          # 禁用同源策略（如果需要）
-        '--disable-features=VizDisplayCompositor', # 禁用显示合成器
+        "--no-sandbox",  # 禁用沙盒（Docker环境必需）
+        "--disable-setuid-sandbox",  # 禁用setuid沙盒
+        "--disable-dev-shm-usage",  # 禁用/dev/shm使用
+        "--disable-accelerated-2d-canvas",  # 禁用硬件加速画布
+        "--no-first-run",  # 跳过首次运行设置
+        "--no-zygote",  # 禁用zygote进程
+        "--disable-gpu",  # 禁用GPU硬件加速
+        "--disable-web-security",  # 禁用同源策略（如果需要）
+        "--disable-features=VizDisplayCompositor",  # 禁用显示合成器
         #'--disable-extensions',            # 禁用扩展
         #'--disable-plugins',               # 禁用插件
         #'--disable-images',                # 不加载图片（可选，加快加载）
         #'--disable-javascript',            # 不执行JS（但我们需要JS，所以不加）
-        '--disable-background-timer-throttling', # 禁用后台定时器限制
-        '--disable-backgrounding-occluded-windows', # 禁用后台窗口限制
-        '--disable-renderer-backgrounding', # 禁用渲染器后台化
+        "--disable-background-timer-throttling",  # 禁用后台定时器限制
+        "--disable-backgrounding-occluded-windows",  # 禁用后台窗口限制
+        "--disable-renderer-backgrounding",  # 禁用渲染器后台化
     ]
 
     browser = await playwright.chromium.launch(
@@ -70,7 +75,7 @@ async def init_browser(proxy=None, **kwargs) -> BrowserContext:
         handle_sigint=False,
         handle_sigterm=False,
         handle_sighup=False,
-        **kwargs
+        **kwargs,
     )
 
     # 创建优化的浏览器上下文 - 高质量截图配置
@@ -80,17 +85,18 @@ async def init_browser(proxy=None, **kwargs) -> BrowserContext:
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
         # 高质量渲染设置
         ignore_https_errors=True,  # 忽略HTTPS错误
-        bypass_csp=True,          # 绕过内容安全策略
+        bypass_csp=True,  # 绕过内容安全策略
         # 禁用不必要的资源加载以提高性能
-        permissions=[],           # 不授予任何权限
+        permissions=[],  # 不授予任何权限
         # 高质量渲染选项
-        device_scale_factor=2,    # 默认2倍缩放，提高清晰度
-        is_mobile=False,          # PC模式
-        has_touch=False,          # 非触摸设备
+        device_scale_factor=2,  # 默认2倍缩放，提高清晰度
+        is_mobile=False,  # PC模式
+        has_touch=False,  # 非触摸设备
     )
 
     # 注入B站Cookie
     from utils.bilibili_api.config import BilibiliConfig
+
     cookie_str = BilibiliConfig.get_bilibili_cookie()
     if cookie_str:
         cookies = _parse_cookie_string(cookie_str)
@@ -140,21 +146,29 @@ class DynamicScreenshot:
 
         try:
             # 设置PC端视口 - 高清分辨率以提高截图质量
-            await page.set_viewport_size({
-                "width": 1920,
-                "height": 1080,
-                "device_scale_factor": 2  # 2倍缩放，提高清晰度
-            })
+            await page.set_viewport_size(
+                {
+                    "width": 1920,
+                    "height": 1080,
+                    "device_scale_factor": 2,  # 2倍缩放，提高清晰度
+                }
+            )
 
             # 设置页面超时
             page.set_default_timeout(30000)  # 30秒超时
 
             # 导航到页面，使用更稳定的等待条件
             logger.debug(f"正在加载页面: {url}")
-            response = await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            response = await page.goto(
+                url, wait_until="domcontentloaded", timeout=20000
+            )
             if not response or response.status != 200:
-                logger.error(f"页面加载失败: HTTP {response.status if response else 'unknown'}, URL: {url}")
-                raise Exception(f"页面加载失败: HTTP {response.status if response else 'unknown'}")
+                logger.error(
+                    f"页面加载失败: HTTP {response.status if response else 'unknown'}, URL: {url}"
+                )
+                raise Exception(
+                    f"页面加载失败: HTTP {response.status if response else 'unknown'}"
+                )
 
             # 检查是否为404页面
             current_url = page.url
@@ -168,14 +182,16 @@ class DynamicScreenshot:
 
             # 等待并检查动态内容区域 - PC端选择器
             dynamic_selectors = [
-                ".bili-dyn-item",       # 完整动态卡片
-                ".bili-dyn-item__main", # 主内容区域
+                ".bili-dyn-item",  # 完整动态卡片
+                ".bili-dyn-item__main",  # 主内容区域
             ]
 
             dynamic_found = False
             for selector in dynamic_selectors:
                 try:
-                    await page.wait_for_selector(selector, state="visible", timeout=8000)
+                    await page.wait_for_selector(
+                        selector, state="visible", timeout=8000
+                    )
                     logger.debug(f"找到动态内容元素: {selector}")
                     dynamic_found = True
                     break
@@ -228,8 +244,8 @@ return new Promise(resolve => {
             # 获取动态卡片，PC端选择器 - 优先选择完整动态卡片
             card = None
             selectors = [
-                ".bili-dyn-item",       # 完整动态卡片
-                ".bili-dyn-item__main", # 主内容区域
+                ".bili-dyn-item",  # 完整动态卡片
+                ".bili-dyn-item__main",  # 主内容区域
             ]
 
             for selector in selectors:
@@ -248,7 +264,9 @@ return new Promise(resolve => {
             if not clip or clip["width"] == 0 or clip["height"] == 0:
                 raise Exception("无法获取动态区域边界")
 
-            logger.debug(f"动态 {dynamic_id} 内容区域大小: {clip['width']}x{clip['height']}")
+            logger.debug(
+                f"动态 {dynamic_id} 内容区域大小: {clip['width']}x{clip['height']}"
+            )
 
             return page, clip
 
@@ -257,7 +275,9 @@ return new Promise(resolve => {
             logger.error(f"动态{dynamic_id}截图处理失败: {str(e)}")
             raise
 
-    async def get_dynamic_screenshot(self, dynamic_id: int, timeout: int = 30000) -> Tuple[Optional[bytes], Optional[str]]:
+    async def get_dynamic_screenshot(
+        self, dynamic_id: int, timeout: int = 30000
+    ) -> Tuple[Optional[bytes], Optional[str]]:
         """
         获取动态截图
 
@@ -282,14 +302,18 @@ return new Promise(resolve => {
                 page, clip = await self.get_dynamic_screenshot_pc(dynamic_id, page)
 
                 # 截图 - 使用PNG格式获得最佳质量（2倍缩放+无损压缩）
-                logger.debug(f"正在截图动态 {dynamic_id}, 区域大小: {clip['width']}x{clip['height']}")
+                logger.debug(
+                    f"正在截图动态 {dynamic_id}, 区域大小: {clip['width']}x{clip['height']}"
+                )
                 screenshot = await page.screenshot(
                     clip=clip,
                     type="png",  # 改为PNG格式，无损压缩，保证最高质量
                     # PNG是无损格式，文件较大但质量最佳
                 )
                 screenshot_size = len(screenshot) if screenshot else 0
-                logger.info(f"动态 {dynamic_id} 截图成功，大小: {screenshot_size} bytes")
+                logger.info(
+                    f"动态 {dynamic_id} 截图成功，大小: {screenshot_size} bytes"
+                )
 
                 return screenshot, None
 
@@ -313,12 +337,13 @@ return new Promise(resolve => {
                     logger.warning(f"关闭页面时出错: {close_error}")
 
 
-
 # 全局截图器实例
 dynamic_screenshot = DynamicScreenshot()
 
 
-async def get_dynamic_screenshot(dynamic_id: int) -> Tuple[Optional[bytes], Optional[str]]:
+async def get_dynamic_screenshot(
+    dynamic_id: int,
+) -> Tuple[Optional[bytes], Optional[str]]:
     """
     获取动态截图的便捷函数
 

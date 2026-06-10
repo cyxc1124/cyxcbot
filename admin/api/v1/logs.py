@@ -5,9 +5,8 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
-from sqlalchemy import select
-
 from nonebot_plugin_orm import get_session
+from sqlalchemy import select
 
 from admin.auth.jwt import decode_access_token
 from admin.deps import AdminUser, RequireSetup
@@ -71,7 +70,9 @@ async def stream_logs(
     token = _token_from_subprotocol(websocket.headers.get("sec-websocket-protocol"))
     user = await _user_from_token(token) if token else None
     if not user or not user.is_admin:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
+        await websocket.close(
+            code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized"
+        )
         return
 
     await websocket.accept(subprotocol=_WS_AUTH_PROTOCOL)

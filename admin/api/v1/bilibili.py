@@ -11,7 +11,10 @@ from admin.schemas.bilibili import (
     QrcodePollRequest,
     QrcodeStartResponse,
 )
-from admin.services.connection_status import bilibili_status_message, get_bilibili_connection_status
+from admin.services.connection_status import (
+    bilibili_status_message,
+    get_bilibili_connection_status,
+)
 from admin.services.monitor_bridge import reload_all_monitors
 from shared.bilibili.qrcode_login import (
     BilibiliQrcodeError,
@@ -34,7 +37,9 @@ async def start_qrcode_login(_: AdminUser):
     try:
         qrcode = await get_tv_qrcode()
     except BilibiliQrcodeError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
 
     url = qrcode["data"]["url"]
     return QrcodeStartResponse(url=url, qrcode=qrcode)
@@ -48,8 +53,12 @@ async def poll_qrcode_login(body: QrcodePollRequest, _: AdminUser):
     except BilibiliQrcodeError as exc:
         detail = str(exc)
         if "超时" in detail:
-            raise HTTPException(status_code=status.HTTP_408_REQUEST_TIMEOUT, detail=detail) from exc
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
+            raise HTTPException(
+                status_code=status.HTTP_408_REQUEST_TIMEOUT, detail=detail
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=detail
+        ) from exc
 
     svc = get_config_service()
     await svc.set_settings({"bilibili_cookie_encrypted": encrypt_value(cookie_header)})
