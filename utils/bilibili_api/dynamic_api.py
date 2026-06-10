@@ -102,7 +102,7 @@ class DynamicFetcher:
             ) as response:
 
                 if response.status != 200:
-                    logger.warning(f"B站API请求失败 {uid}: HTTP {response.status}")
+                    logger.debug(f"B站API请求失败 {uid}: HTTP {response.status}")
                     return None
 
                 response_text = await response.text()
@@ -111,14 +111,14 @@ class DynamicFetcher:
                 try:
                     data = json.loads(response_text)
                 except json.JSONDecodeError as e:
-                    logger.error(f"解析B站API响应失败 {uid}: {e}")
+                    logger.debug(f"解析B站API响应失败 {uid}: {e}")
                     logger.debug(f"原始响应: {response_text[:500]}")
                     return None
 
                 # 检查API响应状态
                 if data.get('code') != 0:
                     error_msg = data.get('message', '未知错误')
-                    logger.warning(f"B站API返回错误 {uid}: {error_msg}")
+                    logger.debug(f"B站API返回错误 {uid}: {error_msg}")
                     return None
 
                 items = data.get('data', {}).get('items', [])
@@ -145,7 +145,7 @@ class DynamicFetcher:
                             # 置顶动态总是包含在结果中，由调用方决定是否推送
                             should_include = True
                             if should_include:
-                                logger.info(f"检测到新的置顶动态: {pinned_id}")
+                                logger.debug(f"解析到置顶动态: {pinned_id}")
                         else:
                             # 非置顶动态直接包含
                             should_include = True
@@ -161,11 +161,11 @@ class DynamicFetcher:
 
                 # 按时间倒序排列（最新的在前面）
                 dynamics.sort(key=lambda x: x.timestamp, reverse=True)
-                logger.info(f"成功获取用户 {uid} 的 {len(dynamics)} 条动态")
+                logger.debug(f"成功获取用户 {uid} 的 {len(dynamics)} 条动态")
                 return dynamics, current_pinned_id
 
         except asyncio.TimeoutError:
-            logger.warning(f"B站API请求超时 {uid}")
+            logger.debug(f"B站API请求超时 {uid}")
             return None
         except Exception as e:
             logger.error(f"B站API请求异常 {uid}: {e}")

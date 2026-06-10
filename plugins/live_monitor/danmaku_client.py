@@ -285,7 +285,7 @@ class DanmakuClient:
                 self._danmu_info = data['data']
                 host_list = self._danmu_info.get('host_list', [])
                 token = self._danmu_info.get('token', '')[:20] + '...' if self._danmu_info.get('token') else 'None'
-                logger.info(f"房间 {self.room_id} 获取弹幕服务器信息成功，服务器数量: {len(host_list)}, token: {token}")
+                logger.debug(f"房间 {self.room_id} 获取弹幕服务器信息成功，服务器数量: {len(host_list)}, token: {token}")
                 return
             else:
                 logger.warning(f"房间 {self.room_id} API返回错误: code={data.get('code')}, message={data.get('message')}")
@@ -299,14 +299,14 @@ class DanmakuClient:
         """连接 WebSocket"""
         host_list = self._danmu_info.get('host_list', DEFAULT_DANMU_INFO['host_list'])
         
-        logger.info(f"房间 {self.room_id} 开始连接弹幕服务器，可用服务器数量: {len(host_list)}")
+        logger.debug(f"房间 {self.room_id} 开始连接弹幕服务器，可用服务器数量: {len(host_list)}")
         
         for retry in range(len(host_list)):
             try:
                 host_info = host_list[self._host_index % len(host_list)]
                 url = f"wss://{host_info['host']}:{host_info['wss_port']}/sub"
                 
-                logger.info(f"房间 {self.room_id} 尝试连接 #{retry+1}: {url}")
+                logger.debug(f"房间 {self.room_id} 尝试连接 #{retry+1}: {url}")
                 
                 # 连接 WebSocket
                 try:
@@ -349,7 +349,7 @@ class DanmakuClient:
                             logger.debug(f"房间 {self.room_id} 认证结果: code={code}, data={result_data}")
                             
                             if code == WS.AUTH_OK:
-                                logger.info(f"房间 {self.room_id} 认证成功，启动心跳和消息循环")
+                                logger.debug(f"房间 {self.room_id} 认证成功，启动心跳和消息循环")
                                 # 启动心跳和消息循环
                                 self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
                                 self._message_task = asyncio.create_task(self._message_loop())
@@ -500,7 +500,7 @@ class DanmakuClient:
         if not self._running:
             return
         
-        logger.info(f"房间 {self.room_id} 正在重新连接...")
+        logger.debug(f"房间 {self.room_id} 正在重新连接...")
         
         # 取消现有任务
         if self._heartbeat_task:
@@ -518,9 +518,9 @@ class DanmakuClient:
         if self._running:
             try:
                 await self._connect()
-                logger.info(f"房间 {self.room_id} 重新连接成功")
+                logger.debug(f"房间 {self.room_id} 重新连接成功")
             except Exception as e:
-                logger.error(f"房间 {self.room_id} 重新连接失败: {e}")
+                logger.warning(f"房间 {self.room_id} 重新连接失败: {e}")
                 # 继续尝试重连
                 await asyncio.sleep(10)
                 if self._running:

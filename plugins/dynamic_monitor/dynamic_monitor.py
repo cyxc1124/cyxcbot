@@ -4,6 +4,7 @@ UP主动态监控核心模块
 """
 
 import aiohttp
+from datetime import datetime
 from typing import Dict, List, Optional
 from nonebot.log import logger
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
@@ -19,6 +20,7 @@ from shared.config.service import get_config_service
 from shared.db.enums import AuditAction
 from shared.db.models import DynamicMonitorState
 from shared.monitor.poll_schedule import compute_dynamic_poll_schedule
+from shared.monitor.check_cycle import CheckCycleLogger
 
 # 全局监控实例
 dynamic_monitor_instance: Optional['DynamicMonitor'] = None
@@ -37,6 +39,11 @@ class DynamicMonitor:
         self.fetcher: Optional[DynamicFetcher] = None
         self.sender: Optional[DynamicSender] = None
         self._stagger_index = 0
+        self._cycle_logger = CheckCycleLogger("动态监控")
+        self.last_check_at: Optional[str] = None
+
+    def _touch_last_check_at(self) -> None:
+        self.last_check_at = datetime.now().isoformat(timespec="seconds")
 
     def _uid_list(self) -> List[str]:
         return list(self.config.dynamic_monitor_mapping.keys())
@@ -152,6 +159,7 @@ class DynamicMonitor:
         ):
             if old_uids != new_uids_set:
                 self._stagger_index = 0
+                self._cycle_logger.reset()
             self._schedule_poll_job()
 
         if old_screenshot != self.config.enable_screenshot:
@@ -224,43 +232,55 @@ class DynamicMonitor:
 
         uid = uid_list[self._stagger_index]
         self._stagger_index = (self._stagger_index + 1) % len(uid_list)
+        cycle_completed = self._stagger_index == 0
 
         try:
             ok = await self._check_user_dynamic(uid)
             if ok is False:
-                logger.warning(f"动态监控检查失败: uid={uid}")
+                self._cycle_logger.record_failure(uid)
+            else:
+                self._cycle_logger.record_success()
+                self._touch_last_check_at()
         except Exception as e:
-            logger.error(f"检查UP主 {uid} 动态失败: {e}")
+            self._cycle_logger.record_error(uid, e)
 
-    async def _check_all_dynamics(self):
-        """检查所有 UP 主的动态（手动触发时使用）"""
+        if cycle_completed:
+            self._cycle_logger.emit_summary()
+            self._touch_last_check_at()
+
+    async def run_manual_check(
+        self, uids: Optional[List[str]] = None
+    ) -> Dict[str, List[str]]:
+        """检查指定或全部 UP 主的动态（手动触发时使用）。"""
         if not self.is_running:
             logger.debug("监控已停止，跳过本次检查")
-            return
+            return {"checked": [], "failed": []}
 
-        uid_list = self._uid_list()
-        total = len(uid_list)
-        failures: list[str] = []
+        uid_list = uids if uids is not None else self._uid_list()
+        cycle = CheckCycleLogger("动态监控（手动）")
+        checked: List[str] = []
+        failed: List[str] = []
 
         try:
             for uid in uid_list:
                 try:
                     ok = await self._check_user_dynamic(uid)
                     if ok is False:
-                        failures.append(uid)
+                        cycle.record_failure(uid)
+                        failed.append(uid)
+                    else:
+                        cycle.record_success()
+                        checked.append(uid)
                 except Exception as e:
-                    failures.append(uid)
-                    logger.error(f"检查UP主 {uid} 动态失败: {e}")
+                    cycle.record_error(uid, e)
+                    failed.append(uid)
 
-            if failures:
-                logger.warning(
-                    f"动态监控本轮检查完成: {total} 个UP主, "
-                    f"{len(failures)} 个失败 ({', '.join(failures)})"
-                )
-            else:
-                logger.info(f"动态监控本轮检查完成: {total} 个UP主")
+            cycle.emit_summary(log_success_at_info=True)
+            self._touch_last_check_at()
         except Exception as e:
             logger.error(f"动态监控检查出错: {e}")
+
+        return {"checked": checked, "failed": failed}
 
     async def _check_user_dynamic(self, uid: str) -> bool:
         """检查单个UP主的动态，成功返回 True，拉取失败返回 False。"""
@@ -273,7 +293,7 @@ class DynamicMonitor:
         result = await self.fetcher.fetch_user_dynamics(uid, current_pinned_id, cookie)
 
         if not result:
-            logger.warning(f"获取UP主 {uid} 动态失败")
+            logger.debug(f"获取UP主 {uid} 动态失败")
             return False
 
         dynamics, new_pinned_id = result

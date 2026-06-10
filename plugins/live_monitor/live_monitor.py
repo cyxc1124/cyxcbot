@@ -20,6 +20,7 @@ from .config import Config
 from shared.audit.service import write_audit
 from shared.config.service import get_config_service
 from shared.db.enums import AuditAction
+from shared.monitor.check_cycle import CheckCycleLogger
 from shared.db.models import LiveMonitorState
 from .models import LiveRoomState
 from .danmaku_client import DanmakuClient
@@ -55,7 +56,12 @@ class LiveMonitor:
             include_room_info=config.include_room_info,
             templates=config.message_templates,
         )
-    
+        self._cycle_logger = CheckCycleLogger("直播监控")
+        self.last_check_at: Optional[str] = None
+
+    def _touch_last_check_at(self) -> None:
+        self.last_check_at = datetime.now().isoformat(timespec="seconds")
+
     async def init_resources(self):
         """初始化资源"""
         # 初始化API管理器
@@ -270,7 +276,7 @@ class LiveMonitor:
         
         self._danmaku_clients[room_id] = client
         await client.start()
-        logger.info(f"房间 {room_id} WebSocket 监控已启动")
+        logger.debug(f"房间 {room_id} WebSocket 监控已启动")
     
     async def _stop_danmaku_clients(self):
         """停止所有弹幕客户端"""
@@ -285,7 +291,7 @@ class LiveMonitor:
     
     async def _handle_live_signal(self, room_id: str):
         """处理开播信号（来自 WebSocket）"""
-        logger.info(f"房间 {room_id} 收到开播信号")
+        logger.debug(f"房间 {room_id} 收到开播信号")
 
         if not self.initialized_rooms.get(room_id, False):
             await self._initialize_room(room_id)
@@ -299,7 +305,7 @@ class LiveMonitor:
         room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
         
         if not room_info:
-            logger.warning(f"房间 {room_id} 获取信息失败")
+            logger.debug(f"房间 {room_id} 获取信息失败")
             return
         
         # 检查状态变化
@@ -323,7 +329,7 @@ class LiveMonitor:
     
     async def _handle_preparing_signal(self, room_id: str, round_status: Optional[int]):
         """处理关播信号（来自 WebSocket）"""
-        logger.info(f"房间 {room_id} 收到关播信号 (round={round_status})")
+        logger.debug(f"房间 {room_id} 收到关播信号 (round={round_status})")
 
         if not self.initialized_rooms.get(room_id, False):
             await self._initialize_room(room_id)
@@ -409,29 +415,21 @@ class LiveMonitor:
             logger.debug("监控已停止，跳过本次检查")
             return
 
-        room_list = list(self.room_states.keys())
-        total = len(room_list)
-        failures: list[str] = []
-
-        for room_id in room_list:
+        for room_id in self.room_states.keys():
             try:
                 ok = await self._check_room_status(room_id)
                 if ok is False:
-                    failures.append(room_id)
+                    self._cycle_logger.record_failure(room_id)
+                else:
+                    self._cycle_logger.record_success()
             except Exception as e:
-                failures.append(room_id)
-                logger.error(f"检查房间 {room_id} 状态失败: {e}")
+                self._cycle_logger.record_error(room_id, e)
 
             # 避免请求过快
             await asyncio.sleep(0.3)
 
-        if failures:
-            logger.warning(
-                f"直播监控本轮检查完成: {total} 个房间, "
-                f"{len(failures)} 个失败 ({', '.join(failures)})"
-            )
-        else:
-            logger.info(f"直播监控本轮检查完成: {total} 个房间")
+        self._cycle_logger.emit_summary()
+        self._touch_last_check_at()
 
     async def _check_room_status(self, room_id: str) -> bool:
         """检查单个房间的直播状态，拉取失败返回 False。"""
@@ -447,7 +445,7 @@ class LiveMonitor:
         room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
 
         if not room_info:
-            logger.warning(f"无法获取房间 {room_id} 的最新状态")
+            logger.debug(f"无法获取房间 {room_id} 的最新状态")
             return False
         
         # 更新状态并检测变化

@@ -113,18 +113,25 @@ async def trigger_dynamic_check(uid: Optional[str] = None) -> Dict[str, Any]:
     if not uids:
         return {"success": False, "message": "No dynamic targets configured"}
 
-    checked = []
-    for target_uid in uids:
-        try:
-            await instance._check_user_dynamic(target_uid)
-            checked.append(target_uid)
-        except Exception as exc:
-            logger.error(f"Manual dynamic check failed for {target_uid}: {exc}")
+    outcome = await instance.run_manual_check(uids)
+    checked = outcome["checked"]
+    failed = outcome["failed"]
+
+    if not checked and failed:
+        return {
+            "success": False,
+            "message": f"All {len(failed)} check(s) failed",
+            "result": {"checked_uids": checked, "failed_uids": failed},
+        }
+
+    message = f"Checked {len(checked)} target(s)"
+    if failed:
+        message += f", {len(failed)} failed"
 
     return {
         "success": True,
-        "message": f"Checked {len(checked)} target(s)",
-        "result": {"checked_uids": checked},
+        "message": message,
+        "result": {"checked_uids": checked, "failed_uids": failed},
     }
 
 
@@ -178,6 +185,7 @@ def get_monitor_status() -> Dict[str, Any]:
 
 def build_dynamic_monitor_status() -> Dict[str, Any]:
     status = get_monitor_status()
+    instance = get_dynamic_monitor_instance()
     snap = get_config_service().get_snapshot()
     target_count = len(snap.dynamic_monitor_mapping)
     poll_schedule = compute_dynamic_poll_schedule(
@@ -189,7 +197,7 @@ def build_dynamic_monitor_status() -> Dict[str, Any]:
         "interval_seconds": snap.dynamic_monitor_interval,
         "target_count": target_count,
         "poll_schedule": poll_schedule,
-        "last_check_at": None,
+        "last_check_at": instance.last_check_at if instance else None,
         "last_fetch_at": None,
         "last_error": None,
         "checks_total": 0,
@@ -200,6 +208,7 @@ def build_dynamic_monitor_status() -> Dict[str, Any]:
 
 def build_live_monitor_status() -> Dict[str, Any]:
     status = get_monitor_status()
+    instance = get_live_monitor_instance()
     snap = get_config_service().get_snapshot()
     targets = get_live_monitor_details()
     live_rooms = sum(1 for t in targets if t.get("is_living"))
@@ -215,7 +224,7 @@ def build_live_monitor_status() -> Dict[str, Any]:
         "use_websocket": snap.live_monitor_use_websocket,
         "target_count": target_count,
         "poll_schedule": poll_schedule,
-        "last_check_at": None,
+        "last_check_at": instance.last_check_at if instance else None,
         "last_error": None,
         "live_rooms": live_rooms,
         "checks_total": 0,
