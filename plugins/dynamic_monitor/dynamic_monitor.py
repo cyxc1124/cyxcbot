@@ -175,7 +175,10 @@ class DynamicMonitor:
             or old_use_stagger != self.config.use_stagger_poll
             or old_uids != new_uids_set
         ):
-            if old_uids != new_uids_set or old_use_stagger != self.config.use_stagger_poll:
+            if (
+                old_uids != new_uids_set
+                or old_use_stagger != self.config.use_stagger_poll
+            ):
                 self._stagger_index = 0
                 self._cycle_logger.reset()
             self._schedule_poll_job()

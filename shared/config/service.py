@@ -126,7 +126,9 @@ class ConfigService:
             dynamic_subscription_user_mapping=dynamic_subscription_user_mapping,
             dynamic_at_all=dynamic_at_all,
             dynamic_monitor_interval=settings.get("dynamic_monitor_interval", 30),
-            dynamic_monitor_use_stagger=settings.get("dynamic_monitor_use_stagger", True),
+            dynamic_monitor_use_stagger=settings.get(
+                "dynamic_monitor_use_stagger", True
+            ),
             dynamic_enable_screenshot=settings.get("dynamic_enable_screenshot", True),
             dynamic_message_templates=dynamic_templates_from_settings(settings),
             live_monitor_mapping=live_mapping,
