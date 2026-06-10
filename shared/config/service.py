@@ -41,8 +41,6 @@ SETTING_KEYS = {
     "live_monitor_include_info": ("true", bool),
     "live_monitor_use_websocket": ("true", bool),
     "bilibili_cookie_encrypted": ("", str),
-    "audit_log_retention_days": ("90", int),
-    "event_retention_days": ("90", int),
     "message_group_restrict": ("true", bool),
     "message_enabled_group_ids": ("[]", "json_list"),
     "message_private_restrict": ("true", bool),
@@ -136,8 +134,6 @@ class ConfigService:
             link_message_templates=link_templates_from_settings(settings),
             bilibili_cookie=cookie,
             bilibili_cookie_set=bool(cookie_encrypted),
-            audit_log_retention_days=settings.get("audit_log_retention_days", 90),
-            event_retention_days=settings.get("event_retention_days", 90),
             message_group_restrict=settings.get("message_group_restrict", True),
             message_enabled_group_ids=settings.get("message_enabled_group_ids", []),
             message_private_restrict=settings.get("message_private_restrict", True),
@@ -425,16 +421,9 @@ class ConfigService:
                 "configured": snap.bilibili_cookie_set,
                 "preview": masked or None,
             },
-            "audit_log_retention_days": snap.audit_log_retention_days,
-            "event_retention_days": snap.event_retention_days,
             "status_check_allowed_qq": snap.status_check_allowed_qq,
             "nonebot_superusers": snap.nonebot_superusers,
         }
-
-    @staticmethod
-    def serialize_details(data: dict) -> str:
-        return json.dumps(data, ensure_ascii=False, default=str)
-
 
 def get_config_service() -> ConfigService:
     return ConfigService.get_instance()

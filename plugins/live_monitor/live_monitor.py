@@ -17,9 +17,7 @@ from nonebot_plugin_apscheduler import scheduler
 from nonebot_plugin_orm import get_session
 
 from .config import Config
-from shared.audit.service import write_audit
 from shared.config.service import get_config_service
-from shared.db.enums import AuditAction
 from shared.monitor.check_cycle import CheckCycleLogger
 from shared.db.models import LiveMonitorState
 from .models import LiveRoomState
@@ -491,20 +489,6 @@ class LiveMonitor:
             duration_seconds=duration_seconds,
             at_all_enabled=self.config.live_at_all.get(room_id, True),
         )
-
-        try:
-            await write_audit(
-                AuditAction.LIVE_PUSH,
-                details=get_config_service().serialize_details({
-                    "room_id": room_id,
-                    "status": status,
-                    "streamer": streamer_name,
-                    "groups": target_groups,
-                    "users": target_users,
-                }),
-            )
-        except Exception as exc:
-            logger.warning(f"写入直播推送审计日志失败: {exc}")
 
         await self._persist_state(room_id)
 

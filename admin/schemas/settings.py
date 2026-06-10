@@ -43,8 +43,6 @@ class SettingsResponse(BaseModel):
     link_template_video: str = Field(default=LINK_TEMPLATE_KEYS["link_template_video"])
     link_template_live: str = Field(default=LINK_TEMPLATE_KEYS["link_template_live"])
     bilibili_cookie: CookieStatusResponse
-    audit_log_retention_days: int
-    event_retention_days: int
     status_check_allowed_qq: list[str] = Field(default_factory=list)
     nonebot_superusers: list[str] = Field(default_factory=list)
 
@@ -75,7 +73,5 @@ class SettingsUpdateRequest(BaseModel):
     live_template_end: Optional[str] = Field(default=None, max_length=500)
     link_template_video: Optional[str] = Field(default=None, max_length=500)
     link_template_live: Optional[str] = Field(default=None, max_length=500)
-    audit_log_retention_days: Optional[int] = Field(default=None, ge=0, le=3650)
-    event_retention_days: Optional[int] = Field(default=None, ge=0, le=3650)
     status_check_allowed_qq: Optional[list[str]] = None
     nonebot_superusers: Optional[list[str]] = None

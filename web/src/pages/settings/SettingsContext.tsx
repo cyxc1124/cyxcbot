@@ -100,8 +100,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         live_monitor_interval: settings.live_monitor_interval,
         live_monitor_include_info: settings.live_monitor_include_info,
         live_monitor_use_websocket: settings.live_monitor_use_websocket,
-        audit_log_retention_days: settings.audit_log_retention_days,
-        event_retention_days: settings.event_retention_days,
       }
       const updated = await patchSettings(payload)
       setSettings(updated)

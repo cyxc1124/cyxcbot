@@ -4,16 +4,14 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 
 from admin.deps import AdminUser, RequireSetup
 from admin.schemas.settings import CookieTestResultResponse, SettingsResponse, SettingsUpdateRequest
 from admin.services.connection_status import bilibili_status_message, get_bilibili_connection_status
 from admin.services.monitor_bridge import reload_all_monitors
-from shared.audit.service import write_audit, write_system_event
 from shared.config.message_templates import MESSAGE_TEMPLATE_KEYS
 from shared.config.service import get_config_service
-from shared.db.enums import AuditAction, SystemEventType
 
 router = APIRouter(
     prefix="/settings",
@@ -30,7 +28,7 @@ async def get_settings(_: AdminUser):
 
 
 @router.patch("", response_model=SettingsResponse)
-async def update_settings(request: Request, body: SettingsUpdateRequest, user: AdminUser):
+async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
     svc = get_config_service()
     updates: dict[str, str] = {}
 
@@ -48,10 +46,6 @@ async def update_settings(request: Request, body: SettingsUpdateRequest, user: A
         updates["live_monitor_include_info"] = str(body.live_monitor_include_info).lower()
     if body.live_monitor_use_websocket is not None:
         updates["live_monitor_use_websocket"] = str(body.live_monitor_use_websocket).lower()
-    if body.audit_log_retention_days is not None:
-        updates["audit_log_retention_days"] = str(body.audit_log_retention_days)
-    if body.event_retention_days is not None:
-        updates["event_retention_days"] = str(body.event_retention_days)
     if body.status_check_allowed_qq is not None:
         cleaned = [
             item.strip()
@@ -74,16 +68,6 @@ async def update_settings(request: Request, body: SettingsUpdateRequest, user: A
         await svc.reload()
         if any(k not in ("status_check_allowed_qq", "nonebot_superusers") for k in updates):
             await reload_all_monitors()
-
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.SETTINGS_UPDATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=svc.serialize_details(updates),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, "Settings updated via Web Admin")
 
     return SettingsResponse(**svc.settings_for_api())
 

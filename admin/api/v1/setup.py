@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func, select
 
 from nonebot_plugin_orm import get_session
@@ -10,8 +10,6 @@ from nonebot_plugin_orm import get_session
 from admin.auth.jwt import create_access_token
 from admin.auth.password import hash_password
 from admin.schemas.common import SetupRequest, SetupStatusResponse, TokenResponse
-from shared.audit.service import write_audit, write_system_event
-from shared.db.enums import AuditAction, SystemEventType
 from shared.db.models import User
 
 router = APIRouter(prefix="/setup", tags=["setup"])
@@ -26,7 +24,7 @@ async def setup_status():
 
 
 @router.post("", response_model=TokenResponse)
-async def setup(request: Request, body: SetupRequest):
+async def setup(body: SetupRequest):
     session = get_session()
     async with session.begin():
         count = await session.scalar(select(func.count()).select_from(User)) or 0
@@ -43,19 +41,6 @@ async def setup(request: Request, body: SetupRequest):
         user_id = user.id
         username = user.username
         is_admin = user.is_admin
-
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.SETUP,
-        actor_user_id=user_id,
-        actor_username=username,
-        ip_address=ip,
-        details=f'{{"username": "{username}"}}',
-    )
-    await write_system_event(
-        SystemEventType.SETUP_COMPLETE,
-        f"Initial admin user '{username}' created",
-    )
 
     token = create_access_token(username, {"uid": user_id, "is_admin": is_admin})
     return TokenResponse(access_token=token)

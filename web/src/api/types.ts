@@ -50,8 +50,6 @@ export interface Settings {
   link_template_video: string
   link_template_live: string
   bilibili_cookie: CookieStatus
-  audit_log_retention_days: number
-  event_retention_days: number
   status_check_allowed_qq: string[]
   nonebot_superusers: string[]
 }
@@ -311,49 +309,6 @@ export interface AboutInfo {
 export interface MonitorActionResult {
   success: boolean
   message: string
-}
-
-// Audit & Events
-export interface PaginatedResponse<T> {
-  items: T[]
-  total: number
-  page: number
-  page_size: number
-}
-
-export interface AuditLog {
-  id: number
-  action: string
-  actor: string
-  resource_type: string | null
-  resource_id: string | null
-  details: Record<string, unknown> | null
-  ip_address: string | null
-  created_at: string
-}
-
-export interface SystemEvent {
-  id: number
-  level: 'debug' | 'info' | 'warning' | 'error'
-  category: string
-  message: string
-  details: Record<string, unknown> | null
-  created_at: string
-}
-
-export interface AuditLogQuery {
-  page?: number
-  page_size?: number
-  action?: string
-  from?: string
-  to?: string
-}
-
-export interface EventQuery {
-  page?: number
-  page_size?: number
-  level?: string
-  category?: string
 }
 
 export interface RuntimeLogEntry {

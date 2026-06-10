@@ -15,9 +15,7 @@ from .config import Config
 from utils.bilibili_api import DynamicFetcher
 from .sender import DynamicSender
 from utils.screenshot import init_screenshot_service, close_screenshot_service, get_dynamic_screenshot
-from shared.audit.service import write_audit
 from shared.config.service import get_config_service
-from shared.db.enums import AuditAction
 from shared.db.models import DynamicMonitorState
 from shared.monitor.poll_schedule import compute_dynamic_poll_schedule
 from shared.monitor.check_cycle import CheckCycleLogger
@@ -401,20 +399,6 @@ class DynamicMonitor:
             f"动态通知已推送: uid={uid} dynamic_id={dynamic.id} "
             f"groups={len(group_ids)} users={len(user_ids)} pinned={is_pinned}"
         )
-
-        try:
-            await write_audit(
-                AuditAction.DYNAMIC_PUSH,
-                details=get_config_service().serialize_details({
-                    "uid": uid,
-                    "dynamic_id": dynamic.id,
-                    "is_pinned": is_pinned,
-                    "groups": group_ids,
-                    "users": user_ids,
-                }),
-            )
-        except Exception as exc:
-            logger.warning(f"写入动态推送审计日志失败: {exc}")
 
     async def get_latest_dynamic(self, uid: str, group_id: str):
         """获取并发送指定UP主的最新动态"""

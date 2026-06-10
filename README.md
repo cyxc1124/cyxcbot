@@ -86,7 +86,7 @@ Web Admin 前端说明见 [web/README.md](web/README.md)。
 cyxcbot/
 ├── bot.py              # 机器人主入口
 ├── admin/              # Web Admin API
-├── shared/             # 共享 DB / 配置 / 审计
+├── shared/             # 共享 DB / 配置
 ├── plugins/            # NoneBot 插件
 ├── web/                # 管理面板前端
 ├── env.example         # 环境变量示例

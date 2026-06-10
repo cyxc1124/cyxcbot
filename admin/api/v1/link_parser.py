@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, status
 
 from admin.deps import AdminUser, RequireSetup
 from admin.schemas.link_parser import (
@@ -17,9 +17,7 @@ from admin.schemas.link_parser import (
     LinkParserUserPolicyUpdateRequest,
 )
 from admin.services.onebot_bridge import get_friend_list, get_group_list, invalidate_user_list_cache
-from shared.audit.service import write_audit, write_system_event
 from shared.config.service import get_config_service
-from shared.db.enums import AuditAction, SystemEventType
 from shared.group_policy import is_group_message_enabled_from_snapshot
 from shared.private_policy import is_private_message_enabled_from_snapshot
 
@@ -161,8 +159,7 @@ async def list_group_policies(_: AdminUser):
 async def update_group_policy(
     group_id: str,
     body: LinkParserGroupPolicyUpdateRequest,
-    request: Request,
-    user: AdminUser,
+    _: AdminUser,
 ):
     svc = get_config_service()
     snap = svc.get_snapshot()
@@ -178,16 +175,6 @@ async def update_group_policy(
         )
     await svc.reload()
 
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.SETTINGS_UPDATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=svc.serialize_details({"link_parser_group_policy": group_id, **body.model_dump()}),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, "Link parser group policy updated")
-
     snap = svc.get_snapshot()
     group = await _group_meta(group_id)
     return LinkParserGroupPolicyMutationResponse(
@@ -196,24 +183,12 @@ async def update_group_policy(
 
 
 @router.delete("/groups/{group_id}", response_model=LinkParserGroupPolicyMutationResponse)
-async def reset_group_policy(group_id: str, request: Request, user: AdminUser):
+async def reset_group_policy(group_id: str, _: AdminUser):
     svc = get_config_service()
     snap = svc.get_snapshot()
     _ensure_group_message_enabled(group_id, snap)
     await svc.delete_link_parser_group_policy(group_id)
     await svc.reload()
-
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.SETTINGS_UPDATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=svc.serialize_details(
-            {"link_parser_group_policy_reset": group_id, "source": "link_parser_policy"}
-        ),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, "Link parser group policy reset")
 
     snap = svc.get_snapshot()
     group = await _group_meta(group_id)
@@ -231,8 +206,7 @@ async def list_user_policies(_: AdminUser):
 @router.post("/users", response_model=LinkParserUserPolicyMutationResponse, status_code=status.HTTP_201_CREATED)
 async def create_user_policy(
     body: LinkParserUserPolicyCreateRequest,
-    request: Request,
-    user: AdminUser,
+    _: AdminUser,
 ):
     user_id = body.user_id.strip()
     if not user_id.isdigit():
@@ -253,16 +227,6 @@ async def create_user_policy(
         )
     await svc.reload()
 
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.SETTINGS_UPDATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=svc.serialize_details({"link_parser_user_policy_create": user_id}),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, "Link parser user policy created")
-
     snap = svc.get_snapshot()
     user_meta = await _user_meta(user_id, snap)
     return LinkParserUserPolicyMutationResponse(
@@ -274,8 +238,7 @@ async def create_user_policy(
 async def update_user_policy(
     user_id: str,
     body: LinkParserUserPolicyUpdateRequest,
-    request: Request,
-    user: AdminUser,
+    _: AdminUser,
 ):
     svc = get_config_service()
     snap = svc.get_snapshot()
@@ -293,16 +256,6 @@ async def update_user_policy(
         )
     await svc.reload()
 
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.SETTINGS_UPDATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=svc.serialize_details({"link_parser_user_policy": user_id, **body.model_dump()}),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, "Link parser user policy updated")
-
     snap = svc.get_snapshot()
     user_meta = await _user_meta(user_id, snap)
     return LinkParserUserPolicyMutationResponse(
@@ -311,22 +264,10 @@ async def update_user_policy(
 
 
 @router.delete("/users/{user_id}", response_model=LinkParserUserPolicyMutationResponse)
-async def reset_user_policy(user_id: str, request: Request, user: AdminUser):
+async def reset_user_policy(user_id: str, _: AdminUser):
     svc = get_config_service()
     await svc.delete_link_parser_user_policy(user_id)
     await svc.reload()
-
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.SETTINGS_UPDATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=svc.serialize_details(
-            {"link_parser_user_policy_reset": user_id, "source": "link_parser_policy"}
-        ),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, "Link parser user policy reset")
 
     snap = svc.get_snapshot()
     user_meta = await _user_meta(user_id, snap)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -24,9 +24,7 @@ from admin.services.target_metadata import (
     resolve_live_target_name,
     resolve_up_name,
 )
-from shared.audit.service import write_audit, write_system_event
 from shared.config.service import get_config_service
-from shared.db.enums import AuditAction, SystemEventType
 from shared.db.models import (
     DynamicTarget,
     DynamicTargetGroup,
@@ -163,7 +161,7 @@ async def list_dynamic_targets(_: AdminUser):
 
 
 @router.post("/dynamic-targets", response_model=DynamicTargetResponse, status_code=status.HTTP_201_CREATED)
-async def create_dynamic_target(request: Request, body: DynamicTargetCreate, user: AdminUser):
+async def create_dynamic_target(body: DynamicTargetCreate, _: AdminUser):
     session = get_session()
     async with session.begin():
         existing = await session.scalar(select(DynamicTarget).where(DynamicTarget.uid == body.uid))
@@ -188,15 +186,6 @@ async def create_dynamic_target(request: Request, body: DynamicTargetCreate, use
     await get_config_service().reload()
     await reload_all_monitors()
 
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.DYNAMIC_TARGET_CREATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=get_config_service().serialize_details({"uid": body.uid}),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, f"Dynamic target {body.uid} created")
     return response
 
 
@@ -220,7 +209,7 @@ async def get_dynamic_target(target_id: int, _: AdminUser):
 
 @router.patch("/dynamic-targets/{target_id}", response_model=DynamicTargetResponse)
 async def update_dynamic_target(
-    target_id: int, request: Request, body: DynamicTargetUpdate, user: AdminUser
+    target_id: int, body: DynamicTargetUpdate, _: AdminUser
 ):
     session = get_session()
     async with session.begin():
@@ -284,39 +273,20 @@ async def update_dynamic_target(
     await get_config_service().reload()
     await reload_all_monitors()
 
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.DYNAMIC_TARGET_UPDATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=get_config_service().serialize_details({"id": target_id, "uid": response.uid}),
-    )
     return response
 
 
 @router.delete("/dynamic-targets/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_dynamic_target(target_id: int, request: Request, user: AdminUser):
+async def delete_dynamic_target(target_id: int, _: AdminUser):
     session = get_session()
     async with session.begin():
         target = await session.get(DynamicTarget, target_id)
         if not target:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
-        uid = target.uid
         await session.delete(target)
 
     await get_config_service().reload()
     await reload_all_monitors()
-
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.DYNAMIC_TARGET_DELETE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=get_config_service().serialize_details({"uid": uid}),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, f"Dynamic target {uid} deleted")
 
 
 # --- Live targets ---
@@ -335,7 +305,7 @@ async def list_live_targets(_: AdminUser):
 
 
 @router.post("/live-targets", response_model=LiveTargetResponse, status_code=status.HTTP_201_CREATED)
-async def create_live_target(request: Request, body: LiveTargetCreate, user: AdminUser):
+async def create_live_target(body: LiveTargetCreate, _: AdminUser):
     session = get_session()
     async with session.begin():
         existing = await session.scalar(select(LiveTarget).where(LiveTarget.room_id == body.room_id))
@@ -360,15 +330,6 @@ async def create_live_target(request: Request, body: LiveTargetCreate, user: Adm
     await get_config_service().reload()
     await reload_all_monitors()
 
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.LIVE_TARGET_CREATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=get_config_service().serialize_details({"room_id": body.room_id}),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, f"Live target {body.room_id} created")
     return response
 
 
@@ -392,7 +353,7 @@ async def get_live_target(target_id: int, _: AdminUser):
 
 @router.patch("/live-targets/{target_id}", response_model=LiveTargetResponse)
 async def update_live_target(
-    target_id: int, request: Request, body: LiveTargetUpdate, user: AdminUser
+    target_id: int, body: LiveTargetUpdate, _: AdminUser
 ):
     session = get_session()
     async with session.begin():
@@ -456,36 +417,17 @@ async def update_live_target(
     await get_config_service().reload()
     await reload_all_monitors()
 
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.LIVE_TARGET_UPDATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=get_config_service().serialize_details({"id": target_id, "room_id": response.room_id}),
-    )
     return response
 
 
 @router.delete("/live-targets/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_live_target(target_id: int, request: Request, user: AdminUser):
+async def delete_live_target(target_id: int, _: AdminUser):
     session = get_session()
     async with session.begin():
         target = await session.get(LiveTarget, target_id)
         if not target:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
-        room_id = target.room_id
         await session.delete(target)
 
     await get_config_service().reload()
     await reload_all_monitors()
-
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.LIVE_TARGET_DELETE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=get_config_service().serialize_details({"room_id": room_id}),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, f"Live target {room_id} deleted")

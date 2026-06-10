@@ -20,8 +20,6 @@ const navItems = [
   { to: '/groups', label: '群组' },
   { to: '/private', label: '好友' },
   { to: '/settings', label: '系统设置' },
-  { to: '/audit', label: '审计日志' },
-  { to: '/events', label: '系统事件' },
   { to: '/logs', label: '运行日志' },
   { to: '/about', label: '关于' },
 ]

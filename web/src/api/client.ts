@@ -1,7 +1,5 @@
 import type {
   AboutInfo,
-  AuditLog,
-  AuditLogQuery,
   BilibiliLogoutResult,
   BilibiliQrcodeLoginResult,
   BilibiliQrcodeStart,
@@ -11,7 +9,6 @@ import type {
   DynamicTargetCreate,
   DynamicTargetUpdate,
   Friend,
-  EventQuery,
   Group,
   GroupMessagePolicy,
   LinkParserGroupPolicyList,
@@ -31,13 +28,11 @@ import type {
   LoginResponse,
   MonitorActionResult,
   MonitorStatus,
-  PaginatedResponse,
   RecentLogsResponse,
   Settings,
   SettingsUpdate,
   SetupRequest,
   SetupStatus,
-  SystemEvent,
   SystemMonitorStatus,
   ConnectionsStatus,
   User,
@@ -395,17 +390,6 @@ export const triggerDynamicCheck = () =>
 
 export const triggerLiveCheck = () =>
   request<MonitorActionResult>('/monitors/live/check', { method: 'POST' })
-
-// Audit & Events
-export const getAuditLogs = (query: AuditLogQuery = {}) =>
-  request<PaginatedResponse<AuditLog>>(
-    `/audit-logs${buildQuery(query as Record<string, string | number | undefined>)}`,
-  )
-
-export const getEvents = (query: EventQuery = {}) =>
-  request<PaginatedResponse<SystemEvent>>(
-    `/events${buildQuery(query as Record<string, string | number | undefined>)}`,
-  )
 
 export const getRecentLogs = (params: { limit?: number; min_level?: string } = {}) =>
   request<RecentLogsResponse>(

@@ -43,8 +43,6 @@ class AppConfigSnapshot:
     link_message_templates: LinkMessageTemplates = field(default_factory=LinkMessageTemplates)
     bilibili_cookie: str = ""
     bilibili_cookie_set: bool = False
-    audit_log_retention_days: int = 90
-    event_retention_days: int = 90
     message_group_restrict: bool = True
     message_enabled_group_ids: List[str] = field(default_factory=list)
     message_private_restrict: bool = True
