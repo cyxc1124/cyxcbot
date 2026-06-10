@@ -2,6 +2,11 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ApiClientError } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
+import {
+  acceptPasswordInput,
+  getPasswordValidationError,
+  MIN_PASSWORD_LENGTH,
+} from '../utils/password'
 
 export function LoginPage() {
   const { login, initialized } = useAuth()
@@ -14,6 +19,13 @@ export function LoginPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+
+    const passwordError = getPasswordValidationError(password)
+    if (passwordError) {
+      setError(passwordError)
+      return
+    }
+
     setLoading(true)
     try {
       await login({ username, password })
@@ -60,10 +72,11 @@ export function LoginPage() {
               type="password"
               className="input"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) =>
+                setPassword(acceptPasswordInput(password, e.target.value))
+              }
               required
-              minLength={8}
-              maxLength={128}
+              minLength={MIN_PASSWORD_LENGTH}
               autoComplete="current-password"
             />
           </div>
