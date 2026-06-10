@@ -86,5 +86,3 @@ class SystemMonitorStatusResponse(BaseModel):
     memory_used_mb: float
     memory_total_mb: float
     disk_percent: float
-    python_version: str
-    bot_version: str

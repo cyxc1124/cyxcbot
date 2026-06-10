@@ -178,9 +178,11 @@ cache/
 bot.session
 bot.db
 
-# 测试文件
-test_*.py
-*_test.py
+# 临时本地测试脚本（pytest 套件在 tests/）
+/test_*.py
+/*_test.py
+!tests/
+!tests/**
 
 # 备份文件
 *.bak

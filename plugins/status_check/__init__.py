@@ -8,14 +8,14 @@ from nonebot.log import logger
 
 from shared.config.service import get_config_service
 
-from . import status_checker
+from . import status_checker  # noqa: F401
 
 __plugin_meta__ = {
     "name": "机器人状态查询",
     "description": "仅允许特定QQ号查询机器人运行状态",
     "usage": "/status - 查询机器人运行状态",
     "version": "1.0.0",
-    "author": "cyxcbot"
+    "author": "cyxcbot",
 }
 
 driver = get_driver()

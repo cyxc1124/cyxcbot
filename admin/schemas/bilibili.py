@@ -9,7 +9,9 @@ from pydantic import BaseModel, Field
 
 class QrcodeStartResponse(BaseModel):
     url: str
-    qrcode: dict[str, Any] = Field(description="Full Bilibili get_qrcode response for polling")
+    qrcode: dict[str, Any] = Field(
+        description="Full Bilibili get_qrcode response for polling"
+    )
 
 
 class QrcodePollRequest(BaseModel):

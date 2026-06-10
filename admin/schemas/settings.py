@@ -6,7 +6,11 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from shared.config.message_templates import DYNAMIC_TEMPLATE_KEYS, LINK_TEMPLATE_KEYS, LIVE_TEMPLATE_KEYS
+from shared.config.message_templates import (
+    DYNAMIC_TEMPLATE_KEYS,
+    LINK_TEMPLATE_KEYS,
+    LIVE_TEMPLATE_KEYS,
+)
 
 
 class CookieStatusResponse(BaseModel):
@@ -16,16 +20,23 @@ class CookieStatusResponse(BaseModel):
 
 class SettingsResponse(BaseModel):
     dynamic_monitor_interval: int
+    dynamic_monitor_use_stagger: bool = True
     dynamic_enable_screenshot: bool
-    dynamic_template_push: str = Field(default=DYNAMIC_TEMPLATE_KEYS["dynamic_template_push"])
-    dynamic_template_pinned: str = Field(default=DYNAMIC_TEMPLATE_KEYS["dynamic_template_pinned"])
+    dynamic_template_push: str = Field(
+        default=DYNAMIC_TEMPLATE_KEYS["dynamic_template_push"]
+    )
+    dynamic_template_pinned: str = Field(
+        default=DYNAMIC_TEMPLATE_KEYS["dynamic_template_pinned"]
+    )
     dynamic_template_query_latest: str = Field(
         default=DYNAMIC_TEMPLATE_KEYS["dynamic_template_query_latest"]
     )
     dynamic_template_query_pinned: str = Field(
         default=DYNAMIC_TEMPLATE_KEYS["dynamic_template_query_pinned"]
     )
-    dynamic_template_extract: str = Field(default=DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract"])
+    dynamic_template_extract: str = Field(
+        default=DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract"]
+    )
     dynamic_template_extract_empty: str = Field(
         default=DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract_empty"]
     )
@@ -43,8 +54,6 @@ class SettingsResponse(BaseModel):
     link_template_video: str = Field(default=LINK_TEMPLATE_KEYS["link_template_video"])
     link_template_live: str = Field(default=LINK_TEMPLATE_KEYS["link_template_live"])
     bilibili_cookie: CookieStatusResponse
-    audit_log_retention_days: int
-    event_retention_days: int
     status_check_allowed_qq: list[str] = Field(default_factory=list)
     nonebot_superusers: list[str] = Field(default_factory=list)
 
@@ -59,6 +68,7 @@ class CookieTestResultResponse(BaseModel):
 
 class SettingsUpdateRequest(BaseModel):
     dynamic_monitor_interval: Optional[int] = Field(default=None, ge=10, le=3600)
+    dynamic_monitor_use_stagger: Optional[bool] = None
     dynamic_enable_screenshot: Optional[bool] = None
     dynamic_template_push: Optional[str] = Field(default=None, max_length=500)
     dynamic_template_pinned: Optional[str] = Field(default=None, max_length=500)
@@ -67,7 +77,9 @@ class SettingsUpdateRequest(BaseModel):
     dynamic_template_extract: Optional[str] = Field(default=None, max_length=500)
     dynamic_template_extract_empty: Optional[str] = Field(default=None, max_length=500)
     dynamic_template_extract_failed: Optional[str] = Field(default=None, max_length=500)
-    dynamic_template_extract_image_label: Optional[str] = Field(default=None, max_length=500)
+    dynamic_template_extract_image_label: Optional[str] = Field(
+        default=None, max_length=500
+    )
     live_monitor_interval: Optional[int] = Field(default=None, ge=30, le=3600)
     live_monitor_include_info: Optional[bool] = None
     live_monitor_use_websocket: Optional[bool] = None
@@ -75,7 +87,5 @@ class SettingsUpdateRequest(BaseModel):
     live_template_end: Optional[str] = Field(default=None, max_length=500)
     link_template_video: Optional[str] = Field(default=None, max_length=500)
     link_template_live: Optional[str] = Field(default=None, max_length=500)
-    audit_log_retention_days: Optional[int] = Field(default=None, ge=0, le=3650)
-    event_retention_days: Optional[int] = Field(default=None, ge=0, le=3650)
     status_check_allowed_qq: Optional[list[str]] = None
     nonebot_superusers: Optional[list[str]] = None

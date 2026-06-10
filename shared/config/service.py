@@ -6,10 +6,9 @@ import json
 from typing import Awaitable, Callable, List, Optional
 
 from nonebot.log import logger
+from nonebot_plugin_orm import get_session
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-
-from nonebot_plugin_orm import get_session
 
 from shared.config.link_parser_policy import (
     LinkParserGroupPolicyRecord,
@@ -36,13 +35,12 @@ ReloadCallback = Callable[[AppConfigSnapshot], Awaitable[None]]
 
 SETTING_KEYS = {
     "dynamic_monitor_interval": ("30", int),
+    "dynamic_monitor_use_stagger": ("true", bool),
     "dynamic_enable_screenshot": ("true", bool),
     "live_monitor_interval": ("60", int),
     "live_monitor_include_info": ("true", bool),
     "live_monitor_use_websocket": ("true", bool),
     "bilibili_cookie_encrypted": ("", str),
-    "audit_log_retention_days": ("90", int),
-    "event_retention_days": ("90", int),
     "message_group_restrict": ("true", bool),
     "message_enabled_group_ids": ("[]", "json_list"),
     "message_private_restrict": ("true", bool),
@@ -106,8 +104,12 @@ class ConfigService:
             live_user_mapping = await self._load_live_user_mapping(session)
             dynamic_at_all = await self._load_dynamic_at_all(session)
             live_at_all = await self._load_live_at_all(session)
-            link_parser_group_policies = await self._load_link_parser_group_policies(session)
-            link_parser_user_policies = await self._load_link_parser_user_policies(session)
+            link_parser_group_policies = await self._load_link_parser_group_policies(
+                session
+            )
+            link_parser_user_policies = await self._load_link_parser_user_policies(
+                session
+            )
 
         cookie_encrypted = settings.get("bilibili_cookie_encrypted", "")
         cookie = ""
@@ -124,6 +126,9 @@ class ConfigService:
             dynamic_subscription_user_mapping=dynamic_subscription_user_mapping,
             dynamic_at_all=dynamic_at_all,
             dynamic_monitor_interval=settings.get("dynamic_monitor_interval", 30),
+            dynamic_monitor_use_stagger=settings.get(
+                "dynamic_monitor_use_stagger", True
+            ),
             dynamic_enable_screenshot=settings.get("dynamic_enable_screenshot", True),
             dynamic_message_templates=dynamic_templates_from_settings(settings),
             live_monitor_mapping=live_mapping,
@@ -136,16 +141,22 @@ class ConfigService:
             link_message_templates=link_templates_from_settings(settings),
             bilibili_cookie=cookie,
             bilibili_cookie_set=bool(cookie_encrypted),
-            audit_log_retention_days=settings.get("audit_log_retention_days", 90),
-            event_retention_days=settings.get("event_retention_days", 90),
             message_group_restrict=settings.get("message_group_restrict", True),
             message_enabled_group_ids=settings.get("message_enabled_group_ids", []),
             message_private_restrict=settings.get("message_private_restrict", True),
             message_enabled_user_ids=settings.get("message_enabled_user_ids", []),
-            status_check_group_restrict=settings.get("status_check_group_restrict", True),
-            status_check_enabled_group_ids=settings.get("status_check_enabled_group_ids", []),
-            status_check_private_restrict=settings.get("status_check_private_restrict", True),
-            status_check_enabled_user_ids=settings.get("status_check_enabled_user_ids", []),
+            status_check_group_restrict=settings.get(
+                "status_check_group_restrict", True
+            ),
+            status_check_enabled_group_ids=settings.get(
+                "status_check_enabled_group_ids", []
+            ),
+            status_check_private_restrict=settings.get(
+                "status_check_private_restrict", True
+            ),
+            status_check_enabled_user_ids=settings.get(
+                "status_check_enabled_user_ids", []
+            ),
             status_check_show_detailed=settings.get("status_check_show_detailed", True),
             status_check_show_uptime=settings.get("status_check_show_uptime", True),
             status_check_show_memory=settings.get("status_check_show_memory", True),
@@ -405,6 +416,7 @@ class ConfigService:
         link = snap.link_message_templates
         return {
             "dynamic_monitor_interval": snap.dynamic_monitor_interval,
+            "dynamic_monitor_use_stagger": snap.dynamic_monitor_use_stagger,
             "dynamic_enable_screenshot": snap.dynamic_enable_screenshot,
             "dynamic_template_push": dt.push,
             "dynamic_template_pinned": dt.pinned,
@@ -425,15 +437,9 @@ class ConfigService:
                 "configured": snap.bilibili_cookie_set,
                 "preview": masked or None,
             },
-            "audit_log_retention_days": snap.audit_log_retention_days,
-            "event_retention_days": snap.event_retention_days,
             "status_check_allowed_qq": snap.status_check_allowed_qq,
             "nonebot_superusers": snap.nonebot_superusers,
         }
-
-    @staticmethod
-    def serialize_details(data: dict) -> str:
-        return json.dumps(data, ensure_ascii=False, default=str)
 
 
 def get_config_service() -> ConfigService:

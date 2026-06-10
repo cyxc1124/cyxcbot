@@ -5,7 +5,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Model
@@ -77,7 +85,9 @@ class DynamicTargetGroup(Model):
     target: Mapped["DynamicTarget"] = relationship(back_populates="groups")
 
     __table_args__ = (
-        UniqueConstraint("dynamic_target_id", "group_id", name="uq_dynamic_target_group"),
+        UniqueConstraint(
+            "dynamic_target_id", "group_id", name="uq_dynamic_target_group"
+        ),
     )
 
 
@@ -185,36 +195,6 @@ class LiveMonitorState(Model):
     streamer_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
-    )
-
-
-class AuditLog(Model):
-    """Audit trail for admin actions."""
-
-    __tablename__ = "shared_db_auditlog"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    action: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    actor_user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    actor_username: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    ip_address: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False, index=True
-    )
-
-
-class SystemEvent(Model):
-    """Important system events for operational visibility."""
-
-    __tablename__ = "shared_db_systemevent"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    message: Mapped[str] = mapped_column(Text, nullable=False)
-    details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False, index=True
     )
 
 

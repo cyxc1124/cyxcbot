@@ -5,10 +5,8 @@ import { AuthProvider } from './contexts/AuthContext'
 import { SidebarProvider } from './contexts/SidebarContext'
 import { ToastProvider } from './contexts/ToastContext'
 import { AboutPage } from './pages/About'
-import { AuditPage } from './pages/Audit'
 import { DashboardPage } from './pages/Dashboard'
 import { DynamicMonitorPage } from './pages/DynamicMonitor'
-import { EventsPage } from './pages/Events'
 import { LogsPage } from './pages/Logs'
 import { GroupsPage } from './pages/Groups'
 import { PrivatePage } from './pages/Private'
@@ -18,7 +16,6 @@ import { MessageTemplatesPage } from './pages/MessageTemplates'
 import { SettingsLayout } from './pages/settings/SettingsLayout'
 import { SettingsAccountPage } from './pages/settings/SettingsAccount'
 import { SettingsBotPage } from './pages/settings/SettingsBot'
-import { SettingsDataPage } from './pages/settings/SettingsData'
 import { SettingsMonitorPage } from './pages/settings/SettingsMonitor'
 import { SetupPage } from './pages/Setup'
 import { AuthGuard, PublicGuard, SetupGuard } from './routes/Guards'
@@ -50,14 +47,14 @@ export default function App() {
                   <Route path="monitor" element={<SettingsMonitorPage />} />
                   <Route path="account" element={<SettingsAccountPage />} />
                   <Route path="bot" element={<SettingsBotPage />} />
-                  <Route path="data" element={<SettingsDataPage />} />
                 </Route>
-                <Route path="audit" element={<AuditPage />} />
-                <Route path="events" element={<EventsPage />} />
                 <Route path="logs" element={<LogsPage />} />
                 <Route path="about" element={<AboutPage />} />
                 <Route path="mappings" element={<Navigate to="/dynamic" replace />} />
                 <Route path="settings/templates" element={<Navigate to="/templates" replace />} />
+                <Route path="audit" element={<Navigate to="/" replace />} />
+                <Route path="events" element={<Navigate to="/" replace />} />
+                <Route path="settings/data" element={<Navigate to="/settings/monitor" replace />} />
               </Route>
             </Route>
 

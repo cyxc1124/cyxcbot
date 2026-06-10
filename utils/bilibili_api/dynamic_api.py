@@ -3,12 +3,13 @@
 负责直接调用B站API获取动态数据
 """
 
-import aiohttp
 import asyncio
 import json
 import time
 from typing import List, Optional
 from urllib.parse import urlencode
+
+import aiohttp
 from nonebot.log import logger
 
 from .dynamic_models import DynamicItem
@@ -22,10 +23,10 @@ class DynamicFetcher:
         self.cookie = cookie  # 保存cookie供后续使用
         # B站API请求头
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
-            'Referer': f'https://space.bilibili.com/',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+            "Referer": "https://space.bilibili.com/",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         }
 
     def _effective_cookie(self, cookie: Optional[str] = None) -> Optional[str]:
@@ -46,7 +47,12 @@ class DynamicFetcher:
             headers["Referer"] = referer
         return headers
 
-    async def fetch_user_dynamics(self, uid: str, current_pinned_id: Optional[int] = None, cookie: Optional[str] = None) -> Optional[tuple[List[DynamicItem], Optional[int]]]:
+    async def fetch_user_dynamics(
+        self,
+        uid: str,
+        current_pinned_id: Optional[int] = None,
+        cookie: Optional[str] = None,
+    ) -> Optional[tuple[List[DynamicItem], Optional[int]]]:
         """直接调用B站API获取用户动态
 
         Args:
@@ -77,9 +83,9 @@ class DynamicFetcher:
 
             # 解析为字典格式供aiohttp使用
             params = {}
-            for param in params_str.split('&'):
-                if '=' in param:
-                    key, value = param.split('=', 1)
+            for param in params_str.split("&"):
+                if "=" in param:
+                    key, value = param.split("=", 1)
                     params[key] = value
 
             # 构建完整的请求URL用于日志
@@ -95,12 +101,8 @@ class DynamicFetcher:
                 logger.debug(f"使用 Cookie 进行 B 站动态列表请求: uid={uid}")
 
             async with self.session.get(
-                api_url,
-                params=params,
-                headers=request_headers,
-                timeout=30
+                api_url, params=params, headers=request_headers, timeout=30
             ) as response:
-
                 if response.status != 200:
                     logger.debug(f"B站API请求失败 {uid}: HTTP {response.status}")
                     return None
@@ -116,12 +118,12 @@ class DynamicFetcher:
                     return None
 
                 # 检查API响应状态
-                if data.get('code') != 0:
-                    error_msg = data.get('message', '未知错误')
+                if data.get("code") != 0:
+                    error_msg = data.get("message", "未知错误")
                     logger.debug(f"B站API返回错误 {uid}: {error_msg}")
                     return None
 
-                items = data.get('data', {}).get('items', [])
+                items = data.get("data", {}).get("items", [])
                 if not items:
                     logger.debug(f"用户 {uid} 没有动态数据")
                     return [], None
@@ -132,13 +134,16 @@ class DynamicFetcher:
                 for item in items:
                     try:
                         # 检测置顶动态
-                        modules = item.get('modules', {})
-                        module_tag = modules.get('module_tag')
-                        is_pinned = (module_tag and isinstance(module_tag, dict)
-                                   and module_tag.get('text') == '置顶')
+                        modules = item.get("modules", {})
+                        module_tag = modules.get("module_tag")
+                        is_pinned = (
+                            module_tag
+                            and isinstance(module_tag, dict)
+                            and module_tag.get("text") == "置顶"
+                        )
 
                         if is_pinned:
-                            pinned_id = item.get('id_str')
+                            pinned_id = item.get("id_str")
                             if pinned_id:
                                 pinned_id_int = int(pinned_id)
                                 current_pinned_id = pinned_id_int
@@ -151,7 +156,9 @@ class DynamicFetcher:
                             should_include = True
 
                         if should_include:
-                            dynamic_item = await self._parse_dynamic_item(item, uid, is_pinned)
+                            dynamic_item = await self._parse_dynamic_item(
+                                item, uid, is_pinned
+                            )
                             if dynamic_item:
                                 dynamics.append(dynamic_item)
 
@@ -210,7 +217,9 @@ class DynamicFetcher:
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as response:
                 if response.status != 200:
-                    logger.warning(f"获取动态 {dynamic_id} 失败: HTTP {response.status}")
+                    logger.warning(
+                        f"获取动态 {dynamic_id} 失败: HTTP {response.status}"
+                    )
                     return None
 
                 data = await response.json()
@@ -233,12 +242,13 @@ class DynamicFetcher:
             logger.error(f"获取动态 {dynamic_id} 异常: {exc}")
             return None
 
-    async def _parse_dynamic_item(self, item: dict, uid: str, is_pinned: bool = False) -> Optional[DynamicItem]:
+    async def _parse_dynamic_item(
+        self, item: dict, uid: str, is_pinned: bool = False
+    ) -> Optional[DynamicItem]:
         """解析单个动态项"""
         try:
-
             # 提取基本信息
-            dynamic_id = item.get('id_str')
+            dynamic_id = item.get("id_str")
             if not dynamic_id:
                 logger.warning(f"动态缺少ID: {item}")
                 return None
@@ -246,33 +256,33 @@ class DynamicFetcher:
             dynamic_id = int(dynamic_id)
 
             # 提取作者信息
-            modules = item.get('modules', {})
-            author_module = modules.get('module_author', {})
+            modules = item.get("modules", {})
+            author_module = modules.get("module_author", {})
 
             # 优先尝试从author子对象获取（主动态的结构）
-            author_info = author_module.get('author', {})
-            author_uid = author_info.get('mid')
+            author_info = author_module.get("author", {})
+            author_uid = author_info.get("mid")
 
             # 如果没有，则直接从module_author获取（转发动态的结构）
             if not author_uid:
-                author_uid = author_module.get('mid', uid)
+                author_uid = author_module.get("mid", uid)
 
             # 暂时不获取用户名，只保存UID，在需要推送时再获取
             name = f"UP主_{author_uid}"  # 临时占位符，推送时会被替换
 
-            author_type = author_info.get('type', 'AUTHOR_TYPE_UNKNOWN')
-            author_type_desc = self._get_author_type_description(author_type)
-            author_type = author_info.get('type', 'AUTHOR_TYPE_NORMAL')
+            author_type = author_info.get("type", "AUTHOR_TYPE_NORMAL")
 
             # 提取时间戳
-            timestamp = item.get('pub_ts', int(time.time()))
+            timestamp = item.get("pub_ts", int(time.time()))
 
             # 提取动态类型 - 只需基本类型信息用于描述
-            bili_dynamic_type = item.get('type', 'DYNAMIC_TYPE_WORD')
+            bili_dynamic_type = item.get("type", "DYNAMIC_TYPE_WORD")
 
             # 过滤直播动态，因为直播推送由其他插件负责
-            if bili_dynamic_type in ('DYNAMIC_TYPE_LIVE_RCMD', 'DYNAMIC_TYPE_LIVE'):
-                logger.debug(f"跳过直播动态: {dynamic_id}, 类型={bili_dynamic_type}, UID={author_uid}")
+            if bili_dynamic_type in ("DYNAMIC_TYPE_LIVE_RCMD", "DYNAMIC_TYPE_LIVE"):
+                logger.debug(
+                    f"跳过直播动态: {dynamic_id}, 类型={bili_dynamic_type}, UID={author_uid}"
+                )
                 return None
 
             dynamic_type = self._map_dynamic_type(bili_dynamic_type)
@@ -281,33 +291,43 @@ class DynamicFetcher:
             body_text = ""
             title = ""
             images: List[str] = []
-            module_dynamic = modules.get('module_dynamic', {})
+            module_dynamic = modules.get("module_dynamic", {})
 
             # 特殊处理转发动态 - 需要解析原始动态信息用于描述
-            if bili_dynamic_type == 'DYNAMIC_TYPE_FORWARD':
+            if bili_dynamic_type == "DYNAMIC_TYPE_FORWARD":
                 orig_info = self._extract_forward_orig_info(item)
                 if orig_info:
                     # 判断是否转发自己的内容
-                    orig_author_uid = orig_info.get('author_uid')
+                    orig_author_uid = orig_info.get("author_uid")
                     if orig_author_uid and str(orig_author_uid) == str(author_uid):
                         # 转发自己的内容
                         content = f"转发了自己的{orig_info['type_desc']}"
                     else:
                         # 转发别人的内容
-                        content = f"转发了【{orig_info['author']}】的{orig_info['type_desc']}"
+                        content = (
+                            f"转发了【{orig_info['author']}】的{orig_info['type_desc']}"
+                        )
 
-                orig = item.get('orig')
+                orig = item.get("orig")
                 if orig and isinstance(orig, dict):
-                    orig_modules = orig.get('modules', {})
-                    orig_dynamic = orig_modules.get('module_dynamic', {})
-                    body_text, title = self._extract_text_from_module_dynamic(orig_dynamic)
+                    orig_modules = orig.get("modules", {})
+                    orig_dynamic = orig_modules.get("module_dynamic", {})
+                    body_text, title = self._extract_text_from_module_dynamic(
+                        orig_dynamic
+                    )
                     images = self._extract_images_from_major(
-                        orig_dynamic.get('major') if isinstance(orig_dynamic, dict) else None
+                        orig_dynamic.get("major")
+                        if isinstance(orig_dynamic, dict)
+                        else None
                     )
             else:
-                body_text, title = self._extract_text_from_module_dynamic(module_dynamic)
+                body_text, title = self._extract_text_from_module_dynamic(
+                    module_dynamic
+                )
                 images = self._extract_images_from_major(
-                    module_dynamic.get('major') if isinstance(module_dynamic, dict) else None
+                    module_dynamic.get("major")
+                    if isinstance(module_dynamic, dict)
+                    else None
                 )
 
             logger.debug(
@@ -327,29 +347,37 @@ class DynamicFetcher:
                 body_text=body_text,
                 images=images,
                 author_type=author_type,
-                is_pinned=is_pinned
+                is_pinned=is_pinned,
             )
 
             # 对于视频动态，尝试提取视频链接而不是动态链接
-            if bili_dynamic_type == 'DYNAMIC_TYPE_AV':
+            if bili_dynamic_type == "DYNAMIC_TYPE_AV":
                 try:
-                    dynamic_module = modules.get('module_dynamic', {})
-                    major = dynamic_module.get('major', {})
+                    dynamic_module = modules.get("module_dynamic", {})
+                    major = dynamic_module.get("major", {})
 
                     # 尝试从archive信息中提取视频链接
                     if major and isinstance(major, dict):
-                        archive = major.get('archive')
+                        archive = major.get("archive")
                         if archive and isinstance(archive, dict):
                             # 优先使用bvid构造链接，如果没有则使用aid
-                            bvid = archive.get('bvid')
+                            bvid = archive.get("bvid")
                             if bvid:
-                                dynamic_item.url = f"https://www.bilibili.com/video/{bvid}"
-                                logger.debug(f"视频动态 {dynamic_id} 使用BV号视频链接: {dynamic_item.url}")
+                                dynamic_item.url = (
+                                    f"https://www.bilibili.com/video/{bvid}"
+                                )
+                                logger.debug(
+                                    f"视频动态 {dynamic_id} 使用BV号视频链接: {dynamic_item.url}"
+                                )
                             else:
-                                aid = archive.get('aid')
+                                aid = archive.get("aid")
                                 if aid:
-                                    dynamic_item.url = f"https://www.bilibili.com/video/av{aid}"
-                                    logger.debug(f"视频动态 {dynamic_id} 使用AV号视频链接: {dynamic_item.url}")
+                                    dynamic_item.url = (
+                                        f"https://www.bilibili.com/video/av{aid}"
+                                    )
+                                    logger.debug(
+                                        f"视频动态 {dynamic_id} 使用AV号视频链接: {dynamic_item.url}"
+                                    )
                 except Exception as e:
                     logger.debug(f"提取视频链接失败，使用默认动态链接: {e}")
                     # 失败时保持默认的动态链接
@@ -363,52 +391,56 @@ class DynamicFetcher:
     async def _get_user_name_from_api(self, uid: str) -> Optional[str]:
         """从B站API获取用户信息"""
         from . import wbi
-        
+
         try:
             user_info_url = "https://api.bilibili.com/x/space/wbi/acc/info"
 
             # 参数
             params = {
-                'mid': uid,
-                'token': '',
-                'platform': 'web',
-                'web_location': '1550101'
+                "mid": uid,
+                "token": "",
+                "platform": "web",
+                "web_location": "1550101",
             }
 
             # 使用公共 WBI 模块签名
             signed_query = await wbi.sign_params(self.session, params, self.cookie)
-            
+
             if signed_query:
                 url = f"{user_info_url}?{signed_query}"
             else:
                 # 降级：不使用签名
                 url = user_info_url
-                logger.debug(f"无法获取WBI签名，尝试无签名请求")
+                logger.debug("无法获取WBI签名，尝试无签名请求")
 
             # 请求头
             user_headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
-                'Referer': f'https://space.bilibili.com/{uid}/',
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+                "Referer": f"https://space.bilibili.com/{uid}/",
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             }
 
             if self.cookie:
-                user_headers['Cookie'] = self.cookie
+                user_headers["Cookie"] = self.cookie
 
             logger.debug(f"获取UP主 {uid} 信息，请求URL: {url[:80]}...")
 
             if signed_query:
-                async with self.session.get(url, headers=user_headers, timeout=10) as response:
+                async with self.session.get(
+                    url, headers=user_headers, timeout=10
+                ) as response:
                     return await self._parse_user_info_response(response, uid)
             else:
-                async with self.session.get(url, params=params, headers=user_headers, timeout=10) as response:
+                async with self.session.get(
+                    url, params=params, headers=user_headers, timeout=10
+                ) as response:
                     return await self._parse_user_info_response(response, uid)
 
         except Exception as e:
             logger.debug(f"获取UP主信息异常 {uid}: {e}")
             return None
-    
+
     async def _parse_user_info_response(self, response, uid: str) -> Optional[str]:
         """解析用户信息响应"""
         if response.status != 200:
@@ -418,19 +450,18 @@ class DynamicFetcher:
         data = await response.json()
         logger.debug(f"用户信息API响应 {uid}: code={data.get('code')}")
 
-        if data.get('code') != 0:
+        if data.get("code") != 0:
             logger.debug(f"获取用户信息失败 {uid}: {data.get('message', '未知错误')}")
             return None
 
-        user_data = data.get('data', {})
-        name = user_data.get('name')
+        user_data = data.get("data", {})
+        name = user_data.get("name")
         if name:
             logger.debug(f"成功获取UP主 {uid} 信息: {name}")
             return name
         else:
             logger.debug(f"用户信息中没有找到名字 {uid}")
             return None
-
 
     @staticmethod
     def _normalize_image_url(url: str) -> str:
@@ -489,7 +520,9 @@ class DynamicFetcher:
         return cls._dedupe_images(images)
 
     @staticmethod
-    def _extract_text_from_module_dynamic(module_dynamic: Optional[dict]) -> tuple[str, str]:
+    def _extract_text_from_module_dynamic(
+        module_dynamic: Optional[dict],
+    ) -> tuple[str, str]:
         """从 module_dynamic 中提取正文和标题"""
         if not module_dynamic or not isinstance(module_dynamic, dict):
             return "", ""
@@ -543,69 +576,78 @@ class DynamicFetcher:
         """提取转发动态的原始信息"""
         try:
             # 转发动态的orig信息直接在item根级别
-            orig = item.get('orig')
+            orig = item.get("orig")
 
             if not orig:
                 return None
 
             # 提取原始动态的作者信息
             # 注意：转发动态的orig中，作者信息可能有两种结构
-            orig_modules = orig.get('modules', {})
-            orig_author = orig_modules.get('module_author', {})
+            orig_modules = orig.get("modules", {})
+            orig_author = orig_modules.get("module_author", {})
 
             # 优先尝试从author子对象获取（主动态的结构）
-            orig_author_info = orig_author.get('author', {})
-            orig_author_name = orig_author_info.get('name')
-            orig_author_uid = orig_author_info.get('mid')
+            orig_author_info = orig_author.get("author", {})
+            orig_author_name = orig_author_info.get("name")
+            orig_author_uid = orig_author_info.get("mid")
 
             # 如果没有，则直接从module_author获取（orig中的结构）
             if not orig_author_name:
-                orig_author_name = orig_author.get('name', '未知用户')
-                orig_author_uid = orig_author.get('mid')
+                orig_author_name = orig_author.get("name", "未知用户")
+                orig_author_uid = orig_author.get("mid")
 
             # 提取原始动态的类型
-            orig_type = orig.get('type', 'DYNAMIC_TYPE_UNKNOWN')
+            orig_type = orig.get("type", "DYNAMIC_TYPE_UNKNOWN")
             orig_type_desc = self._get_forward_type_description(orig_type, orig)
 
             return {
-                'author': orig_author_name,
-                'author_uid': orig_author_uid,
-                'type_desc': orig_type_desc,
-                'orig_type': orig_type
+                "author": orig_author_name,
+                "author_uid": orig_author_uid,
+                "type_desc": orig_type_desc,
+                "orig_type": orig_type,
             }
 
         except Exception as e:
             logger.debug(f"解析转发原始信息失败: {e}")
             return None
 
-    def _get_forward_type_description(self, bili_type: str, orig_data: dict = None) -> str:
+    def _get_forward_type_description(
+        self, bili_type: str, orig_data: dict = None
+    ) -> str:
         """获取转发类型描述"""
         # 基础类型映射
         type_descriptions = {
-            'DYNAMIC_TYPE_WORD': '动态',
-            'DYNAMIC_TYPE_DRAW': '图文动态',
-            'DYNAMIC_TYPE_FORWARD': '动态',
-            'DYNAMIC_TYPE_AV': '视频',
-            'DYNAMIC_TYPE_ARTICLE': '专栏',
-            'DYNAMIC_TYPE_MUSIC': '音频',
-            'DYNAMIC_TYPE_LIVE': '直播',
-            'DYNAMIC_TYPE_LIVE_RCMD': '直播',
+            "DYNAMIC_TYPE_WORD": "动态",
+            "DYNAMIC_TYPE_DRAW": "图文动态",
+            "DYNAMIC_TYPE_FORWARD": "动态",
+            "DYNAMIC_TYPE_AV": "视频",
+            "DYNAMIC_TYPE_ARTICLE": "专栏",
+            "DYNAMIC_TYPE_MUSIC": "音频",
+            "DYNAMIC_TYPE_LIVE": "直播",
+            "DYNAMIC_TYPE_LIVE_RCMD": "直播",
         }
 
-        logger.debug(f"获取转发类型描述: bili_type={bili_type}, has_orig_data={orig_data is not None}")
+        logger.debug(
+            f"获取转发类型描述: bili_type={bili_type}, has_orig_data={orig_data is not None}"
+        )
 
         # 如果有原始数据，尝试从major.type获取更精确的类型
-        if orig_data and bili_type == 'DYNAMIC_TYPE_AV':
+        if orig_data and bili_type == "DYNAMIC_TYPE_AV":
             try:
                 # 直接检查major.type，简化逻辑
-                major_type = orig_data.get('modules', {}).get('module_dynamic', {}).get('major', {}).get('type')
+                major_type = (
+                    orig_data.get("modules", {})
+                    .get("module_dynamic", {})
+                    .get("major", {})
+                    .get("type")
+                )
 
                 logger.debug(f"转发视频检查: major_type={major_type}")
 
                 # 检查是否是投稿视频
-                if major_type == 'MAJOR_TYPE_ARCHIVE':
+                if major_type == "MAJOR_TYPE_ARCHIVE":
                     logger.debug("确认是投稿视频，返回'视频'")
-                    return '视频'
+                    return "视频"
                 elif major_type:
                     logger.debug(f"其他major_type: {major_type}")
                 else:
@@ -613,9 +655,10 @@ class DynamicFetcher:
             except Exception as e:
                 logger.debug(f"解析转发视频类型失败: {e}")
                 import traceback
+
                 logger.debug(f"异常详情: {traceback.format_exc()}")
 
-        result = type_descriptions.get(bili_type, '动态')
+        result = type_descriptions.get(bili_type, "动态")
         logger.debug(f"返回转发类型描述: {result}")
         return result
 
@@ -627,6 +670,7 @@ class DynamicFetcher:
         def generate_gaussian_integer(mean: float, std: float) -> int:
             # 使用Box-Muller变换生成高斯分布随机数
             import math
+
             u1 = random.random()
             u2 = random.random()
             z0 = math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
@@ -644,21 +688,18 @@ class DynamicFetcher:
         timestamp = generate_gaussian_integer(30, 5)
 
         # 构建dm图像列表 - 与RSSHub完全一致的格式
-        dm_img_data = [{
-            "x": final_x,
-            "y": final_y,
-            "z": 0,
-            "timestamp": timestamp,
-            "type": 0
-        }]
+        dm_img_data = [
+            {"x": final_x, "y": final_y, "z": 0, "timestamp": timestamp, "type": 0}
+        ]
 
         return json.dumps(dm_img_data)
 
     def _generate_dm_verify_string(self) -> str:
         """生成dm验证字符串，参考RSSHub的实现"""
         import base64
+
         # 模拟RSSHub: Buffer.from('no webgl').toString('base64').slice(0, -2)
-        return base64.b64encode(b'no webgl').decode()[:-2]
+        return base64.b64encode(b"no webgl").decode()[:-2]
 
     def _map_dynamic_type(self, bili_type: str) -> int:
         """将B站动态类型映射为内部类型编号
@@ -672,14 +713,14 @@ class DynamicFetcher:
         - DYNAMIC_TYPE_MUSIC: 投稿音频动态
         """
         type_mapping = {
-            'DYNAMIC_TYPE_WORD': 4,      # 文字动态
-            'DYNAMIC_TYPE_DRAW': 2,      # 图文动态
-            'DYNAMIC_TYPE_FORWARD': 1,   # 转发动态
-            'DYNAMIC_TYPE_AV': 8,        # 投稿视频
-            'DYNAMIC_TYPE_ARTICLE': 64,  # 投稿专栏
-            'DYNAMIC_TYPE_MUSIC': 256,   # 投稿音频
-            'DYNAMIC_TYPE_LIVE': 16,     # 直播动态
-            'DYNAMIC_TYPE_LIVE_RCMD': 16, # 直播推荐
+            "DYNAMIC_TYPE_WORD": 4,  # 文字动态
+            "DYNAMIC_TYPE_DRAW": 2,  # 图文动态
+            "DYNAMIC_TYPE_FORWARD": 1,  # 转发动态
+            "DYNAMIC_TYPE_AV": 8,  # 投稿视频
+            "DYNAMIC_TYPE_ARTICLE": 64,  # 投稿专栏
+            "DYNAMIC_TYPE_MUSIC": 256,  # 投稿音频
+            "DYNAMIC_TYPE_LIVE": 16,  # 直播动态
+            "DYNAMIC_TYPE_LIVE_RCMD": 16,  # 直播推荐
         }
 
         return type_mapping.get(bili_type, 0)  # 默认其他动态
@@ -687,9 +728,9 @@ class DynamicFetcher:
     def _get_author_type_description(self, author_type: str) -> str:
         """获取作者类型描述"""
         type_descriptions = {
-            'AUTHOR_TYPE_NORMAL': '普通用户',
-            'AUTHOR_TYPE_OFFICIAL': '官方账号',
-            'AUTHOR_TYPE_BIZ': '商业账号',
-            'AUTHOR_TYPE_BIG_VIP': '大会员',
+            "AUTHOR_TYPE_NORMAL": "普通用户",
+            "AUTHOR_TYPE_OFFICIAL": "官方账号",
+            "AUTHOR_TYPE_BIZ": "商业账号",
+            "AUTHOR_TYPE_BIG_VIP": "大会员",
         }
-        return type_descriptions.get(author_type, '未知类型')
+        return type_descriptions.get(author_type, "未知类型")

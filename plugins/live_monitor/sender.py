@@ -8,14 +8,14 @@ from datetime import datetime
 from typing import Iterable, List, Optional, Union
 
 from nonebot import get_driver
-from nonebot.log import logger
 from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot.log import logger
 
-from utils.bilibili_api import RoomInfo, UserInfo
 from shared.config.message_templates import LiveMessageTemplates
 from shared.notify.at_all import LIVE_AT_ALL_FALLBACK, bot_can_at_all
 from shared.notify.message_template import build_message_from_template
+from utils.bilibili_api import RoomInfo, UserInfo
 
 SegmentPart = Union[MessageSegment, str]
 
@@ -84,7 +84,9 @@ class LiveNotificationSender:
         duration_seconds: int = 0,
     ) -> Message:
         """严格按模板顺序构建下播通知消息。"""
-        duration_str = self._format_duration(duration_seconds) if duration_seconds > 0 else ""
+        duration_str = (
+            self._format_duration(duration_seconds) if duration_seconds > 0 else ""
+        )
         text_variables = {
             "streamer_name": streamer_name,
             "duration": duration_str,
@@ -144,6 +146,7 @@ class LiveNotificationSender:
         """尝试生成开播卡片图片，失败返回 None（触发降级）"""
         try:
             from .card_generator import generate_live_start_card
+
             return await generate_live_start_card(
                 streamer_name=streamer_name,
                 user_info=user_info,
@@ -163,6 +166,7 @@ class LiveNotificationSender:
         """尝试生成下播卡片图片，失败返回 None（触发降级）"""
         try:
             from .card_generator import generate_live_end_card
+
             return await generate_live_end_card(
                 streamer_name=streamer_name,
                 user_info=user_info,
@@ -202,7 +206,9 @@ class LiveNotificationSender:
             return
 
         if status == "start":
-            card_image = await self._try_generate_card(streamer_name, user_info, room_info)
+            card_image = await self._try_generate_card(
+                streamer_name, user_info, room_info
+            )
         else:
             card_image = await self._try_generate_end_card(
                 streamer_name, user_info, room_info, duration_seconds
@@ -244,6 +250,7 @@ class LiveNotificationSender:
                 except Exception as e:
                     logger.error(f"发送通知到群组 {group_id} 失败: {e}")
                     import traceback
+
                     logger.debug(f"错误详情: {traceback.format_exc()}")
 
             for user_id in target_users:
@@ -272,6 +279,7 @@ class LiveNotificationSender:
                 except Exception as e:
                     logger.error(f"发送通知到好友 {user_id} 失败: {e}")
                     import traceback
+
                     logger.debug(f"错误详情: {traceback.format_exc()}")
 
 

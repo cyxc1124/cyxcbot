@@ -3,27 +3,31 @@ UP主动态监控核心模块
 负责协调各个组件进行动态监控
 """
 
-import aiohttp
 from datetime import datetime
 from typing import Dict, List, Optional
+
+import aiohttp
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.log import logger
-from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot_plugin_apscheduler import scheduler
 from nonebot_plugin_orm import get_session
 
-from .config import Config
-from utils.bilibili_api import DynamicFetcher
-from .sender import DynamicSender
-from utils.screenshot import init_screenshot_service, close_screenshot_service, get_dynamic_screenshot
-from shared.audit.service import write_audit
 from shared.config.service import get_config_service
-from shared.db.enums import AuditAction
 from shared.db.models import DynamicMonitorState
-from shared.monitor.poll_schedule import compute_dynamic_poll_schedule
 from shared.monitor.check_cycle import CheckCycleLogger
+from shared.monitor.poll_schedule import compute_dynamic_poll_schedule
+from utils.bilibili_api import DynamicFetcher
+from utils.screenshot import (
+    close_screenshot_service,
+    get_dynamic_screenshot,
+    init_screenshot_service,
+)
+
+from .config import Config
+from .sender import DynamicSender
 
 # 全局监控实例
-dynamic_monitor_instance: Optional['DynamicMonitor'] = None
+dynamic_monitor_instance: Optional["DynamicMonitor"] = None
 
 
 class DynamicMonitor:
@@ -56,11 +60,20 @@ class DynamicMonitor:
         schedule = compute_dynamic_poll_schedule(
             len(uid_list),
             self.config.monitor_interval,
+            use_stagger=self.config.use_stagger_poll,
         )
-        tick = schedule["tick_interval_seconds"]
+
+        if self.config.use_stagger_poll:
+            tick = schedule["tick_interval_seconds"]
+            callback = self._check_next_dynamic
+            mode_label = "分散检查"
+        else:
+            tick = self.config.monitor_interval
+            callback = self._check_all_dynamics
+            mode_label = "批量检查"
 
         scheduler.add_job(
-            self._check_next_dynamic,
+            callback,
             "interval",
             seconds=tick,
             id="dynamic_monitor_check",
@@ -69,7 +82,8 @@ class DynamicMonitor:
             misfire_grace_time=60,
         )
         logger.info(
-            f"动态监控调度: {len(uid_list)} 个UP主, 每次间隔 {tick:.1f}秒, "
+            f"动态监控调度({mode_label}): {len(uid_list)} 个UP主, "
+            f"定时 {tick:.1f}秒, "
             f"每人周期约 {schedule['per_target_cycle_seconds']:.0f}秒, "
             f"峰值约 {schedule['requests_per_second_peak']:.2f} 次/秒"
         )
@@ -131,7 +145,9 @@ class DynamicMonitor:
     async def reload_config(self):
         """热重载配置并调整调度任务"""
         old_interval = self.config.monitor_interval
+        old_use_stagger = self.config.use_stagger_poll
         old_screenshot = self.config.enable_screenshot
+        old_cookie = self.config.bilibili_cookie
         old_uids = set(self.config.dynamic_monitor_mapping.keys())
         self.config = Config.from_service()
         new_uids_set = set(self.config.dynamic_monitor_mapping.keys())
@@ -155,9 +171,14 @@ class DynamicMonitor:
                     logger.error(f"初始化UP主 {uid} 动态监控失败: {e}")
 
         if self.is_running and (
-            old_interval != self.config.monitor_interval or old_uids != new_uids_set
+            old_interval != self.config.monitor_interval
+            or old_use_stagger != self.config.use_stagger_poll
+            or old_uids != new_uids_set
         ):
-            if old_uids != new_uids_set:
+            if (
+                old_uids != new_uids_set
+                or old_use_stagger != self.config.use_stagger_poll
+            ):
                 self._stagger_index = 0
                 self._cycle_logger.reset()
             self._schedule_poll_job()
@@ -167,6 +188,11 @@ class DynamicMonitor:
                 await init_screenshot_service()
             else:
                 await close_screenshot_service()
+        elif (
+            self.config.enable_screenshot and old_cookie != self.config.bilibili_cookie
+        ):
+            await close_screenshot_service()
+            await init_screenshot_service()
 
         if self.sender:
             self.sender.templates = self.config.message_templates
@@ -174,18 +200,21 @@ class DynamicMonitor:
         logger.info(
             f"动态监控配置已热重载: {len(self.config.dynamic_monitor_mapping)} 个UP主, "
             f"间隔 {self.config.monitor_interval}秒, "
+            f"模式={'分散检查' if self.config.use_stagger_poll else '批量检查'}, "
             f"截图={'开启' if self.config.enable_screenshot else '关闭'}"
         )
 
     async def start_monitoring(self):
         """启动监控 - 使用APScheduler定时任务"""
         self.is_running = True
-        
+
         # 初始化资源
         await self.init_resources()
-        
+
         logger.info(
-            f"UP主动态监控已启动，分散检查模式，目标周期: {self.config.monitor_interval}秒"
+            f"UP主动态监控已启动，"
+            f"{'分散检查' if self.config.use_stagger_poll else '批量检查'}模式，"
+            f"目标周期: {self.config.monitor_interval}秒"
         )
 
         self._schedule_poll_job()
@@ -205,14 +234,14 @@ class DynamicMonitor:
         """停止监控"""
         logger.info("正在停止UP主动态监控...")
         self.is_running = False
-        
+
         # 移除定时任务
         try:
             scheduler.remove_job("dynamic_monitor_check")
             logger.info("动态监控定时任务已从调度器移除")
         except Exception as e:
             logger.warning(f"移除定时任务时出错: {e}")
-        
+
         # 清理资源
         await self._cleanup_resources()
         logger.info("UP主动态监控已完全停止")
@@ -247,6 +276,32 @@ class DynamicMonitor:
         if cycle_completed:
             self._cycle_logger.emit_summary()
             self._touch_last_check_at()
+
+    async def _check_all_dynamics(self):
+        """批量检查全部 UP 主的动态 - 由 APScheduler 定时调用"""
+        if not self.is_running:
+            logger.debug("监控已停止，跳过本次检查")
+            return
+
+        uid_list = self._uid_list()
+        if not uid_list:
+            return
+
+        try:
+            for uid in uid_list:
+                try:
+                    ok = await self._check_user_dynamic(uid)
+                    if ok is False:
+                        self._cycle_logger.record_failure(uid)
+                    else:
+                        self._cycle_logger.record_success()
+                except Exception as e:
+                    self._cycle_logger.record_error(uid, e)
+
+            self._cycle_logger.emit_summary()
+            self._touch_last_check_at()
+        except Exception as e:
+            logger.error(f"动态监控检查出错: {e}")
 
     async def run_manual_check(
         self, uids: Optional[List[str]] = None
@@ -311,7 +366,9 @@ class DynamicMonitor:
         if not self.initialized_uids.get(uid, False):
             if dynamics:
                 self.last_dynamic_ids[uid] = max(d.id for d in dynamics)
-                logger.info(f"UP主 {uid} 首次监控，已记录最新动态ID: {self.last_dynamic_ids[uid]}")
+                logger.info(
+                    f"UP主 {uid} 首次监控，已记录最新动态ID: {self.last_dynamic_ids[uid]}"
+                )
             else:
                 logger.info(f"UP主 {uid} 首次监控，当前无动态")
 
@@ -325,15 +382,21 @@ class DynamicMonitor:
 
         # 处理置顶动态变化（只有在非首次启动时才推送置顶动态变化）
         if new_pinned_id != current_pinned_id:
-            logger.info(f"UP主 {uid} 置顶动态已更新: {current_pinned_id} -> {new_pinned_id}")
+            logger.info(
+                f"UP主 {uid} 置顶动态已更新: {current_pinned_id} -> {new_pinned_id}"
+            )
             self.pinned_dynamic_ids[uid] = new_pinned_id
 
             # 只有当前置顶动态ID存在且有变化时，才推送置顶动态通知
             if new_pinned_id and current_pinned_id is not None:
                 # 查找置顶动态并推送
-                pinned_dynamic = next((d for d in dynamics if d.id == new_pinned_id), None)
+                pinned_dynamic = next(
+                    (d for d in dynamics if d.id == new_pinned_id), None
+                )
                 if pinned_dynamic:
-                    await self._send_dynamic_notification(uid, pinned_dynamic, is_pinned=True)
+                    await self._send_dynamic_notification(
+                        uid, pinned_dynamic, is_pinned=True
+                    )
 
         # 如果有新动态，处理推送
         if new_dynamics:
@@ -354,7 +417,9 @@ class DynamicMonitor:
         if not self.config.enable_screenshot:
             return None
         try:
-            screenshot_image, screenshot_error = await get_dynamic_screenshot(dynamic_id)
+            screenshot_image, screenshot_error = await get_dynamic_screenshot(
+                dynamic_id
+            )
             if screenshot_error:
                 logger.warning(f"获取动态{dynamic_id}截图失败: {screenshot_error}")
             return screenshot_image
@@ -362,16 +427,22 @@ class DynamicMonitor:
             logger.warning(f"截图服务异常: {e}")
             return None
 
-    async def _send_dynamic_notification(self, uid: str, dynamic, is_pinned: bool = False):
+    async def _send_dynamic_notification(
+        self, uid: str, dynamic, is_pinned: bool = False
+    ):
         """发送动态通知"""
         # 获取真实的用户名（只在需要推送时才获取）
         real_name = await self.fetcher._get_user_name_from_api(str(dynamic.uid))
         if real_name:
             dynamic.name = real_name
-            logger.info(f"发现新动态: {dynamic.name} - {dynamic.get_type_description()}")
+            logger.info(
+                f"发现新动态: {dynamic.name} - {dynamic.get_type_description()}"
+            )
         else:
             dynamic.name = f"UP主_{dynamic.uid}"
-            logger.info(f"发现新动态: UP主_{dynamic.uid} - {dynamic.get_type_description()}")
+            logger.info(
+                f"发现新动态: UP主_{dynamic.uid} - {dynamic.get_type_description()}"
+            )
 
         screenshot_image = await self._fetch_dynamic_screenshot(dynamic.id)
 
@@ -391,26 +462,14 @@ class DynamicMonitor:
             return
 
         at_all_enabled = self.config.dynamic_at_all.get(uid, False)
-        await self.sender.send_to_groups(message, group_ids, at_all_enabled=at_all_enabled)
+        await self.sender.send_to_groups(
+            message, group_ids, at_all_enabled=at_all_enabled
+        )
         await self.sender.send_to_users(message, user_ids)
         logger.info(
             f"动态通知已推送: uid={uid} dynamic_id={dynamic.id} "
             f"groups={len(group_ids)} users={len(user_ids)} pinned={is_pinned}"
         )
-
-        try:
-            await write_audit(
-                AuditAction.DYNAMIC_PUSH,
-                details=get_config_service().serialize_details({
-                    "uid": uid,
-                    "dynamic_id": dynamic.id,
-                    "is_pinned": is_pinned,
-                    "groups": group_ids,
-                    "users": user_ids,
-                }),
-            )
-        except Exception as exc:
-            logger.warning(f"写入动态推送审计日志失败: {exc}")
 
     async def get_latest_dynamic(self, uid: str, group_id: str):
         """获取并发送指定UP主的最新动态"""
@@ -439,11 +498,15 @@ class DynamicMonitor:
         filtered_dynamics = [d for d in dynamics if not d.is_pinned and d.type != 16]
         if not filtered_dynamics:
             logger.info(f"UP主 {uid} 没有非置顶非直播动态")
-            await self.sender.send_to_groups(Message("该UP主暂无非置顶的动态"), [group_id])
+            await self.sender.send_to_groups(
+                Message("该UP主暂无非置顶的动态"), [group_id]
+            )
             return
 
         latest_dynamic = max(filtered_dynamics, key=lambda x: x.timestamp)
-        logger.debug(f"UP主 {uid} 最新动态ID: {latest_dynamic.id}, 类型: {latest_dynamic.get_type_description()}")
+        logger.debug(
+            f"UP主 {uid} 最新动态ID: {latest_dynamic.id}, 类型: {latest_dynamic.get_type_description()}"
+        )
 
         screenshot_image = await self._fetch_dynamic_screenshot(latest_dynamic.id)
 
@@ -529,7 +592,6 @@ class DynamicMonitor:
         logger.info(f"已发送UP主 {uid} 的置顶动态查询结果到群组 {group_id}")
 
 
-
 # 插件启动和关闭函数
 async def start_dynamic_monitor():
     """启动动态监控"""
@@ -547,7 +609,9 @@ async def start_dynamic_monitor():
         return
 
     group_count = sum(len(groups) for groups in config.dynamic_monitor_mapping.values())
-    user_count = sum(len(users) for users in config.dynamic_monitor_user_mapping.values())
+    user_count = sum(
+        len(users) for users in config.dynamic_monitor_user_mapping.values()
+    )
     logger.info(
         f"准备启动动态监控: {len(config.dynamic_monitor_mapping)} 个UP主, "
         f"{group_count} 个群推送目标, {user_count} 个好友推送目标, "

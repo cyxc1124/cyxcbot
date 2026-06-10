@@ -5,13 +5,13 @@
 
 from typing import Iterable, List, Optional, Union
 
-from nonebot.log import logger
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot.log import logger
 
-from utils.bilibili_api import DynamicItem
 from shared.config.message_templates import DynamicMessageTemplates
 from shared.notify.at_all import DYNAMIC_AT_ALL_FALLBACK, resolve_at_all_prefix
 from shared.notify.message_template import build_message_from_template
+from utils.bilibili_api import DynamicItem
 
 SegmentPart = Union[MessageSegment, str]
 
@@ -67,7 +67,9 @@ class DynamicSender:
             {"media": media_parts},
         )
 
-    def _resolve_template(self, is_pinned: bool, is_query: bool, query_type: str) -> str:
+    def _resolve_template(
+        self, is_pinned: bool, is_query: bool, query_type: str
+    ) -> str:
         if is_query:
             if query_type == "latest":
                 return self.templates.query_latest
@@ -88,15 +90,20 @@ class DynamicSender:
         """发送消息到多个群组"""
         for group_id in group_ids:
             try:
-                await self._send_to_group(group_id, message, at_all_enabled=at_all_enabled)
+                await self._send_to_group(
+                    group_id, message, at_all_enabled=at_all_enabled
+                )
                 logger.info(f"动态消息已发送到群组 {group_id}")
             except Exception as e:
                 logger.error(f"发送消息到群组 {group_id} 失败: {e}")
 
-    async def _send_to_group(self, group_id: str, message: Message, *, at_all_enabled: bool = False):
+    async def _send_to_group(
+        self, group_id: str, message: Message, *, at_all_enabled: bool = False
+    ):
         """发送消息到指定群组"""
         try:
             from nonebot import get_bot
+
             bot = get_bot()
 
             if not bot:
@@ -114,10 +121,7 @@ class DynamicSender:
             else:
                 payload = message
 
-            await bot.send_group_msg(
-                group_id=int(group_id),
-                message=payload
-            )
+            await bot.send_group_msg(group_id=int(group_id), message=payload)
         except Exception as e:
             logger.error(f"发送消息到群组 {group_id} 失败: {e}")
             raise
@@ -135,6 +139,7 @@ class DynamicSender:
         """发送消息到指定好友"""
         try:
             from nonebot import get_bot
+
             bot = get_bot()
 
             if not bot:

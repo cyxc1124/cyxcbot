@@ -4,16 +4,21 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 
 from admin.deps import AdminUser, RequireSetup
-from admin.schemas.settings import CookieTestResultResponse, SettingsResponse, SettingsUpdateRequest
-from admin.services.connection_status import bilibili_status_message, get_bilibili_connection_status
+from admin.schemas.settings import (
+    CookieTestResultResponse,
+    SettingsResponse,
+    SettingsUpdateRequest,
+)
+from admin.services.connection_status import (
+    bilibili_status_message,
+    get_bilibili_connection_status,
+)
 from admin.services.monitor_bridge import reload_all_monitors
-from shared.audit.service import write_audit, write_system_event
 from shared.config.message_templates import MESSAGE_TEMPLATE_KEYS
 from shared.config.service import get_config_service
-from shared.db.enums import AuditAction, SystemEventType
 
 router = APIRouter(
     prefix="/settings",
@@ -30,14 +35,20 @@ async def get_settings(_: AdminUser):
 
 
 @router.patch("", response_model=SettingsResponse)
-async def update_settings(request: Request, body: SettingsUpdateRequest, user: AdminUser):
+async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
     svc = get_config_service()
     updates: dict[str, str] = {}
 
     if body.dynamic_monitor_interval is not None:
         updates["dynamic_monitor_interval"] = str(body.dynamic_monitor_interval)
+    if body.dynamic_monitor_use_stagger is not None:
+        updates["dynamic_monitor_use_stagger"] = str(
+            body.dynamic_monitor_use_stagger
+        ).lower()
     if body.dynamic_enable_screenshot is not None:
-        updates["dynamic_enable_screenshot"] = str(body.dynamic_enable_screenshot).lower()
+        updates["dynamic_enable_screenshot"] = str(
+            body.dynamic_enable_screenshot
+        ).lower()
     for key in MESSAGE_TEMPLATE_KEYS:
         value = getattr(body, key, None)
         if value is not None:
@@ -45,13 +56,13 @@ async def update_settings(request: Request, body: SettingsUpdateRequest, user: A
     if body.live_monitor_interval is not None:
         updates["live_monitor_interval"] = str(body.live_monitor_interval)
     if body.live_monitor_include_info is not None:
-        updates["live_monitor_include_info"] = str(body.live_monitor_include_info).lower()
+        updates["live_monitor_include_info"] = str(
+            body.live_monitor_include_info
+        ).lower()
     if body.live_monitor_use_websocket is not None:
-        updates["live_monitor_use_websocket"] = str(body.live_monitor_use_websocket).lower()
-    if body.audit_log_retention_days is not None:
-        updates["audit_log_retention_days"] = str(body.audit_log_retention_days)
-    if body.event_retention_days is not None:
-        updates["event_retention_days"] = str(body.event_retention_days)
+        updates["live_monitor_use_websocket"] = str(
+            body.live_monitor_use_websocket
+        ).lower()
     if body.status_check_allowed_qq is not None:
         cleaned = [
             item.strip()
@@ -72,18 +83,10 @@ async def update_settings(request: Request, body: SettingsUpdateRequest, user: A
     if updates:
         await svc.set_settings(updates)
         await svc.reload()
-        if any(k not in ("status_check_allowed_qq", "nonebot_superusers") for k in updates):
+        if any(
+            k not in ("status_check_allowed_qq", "nonebot_superusers") for k in updates
+        ):
             await reload_all_monitors()
-
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.SETTINGS_UPDATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=svc.serialize_details(updates),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, "Settings updated via Web Admin")
 
     return SettingsResponse(**svc.settings_for_api())
 

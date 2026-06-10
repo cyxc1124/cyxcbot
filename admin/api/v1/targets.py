@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, status
+from nonebot_plugin_orm import get_session
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-
-from nonebot_plugin_orm import get_session
 
 from admin.deps import AdminUser, RequireSetup
 from admin.schemas.targets import (
@@ -24,9 +23,7 @@ from admin.services.target_metadata import (
     resolve_live_target_name,
     resolve_up_name,
 )
-from shared.audit.service import write_audit, write_system_event
 from shared.config.service import get_config_service
-from shared.db.enums import AuditAction, SystemEventType
 from shared.db.models import (
     DynamicTarget,
     DynamicTargetGroup,
@@ -97,7 +94,9 @@ def _normalize_user_ids(user_ids: list[str]) -> list[str]:
     return _normalize_ids(user_ids)
 
 
-async def _sync_groups_dynamic(session, target: DynamicTarget, group_ids: list[str]) -> None:
+async def _sync_groups_dynamic(
+    session, target: DynamicTarget, group_ids: list[str]
+) -> None:
     normalized = _normalize_group_ids(group_ids)
     for group in list(target.groups):
         await session.delete(group)
@@ -105,7 +104,9 @@ async def _sync_groups_dynamic(session, target: DynamicTarget, group_ids: list[s
     target.groups = [DynamicTargetGroup(group_id=gid) for gid in normalized]
 
 
-async def _sync_users_dynamic(session, target: DynamicTarget, user_ids: list[str]) -> None:
+async def _sync_users_dynamic(
+    session, target: DynamicTarget, user_ids: list[str]
+) -> None:
     normalized = _normalize_user_ids(user_ids)
     for user in list(target.users):
         await session.delete(user)
@@ -149,6 +150,7 @@ async def _refresh_missing_live_names(targets: list[LiveTarget]) -> None:
 
 # --- Dynamic targets ---
 
+
 @router.get("/dynamic-targets", response_model=list[DynamicTargetResponse])
 async def list_dynamic_targets(_: AdminUser):
     session = get_session()
@@ -162,13 +164,21 @@ async def list_dynamic_targets(_: AdminUser):
         return [_dynamic_to_response(t) for t in targets]
 
 
-@router.post("/dynamic-targets", response_model=DynamicTargetResponse, status_code=status.HTTP_201_CREATED)
-async def create_dynamic_target(request: Request, body: DynamicTargetCreate, user: AdminUser):
+@router.post(
+    "/dynamic-targets",
+    response_model=DynamicTargetResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_dynamic_target(body: DynamicTargetCreate, _: AdminUser):
     session = get_session()
     async with session.begin():
-        existing = await session.scalar(select(DynamicTarget).where(DynamicTarget.uid == body.uid))
+        existing = await session.scalar(
+            select(DynamicTarget).where(DynamicTarget.uid == body.uid)
+        )
         if existing:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="UID already exists")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="UID already exists"
+            )
 
         resolved_name = await resolve_dynamic_target_name(body.uid, body.name)
         if not resolved_name:
@@ -177,7 +187,9 @@ async def create_dynamic_target(request: Request, body: DynamicTargetCreate, use
                 detail="无法获取 UP 主信息，请检查 UID 是否正确，或手动填写显示名称",
             )
         _ensure_recipients(body.group_ids, body.user_ids)
-        target = DynamicTarget(uid=body.uid, name=resolved_name, enabled=body.enabled, at_all=body.at_all)
+        target = DynamicTarget(
+            uid=body.uid, name=resolved_name, enabled=body.enabled, at_all=body.at_all
+        )
         await _sync_groups_dynamic(session, target, body.group_ids)
         await _sync_users_dynamic(session, target, body.user_ids)
         session.add(target)
@@ -188,15 +200,6 @@ async def create_dynamic_target(request: Request, body: DynamicTargetCreate, use
     await get_config_service().reload()
     await reload_all_monitors()
 
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.DYNAMIC_TARGET_CREATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=get_config_service().serialize_details({"uid": body.uid}),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, f"Dynamic target {body.uid} created")
     return response
 
 
@@ -213,14 +216,16 @@ async def get_dynamic_target(target_id: int, _: AdminUser):
             )
         )
         if not target:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+            )
         response = _dynamic_to_response(target)
     return response
 
 
 @router.patch("/dynamic-targets/{target_id}", response_model=DynamicTargetResponse)
 async def update_dynamic_target(
-    target_id: int, request: Request, body: DynamicTargetUpdate, user: AdminUser
+    target_id: int, body: DynamicTargetUpdate, _: AdminUser
 ):
     session = get_session()
     async with session.begin():
@@ -233,7 +238,9 @@ async def update_dynamic_target(
             )
         )
         if not target:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+            )
 
         if body.uid is not None:
             new_uid = body.uid.strip()
@@ -284,42 +291,26 @@ async def update_dynamic_target(
     await get_config_service().reload()
     await reload_all_monitors()
 
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.DYNAMIC_TARGET_UPDATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=get_config_service().serialize_details({"id": target_id, "uid": response.uid}),
-    )
     return response
 
 
 @router.delete("/dynamic-targets/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_dynamic_target(target_id: int, request: Request, user: AdminUser):
+async def delete_dynamic_target(target_id: int, _: AdminUser):
     session = get_session()
     async with session.begin():
         target = await session.get(DynamicTarget, target_id)
         if not target:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
-        uid = target.uid
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+            )
         await session.delete(target)
 
     await get_config_service().reload()
     await reload_all_monitors()
 
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.DYNAMIC_TARGET_DELETE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=get_config_service().serialize_details({"uid": uid}),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, f"Dynamic target {uid} deleted")
-
 
 # --- Live targets ---
+
 
 @router.get("/live-targets", response_model=list[LiveTargetResponse])
 async def list_live_targets(_: AdminUser):
@@ -334,13 +325,21 @@ async def list_live_targets(_: AdminUser):
         return [_live_to_response(t) for t in targets]
 
 
-@router.post("/live-targets", response_model=LiveTargetResponse, status_code=status.HTTP_201_CREATED)
-async def create_live_target(request: Request, body: LiveTargetCreate, user: AdminUser):
+@router.post(
+    "/live-targets",
+    response_model=LiveTargetResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_live_target(body: LiveTargetCreate, _: AdminUser):
     session = get_session()
     async with session.begin():
-        existing = await session.scalar(select(LiveTarget).where(LiveTarget.room_id == body.room_id))
+        existing = await session.scalar(
+            select(LiveTarget).where(LiveTarget.room_id == body.room_id)
+        )
         if existing:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Room already exists")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Room already exists"
+            )
 
         resolved_name = await resolve_live_target_name(body.room_id, body.name)
         if not resolved_name:
@@ -349,7 +348,12 @@ async def create_live_target(request: Request, body: LiveTargetCreate, user: Adm
                 detail="无法获取直播间信息，请检查房间号是否正确，或手动填写显示名称",
             )
         _ensure_recipients(body.group_ids, body.user_ids)
-        target = LiveTarget(room_id=body.room_id, name=resolved_name, enabled=body.enabled, at_all=body.at_all)
+        target = LiveTarget(
+            room_id=body.room_id,
+            name=resolved_name,
+            enabled=body.enabled,
+            at_all=body.at_all,
+        )
         await _sync_groups_live(session, target, body.group_ids)
         await _sync_users_live(session, target, body.user_ids)
         session.add(target)
@@ -360,15 +364,6 @@ async def create_live_target(request: Request, body: LiveTargetCreate, user: Adm
     await get_config_service().reload()
     await reload_all_monitors()
 
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.LIVE_TARGET_CREATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=get_config_service().serialize_details({"room_id": body.room_id}),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, f"Live target {body.room_id} created")
     return response
 
 
@@ -385,15 +380,15 @@ async def get_live_target(target_id: int, _: AdminUser):
             )
         )
         if not target:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+            )
         response = _live_to_response(target)
     return response
 
 
 @router.patch("/live-targets/{target_id}", response_model=LiveTargetResponse)
-async def update_live_target(
-    target_id: int, request: Request, body: LiveTargetUpdate, user: AdminUser
-):
+async def update_live_target(target_id: int, body: LiveTargetUpdate, _: AdminUser):
     session = get_session()
     async with session.begin():
         target = await session.scalar(
@@ -405,7 +400,9 @@ async def update_live_target(
             )
         )
         if not target:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+            )
 
         if body.room_id is not None:
             new_room_id = body.room_id.strip()
@@ -456,36 +453,19 @@ async def update_live_target(
     await get_config_service().reload()
     await reload_all_monitors()
 
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.LIVE_TARGET_UPDATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=get_config_service().serialize_details({"id": target_id, "room_id": response.room_id}),
-    )
     return response
 
 
 @router.delete("/live-targets/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_live_target(target_id: int, request: Request, user: AdminUser):
+async def delete_live_target(target_id: int, _: AdminUser):
     session = get_session()
     async with session.begin():
         target = await session.get(LiveTarget, target_id)
         if not target:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
-        room_id = target.room_id
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+            )
         await session.delete(target)
 
     await get_config_service().reload()
     await reload_all_monitors()
-
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.LIVE_TARGET_DELETE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=get_config_service().serialize_details({"room_id": room_id}),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, f"Live target {room_id} deleted")

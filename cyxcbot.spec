@@ -171,7 +171,7 @@ a = Analysis(
         "hooks/pyi_rth_build_info.py",
         "hooks/pyi_rth_playwright.py",
     ],
-    excludes=["pytest", "flake8", "tkinter"],
+    excludes=["pytest", "ruff", "tkinter"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

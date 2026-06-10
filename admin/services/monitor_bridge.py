@@ -7,7 +7,10 @@ from typing import Any, Dict, List, Optional
 from nonebot.log import logger
 
 from shared.config.service import get_config_service
-from shared.monitor.poll_schedule import compute_dynamic_poll_schedule, compute_live_poll_schedule
+from shared.monitor.poll_schedule import (
+    compute_dynamic_poll_schedule,
+    compute_live_poll_schedule,
+)
 
 
 def get_dynamic_monitor_instance():
@@ -191,6 +194,7 @@ def build_dynamic_monitor_status() -> Dict[str, Any]:
     poll_schedule = compute_dynamic_poll_schedule(
         target_count,
         snap.dynamic_monitor_interval,
+        use_stagger=snap.dynamic_monitor_use_stagger,
     )
     return {
         "enabled": status["dynamic_running"],
@@ -233,28 +237,17 @@ def build_live_monitor_status() -> Dict[str, Any]:
 
 
 def get_system_monitor_status() -> Dict[str, Any]:
-    import os
-    import platform
-
     import psutil
 
     mem = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
-    try:
-        import nonebot
-
-        bot_version = nonebot.__version__
-    except Exception:
-        bot_version = os.getenv("GIT_TAG", "dev")
 
     return {
         "cpu_percent": psutil.cpu_percent(interval=0.1),
         "memory_percent": float(mem.percent),
-        "memory_used_mb": mem.used / (1024 ** 2),
-        "memory_total_mb": mem.total / (1024 ** 2),
+        "memory_used_mb": mem.used / (1024**2),
+        "memory_total_mb": mem.total / (1024**2),
         "disk_percent": float(disk.percent),
-        "python_version": platform.python_version(),
-        "bot_version": bot_version,
     }
 
 
@@ -263,14 +256,22 @@ def get_dynamic_monitor_details() -> List[Dict[str, Any]]:
     snap = get_config_service().get_snapshot()
     details = []
     for uid in snap.dynamic_monitor_mapping:
-        details.append({
-            "uid": uid,
-            "last_dynamic_id": instance.last_dynamic_ids.get(uid, 0) if instance else 0,
-            "initialized": instance.initialized_uids.get(uid, False) if instance else False,
-            "pinned_dynamic_id": instance.pinned_dynamic_ids.get(uid) if instance else None,
-            "group_count": len(snap.dynamic_monitor_mapping.get(uid, [])),
-            "user_count": len(snap.dynamic_monitor_user_mapping.get(uid, [])),
-        })
+        details.append(
+            {
+                "uid": uid,
+                "last_dynamic_id": instance.last_dynamic_ids.get(uid, 0)
+                if instance
+                else 0,
+                "initialized": instance.initialized_uids.get(uid, False)
+                if instance
+                else False,
+                "pinned_dynamic_id": instance.pinned_dynamic_ids.get(uid)
+                if instance
+                else None,
+                "group_count": len(snap.dynamic_monitor_mapping.get(uid, [])),
+                "user_count": len(snap.dynamic_monitor_user_mapping.get(uid, [])),
+            }
+        )
     return details
 
 
@@ -283,12 +284,18 @@ def get_live_monitor_details() -> List[Dict[str, Any]]:
         is_living = None
         if state and state.room_info:
             is_living = state.room_info.is_living()
-        details.append({
-            "room_id": room_id,
-            "previous_status": state.previous_status.name if state and state.previous_status else None,
-            "streamer_name": state.user_info.name if state and state.user_info else None,
-            "is_living": is_living,
-            "group_count": len(snap.live_monitor_mapping.get(room_id, [])),
-            "user_count": len(snap.live_monitor_user_mapping.get(room_id, [])),
-        })
+        details.append(
+            {
+                "room_id": room_id,
+                "previous_status": state.previous_status.name
+                if state and state.previous_status
+                else None,
+                "streamer_name": state.user_info.name
+                if state and state.user_info
+                else None,
+                "is_living": is_living,
+                "group_count": len(snap.live_monitor_mapping.get(room_id, [])),
+                "user_count": len(snap.live_monitor_user_mapping.get(room_id, [])),
+            }
+        )
     return details

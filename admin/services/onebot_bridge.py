@@ -21,11 +21,13 @@ async def get_group_list() -> List[dict]:
         try:
             result = await bot.call_api("get_group_list")
             for item in result:
-                groups.append({
-                    "group_id": str(item.get("group_id", "")),
-                    "group_name": item.get("group_name"),
-                    "member_count": item.get("member_count"),
-                })
+                groups.append(
+                    {
+                        "group_id": str(item.get("group_id", "")),
+                        "group_name": item.get("group_name"),
+                        "member_count": item.get("member_count"),
+                    }
+                )
         except Exception as exc:
             logger.error(f"Failed to get group list from bot {bot.self_id}: {exc}")
 
@@ -91,7 +93,9 @@ async def get_friend_list() -> List[dict]:
             result = await bot.call_api("get_friend_list")
             for item in result:
                 nickname = item.get("remark") or item.get("nickname")
-                _merge_user(users, str(item.get("user_id", "")), nickname, self_ids=self_ids)
+                _merge_user(
+                    users, str(item.get("user_id", "")), nickname, self_ids=self_ids
+                )
         except Exception as exc:
             logger.error(f"Failed to get friend list from bot {bot.self_id}: {exc}")
 

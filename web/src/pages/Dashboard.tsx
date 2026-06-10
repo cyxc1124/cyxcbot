@@ -4,7 +4,6 @@ import { createRetryHandler } from '../utils/retryLoad'
 import { Link } from 'react-router-dom'
 import {
   getConnectionsStatus,
-  getEvents,
   getMonitorStatus,
   getSystemMonitorStatus,
 } from '../api/client'
@@ -12,18 +11,16 @@ import type {
   BilibiliConnectionStatus,
   ConnectionsStatus,
   QqConnectionStatus,
-  SystemEvent,
   SystemMonitorStatus,
 } from '../api/types'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
 import { ResourceUsageCard } from '../components/ResourceUsageCard'
 import { StatCard } from '../components/StatCard'
-import { LevelBadge } from '../components/StatusBadge'
 import { useLiveUptime } from '../hooks/useLiveUptime'
 import { useMountAsync } from '../hooks/useMountAsync'
 import { formatApiError } from '../utils/apiError'
-import { formatDateTime, formatMemoryUsage, formatUptime } from '../utils/format'
+import { formatMemoryUsage, formatUptime } from '../utils/format'
 
 function bilibiliCardValue(b: BilibiliConnectionStatus | undefined): string {
   if (!b) return '—'
@@ -76,21 +73,18 @@ export function DashboardPage() {
   const [uptime, setUptime] = useState(0)
   const [system, setSystem] = useState<SystemMonitorStatus | null>(null)
   const [connections, setConnections] = useState<ConnectionsStatus | null>(null)
-  const [events, setEvents] = useState<SystemEvent[]>([])
 
   const load = useCallback(async () => {
     try {
-      const [status, sys, conn, ev] = await Promise.all([
+      const [status, sys, conn] = await Promise.all([
         getMonitorStatus(),
         getSystemMonitorStatus(),
         getConnectionsStatus(),
-        getEvents({ page: 1, page_size: 8 }),
       ])
       setRunning(status.running)
       setUptime(status.uptime_seconds)
       setSystem(sys)
       setConnections(conn)
-      setEvents(ev.items)
       setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
@@ -140,16 +134,9 @@ export function DashboardPage() {
       </div>
 
       <section>
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h3 className="font-semibold text-foreground">资源使用</h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">每 30 秒自动刷新</p>
-          </div>
-          {system && (
-            <p className="text-xs text-muted-foreground">
-              {system.bot_version} · Python {system.python_version}
-            </p>
-          )}
+        <div className="mb-4">
+          <h3 className="font-semibold text-foreground">资源使用</h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">每 30 秒自动刷新</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-3">
           <ResourceUsageCard label="CPU" percent={system?.cpu_percent} detail="处理器占用" />
@@ -165,34 +152,6 @@ export function DashboardPage() {
           <ResourceUsageCard label="磁盘" percent={system?.disk_percent} detail="根分区占用" />
         </div>
       </section>
-
-      <div className="card">
-        <h3 className="mb-4 font-semibold text-foreground">最近事件</h3>
-        {error ? (
-          <p className="text-sm text-muted-foreground">数据暂时无法加载</p>
-        ) : events.length === 0 ? (
-          <p className="text-sm text-muted-foreground">暂无事件记录</p>
-        ) : (
-          <ul className="space-y-3">
-            {events.map((ev) => (
-              <li
-                key={ev.id}
-                className="flex items-start gap-3 border-b border-border pb-3 last:border-0 border-border"
-              >
-                <LevelBadge level={ev.level} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm text-foreground text-foreground">
-                    {ev.message}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {ev.category} · {formatDateTime(ev.created_at)}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </div>
   )
 }

@@ -2,21 +2,20 @@
 视频查询插件配置（从 ConfigService 加载，与动态监控共用映射）
 """
 
+from typing import Dict, List
+
 from pydantic import BaseModel, Field
-from typing import List, Dict
 
 
 class Config(BaseModel):
     """视频查询插件配置"""
 
     dynamic_monitor_mapping: Dict[str, List[str]] = Field(
-        default_factory=dict,
-        description="UP主UID-群组ID映射配置"
+        default_factory=dict, description="UP主UID-群组ID映射配置"
     )
 
     bilibili_cookie: str = Field(
-        default="",
-        description="B站用户Cookie，用于提高API请求成功率"
+        default="", description="B站用户Cookie，用于提高API请求成功率"
     )
 
     @classmethod

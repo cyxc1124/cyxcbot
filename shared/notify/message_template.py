@@ -30,7 +30,7 @@ def iter_template_parts(template: str) -> Iterable[tuple[str, str]]:
     pos = 0
     for match in _PLACEHOLDER.finditer(template):
         if match.start() > pos:
-            yield ("text", template[pos:match.start()])
+            yield ("text", template[pos : match.start()])
         yield ("var", match.group(1))
         pos = match.end()
     if pos < len(template):

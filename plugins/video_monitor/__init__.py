@@ -13,8 +13,8 @@ B站视频查询插件
 """
 
 from nonebot import get_driver, on_message
-from nonebot.log import logger
 from nonebot.adapters.onebot.v11 import GroupMessageEvent
+from nonebot.log import logger
 
 from .config import get_cached_config, reload_config
 from .sender import VideoSender
@@ -24,7 +24,7 @@ __plugin_meta__ = {
     "description": "查询UP主最新投稿视频，和动态监控共用配置",
     "usage": "在配置的群组中发送'最新视频'或'最新投稿'查询UP主最新投稿",
     "version": "1.0.0",
-    "author": "cyxcbot"
+    "author": "cyxcbot",
 }
 
 driver = get_driver()
@@ -47,7 +47,9 @@ async def _video_monitor_startup() -> None:
 
 async def _on_config_reload(_snapshot) -> None:
     config = reload_config()
-    logger.info(f"视频查询: 配置已热重载, 监控映射含 {len(config.dynamic_monitor_mapping)} 个UP主")
+    logger.info(
+        f"视频查询: 配置已热重载, 监控映射含 {len(config.dynamic_monitor_mapping)} 个UP主"
+    )
 
 
 def _register_config_reload() -> None:
@@ -121,7 +123,9 @@ async def handle_video_commands(event: GroupMessageEvent):
             try:
                 logger.info(f"为UP主 {uid} 获取最新视频")
 
-                videos = await video_api_manager.get_user_videos(int(uid), page=1, page_size=5)
+                videos = await video_api_manager.get_user_videos(
+                    int(uid), page=1, page_size=5
+                )
 
                 if videos:
                     message = video_sender.build_video_message(videos)
@@ -130,24 +134,27 @@ async def handle_video_commands(event: GroupMessageEvent):
                 else:
                     logger.warning(f"无法获取UP主 {uid} 的视频")
                     from nonebot import get_bot
+
                     bot = get_bot()
                     if bot:
                         await bot.send_group_msg(
                             group_id=int(group_id),
-                            message=f"无法获取UP主 {uid} 的视频，请检查UID是否正确"
+                            message=f"无法获取UP主 {uid} 的视频，请检查UID是否正确",
                         )
 
             except Exception as e:
                 logger.error(f"获取UP主 {uid} 最新视频失败: {e}")
                 import traceback
+
                 logger.error(f"详细错误信息: {traceback.format_exc()}")
                 try:
                     from nonebot import get_bot
+
                     bot = get_bot()
                     if bot:
                         await bot.send_group_msg(
                             group_id=int(group_id),
-                            message=f"UP主 {uid} 视频查询失败，请稍后重试"
+                            message=f"UP主 {uid} 视频查询失败，请稍后重试",
                         )
                 except Exception as send_e:
                     logger.error(f"发送失败提示消息失败: {send_e}")
@@ -155,14 +162,15 @@ async def handle_video_commands(event: GroupMessageEvent):
     except Exception as e:
         logger.error(f"处理视频查询命令失败: {e}")
         import traceback
+
         logger.error(f"全局异常详细错误信息: {traceback.format_exc()}")
         try:
             from nonebot import get_bot
+
             bot = get_bot()
             if bot:
                 await bot.send_group_msg(
-                    group_id=int(group_id),
-                    message="系统错误，请稍后重试"
+                    group_id=int(group_id), message="系统错误，请稍后重试"
                 )
         except Exception as send_e:
             logger.error(f"发送系统错误消息失败: {send_e}")

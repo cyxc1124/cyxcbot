@@ -56,8 +56,16 @@ export function SettingsMonitorPage() {
   const dynamicSchedule = useMemo(() => {
     const interval = settings?.dynamic_monitor_interval
     if (!interval || interval < 10) return null
-    return computeDynamicPollSchedule(dynamicTargetCount, interval)
-  }, [dynamicTargetCount, settings?.dynamic_monitor_interval])
+    return computeDynamicPollSchedule(
+      dynamicTargetCount,
+      interval,
+      settings?.dynamic_monitor_use_stagger ?? true,
+    )
+  }, [
+    dynamicTargetCount,
+    settings?.dynamic_monitor_interval,
+    settings?.dynamic_monitor_use_stagger,
+  ])
 
   const liveSchedule = useMemo(() => {
     const interval = settings?.live_monitor_interval
@@ -96,7 +104,9 @@ export function SettingsMonitorPage() {
             }
           />
           <p className="mt-1 text-xs text-muted-foreground">
-            期望每个 UP 主约每 N 秒检查一次；目标较多时会自动分散请求，且单次间隔不低于 3 秒。
+            {settings?.dynamic_monitor_use_stagger ?? true
+              ? '期望每个 UP 主约每 N 秒检查一次；目标较多时会自动分散请求，且单次间隔不低于 3 秒。'
+              : '每 N 秒依次检查全部 UP 主；订阅较多时可能短时集中请求 API。'}
           </p>
         </div>
         {dynamicSchedule ? (
@@ -105,7 +115,17 @@ export function SettingsMonitorPage() {
             schedule={dynamicSchedule}
           />
         ) : null}
-        <div className="border-t border-border pt-1 border-border">
+        <div className="divide-y divide-border border-t border-border pt-1">
+          <SettingToggleRow
+            label="启用分散检查（推荐）"
+            checked={settings?.dynamic_monitor_use_stagger ?? true}
+            disabled={formDisabled || saving}
+            onChange={(checked) =>
+              setSettings((s) =>
+                s ? { ...s, dynamic_monitor_use_stagger: checked } : s,
+              )
+            }
+          />
           <SettingToggleRow
             label="启用动态截图（Playwright）"
             checked={settings?.dynamic_enable_screenshot ?? false}

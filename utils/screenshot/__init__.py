@@ -4,15 +4,15 @@
 """
 
 from .screenshot import (
+    DynamicScreenshot,
+    close_screenshot_service,
     get_dynamic_screenshot,
     init_screenshot_service,
-    close_screenshot_service,
-    DynamicScreenshot
 )
 
 __all__ = [
-    'get_dynamic_screenshot',
-    'init_screenshot_service',
-    'close_screenshot_service',
-    'DynamicScreenshot',
+    "get_dynamic_screenshot",
+    "init_screenshot_service",
+    "close_screenshot_service",
+    "DynamicScreenshot",
 ]

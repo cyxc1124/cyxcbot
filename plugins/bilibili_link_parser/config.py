@@ -2,13 +2,16 @@
 
 from pydantic import BaseModel, Field
 
-
 from shared.config.message_templates import LinkMessageTemplates
 
 
 class Config(BaseModel):
-    bilibili_cookie: str = Field(default="", description="B 站 Cookie（直播解析必需，与全局账号设置共用）")
-    message_templates: LinkMessageTemplates = Field(default_factory=LinkMessageTemplates)
+    bilibili_cookie: str = Field(
+        default="", description="B 站 Cookie（直播解析必需，与全局账号设置共用）"
+    )
+    message_templates: LinkMessageTemplates = Field(
+        default_factory=LinkMessageTemplates
+    )
 
     @classmethod
     def from_service(cls) -> "Config":
