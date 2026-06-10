@@ -140,16 +140,9 @@ export function DashboardPage() {
       </div>
 
       <section>
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h3 className="font-semibold text-foreground">资源使用</h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">每 30 秒自动刷新</p>
-          </div>
-          {system && (
-            <p className="text-xs text-muted-foreground">
-              {system.bot_version} · Python {system.python_version}
-            </p>
-          )}
+        <div className="mb-4">
+          <h3 className="font-semibold text-foreground">资源使用</h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">每 30 秒自动刷新</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-3">
           <ResourceUsageCard label="CPU" percent={system?.cpu_percent} detail="处理器占用" />

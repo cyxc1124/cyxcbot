@@ -267,8 +267,6 @@ export interface SystemMonitorStatus {
   memory_used_mb: number
   memory_total_mb: number
   disk_percent: number
-  python_version: string
-  bot_version: string
 }
 
 export type BilibiliConnectionStatusKind =

@@ -233,19 +233,10 @@ def build_live_monitor_status() -> Dict[str, Any]:
 
 
 def get_system_monitor_status() -> Dict[str, Any]:
-    import os
-    import platform
-
     import psutil
 
     mem = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
-    try:
-        import nonebot
-
-        bot_version = nonebot.__version__
-    except Exception:
-        bot_version = os.getenv("GIT_TAG", "dev")
 
     return {
         "cpu_percent": psutil.cpu_percent(interval=0.1),
@@ -253,8 +244,6 @@ def get_system_monitor_status() -> Dict[str, Any]:
         "memory_used_mb": mem.used / (1024 ** 2),
         "memory_total_mb": mem.total / (1024 ** 2),
         "disk_percent": float(disk.percent),
-        "python_version": platform.python_version(),
-        "bot_version": bot_version,
     }
 
 
