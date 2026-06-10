@@ -3,7 +3,6 @@ B站API配置模块
 提供B站API相关的配置管理功能
 """
 
-import os
 from nonebot.log import logger
 
 
@@ -12,12 +11,14 @@ class BilibiliConfig:
 
     @staticmethod
     def get_bilibili_cookie() -> str:
-        """从环境变量读取B站Cookie配置"""
+        """从 ConfigService 读取 B 站 Cookie"""
         try:
-            cookie = os.getenv('BILIBILI_COOKIE', '')
+            from shared.config.service import get_config_service
+
+            cookie = get_config_service().get_snapshot().bilibili_cookie
             if cookie:
-                logger.info("加载B站Cookie配置")
-            return cookie
+                logger.debug("已加载 B 站 Cookie")
+            return cookie or ""
         except Exception as e:
-            logger.error(f"读取B站Cookie配置失败: {e}")
+            logger.error(f"读取 B 站 Cookie 配置失败: {e}")
             return ""

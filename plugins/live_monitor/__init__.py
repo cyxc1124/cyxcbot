@@ -12,7 +12,7 @@ B站直播监控插件
 - LIVE_MONITOR_MAPPING: 房间号-群组映射，格式: {"房间号": ["群号1", "群号2"], ...}
 - LIVE_MONITOR_INTERVAL: 检查间隔（秒），默认60秒，最小30秒
 - LIVE_MONITOR_INCLUDE_INFO: 是否包含详细信息，默认true
-- BILIBILI_COOKIE: B站Cookie（可选）
+- B 站 Cookie: 在 Web Admin 账号设置中登录
 """
 
 from nonebot import get_driver, on_command

@@ -132,6 +132,7 @@ class DynamicMonitor:
         """热重载配置并调整调度任务"""
         old_interval = self.config.monitor_interval
         old_screenshot = self.config.enable_screenshot
+        old_cookie = self.config.bilibili_cookie
         old_uids = set(self.config.dynamic_monitor_mapping.keys())
         self.config = Config.from_service()
         new_uids_set = set(self.config.dynamic_monitor_mapping.keys())
@@ -167,6 +168,9 @@ class DynamicMonitor:
                 await init_screenshot_service()
             else:
                 await close_screenshot_service()
+        elif self.config.enable_screenshot and old_cookie != self.config.bilibili_cookie:
+            await close_screenshot_service()
+            await init_screenshot_service()
 
         if self.sender:
             self.sender.templates = self.config.message_templates

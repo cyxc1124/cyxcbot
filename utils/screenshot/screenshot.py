@@ -98,7 +98,7 @@ async def init_browser(proxy=None, **kwargs) -> BrowserContext:
         await context.add_cookies(cookies)
         logger.info(f"已注入 {len(cookies)} 个B站Cookie")
     else:
-        logger.warning("未配置BILIBILI_COOKIE，截图可能触发验证码")
+        logger.warning("未登录 B 站，截图可能触发验证码")
 
     logger.info("浏览器初始化完成")
     return context
