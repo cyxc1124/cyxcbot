@@ -2,6 +2,11 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ApiClientError } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
+import {
+  acceptPasswordInput,
+  getPasswordValidationError,
+  MIN_PASSWORD_LENGTH,
+} from '../utils/password'
 
 export function SetupPage() {
   const { setup } = useAuth()
@@ -16,8 +21,9 @@ export function SetupPage() {
     e.preventDefault()
     setError('')
 
-    if (password.length < 8) {
-      setError('密码至少需要 8 个字符')
+    const passwordError = getPasswordValidationError(password)
+    if (passwordError) {
+      setError(passwordError)
       return
     }
     if (password !== confirm) {
@@ -74,10 +80,11 @@ export function SetupPage() {
               type="password"
               className="input"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) =>
+                setPassword(acceptPasswordInput(password, e.target.value))
+              }
               required
-              minLength={8}
-              maxLength={128}
+              minLength={MIN_PASSWORD_LENGTH}
               autoComplete="new-password"
             />
           </div>
@@ -90,8 +97,11 @@ export function SetupPage() {
               type="password"
               className="input"
               value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
+              onChange={(e) =>
+                setConfirm(acceptPasswordInput(confirm, e.target.value))
+              }
               required
+              minLength={MIN_PASSWORD_LENGTH}
               autoComplete="new-password"
             />
           </div>
