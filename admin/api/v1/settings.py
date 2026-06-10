@@ -41,6 +41,10 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
 
     if body.dynamic_monitor_interval is not None:
         updates["dynamic_monitor_interval"] = str(body.dynamic_monitor_interval)
+    if body.dynamic_monitor_use_stagger is not None:
+        updates["dynamic_monitor_use_stagger"] = str(
+            body.dynamic_monitor_use_stagger
+        ).lower()
     if body.dynamic_enable_screenshot is not None:
         updates["dynamic_enable_screenshot"] = str(
             body.dynamic_enable_screenshot

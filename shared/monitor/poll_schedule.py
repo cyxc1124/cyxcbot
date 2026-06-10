@@ -17,6 +17,26 @@ def compute_dynamic_poll_schedule(
     target_count: int,
     configured_interval_seconds: int,
     *,
+    use_stagger: bool = True,
+    min_tick_interval_seconds: float = DYNAMIC_MIN_TICK_INTERVAL_SECONDS,
+) -> dict[str, Any]:
+    """Compute dynamic monitor polling schedule for stagger or batch mode."""
+    if not use_stagger:
+        return _compute_dynamic_batch_poll_schedule(
+            target_count,
+            configured_interval_seconds,
+        )
+    return _compute_dynamic_stagger_poll_schedule(
+        target_count,
+        configured_interval_seconds,
+        min_tick_interval_seconds=min_tick_interval_seconds,
+    )
+
+
+def _compute_dynamic_stagger_poll_schedule(
+    target_count: int,
+    configured_interval_seconds: int,
+    *,
     min_tick_interval_seconds: float = DYNAMIC_MIN_TICK_INTERVAL_SECONDS,
 ) -> dict[str, Any]:
     """Stagger one UP per tick; cap tick frequency with a minimum interval."""
@@ -59,6 +79,51 @@ def compute_dynamic_poll_schedule(
         "requests_per_second_avg": _round(avg_rps),
         "requests_per_second_peak": _round(peak_rps),
         "meets_configured_interval": meets_configured,
+        "warning": warning,
+    }
+
+
+def _compute_dynamic_batch_poll_schedule(
+    target_count: int,
+    configured_interval_seconds: int,
+) -> dict[str, Any]:
+    """Batch mode: check all UPs sequentially every configured interval."""
+    poll_interval = configured_interval_seconds
+
+    if target_count <= 0:
+        return {
+            "strategy": "batch",
+            "target_count": 0,
+            "configured_interval_seconds": configured_interval_seconds,
+            "poll_interval_seconds": poll_interval,
+            "tick_interval_seconds": 0.0,
+            "per_target_cycle_seconds": 0.0,
+            "requests_per_second_avg": 0.0,
+            "requests_per_second_peak": 0.0,
+            "meets_configured_interval": True,
+            "warning": None,
+        }
+
+    avg_rps = target_count / poll_interval
+    peak_rps = 1.0
+
+    warning: Optional[str] = None
+    if target_count >= 5:
+        warning = (
+            f"批量模式下每 {poll_interval} 秒会依次检查全部 {target_count} 个 UP 主。"
+            f"订阅较多时建议启用分散检查以降低 API 峰值压力。"
+        )
+
+    return {
+        "strategy": "batch",
+        "target_count": target_count,
+        "configured_interval_seconds": configured_interval_seconds,
+        "poll_interval_seconds": poll_interval,
+        "tick_interval_seconds": _round(poll_interval),
+        "per_target_cycle_seconds": _round(poll_interval),
+        "requests_per_second_avg": _round(avg_rps),
+        "requests_per_second_peak": _round(peak_rps),
+        "meets_configured_interval": True,
         "warning": warning,
     }
 

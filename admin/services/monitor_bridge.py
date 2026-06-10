@@ -194,6 +194,7 @@ def build_dynamic_monitor_status() -> Dict[str, Any]:
     poll_schedule = compute_dynamic_poll_schedule(
         target_count,
         snap.dynamic_monitor_interval,
+        use_stagger=snap.dynamic_monitor_use_stagger,
     )
     return {
         "enabled": status["dynamic_running"],
