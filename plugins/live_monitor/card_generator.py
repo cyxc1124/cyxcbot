@@ -192,12 +192,8 @@ async def _resolve_card_images(
     else:
         avatar_img, cover_img = None, None
 
-    avatar_task = (
-        _download_image(face_url) if avatar_img is None and face_url else None
-    )
-    cover_task = (
-        _download_image(cover_url) if cover_img is None and cover_url else None
-    )
+    avatar_task = _download_image(face_url) if avatar_img is None and face_url else None
+    cover_task = _download_image(cover_url) if cover_img is None and cover_url else None
 
     if avatar_task and cover_task:
         avatar_img, cover_img = await asyncio.gather(avatar_task, cover_task)

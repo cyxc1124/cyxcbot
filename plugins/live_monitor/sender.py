@@ -301,9 +301,7 @@ class LiveNotificationSender:
             return
 
         valid_bots: List[Tuple[str, Bot]] = [
-            (bot_id, bot)
-            for bot_id, bot in bots.items()
-            if isinstance(bot, Bot)
+            (bot_id, bot) for bot_id, bot in bots.items() if isinstance(bot, Bot)
         ]
         if not valid_bots:
             logger.warning("没有可用的 OneBot 机器人实例")
