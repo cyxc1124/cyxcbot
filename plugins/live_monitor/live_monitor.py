@@ -22,6 +22,7 @@ from shared.db.models import LiveMonitorState
 from shared.monitor.check_cycle import CheckCycleLogger
 from utils.bilibili_api import LiveStatus, api_manager
 
+from .card_generator import PrefetchImages, prefetch_card_images
 from .config import Config
 from .danmaku_client import DanmakuClient
 from .models import LiveRoomState
@@ -296,6 +297,27 @@ class LiveMonitor:
         self._danmaku_clients.clear()
         logger.info("所有 WebSocket 客户端已停止")
 
+    async def _fetch_room_info_with_prefetch(
+        self, room_id: str, status: str, state: LiveRoomState
+    ):
+        """并行拉取最新房间信息，并在需要卡片时预下载素材。"""
+        prefetch_task = None
+        if self._sender.template_uses_card(status):
+            prefetch_task = asyncio.create_task(
+                prefetch_card_images(state.user_info, state.room_info)
+            )
+
+        room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
+
+        prefetched = None
+        if prefetch_task:
+            try:
+                prefetched = await prefetch_task
+            except Exception as e:
+                logger.warning(f"房间 {room_id} 卡片素材预下载失败: {e}")
+
+        return room_info, user_info, prefetched
+
     async def _handle_live_signal(self, room_id: str):
         """处理开播信号（来自 WebSocket）"""
         logger.debug(f"房间 {room_id} 收到开播信号")
@@ -308,8 +330,10 @@ class LiveMonitor:
         if not state:
             return
 
-        # 获取最新房间信息
-        room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
+        # 获取最新房间信息（卡片素材与 API 并行预取）
+        room_info, user_info, prefetched = await self._fetch_room_info_with_prefetch(
+            room_id, "start", state
+        )
 
         if not room_info:
             logger.debug(f"房间 {room_id} 获取信息失败")
@@ -329,7 +353,9 @@ class LiveMonitor:
 
             streamer_name = user_info.name if user_info else f"房间{room_id}"
             logger.info(f"确认开播: {streamer_name} (房间 {room_id})")
-            await self._send_live_notification(room_id, "start", state)
+            await self._send_live_notification(
+                room_id, "start", state, prefetched_images=prefetched
+            )
         else:
             # 更新状态但不发送通知（可能是重复信号或已经在直播中）
             state.room_info = room_info
@@ -348,8 +374,10 @@ class LiveMonitor:
         if not state:
             return
 
-        # 获取最新房间信息
-        room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
+        # 获取最新房间信息（卡片素材与 API 并行预取）
+        room_info, user_info, prefetched = await self._fetch_room_info_with_prefetch(
+            room_id, "end", state
+        )
 
         old_status = state.previous_status
 
@@ -368,7 +396,9 @@ class LiveMonitor:
                 state.user_info.name if state.user_info else f"房间{room_id}"
             )
             logger.info(f"确认关播: {streamer_name} (房间 {room_id})")
-            await self._send_live_notification(room_id, "end", state)
+            await self._send_live_notification(
+                room_id, "end", state, prefetched_images=prefetched
+            )
 
     async def _handle_room_change(self, room_id: str, data: dict):
         """处理房间信息变更"""
@@ -458,8 +488,22 @@ class LiveMonitor:
         if not state:
             return True
 
-        # 获取最新的房间信息
+        need_start_card = self._sender.template_uses_card("start")
+        need_end_card = self._sender.template_uses_card("end")
+        prefetch_task = None
+        if need_start_card or need_end_card:
+            prefetch_task = asyncio.create_task(
+                prefetch_card_images(state.user_info, state.room_info)
+            )
+
         room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
+
+        prefetched = None
+        if prefetch_task:
+            try:
+                prefetched = await prefetch_task
+            except Exception as e:
+                logger.warning(f"房间 {room_id} 卡片素材预下载失败: {e}")
 
         if not room_info:
             logger.debug(f"无法获取房间 {room_id} 的最新状态")
@@ -474,7 +518,12 @@ class LiveMonitor:
                 state.user_info.name if state.user_info else f"房间{room_id}"
             )
             logger.info(f"检测到开播: {streamer_name} (房间 {room_id})")
-            await self._send_live_notification(room_id, "start", state)
+            await self._send_live_notification(
+                room_id,
+                "start",
+                state,
+                prefetched_images=prefetched if need_start_card else None,
+            )
 
         # 处理关播事件
         if is_live_ended:
@@ -482,12 +531,21 @@ class LiveMonitor:
                 state.user_info.name if state.user_info else f"房间{room_id}"
             )
             logger.info(f"检测到关播: {streamer_name} (房间 {room_id})")
-            await self._send_live_notification(room_id, "end", state)
+            await self._send_live_notification(
+                room_id,
+                "end",
+                state,
+                prefetched_images=prefetched if need_end_card else None,
+            )
 
         return True
 
     async def _send_live_notification(
-        self, room_id: str, status: str, state: LiveRoomState
+        self,
+        room_id: str,
+        status: str,
+        state: LiveRoomState,
+        prefetched_images: Optional[PrefetchImages] = None,
     ):
         """发送直播通知"""
         # 获取目标群组
@@ -513,9 +571,10 @@ class LiveMonitor:
             user_info=state.user_info,
             duration_seconds=duration_seconds,
             at_all_enabled=self.config.live_at_all.get(room_id, True),
+            prefetched_images=prefetched_images,
         )
 
-        await self._persist_state(room_id)
+        asyncio.create_task(self._persist_state(room_id))
 
     async def check_room_now(self, room_id: str) -> Optional[Dict]:
         """立即检查指定房间的状态（用于手动触发）"""
