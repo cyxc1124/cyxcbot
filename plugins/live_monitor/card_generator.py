@@ -10,13 +10,13 @@ from io import BytesIO
 from pathlib import Path
 from typing import Optional, Tuple
 
-PrefetchImages = Tuple[Optional[Image.Image], Optional[Image.Image]]
-
 import aiohttp
 from nonebot.log import logger
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from utils.bilibili_api import RoomInfo, UserInfo
+
+PrefetchImages = Tuple[Optional[Image.Image], Optional[Image.Image]]
 
 # 渲染倍率（2x 高清）
 SCALE = 2
