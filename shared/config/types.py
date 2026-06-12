@@ -28,6 +28,7 @@ class AppConfigSnapshot:
     )
     dynamic_at_all: Dict[str, bool] = field(default_factory=dict)
     dynamic_monitor_interval: int = 30
+    dynamic_monitor_use_stagger: bool = True
     dynamic_enable_screenshot: bool = True
     dynamic_message_templates: DynamicMessageTemplates = field(
         default_factory=DynamicMessageTemplates

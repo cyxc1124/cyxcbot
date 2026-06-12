@@ -178,9 +178,12 @@ cache/
 bot.session
 bot.db
 
-# 测试文件
-test_*.py
-*_test.py
+# 临时本地测试脚本（pytest 套件在 tests/）
+/test_*.py
+/*_test.py
+!tests/
+!tests/**
+tests/__pycache__/
 
 # 备份文件
 *.bak
@@ -189,6 +192,11 @@ test_*.py
 
 # Web Admin (frontend)
 web/node_modules/
+
+# Documentation (Docusaurus)
+docs/node_modules/
+docs/build/
+docs/.docusaurus/
 
 # 系统文件
 .DS_Store

@@ -14,9 +14,9 @@ uvicorn==0.34.0
 python-multipart==0.0.20
 
 # 认证与安全
-bcrypt==4.2.1
+bcrypt==5.0.0
 python-jose[cryptography]==3.3.0
-cryptography==44.0.0
+cryptography==48.0.1
 
 # HTTP 客户端
 aiohttp==3.9.1

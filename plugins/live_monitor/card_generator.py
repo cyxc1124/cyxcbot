@@ -8,13 +8,15 @@ import os
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import aiohttp
 from nonebot.log import logger
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from utils.bilibili_api import RoomInfo, UserInfo
+
+PrefetchImages = Tuple[Optional[Image.Image], Optional[Image.Image]]
 
 # 渲染倍率（2x 高清）
 SCALE = 2
@@ -161,6 +163,46 @@ def _truncate_text(
     if current_line:
         lines.append(current_line)
     return lines
+
+
+async def prefetch_card_images(
+    user_info: Optional[UserInfo],
+    room_info: Optional[RoomInfo],
+) -> PrefetchImages:
+    """使用缓存的头像/封面 URL 预下载卡片素材，可与 API 确认并行执行。"""
+    face_url = user_info.face if user_info else ""
+    cover_url = room_info.cover if room_info else ""
+    return await asyncio.gather(
+        _download_image(face_url),
+        _download_image(cover_url),
+    )
+
+
+async def _resolve_card_images(
+    user_info: Optional[UserInfo],
+    room_info: Optional[RoomInfo],
+    prefetched_images: Optional[PrefetchImages] = None,
+) -> PrefetchImages:
+    """优先使用预下载素材，缺失项按最新 URL 补拉。"""
+    face_url = user_info.face if user_info else ""
+    cover_url = room_info.cover or "" if room_info else ""
+
+    if prefetched_images is not None:
+        avatar_img, cover_img = prefetched_images
+    else:
+        avatar_img, cover_img = None, None
+
+    avatar_task = _download_image(face_url) if avatar_img is None and face_url else None
+    cover_task = _download_image(cover_url) if cover_img is None and cover_url else None
+
+    if avatar_task and cover_task:
+        avatar_img, cover_img = await asyncio.gather(avatar_task, cover_task)
+    elif avatar_task:
+        avatar_img = await avatar_task
+    elif cover_task:
+        cover_img = await cover_task
+
+    return avatar_img, cover_img
 
 
 async def _download_image(url: str, timeout: int = 10) -> Optional[Image.Image]:
@@ -378,6 +420,7 @@ async def generate_live_start_card(
     streamer_name: str,
     user_info: Optional[UserInfo],
     room_info: Optional[RoomInfo],
+    prefetched_images: Optional[PrefetchImages] = None,
 ) -> Optional[bytes]:
     """
     生成开播通知卡片图片
@@ -395,12 +438,8 @@ async def generate_live_start_card(
         return None
 
     try:
-        face_url = user_info.face if user_info else ""
-        cover_url = room_info.cover or ""
-
-        avatar_img, cover_img = await asyncio.gather(
-            _download_image(face_url),
-            _download_image(cover_url),
+        avatar_img, cover_img = await _resolve_card_images(
+            user_info, room_info, prefetched_images
         )
 
         area_parts = []
@@ -441,6 +480,7 @@ async def generate_live_end_card(
     user_info: Optional[UserInfo],
     room_info: Optional[RoomInfo],
     duration_seconds: int = 0,
+    prefetched_images: Optional[PrefetchImages] = None,
 ) -> Optional[bytes]:
     """
     生成下播通知卡片图片
@@ -459,12 +499,8 @@ async def generate_live_end_card(
         return None
 
     try:
-        face_url = user_info.face if user_info else ""
-        cover_url = room_info.cover or ""
-
-        avatar_img, cover_img = await asyncio.gather(
-            _download_image(face_url),
-            _download_image(cover_url),
+        avatar_img, cover_img = await _resolve_card_images(
+            user_info, room_info, prefetched_images
         )
 
         area_parts = []

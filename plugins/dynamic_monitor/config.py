@@ -22,6 +22,10 @@ class Config(BaseModel):
 
     monitor_interval: int = Field(default=30, description="监控间隔时间（秒）")
 
+    use_stagger_poll: bool = Field(
+        default=True, description="是否启用分散检查（关闭则为批量检查）"
+    )
+
     enable_screenshot: bool = Field(
         default=True, description="是否在推送消息中包含动态网页截图"
     )
@@ -44,6 +48,7 @@ class Config(BaseModel):
             dynamic_monitor_user_mapping=snap.dynamic_monitor_user_mapping,
             dynamic_at_all=snap.dynamic_at_all,
             monitor_interval=snap.dynamic_monitor_interval,
+            use_stagger_poll=snap.dynamic_monitor_use_stagger,
             enable_screenshot=snap.dynamic_enable_screenshot,
             message_templates=snap.dynamic_message_templates,
             bilibili_cookie=snap.bilibili_cookie,

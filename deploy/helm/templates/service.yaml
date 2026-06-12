@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cyxcbot.fullname" . }}-service
+  labels:
+    {{- include "cyxcbot.labels" . | nindent 4 }}
+  {{- if .Values.service.loadBalancerIP }}
+  annotations:
+    service.beta.kubernetes.io/loadbalancer-ip: {{ .Values.service.loadBalancerIP | quote }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- if and (eq .Values.service.type "LoadBalancer") .Values.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.service.loadBalancerIP }}
+  {{- end }}
+  ports:
+    # OneBot 协议端（如 NapCat）反向 WebSocket 连接此端口
+    - port: {{ .Values.service.onebot.port }}
+      targetPort: onebot
+      protocol: TCP
+      name: onebot
+    # 浏览器访问 Web Admin 面板
+    - port: {{ .Values.service.webAdmin.port }}
+      targetPort: web-admin
+      protocol: TCP
+      name: web-admin
+  selector:
+    {{- include "cyxcbot.selectorLabels" . | nindent 4 }}

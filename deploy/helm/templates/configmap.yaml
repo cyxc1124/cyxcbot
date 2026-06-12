@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cyxcbot.fullname" . }}-config
+  labels:
+    {{- include "cyxcbot.labels" . | nindent 4 }}
+data:
+  # NoneBot / OneBot → HOST, PORT, COMMAND_START, COMMAND_SEP
+  host: {{ .Values.nonebot.host | quote }}
+  port: {{ .Values.nonebot.port | quote }}
+  command_start: {{ .Values.nonebot.commandStart | toJson | quote }}
+  command_sep: {{ .Values.nonebot.commandSep | toJson | quote }}
+  # Web Admin → WEB_HOST, WEB_PORT, WEB_ADMIN_ENABLED
+  web_host: {{ .Values.webAdmin.host | quote }}
+  web_port: {{ .Values.webAdmin.port | quote }}
+  web_admin_enabled: {{ .Values.webAdmin.enabled | quote }}
+  # 数据库 → SQLALCHEMY_DATABASE_URL
+  sqlalchemy_database_url: {{ .Values.database.url | quote }}
+  # 日志 → LOG_LEVEL
+  log_level: {{ .Values.logging.level | quote }}

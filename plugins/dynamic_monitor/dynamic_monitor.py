@@ -60,11 +60,20 @@ class DynamicMonitor:
         schedule = compute_dynamic_poll_schedule(
             len(uid_list),
             self.config.monitor_interval,
+            use_stagger=self.config.use_stagger_poll,
         )
-        tick = schedule["tick_interval_seconds"]
+
+        if self.config.use_stagger_poll:
+            tick = schedule["tick_interval_seconds"]
+            callback = self._check_next_dynamic
+            mode_label = "分散检查"
+        else:
+            tick = self.config.monitor_interval
+            callback = self._check_all_dynamics
+            mode_label = "批量检查"
 
         scheduler.add_job(
-            self._check_next_dynamic,
+            callback,
             "interval",
             seconds=tick,
             id="dynamic_monitor_check",
@@ -73,7 +82,8 @@ class DynamicMonitor:
             misfire_grace_time=60,
         )
         logger.info(
-            f"动态监控调度: {len(uid_list)} 个UP主, 每次间隔 {tick:.1f}秒, "
+            f"动态监控调度({mode_label}): {len(uid_list)} 个UP主, "
+            f"定时 {tick:.1f}秒, "
             f"每人周期约 {schedule['per_target_cycle_seconds']:.0f}秒, "
             f"峰值约 {schedule['requests_per_second_peak']:.2f} 次/秒"
         )
@@ -135,6 +145,7 @@ class DynamicMonitor:
     async def reload_config(self):
         """热重载配置并调整调度任务"""
         old_interval = self.config.monitor_interval
+        old_use_stagger = self.config.use_stagger_poll
         old_screenshot = self.config.enable_screenshot
         old_cookie = self.config.bilibili_cookie
         old_uids = set(self.config.dynamic_monitor_mapping.keys())
@@ -160,9 +171,14 @@ class DynamicMonitor:
                     logger.error(f"初始化UP主 {uid} 动态监控失败: {e}")
 
         if self.is_running and (
-            old_interval != self.config.monitor_interval or old_uids != new_uids_set
+            old_interval != self.config.monitor_interval
+            or old_use_stagger != self.config.use_stagger_poll
+            or old_uids != new_uids_set
         ):
-            if old_uids != new_uids_set:
+            if (
+                old_uids != new_uids_set
+                or old_use_stagger != self.config.use_stagger_poll
+            ):
                 self._stagger_index = 0
                 self._cycle_logger.reset()
             self._schedule_poll_job()
@@ -184,6 +200,7 @@ class DynamicMonitor:
         logger.info(
             f"动态监控配置已热重载: {len(self.config.dynamic_monitor_mapping)} 个UP主, "
             f"间隔 {self.config.monitor_interval}秒, "
+            f"模式={'分散检查' if self.config.use_stagger_poll else '批量检查'}, "
             f"截图={'开启' if self.config.enable_screenshot else '关闭'}"
         )
 
@@ -195,7 +212,9 @@ class DynamicMonitor:
         await self.init_resources()
 
         logger.info(
-            f"UP主动态监控已启动，分散检查模式，目标周期: {self.config.monitor_interval}秒"
+            f"UP主动态监控已启动，"
+            f"{'分散检查' if self.config.use_stagger_poll else '批量检查'}模式，"
+            f"目标周期: {self.config.monitor_interval}秒"
         )
 
         self._schedule_poll_job()
@@ -257,6 +276,32 @@ class DynamicMonitor:
         if cycle_completed:
             self._cycle_logger.emit_summary()
             self._touch_last_check_at()
+
+    async def _check_all_dynamics(self):
+        """批量检查全部 UP 主的动态 - 由 APScheduler 定时调用"""
+        if not self.is_running:
+            logger.debug("监控已停止，跳过本次检查")
+            return
+
+        uid_list = self._uid_list()
+        if not uid_list:
+            return
+
+        try:
+            for uid in uid_list:
+                try:
+                    ok = await self._check_user_dynamic(uid)
+                    if ok is False:
+                        self._cycle_logger.record_failure(uid)
+                    else:
+                        self._cycle_logger.record_success()
+                except Exception as e:
+                    self._cycle_logger.record_error(uid, e)
+
+            self._cycle_logger.emit_summary()
+            self._touch_last_check_at()
+        except Exception as e:
+            logger.error(f"动态监控检查出错: {e}")
 
     async def run_manual_check(
         self, uids: Optional[List[str]] = None

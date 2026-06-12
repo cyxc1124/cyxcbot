@@ -26,8 +26,13 @@ function round(value: number, digits = 2): number {
 export function computeDynamicPollSchedule(
   targetCount: number,
   configuredIntervalSeconds: number,
+  useStagger = true,
   minTickIntervalSeconds = DYNAMIC_MIN_TICK_INTERVAL_SECONDS,
 ): MonitorPollSchedule {
+  if (!useStagger) {
+    return computeDynamicBatchPollSchedule(targetCount, configuredIntervalSeconds)
+  }
+
   if (targetCount <= 0) {
     return {
       strategy: 'stagger',
@@ -67,6 +72,51 @@ export function computeDynamicPollSchedule(
     requests_per_second_avg: round(avgRps),
     requests_per_second_peak: round(peakRps),
     meets_configured_interval: meetsConfigured,
+    warning,
+  }
+}
+
+export function computeDynamicBatchPollSchedule(
+  targetCount: number,
+  configuredIntervalSeconds: number,
+): MonitorPollSchedule {
+  const pollInterval = configuredIntervalSeconds
+
+  if (targetCount <= 0) {
+    return {
+      strategy: 'batch',
+      target_count: 0,
+      configured_interval_seconds: configuredIntervalSeconds,
+      poll_interval_seconds: pollInterval,
+      tick_interval_seconds: 0,
+      per_target_cycle_seconds: 0,
+      requests_per_second_avg: 0,
+      requests_per_second_peak: 0,
+      meets_configured_interval: true,
+      warning: null,
+    }
+  }
+
+  const avgRps = targetCount / pollInterval
+  const peakRps = 1
+
+  let warning: string | null = null
+  if (targetCount >= 5) {
+    warning =
+      `批量模式下每 ${pollInterval} 秒会依次检查全部 ${targetCount} 个 UP 主。` +
+      `订阅较多时建议启用分散检查以降低 API 峰值压力。`
+  }
+
+  return {
+    strategy: 'batch',
+    target_count: targetCount,
+    configured_interval_seconds: configuredIntervalSeconds,
+    poll_interval_seconds: pollInterval,
+    tick_interval_seconds: round(pollInterval),
+    per_target_cycle_seconds: round(pollInterval),
+    requests_per_second_avg: round(avgRps),
+    requests_per_second_peak: round(peakRps),
+    meets_configured_interval: true,
     warning,
   }
 }
