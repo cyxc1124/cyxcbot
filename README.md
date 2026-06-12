@@ -2,7 +2,7 @@
 
 基于 [NoneBot2](https://nonebot.dev/) 的 QQ 机器人，专注 B 站动态、直播监控与群消息推送。内置 Web Admin 管理面板，可在浏览器中完成监控配置、权限策略与消息模板管理，无需反复改环境变量。
 
-📖 **完整文档**：[docs/](docs/)（Docusaurus，本地预览：`cd docs && npm start`）
+📖 **完整文档**：https://cyxc1124.github.io/cyxcbot/（源码在 [docs/](docs/)，本地预览：`cd docs && npm start`）
 
 ---
 
