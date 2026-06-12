@@ -21,7 +21,7 @@ npm run serve   # 预览构建产物
 
 ## 部署到 GitHub Pages
 
-推送到 `main` 分支且 `docs/` 有变更时，GitHub Actions（[`.github/workflows/deploy-docs.yml`](../.github/workflows/deploy-docs.yml)）会自动构建并部署。
+直接推送到 `main` 分支且 `docs/` 有变更时，GitHub Actions（[`.github/workflows/deploy-docs.yml`](../.github/workflows/deploy-docs.yml)）会自动构建并部署，无需 PR。
 
 线上地址：https://cyxc1124.github.io/cyxcbot/
 
