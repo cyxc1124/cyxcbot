@@ -1,0 +1,162 @@
+"""Tests for dynamic monitor config hot reload."""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+import types
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+PLUGINS_ROOT = ROOT / "plugins"
+PLUGIN_ROOT = PLUGINS_ROOT / "dynamic_monitor"
+
+_TOUCHED_MODULE_KEYS = (
+    "plugins",
+    "plugins.dynamic_monitor",
+    "plugins.dynamic_monitor.config",
+    "plugins.dynamic_monitor.dynamic_monitor",
+    "plugins.dynamic_monitor.sender",
+    "nonebot_plugin_apscheduler",
+    "nonebot_plugin_orm",
+    "utils.screenshot",
+)
+
+
+def _ensure_package(name: str, path: Path) -> types.ModuleType:
+    if name in sys.modules:
+        module = sys.modules[name]
+        if not getattr(module, "__path__", None):
+            module.__path__ = [str(path)]
+        return module
+    module = types.ModuleType(name)
+    module.__path__ = [str(path)]
+    sys.modules[name] = module
+    return module
+
+
+def _load_module(qualified_name: str, filename: str):
+    path = PLUGIN_ROOT / filename
+    spec = importlib.util.spec_from_file_location(
+        qualified_name,
+        path,
+        submodule_search_locations=[str(PLUGIN_ROOT)],
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[qualified_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _import_dynamic_monitor_modules():
+    _ensure_package("plugins", PLUGINS_ROOT)
+    _ensure_package("plugins.dynamic_monitor", PLUGIN_ROOT)
+
+    sys.modules.setdefault(
+        "nonebot_plugin_apscheduler",
+        MagicMock(scheduler=MagicMock()),
+    )
+    sys.modules.setdefault(
+        "nonebot_plugin_orm",
+        MagicMock(get_session=MagicMock()),
+    )
+    sys.modules.setdefault(
+        "plugins.dynamic_monitor.sender",
+        MagicMock(DynamicSender=MagicMock()),
+    )
+    sys.modules.setdefault(
+        "utils.screenshot",
+        MagicMock(
+            init_screenshot_service=AsyncMock(),
+            close_screenshot_service=AsyncMock(),
+            get_dynamic_screenshot=AsyncMock(),
+        ),
+    )
+
+    config_mod = _load_module("plugins.dynamic_monitor.config", "config.py")
+    monitor_mod = _load_module(
+        "plugins.dynamic_monitor.dynamic_monitor", "dynamic_monitor.py"
+    )
+    return config_mod.Config, monitor_mod.DynamicMonitor
+
+
+@pytest.fixture
+def dynamic_monitor_modules() -> Iterator[tuple[Any, Any]]:
+    snapshot = {key: sys.modules.get(key) for key in _TOUCHED_MODULE_KEYS}
+    try:
+        yield _import_dynamic_monitor_modules()
+    finally:
+        for key in _TOUCHED_MODULE_KEYS:
+            original = snapshot[key]
+            if original is None:
+                sys.modules.pop(key, None)
+            else:
+                sys.modules[key] = original
+
+
+def _make_monitor(
+    Config: Any,
+    DynamicMonitor: Any,
+    uids: list[str],
+):
+    config = Config(
+        dynamic_monitor_mapping={uid: ["group1"] for uid in uids},
+    )
+    monitor = DynamicMonitor(config)
+    monitor.is_running = True
+    for uid in uids:
+        monitor.last_dynamic_ids[uid] = 100
+        monitor.initialized_uids[uid] = True
+        monitor.pinned_dynamic_ids[uid] = 42
+    return monitor
+
+
+@pytest.mark.asyncio
+async def test_reload_config_removes_deleted_uid_runtime_state(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111", "222"])
+
+    reduced_config = Config(
+        dynamic_monitor_mapping={"222": ["group1"]},
+    )
+
+    with patch(
+        "plugins.dynamic_monitor.dynamic_monitor.Config.from_service",
+        return_value=reduced_config,
+    ):
+        await monitor.reload_config()
+
+    assert "111" not in monitor.last_dynamic_ids
+    assert "111" not in monitor.initialized_uids
+    assert "111" not in monitor.pinned_dynamic_ids
+    assert "222" in monitor.last_dynamic_ids
+
+
+@pytest.mark.asyncio
+async def test_reenabled_uid_treated_as_new_after_reload_removal(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+
+    disabled_config = Config(dynamic_monitor_mapping={})
+    reenabled_config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+
+    with patch(
+        "plugins.dynamic_monitor.dynamic_monitor.Config.from_service",
+        side_effect=[disabled_config, reenabled_config],
+    ):
+        await monitor.reload_config()
+        await monitor.reload_config()
+
+    assert monitor.last_dynamic_ids["111"] == 0
+    assert monitor.initialized_uids["111"] is False
+    assert monitor.pinned_dynamic_ids["111"] is None
