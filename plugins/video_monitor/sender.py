@@ -3,9 +3,10 @@
 负责构建和发送视频通知消息
 """
 
-from typing import List, Optional
-from nonebot.log import logger
+from typing import List
+
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
+from nonebot.log import logger
 
 from utils.bilibili_api import VideoInfo
 
@@ -16,7 +17,9 @@ class VideoSender:
     def __init__(self):
         pass
 
-    def build_video_message(self, videos: List[VideoInfo], uploader_name: str = "") -> Message:
+    def build_video_message(
+        self, videos: List[VideoInfo], uploader_name: str = ""
+    ) -> Message:
         """构建视频列表消息
 
         消息格式：
@@ -65,16 +68,14 @@ class VideoSender:
         """发送消息到指定群组"""
         try:
             from nonebot import get_bot
+
             bot = get_bot()
 
             if not bot:
                 logger.warning(f"机器人未连接，跳过发送到群组 {group_id}")
                 return
 
-            await bot.send_group_msg(
-                group_id=int(group_id),
-                message=message
-            )
+            await bot.send_group_msg(group_id=int(group_id), message=message)
             logger.info(f"成功发送视频消息到群组 {group_id}")
         except Exception as e:
             logger.error(f"发送消息到群组 {group_id} 失败: {e}")

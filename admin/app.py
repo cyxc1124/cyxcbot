@@ -34,7 +34,11 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router)
 
-    app_base = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
+    app_base = (
+        Path(sys._MEIPASS)
+        if getattr(sys, "frozen", False)
+        else Path(__file__).resolve().parent.parent
+    )
     web_dist = app_base / "web" / "dist"
     if web_dist.is_dir():
         web_dist = web_dist.resolve()

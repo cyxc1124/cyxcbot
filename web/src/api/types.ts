@@ -33,6 +33,7 @@ export interface CookieStatus {
 
 export interface Settings {
   dynamic_monitor_interval: number
+  dynamic_monitor_use_stagger: boolean
   dynamic_enable_screenshot: boolean
   dynamic_template_push: string
   dynamic_template_pinned: string
@@ -50,8 +51,6 @@ export interface Settings {
   link_template_video: string
   link_template_live: string
   bilibili_cookie: CookieStatus
-  audit_log_retention_days: number
-  event_retention_days: number
   status_check_allowed_qq: string[]
   nonebot_superusers: string[]
 }
@@ -221,10 +220,27 @@ export interface MonitorStatus {
   last_check_at: string | null
 }
 
+export interface MonitorPollSchedule {
+  strategy: string
+  target_count: number
+  configured_interval_seconds: number
+  min_tick_interval_seconds?: number | null
+  poll_interval_seconds?: number | null
+  batch_gap_seconds?: number | null
+  use_websocket?: boolean | null
+  tick_interval_seconds: number
+  per_target_cycle_seconds: number
+  requests_per_second_avg: number
+  requests_per_second_peak: number
+  meets_configured_interval: boolean
+  warning?: string | null
+}
+
 export interface DynamicMonitorStatus {
   enabled: boolean
   interval_seconds: number
   target_count: number
+  poll_schedule: MonitorPollSchedule
   last_check_at: string | null
   last_fetch_at: string | null
   last_error: string | null
@@ -237,6 +253,7 @@ export interface LiveMonitorStatus {
   interval_seconds: number
   use_websocket: boolean
   target_count: number
+  poll_schedule: MonitorPollSchedule
   last_check_at: string | null
   last_error: string | null
   live_rooms: number
@@ -249,8 +266,6 @@ export interface SystemMonitorStatus {
   memory_used_mb: number
   memory_total_mb: number
   disk_percent: number
-  python_version: string
-  bot_version: string
 }
 
 export type BilibiliConnectionStatusKind =
@@ -295,49 +310,6 @@ export interface AboutInfo {
 export interface MonitorActionResult {
   success: boolean
   message: string
-}
-
-// Audit & Events
-export interface PaginatedResponse<T> {
-  items: T[]
-  total: number
-  page: number
-  page_size: number
-}
-
-export interface AuditLog {
-  id: number
-  action: string
-  actor: string
-  resource_type: string | null
-  resource_id: string | null
-  details: Record<string, unknown> | null
-  ip_address: string | null
-  created_at: string
-}
-
-export interface SystemEvent {
-  id: number
-  level: 'debug' | 'info' | 'warning' | 'error'
-  category: string
-  message: string
-  details: Record<string, unknown> | null
-  created_at: string
-}
-
-export interface AuditLogQuery {
-  page?: number
-  page_size?: number
-  action?: string
-  from?: string
-  to?: string
-}
-
-export interface EventQuery {
-  page?: number
-  page_size?: number
-  level?: string
-  category?: string
 }
 
 export interface RuntimeLogEntry {

@@ -56,7 +56,9 @@ async def get_bilibili_connection_status() -> Dict[str, Any]:
     try:
         headers = {**_NAV_HEADERS, "Cookie": snap.bilibili_cookie}
         async with aiohttp.ClientSession() as session:
-            async with session.get(_NAV_URL, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            async with session.get(
+                _NAV_URL, headers=headers, timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
                 if resp.status != 200:
                     logger.warning(f"Bilibili nav check failed: HTTP {resp.status}")
                     return {

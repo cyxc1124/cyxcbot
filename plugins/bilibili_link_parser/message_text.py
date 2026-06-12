@@ -7,7 +7,11 @@ from typing import Any, Iterable
 
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, PrivateMessageEvent
 
-from .miniapp import extract_bilibili_miniapp_urls, normalize_bilibili_url, parse_json_segment_data
+from .miniapp import (
+    extract_bilibili_miniapp_urls,
+    normalize_bilibili_url,
+    parse_json_segment_data,
+)
 
 _URL_IN_TEXT = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 
@@ -53,7 +57,11 @@ def _urls_from_json_segment(raw: str | dict[str, Any]) -> list[str]:
 def _urls_from_xml_segment(raw: str) -> list[str]:
     if not raw:
         return []
-    return [url for url in _URL_IN_TEXT.findall(raw) if "bilibili.com" in url or "b23.tv" in url]
+    return [
+        url
+        for url in _URL_IN_TEXT.findall(raw)
+        if "bilibili.com" in url or "b23.tv" in url
+    ]
 
 
 def collect_message_text(event: GroupMessageEvent | PrivateMessageEvent) -> str:

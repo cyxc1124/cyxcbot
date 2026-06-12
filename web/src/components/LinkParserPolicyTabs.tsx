@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
+import { useMountAsync } from '../hooks/useMountAsync'
+import { createRetryHandler } from '../utils/retryLoad'
 import {
   getLinkParserGroupPolicies,
   getLinkParserUserPolicies,
@@ -59,9 +62,10 @@ function GlobalPolicyHint({ scope }: { scope: 'group' | 'user' }) {
 export function LinkParserGroupPolicyTab() {
   const { showToast } = useToast()
   const [groups, setGroups] = useState<LinkParserGroupPolicyItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useLoadingOnKeyChange('link-parser-groups')
   const [error, setError] = useState('')
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
+  const [togglingAll, setTogglingAll] = useState(false)
 
   const markSaving = (groupId: string, saving: boolean) => {
     setSavingIds((current) => {
@@ -83,21 +87,20 @@ export function LinkParserGroupPolicyTab() {
   }
 
   const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
     try {
       const data = await getLinkParserGroupPolicies()
       setGroups(data.groups)
+      setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [setLoading])
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  useMountAsync(load)
+
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
 
   const patchGroup = async (
     groupId: string,
@@ -150,13 +153,73 @@ export function LinkParserGroupPolicyTab() {
     }
   }
 
+  const handleToggleAll = async (enabled: boolean) => {
+    if (groups.length === 0) return
+
+    const payload = { video_enabled: enabled, live_enabled: enabled }
+    const prevGroups = groups
+    setTogglingAll(true)
+    setGroups((current) =>
+      current.map((item) => ({
+        ...item,
+        ...payload,
+        customized: enabled,
+      })),
+    )
+
+    try {
+      await Promise.all(
+        groups.map((group) =>
+          enabled
+            ? updateLinkParserGroupPolicy(group.group_id, payload)
+            : resetLinkParserGroupPolicy(group.group_id),
+        ),
+      )
+      await load()
+      showToast('success', enabled ? '已为全部群组启用链接解析' : '已为全部群组关闭链接解析')
+    } catch (err) {
+      setGroups(prevGroups)
+      showToast('error', formatApiError(err, '批量保存失败'))
+    } finally {
+      setTogglingAll(false)
+    }
+  }
+
+  const allEnabled = groups.length > 0 && groups.every((group) => group.video_enabled && group.live_enabled)
+  const noneEnabled = groups.length > 0 && groups.every((group) => !group.video_enabled && !group.live_enabled)
+  const busy = togglingAll || savingIds.size > 0
+
   if (loading && groups.length === 0 && !error) return <PageLoading />
-  if (error && groups.length === 0) return <LoadErrorBanner message={error} onRetry={load} />
+  if (error && groups.length === 0) return <LoadErrorBanner message={error} onRetry={retryLoad} />
 
   return (
     <div className="space-y-4">
-      <GlobalPolicyHint scope="group" />
-      {error && <LoadErrorBanner message={error} onRetry={load} />}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <GlobalPolicyHint scope="group" />
+        </div>
+        {groups.length > 0 && (
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              className="btn-secondary text-sm"
+              disabled={busy || allEnabled}
+              onClick={() => void handleToggleAll(true)}
+            >
+              全部启用
+            </button>
+            <button
+              type="button"
+              className="btn-secondary text-sm"
+              disabled={busy || noneEnabled}
+              onClick={() => void handleToggleAll(false)}
+            >
+              全部关闭
+            </button>
+          </div>
+        )}
+      </div>
+      {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       {groups.length === 0 ? (
         <p className="text-sm text-muted-foreground">
@@ -176,7 +239,7 @@ export function LinkParserGroupPolicyTab() {
             </thead>
             <tbody>
               {groups.map((group) => {
-                const saving = savingIds.has(group.group_id)
+                const saving = savingIds.has(group.group_id) || togglingAll
                 return (
                   <tr
                     key={group.group_id}
@@ -229,9 +292,10 @@ export function LinkParserGroupPolicyTab() {
 export function LinkParserUserPolicyTab() {
   const { showToast } = useToast()
   const [users, setUsers] = useState<LinkParserUserPolicyItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useLoadingOnKeyChange('link-parser-users')
   const [error, setError] = useState('')
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
+  const [togglingAll, setTogglingAll] = useState(false)
 
   const markSaving = (userId: string, saving: boolean) => {
     setSavingIds((current) => {
@@ -253,21 +317,20 @@ export function LinkParserUserPolicyTab() {
   }
 
   const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
     try {
       const data = await getLinkParserUserPolicies()
       setUsers(data.users)
+      setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [setLoading])
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  useMountAsync(load)
+
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
 
   const patchUser = async (
     userId: string,
@@ -324,13 +387,76 @@ export function LinkParserUserPolicyTab() {
     }
   }
 
+  const handleToggleAll = async (enabled: boolean) => {
+    if (users.length === 0) return
+
+    const payload = { video_enabled: enabled, live_enabled: enabled }
+    const prevUsers = users
+    setTogglingAll(true)
+    setUsers((current) =>
+      current.map((item) => ({
+        ...item,
+        ...payload,
+        customized: enabled,
+      })),
+    )
+
+    try {
+      await Promise.all(
+        users.map((user) =>
+          enabled
+            ? updateLinkParserUserPolicy(user.user_id, {
+                name: user.name ?? undefined,
+                ...payload,
+              })
+            : resetLinkParserUserPolicy(user.user_id),
+        ),
+      )
+      await load()
+      showToast('success', enabled ? '已为全部好友启用链接解析' : '已为全部好友关闭链接解析')
+    } catch (err) {
+      setUsers(prevUsers)
+      showToast('error', formatApiError(err, '批量保存失败'))
+    } finally {
+      setTogglingAll(false)
+    }
+  }
+
+  const allEnabled = users.length > 0 && users.every((user) => user.video_enabled && user.live_enabled)
+  const noneEnabled = users.length > 0 && users.every((user) => !user.video_enabled && !user.live_enabled)
+  const busy = togglingAll || savingIds.size > 0
+
   if (loading && users.length === 0 && !error) return <PageLoading />
-  if (error && users.length === 0) return <LoadErrorBanner message={error} onRetry={load} />
+  if (error && users.length === 0) return <LoadErrorBanner message={error} onRetry={retryLoad} />
 
   return (
     <div className="space-y-4">
-      <GlobalPolicyHint scope="user" />
-      {error && <LoadErrorBanner message={error} onRetry={load} />}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <GlobalPolicyHint scope="user" />
+        </div>
+        {users.length > 0 && (
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              className="btn-secondary text-sm"
+              disabled={busy || allEnabled}
+              onClick={() => void handleToggleAll(true)}
+            >
+              全部启用
+            </button>
+            <button
+              type="button"
+              className="btn-secondary text-sm"
+              disabled={busy || noneEnabled}
+              onClick={() => void handleToggleAll(false)}
+            >
+              全部关闭
+            </button>
+          </div>
+        )}
+      </div>
+      {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       {users.length === 0 ? (
         <p className="text-sm text-muted-foreground">
@@ -350,7 +476,7 @@ export function LinkParserUserPolicyTab() {
             </thead>
             <tbody>
               {users.map((user) => {
-                const saving = savingIds.has(user.user_id)
+                const saving = savingIds.has(user.user_id) || togglingAll
                 const displayName = user.nickname ?? user.name
                 return (
                   <tr

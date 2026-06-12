@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, status
 
 from admin.deps import AdminUser, RequireSetup
 from admin.schemas.groups import (
@@ -19,9 +19,7 @@ from admin.schemas.status_check import (
     StatusCheckDisplayOptions,
 )
 from admin.services.onebot_bridge import get_group_list
-from shared.audit.service import write_audit, write_system_event
 from shared.config.service import get_config_service
-from shared.db.enums import AuditAction, SystemEventType
 from shared.group_policy import is_group_message_enabled_from_snapshot
 
 router = APIRouter(
@@ -50,12 +48,13 @@ async def get_message_policy(_: AdminUser):
 
 @router.put("/message-policy", response_model=GroupMessagePolicyResponse)
 async def update_message_policy(
-    request: Request,
     body: GroupMessagePolicyUpdateRequest,
-    user: AdminUser,
+    _: AdminUser,
 ):
     svc = get_config_service()
-    enabled_ids = [str(gid).strip() for gid in body.enabled_group_ids if str(gid).strip()]
+    enabled_ids = [
+        str(gid).strip() for gid in body.enabled_group_ids if str(gid).strip()
+    ]
     await svc.set_settings(
         {
             "message_group_restrict": str(body.restrict).lower(),
@@ -63,22 +62,6 @@ async def update_message_policy(
         }
     )
     await svc.reload()
-
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.SETTINGS_UPDATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=svc.serialize_details(
-            {
-                "message_group_restrict": body.restrict,
-                "message_enabled_group_ids": enabled_ids,
-                "source": "group_message_policy",
-            }
-        ),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, "Group message policy updated")
 
     snap = svc.get_snapshot()
     groups = await get_group_list()
@@ -113,7 +96,9 @@ def _ensure_group_message_enabled(group_id: str, snap) -> None:
         )
 
 
-def _filter_status_enabled_group_ids(enabled_ids: list[str], groups: list[dict]) -> list[str]:
+def _filter_status_enabled_group_ids(
+    enabled_ids: list[str], groups: list[dict]
+) -> list[str]:
     allowed = {str(group["group_id"]) for group in groups}
     return [gid for gid in enabled_ids if gid in allowed]
 
@@ -134,17 +119,14 @@ async def get_status_policy(_: AdminUser):
 
 @router.put("/status-policy", response_model=GroupStatusPolicyResponse)
 async def update_status_policy(
-    request: Request,
     body: GroupStatusPolicyUpdateRequest,
-    user: AdminUser,
+    _: AdminUser,
 ):
     svc = get_config_service()
     snap = svc.get_snapshot()
     message_groups = _message_enabled_groups(snap, await get_group_list())
     enabled_ids = [
-        str(gid).strip()
-        for gid in body.enabled_group_ids
-        if str(gid).strip()
+        str(gid).strip() for gid in body.enabled_group_ids if str(gid).strip()
     ]
     for group_id in enabled_ids:
         _ensure_group_message_enabled(group_id, snap)
@@ -160,22 +142,6 @@ async def update_status_policy(
 
     await svc.set_settings(updates)
     await svc.reload()
-
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.SETTINGS_UPDATE,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=svc.serialize_details(
-            {
-                "status_check_group_restrict": body.restrict,
-                "status_check_enabled_group_ids": enabled_ids,
-                "source": "group_status_policy",
-            }
-        ),
-    )
-    await write_system_event(SystemEventType.CONFIG_RELOAD, "Group status policy updated")
 
     snap = svc.get_snapshot()
     groups = _message_enabled_groups(snap, await get_group_list())

@@ -28,7 +28,11 @@ LINK_TEMPLATE_KEYS = {
     ),
 }
 
-MESSAGE_TEMPLATE_KEYS = {**DYNAMIC_TEMPLATE_KEYS, **LIVE_TEMPLATE_KEYS, **LINK_TEMPLATE_KEYS}
+MESSAGE_TEMPLATE_KEYS = {
+    **DYNAMIC_TEMPLATE_KEYS,
+    **LIVE_TEMPLATE_KEYS,
+    **LINK_TEMPLATE_KEYS,
+}
 
 MAX_TEMPLATE_LENGTH = 500
 
@@ -42,7 +46,9 @@ class DynamicMessageTemplates:
     extract: str = DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract"]
     extract_empty: str = DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract_empty"]
     extract_failed: str = DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract_failed"]
-    extract_image_label: str = DYNAMIC_TEMPLATE_KEYS["dynamic_template_extract_image_label"]
+    extract_image_label: str = DYNAMIC_TEMPLATE_KEYS[
+        "dynamic_template_extract_image_label"
+    ]
 
 
 @dataclass
@@ -57,9 +63,13 @@ class LinkMessageTemplates:
     live: str = LINK_TEMPLATE_KEYS["link_template_live"]
 
 
-def dynamic_templates_from_settings(settings: dict[str, str]) -> DynamicMessageTemplates:
+def dynamic_templates_from_settings(
+    settings: dict[str, str],
+) -> DynamicMessageTemplates:
     return DynamicMessageTemplates(
-        push=settings.get("dynamic_template_push", DYNAMIC_TEMPLATE_KEYS["dynamic_template_push"]),
+        push=settings.get(
+            "dynamic_template_push", DYNAMIC_TEMPLATE_KEYS["dynamic_template_push"]
+        ),
         pinned=settings.get(
             "dynamic_template_pinned",
             DYNAMIC_TEMPLATE_KEYS["dynamic_template_pinned"],
@@ -107,13 +117,19 @@ def _resolve_live_end_template(settings: dict[str, str]) -> str:
 
 def live_templates_from_settings(settings: dict[str, str]) -> LiveMessageTemplates:
     return LiveMessageTemplates(
-        start=settings.get("live_template_start", LIVE_TEMPLATE_KEYS["live_template_start"]),
+        start=settings.get(
+            "live_template_start", LIVE_TEMPLATE_KEYS["live_template_start"]
+        ),
         end=_resolve_live_end_template(settings),
     )
 
 
 def link_templates_from_settings(settings: dict[str, str]) -> LinkMessageTemplates:
     return LinkMessageTemplates(
-        video=settings.get("link_template_video", LINK_TEMPLATE_KEYS["link_template_video"]),
-        live=settings.get("link_template_live", LINK_TEMPLATE_KEYS["link_template_live"]),
+        video=settings.get(
+            "link_template_video", LINK_TEMPLATE_KEYS["link_template_video"]
+        ),
+        live=settings.get(
+            "link_template_live", LINK_TEMPLATE_KEYS["link_template_live"]
+        ),
     )

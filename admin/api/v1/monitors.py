@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 
 from admin.deps import AdminUser, RequireSetup
 from admin.schemas.monitors import (
@@ -22,9 +22,6 @@ from admin.services.monitor_bridge import (
     trigger_dynamic_check,
     trigger_live_check,
 )
-from shared.audit.service import write_audit
-from shared.config.service import get_config_service
-from shared.db.enums import AuditAction
 
 router = APIRouter(
     prefix="/monitors",
@@ -54,32 +51,12 @@ async def system_monitor_status(_: AdminUser):
 
 
 @router.post("/dynamic/check", response_model=ManualCheckResponse)
-async def manual_dynamic_check(
-    request: Request, user: AdminUser, uid: Optional[str] = None
-):
+async def manual_dynamic_check(_: AdminUser, uid: Optional[str] = None):
     result = await trigger_dynamic_check(uid)
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.MONITOR_MANUAL_CHECK,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=get_config_service().serialize_details({"type": "dynamic", "uid": uid}),
-    )
     return ManualCheckResponse(**result)
 
 
 @router.post("/live/check", response_model=ManualCheckResponse)
-async def manual_live_check(
-    request: Request, user: AdminUser, room_id: Optional[str] = None
-):
+async def manual_live_check(_: AdminUser, room_id: Optional[str] = None):
     result = await trigger_live_check(room_id)
-    ip = request.client.host if request.client else None
-    await write_audit(
-        AuditAction.MONITOR_MANUAL_CHECK,
-        actor_user_id=user.id,
-        actor_username=user.username,
-        ip_address=ip,
-        details=get_config_service().serialize_details({"type": "live", "room_id": room_id}),
-    )
     return ManualCheckResponse(**result)

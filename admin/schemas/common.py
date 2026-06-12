@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Generic, List, Optional, TypeVar
+from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 
-T = TypeVar("T")
+from admin.auth.password import ensure_password_byte_length
 
-
-class PaginatedResponse(BaseModel, Generic[T]):
-    items: List[T]
-    total: int
-    page: int
-    page_size: int
+Username = Annotated[str, Field(min_length=3, max_length=64)]
+Password = Annotated[
+    str,
+    Field(min_length=8, max_length=128),
+    AfterValidator(ensure_password_byte_length),
+]
 
 
 class MessageResponse(BaseModel):
@@ -27,13 +27,13 @@ class SetupStatusResponse(BaseModel):
 
 
 class SetupRequest(BaseModel):
-    username: str = Field(min_length=3, max_length=64)
-    password: str = Field(min_length=8, max_length=128)
+    username: Username
+    password: Password
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: Username
+    password: Password
 
 
 class TokenResponse(BaseModel):

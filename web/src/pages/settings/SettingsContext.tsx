@@ -2,12 +2,14 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
   type FormEvent,
   type ReactNode,
 } from 'react'
+import { useLoadingOnKeyChange } from '../../hooks/useLoadingOnKeyChange'
+import { useMountAsync } from '../../hooks/useMountAsync'
+import { createRetryHandler } from '../../utils/retryLoad'
 import {
   getConnectionsStatus,
   getSettings,
@@ -45,6 +47,7 @@ interface SettingsContextValue {
   loading: boolean
   error: string
   load: () => Promise<void>
+  retryLoad: () => void
   saving: boolean
   formDisabled: boolean
   handleSubmit: (e: FormEvent) => Promise<void>
@@ -61,7 +64,7 @@ const SettingsContext = createContext<SettingsContextValue | null>(null)
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const { showToast } = useToast()
   const [settings, setSettings] = useState<Settings | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useLoadingOnKeyChange('settings')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -70,22 +73,21 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [bilibili, setBilibili] = useState<BilibiliConnectionStatus | null>(null)
 
   const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
     try {
       const [data, connections] = await Promise.all([getSettings(), getConnectionsStatus()])
       setSettings(data)
       setBilibili(connections.bilibili)
+      setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [setLoading])
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  useMountAsync(load)
+
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
 
   const handleSubmit = useCallback(async (e: FormEvent) => {
     e.preventDefault()
@@ -94,12 +96,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     try {
       const payload: Parameters<typeof patchSettings>[0] = {
         dynamic_monitor_interval: settings.dynamic_monitor_interval,
+        dynamic_monitor_use_stagger: settings.dynamic_monitor_use_stagger,
         dynamic_enable_screenshot: settings.dynamic_enable_screenshot,
         live_monitor_interval: settings.live_monitor_interval,
         live_monitor_include_info: settings.live_monitor_include_info,
         live_monitor_use_websocket: settings.live_monitor_use_websocket,
-        audit_log_retention_days: settings.audit_log_retention_days,
-        event_retention_days: settings.event_retention_days,
       }
       const updated = await patchSettings(payload)
       setSettings(updated)
@@ -146,6 +147,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       loading,
       error,
       load,
+      retryLoad,
       saving,
       formDisabled: !settings,
       handleSubmit,
@@ -162,6 +164,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       loading,
       error,
       load,
+      retryLoad,
       saving,
       handleSubmit,
       testing,

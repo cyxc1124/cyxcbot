@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
+import { useMountAsync } from '../hooks/useMountAsync'
+import { createRetryHandler } from '../utils/retryLoad'
 import {
   getGroupStatusPolicy,
   getPrivateStatusPolicy,
@@ -114,7 +117,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
     show_uptime: true,
     show_memory: true,
   })
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useLoadingOnKeyChange(isGroup ? 'status-group' : 'status-friend')
   const [error, setError] = useState('')
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [savingDisplay, setSavingDisplay] = useState(false)
@@ -126,8 +129,6 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
   const allIds = items.map((item) => item.id)
 
   const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
     try {
       if (isGroup) {
         const data = await getGroupStatusPolicy()
@@ -142,16 +143,17 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
         setEnabledIds(data.enabled_user_ids)
         setDisplay(data.display)
       }
+      setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [isGroup])
+  }, [isGroup, setLoading])
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
+
+  useMountAsync(load)
 
   const applyGroupResponse = (data: Awaited<ReturnType<typeof getGroupStatusPolicy>>) => {
     setGroups(data.groups)
@@ -304,7 +306,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
         )}
       </div>
 
-      {error && <LoadErrorBanner message={error} onRetry={load} />}
+      {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       <div className="card">
         {items.length === 0 ? (

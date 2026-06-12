@@ -3,19 +3,20 @@
 使用 Pillow 生成开播通知卡片
 """
 
-import os
 import asyncio
-from io import BytesIO
-from typing import Optional
+import os
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
+from typing import Optional, Tuple
 
 import aiohttp
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from nonebot.log import logger
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from utils.bilibili_api import RoomInfo, UserInfo
 
+PrefetchImages = Tuple[Optional[Image.Image], Optional[Image.Image]]
 
 # 渲染倍率（2x 高清）
 SCALE = 2
@@ -53,8 +54,18 @@ FONT_CANDIDATES = [
     "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
     "/usr/share/fonts/truetype/noto/NotoSansSC-Regular.otf",
     # 项目内可选
-    str(Path(__file__).parent.parent.parent / "assets" / "fonts" / "NotoSansCJK-Regular.ttf"),
-    str(Path(__file__).parent.parent.parent / "assets" / "fonts" / "NotoSansSC-Regular.otf"),
+    str(
+        Path(__file__).parent.parent.parent
+        / "assets"
+        / "fonts"
+        / "NotoSansCJK-Regular.ttf"
+    ),
+    str(
+        Path(__file__).parent.parent.parent
+        / "assets"
+        / "fonts"
+        / "NotoSansSC-Regular.otf"
+    ),
     # Windows
     "C:/Windows/Fonts/msyh.ttc",
     "C:/Windows/Fonts/simhei.ttf",
@@ -87,7 +98,9 @@ def _round_corner_mask(size: tuple, radius: int) -> Image.Image:
     """创建圆角矩形遮罩"""
     mask = Image.new("L", size, 0)
     draw = ImageDraw.Draw(mask)
-    draw.rounded_rectangle([(0, 0), (size[0] - 1, size[1] - 1)], radius=radius, fill=255)
+    draw.rounded_rectangle(
+        [(0, 0), (size[0] - 1, size[1] - 1)], radius=radius, fill=255
+    )
     return mask
 
 
@@ -110,7 +123,9 @@ def _cover_fit(cover_img: Image.Image, target_w: int) -> Image.Image:
     return cover_img.resize((target_w, new_h), Image.Resampling.LANCZOS)
 
 
-def _make_avatar_cover(avatar_img: Image.Image, target_w: int, target_h: int) -> Image.Image:
+def _make_avatar_cover(
+    avatar_img: Image.Image, target_w: int, target_h: int
+) -> Image.Image:
     """封面缺失时，用头像生成模糊背景 + 居中圆形头像的替代封面"""
     bg = avatar_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
     bg = bg.filter(ImageFilter.GaussianBlur(radius=20))
@@ -123,8 +138,13 @@ def _make_avatar_cover(avatar_img: Image.Image, target_w: int, target_h: int) ->
     return bg
 
 
-def _truncate_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont,
-                   max_width: int, max_lines: int = 2) -> list[str]:
+def _truncate_text(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    max_width: int,
+    max_lines: int = 2,
+) -> list[str]:
     """将文本按宽度换行，超出行数用省略号截断"""
     lines = []
     current_line = ""
@@ -145,13 +165,55 @@ def _truncate_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTyp
     return lines
 
 
+async def prefetch_card_images(
+    user_info: Optional[UserInfo],
+    room_info: Optional[RoomInfo],
+) -> PrefetchImages:
+    """使用缓存的头像/封面 URL 预下载卡片素材，可与 API 确认并行执行。"""
+    face_url = user_info.face if user_info else ""
+    cover_url = room_info.cover if room_info else ""
+    return await asyncio.gather(
+        _download_image(face_url),
+        _download_image(cover_url),
+    )
+
+
+async def _resolve_card_images(
+    user_info: Optional[UserInfo],
+    room_info: Optional[RoomInfo],
+    prefetched_images: Optional[PrefetchImages] = None,
+) -> PrefetchImages:
+    """优先使用预下载素材，缺失项按最新 URL 补拉。"""
+    face_url = user_info.face if user_info else ""
+    cover_url = room_info.cover or "" if room_info else ""
+
+    if prefetched_images is not None:
+        avatar_img, cover_img = prefetched_images
+    else:
+        avatar_img, cover_img = None, None
+
+    avatar_task = _download_image(face_url) if avatar_img is None and face_url else None
+    cover_task = _download_image(cover_url) if cover_img is None and cover_url else None
+
+    if avatar_task and cover_task:
+        avatar_img, cover_img = await asyncio.gather(avatar_task, cover_task)
+    elif avatar_task:
+        avatar_img = await avatar_task
+    elif cover_task:
+        cover_img = await cover_task
+
+    return avatar_img, cover_img
+
+
 async def _download_image(url: str, timeout: int = 10) -> Optional[Image.Image]:
     """异步下载图片，失败返回 None"""
     if not url:
         return None
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
+            async with session.get(
+                url, timeout=aiohttp.ClientTimeout(total=timeout)
+            ) as resp:
                 if resp.status == 200:
                     data = await resp.read()
                     return Image.open(BytesIO(data)).convert("RGBA")
@@ -201,7 +263,15 @@ def _draw_card(
         cover_h = COVER_DEFAULT_HEIGHT
 
     # 计算总高度
-    card_height = CARD_PADDING + HEADER_HEIGHT + title_block_height + cover_h + 12 * S + FOOTER_HEIGHT + CARD_PADDING
+    card_height = (
+        CARD_PADDING
+        + HEADER_HEIGHT
+        + title_block_height
+        + cover_h
+        + 12 * S
+        + FOOTER_HEIGHT
+        + CARD_PADDING
+    )
 
     # 创建画布
     card = Image.new("RGBA", (CARD_WIDTH, card_height), (0, 0, 0, 0))
@@ -211,8 +281,12 @@ def _draw_card(
     bg_source = cover_img or avatar_img
     if bg_source:
         bg_blur = bg_source.resize((CARD_WIDTH, card_height), Image.Resampling.LANCZOS)
-        bg_blur = bg_blur.filter(ImageFilter.GaussianBlur(radius=15 * S))  # 模糊半径：15 轻微 / 30 中等 / 50 强模糊
-        overlay = Image.new("RGBA", (CARD_WIDTH, card_height), (255, 255, 255, 120))  # 白色蒙版透明度：120 透出更多色彩 / 180 偏白 / 220 接近纯白
+        bg_blur = bg_blur.filter(
+            ImageFilter.GaussianBlur(radius=15 * S)
+        )  # 模糊半径：15 轻微 / 30 中等 / 50 强模糊
+        overlay = Image.new(
+            "RGBA", (CARD_WIDTH, card_height), (255, 255, 255, 120)
+        )  # 白色蒙版透明度：120 透出更多色彩 / 180 偏白 / 220 接近纯白
         bg_blur = bg_blur.convert("RGBA")
         bg_blur = Image.alpha_composite(bg_blur, overlay)
         card.paste(bg_blur, (0, 0), mask)
@@ -232,8 +306,11 @@ def _draw_card(
         card.paste(avatar_circle, (avatar_x, avatar_y), avatar_circle)
     else:
         draw.ellipse(
-            [(avatar_x, avatar_y), (avatar_x + AVATAR_SIZE - 1, avatar_y + AVATAR_SIZE - 1)],
-            fill=COLOR_COVER_PLACEHOLDER
+            [
+                (avatar_x, avatar_y),
+                (avatar_x + AVATAR_SIZE - 1, avatar_y + AVATAR_SIZE - 1),
+            ],
+            fill=COLOR_COVER_PLACEHOLDER,
         )
 
     text_x = avatar_x + AVATAR_SIZE + 12 * S
@@ -259,9 +336,7 @@ def _draw_card(
     tag_x = CARD_WIDTH - CARD_PADDING - tag_w
     tag_y = avatar_y + (AVATAR_SIZE - tag_h) // 2
     draw.rounded_rectangle(
-        [(tag_x, tag_y), (tag_x + tag_w, tag_y + tag_h)],
-        radius=tag_h // 2,
-        fill=tag_bg
+        [(tag_x, tag_y), (tag_x + tag_w, tag_y + tag_h)], radius=tag_h // 2, fill=tag_bg
     )
     # 小圆点
     dot_r = 3 * S
@@ -269,7 +344,7 @@ def _draw_card(
     dot_y = tag_y + tag_h // 2
     draw.ellipse(
         [(dot_x - dot_r, dot_y - dot_r), (dot_x + dot_r, dot_y + dot_r)],
-        fill=COLOR_TEXT_WHITE
+        fill=COLOR_TEXT_WHITE,
     )
     tag_text_x = dot_x + dot_r + 4 * S
     tag_text_y = tag_y + (tag_h - (tag_bbox[3] - tag_bbox[1])) // 2 - 1 * S
@@ -294,7 +369,7 @@ def _draw_card(
         draw.rounded_rectangle(
             [(CARD_PADDING, y), (CARD_PADDING + cover_w, y + cover_h)],
             radius=cover_radius,
-            fill=COLOR_COVER_PLACEHOLDER
+            fill=COLOR_COVER_PLACEHOLDER,
         )
     y += cover_h + 12 * S
 
@@ -325,12 +400,14 @@ def _draw_card(
             (CARD_WIDTH - CARD_PADDING - right_w, y),
             footer_right,
             fill=COLOR_TEXT_DARK,
-            font=font_footer
+            font=font_footer,
         )
 
     # 下播卡片叠加暗色蒙版，营造"已结束"的视觉感
     if card_type == "end":
-        dark_overlay = Image.new("RGBA", (CARD_WIDTH, card_height), (0, 0, 0, 60))  # 暗色蒙版：40 微暗 / 60 适中 / 90 较暗
+        dark_overlay = Image.new(
+            "RGBA", (CARD_WIDTH, card_height), (0, 0, 0, 60)
+        )  # 暗色蒙版：40 微暗 / 60 适中 / 90 较暗
         card = Image.alpha_composite(card, dark_overlay)
 
     # 输出 PNG bytes
@@ -343,6 +420,7 @@ async def generate_live_start_card(
     streamer_name: str,
     user_info: Optional[UserInfo],
     room_info: Optional[RoomInfo],
+    prefetched_images: Optional[PrefetchImages] = None,
 ) -> Optional[bytes]:
     """
     生成开播通知卡片图片
@@ -360,12 +438,8 @@ async def generate_live_start_card(
         return None
 
     try:
-        face_url = user_info.face if user_info else ""
-        cover_url = room_info.cover or ""
-
-        avatar_img, cover_img = await asyncio.gather(
-            _download_image(face_url),
-            _download_image(cover_url),
+        avatar_img, cover_img = await _resolve_card_images(
+            user_info, room_info, prefetched_images
         )
 
         area_parts = []
@@ -396,6 +470,7 @@ async def generate_live_start_card(
     except Exception as e:
         logger.error(f"卡片生成失败: {e}")
         import traceback
+
         logger.debug(traceback.format_exc())
         return None
 
@@ -405,6 +480,7 @@ async def generate_live_end_card(
     user_info: Optional[UserInfo],
     room_info: Optional[RoomInfo],
     duration_seconds: int = 0,
+    prefetched_images: Optional[PrefetchImages] = None,
 ) -> Optional[bytes]:
     """
     生成下播通知卡片图片
@@ -423,12 +499,8 @@ async def generate_live_end_card(
         return None
 
     try:
-        face_url = user_info.face if user_info else ""
-        cover_url = room_info.cover or ""
-
-        avatar_img, cover_img = await asyncio.gather(
-            _download_image(face_url),
-            _download_image(cover_url),
+        avatar_img, cover_img = await _resolve_card_images(
+            user_info, room_info, prefetched_images
         )
 
         area_parts = []
@@ -461,5 +533,6 @@ async def generate_live_end_card(
     except Exception as e:
         logger.error(f"下播卡片生成失败: {e}")
         import traceback
+
         logger.debug(traceback.format_exc())
         return None

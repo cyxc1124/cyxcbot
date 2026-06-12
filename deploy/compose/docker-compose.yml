@@ -1,0 +1,27 @@
+services:
+  cyxcbot:
+    image: ghcr.io/cyxc1124/cyxcbot:v2.1.0
+    container_name: cyxcbot
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    volumes:
+      - ./data:/app/data
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8080"
+      COMMAND_START: '["/"]'
+      COMMAND_SEP: '["."]'
+      WEB_HOST: "0.0.0.0"
+      WEB_PORT: "8081"
+      WEB_ADMIN_ENABLED: "true"
+      WEB_SECRET_KEY: change-me-to-a-long-random-string
+      SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:///data/cyxcbot.db
+      LOG_LEVEL: INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8081/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

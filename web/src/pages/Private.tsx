@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { useMountAsync } from '../hooks/useMountAsync'
+import { createRetryHandler } from '../utils/retryLoad'
 import { getPrivateMessagePolicy, updatePrivateMessagePolicy } from '../api/client'
 import type { Friend } from '../api/types'
 import { LinkParserUserPolicyTab } from '../components/LinkParserPolicyTabs'
@@ -58,16 +60,21 @@ export function PrivatePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [trackedTab, setTrackedTab] = useState(tab)
+
+  if (tab !== trackedTab) {
+    setTrackedTab(tab)
+    if (tab === 'message') setLoading(true)
+  }
 
   const load = useCallback(async () => {
     if (tab !== 'message') return
-    setLoading(true)
-    setError('')
     try {
       const data = await getPrivateMessagePolicy()
       setUsers(data.users)
       setRestrict(data.restrict)
       setEnabledIds(data.enabled_user_ids)
+      setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
@@ -75,9 +82,9 @@ export function PrivatePage() {
     }
   }, [tab])
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load])
+
+  useMountAsync(load)
 
   const tabLabels: Record<PrivateTab, string> = {
     message: '好友消息',
@@ -175,7 +182,7 @@ export function PrivatePage() {
 
       {tab === 'message' && (
         <>
-          {error && <LoadErrorBanner message={error} onRetry={load} />}
+          {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
           <div className="card">
             {users.length === 0 ? (

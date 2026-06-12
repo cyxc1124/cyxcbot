@@ -95,7 +95,9 @@ def _ref_from_url(url: str) -> BilibiliRef | None:
     return None
 
 
-def _request_headers(cookie: str | None = None, *, referer: str = "https://www.bilibili.com/") -> dict[str, str]:
+def _request_headers(
+    cookie: str | None = None, *, referer: str = "https://www.bilibili.com/"
+) -> dict[str, str]:
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -192,7 +194,9 @@ async def extract_video_refs(
     max_count: int = 3,
 ) -> list[tuple[str | None, int | None]]:
     """Backward-compatible video-only extraction."""
-    refs = await extract_bilibili_refs(text, session, cookie=cookie, max_count=max_count)
+    refs = await extract_bilibili_refs(
+        text, session, cookie=cookie, max_count=max_count
+    )
     result: list[tuple[str | None, int | None]] = []
     for ref in refs:
         if ref.kind == "video":

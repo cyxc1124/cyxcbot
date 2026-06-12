@@ -10,11 +10,13 @@ from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, PrivateMessageEv
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
+from shared.config.link_parser_policy import (
+    LinkParserScopePolicy,
+    resolve_link_parser_policy,
+)
+from shared.config.service import get_config_service
 from utils.bilibili_api import api_manager as live_api_manager
 from utils.bilibili_api import extract_bilibili_refs, video_api_manager
-
-from shared.config.link_parser_policy import LinkParserScopePolicy, resolve_link_parser_policy
-from shared.config.service import get_config_service
 
 from .config import Config, get_config, reload_config
 from .message_text import collect_message_text
@@ -55,15 +57,21 @@ async def _resolve_reply(
             if ref.kind == "video":
                 if not scope.video_enabled:
                     continue
-                video = await video_api_manager.get_video_detail(bvid=ref.bvid, aid=ref.aid)
+                video = await video_api_manager.get_video_detail(
+                    bvid=ref.bvid, aid=ref.aid
+                )
                 if video:
                     return build_video_link_message(video, config.message_templates)
             elif ref.room_id:
                 if not scope.live_enabled:
                     continue
-                room_info, user_info = await live_api_manager.get_room_and_user_info(ref.room_id)
+                room_info, user_info = await live_api_manager.get_room_and_user_info(
+                    ref.room_id
+                )
                 if room_info:
-                    return build_live_link_message(room_info, user_info, config.message_templates)
+                    return build_live_link_message(
+                        room_info, user_info, config.message_templates
+                    )
         except Exception as exc:
             logger.warning(f"B 站链接解析失败 ref={ref}: {exc}")
 
@@ -71,7 +79,9 @@ async def _resolve_reply(
     return None
 
 
-async def _handle_link_message(bot: Bot, event: GroupMessageEvent | PrivateMessageEvent) -> None:
+async def _handle_link_message(
+    bot: Bot, event: GroupMessageEvent | PrivateMessageEvent
+) -> None:
     config = get_config()
     snap = get_config_service().get_snapshot()
 
@@ -103,7 +113,9 @@ async def _handle_link_message(bot: Bot, event: GroupMessageEvent | PrivateMessa
         logger.debug(f"B 站链接解析：未提取到文本/链接 user={event.user_id}")
         return
 
-    logger.info(f"B 站链接解析：收到消息 user={event.user_id} text={message_text[:120]!r}")
+    logger.info(
+        f"B 站链接解析：收到消息 user={event.user_id} text={message_text[:120]!r}"
+    )
 
     reply = await _resolve_reply(config, message_text, scope)
     if reply is None:

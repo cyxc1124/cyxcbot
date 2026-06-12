@@ -44,5 +44,3 @@ npm run build
 | `/dynamic` | 动态监控（运行状态 + 映射 CRUD） |
 | `/live` | 直播监控（运行状态 + 映射 CRUD） |
 | `/settings` | 系统设置 |
-| `/audit` | 审计日志 |
-| `/events` | 系统事件 |

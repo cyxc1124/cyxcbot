@@ -48,18 +48,24 @@ async def resolve_live_streamer_name(room_id: str) -> str | None:
             if user_info and user_info.name:
                 return user_info.name
     except Exception as exc:
-        logger.warning("Failed to resolve live streamer name for room %s: %s", room_id, exc)
+        logger.warning(
+            "Failed to resolve live streamer name for room %s: %s", room_id, exc
+        )
     return None
 
 
-async def resolve_dynamic_target_name(uid: str, manual_name: str | None = None) -> str | None:
+async def resolve_dynamic_target_name(
+    uid: str, manual_name: str | None = None
+) -> str | None:
     """Prefer manual name; otherwise fetch from Bilibili."""
     if manual_name and manual_name.strip():
         return manual_name.strip()
     return await resolve_up_name(uid)
 
 
-async def resolve_live_target_name(room_id: str, manual_name: str | None = None) -> str | None:
+async def resolve_live_target_name(
+    room_id: str, manual_name: str | None = None
+) -> str | None:
     """Prefer manual name; otherwise fetch streamer nickname."""
     if manual_name and manual_name.strip():
         return manual_name.strip()

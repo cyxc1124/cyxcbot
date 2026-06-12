@@ -3,17 +3,27 @@
 定义动态相关的核心数据结构
 """
 
-from typing import List
 from datetime import datetime
+from typing import List
 
 
 class DynamicItem:
     """动态项数据类"""
 
-    def __init__(self, dynamic_id: int, uid: int, name: str, timestamp: int,
-                 dynamic_type: int, title: str = "", content: str = "",
-                 body_text: str = "", images: List[str] = None,
-                 author_type: str = "", is_pinned: bool = False):
+    def __init__(
+        self,
+        dynamic_id: int,
+        uid: int,
+        name: str,
+        timestamp: int,
+        dynamic_type: int,
+        title: str = "",
+        content: str = "",
+        body_text: str = "",
+        images: List[str] = None,
+        author_type: str = "",
+        is_pinned: bool = False,
+    ):
         self.id = dynamic_id
         self.uid = uid
         self.name = name
@@ -27,7 +37,6 @@ class DynamicItem:
         self.is_pinned = is_pinned  # 是否为置顶动态
         self.url = f"https://t.bilibili.com/{dynamic_id}"
 
-
     def format_beijing_time(self) -> str:
         """格式化北京时间为字符串"""
         # 时间戳已经是北京时间，直接转换
@@ -38,7 +47,7 @@ class DynamicItem:
     def get_type_description(self) -> str:
         """获取动态类型描述"""
         # 如果是转发动态且内容已经包含转发信息，直接使用内容
-        if self.type == 1 and self.content and self.content.startswith('转发了'):
+        if self.type == 1 and self.content and self.content.startswith("转发了"):
             return self.content
 
         type_msg = {
@@ -53,6 +62,6 @@ class DynamicItem:
             256: "发布了新音频",
             512: "发布了新番剧",
             1024: "发布了新影视",
-            2048: "发布了新剧集"
+            2048: "发布了新剧集",
         }
         return type_msg.get(self.type, "发布了新动态")

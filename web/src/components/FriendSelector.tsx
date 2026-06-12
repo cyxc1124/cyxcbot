@@ -23,7 +23,10 @@ export function FriendSelector({
 }: FriendSelectorProps) {
   const [availableQuery, setAvailableQuery] = useState('')
   const [selectedQuery, setSelectedQuery] = useState('')
-  const list = Array.isArray(friends) ? friends : []
+  const list = useMemo(
+    () => (Array.isArray(friends) ? friends : []),
+    [friends],
+  )
 
   const friendMap = useMemo(() => {
     const map = new Map<string, Friend>()

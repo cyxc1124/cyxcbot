@@ -72,7 +72,9 @@ async def get_tv_qrcode() -> dict[str, Any]:
     """Request a TV login QR code. Returns the raw Bilibili API JSON."""
     params = _signed_tv_params()
     timeout = aiohttp.ClientTimeout(total=15)
-    async with aiohttp.ClientSession(timeout=timeout, headers=_DEFAULT_HEADERS) as session:
+    async with aiohttp.ClientSession(
+        timeout=timeout, headers=_DEFAULT_HEADERS
+    ) as session:
         async with session.post(_AUTH_CODE_URL, data=params) as resp:
             payload = await resp.json(content_type=None)
 
@@ -98,7 +100,9 @@ async def poll_tv_qrcode_login(
         raise BilibiliQrcodeError("缺少 auth_code，请重新获取二维码")
 
     timeout = aiohttp.ClientTimeout(total=15)
-    async with aiohttp.ClientSession(timeout=timeout, headers=_DEFAULT_HEADERS) as session:
+    async with aiohttp.ClientSession(
+        timeout=timeout, headers=_DEFAULT_HEADERS
+    ) as session:
         for _ in range(timeout_seconds):
             params = _signed_tv_params(auth_code=auth_code)
             async with session.post(_POLL_URL, data=params) as resp:

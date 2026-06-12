@@ -1,5 +1,6 @@
+from typing import Dict, List
+
 from pydantic import BaseModel, Field
-from typing import List, Dict
 
 from shared.config.message_templates import DynamicMessageTemplates
 
@@ -8,38 +9,33 @@ class Config(BaseModel):
     """UP主动态监控插件配置（从 ConfigService 加载）"""
 
     dynamic_monitor_mapping: Dict[str, List[str]] = Field(
-        default_factory=dict,
-        description="UP主UID-群组ID映射配置"
+        default_factory=dict, description="UP主UID-群组ID映射配置"
     )
 
     dynamic_monitor_user_mapping: Dict[str, List[str]] = Field(
-        default_factory=dict,
-        description="UP主UID-好友QQ号映射配置"
+        default_factory=dict, description="UP主UID-好友QQ号映射配置"
     )
 
     dynamic_at_all: Dict[str, bool] = Field(
-        default_factory=dict,
-        description="UP主UID-是否@全体成员"
+        default_factory=dict, description="UP主UID-是否@全体成员"
     )
 
-    monitor_interval: int = Field(
-        default=30,
-        description="监控间隔时间（秒）"
+    monitor_interval: int = Field(default=30, description="监控间隔时间（秒）")
+
+    use_stagger_poll: bool = Field(
+        default=True, description="是否启用分散检查（关闭则为批量检查）"
     )
 
     enable_screenshot: bool = Field(
-        default=True,
-        description="是否在推送消息中包含动态网页截图"
+        default=True, description="是否在推送消息中包含动态网页截图"
     )
 
     message_templates: DynamicMessageTemplates = Field(
-        default_factory=DynamicMessageTemplates,
-        description="动态推送消息模板"
+        default_factory=DynamicMessageTemplates, description="动态推送消息模板"
     )
 
     bilibili_cookie: str = Field(
-        default="",
-        description="B站用户Cookie，用于提高API请求成功率"
+        default="", description="B站用户Cookie，用于提高API请求成功率"
     )
 
     @classmethod
@@ -52,6 +48,7 @@ class Config(BaseModel):
             dynamic_monitor_user_mapping=snap.dynamic_monitor_user_mapping,
             dynamic_at_all=snap.dynamic_at_all,
             monitor_interval=snap.dynamic_monitor_interval,
+            use_stagger_poll=snap.dynamic_monitor_use_stagger,
             enable_screenshot=snap.dynamic_enable_screenshot,
             message_templates=snap.dynamic_message_templates,
             bilibili_cookie=snap.bilibili_cookie,

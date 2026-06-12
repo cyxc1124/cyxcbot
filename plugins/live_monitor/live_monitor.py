@@ -9,36 +9,37 @@ B站直播监控核心模块
 """
 
 import asyncio
-import aiohttp
-from typing import Dict, Optional
 from datetime import datetime
+from typing import Dict, Optional
+
+import aiohttp
 from nonebot.log import logger
 from nonebot_plugin_apscheduler import scheduler
 from nonebot_plugin_orm import get_session
 
-from .config import Config
-from shared.audit.service import write_audit
 from shared.config.service import get_config_service
-from shared.db.enums import AuditAction
 from shared.db.models import LiveMonitorState
-from .models import LiveRoomState
-from .danmaku_client import DanmakuClient
-from .sender import LiveNotificationSender
-from utils.bilibili_api import LiveStatus, RoomInfo, UserInfo, api_manager
+from shared.monitor.check_cycle import CheckCycleLogger
+from utils.bilibili_api import LiveStatus, api_manager
 
+from .card_generator import PrefetchImages, prefetch_card_images
+from .config import Config
+from .danmaku_client import DanmakuClient
+from .models import LiveRoomState
+from .sender import LiveNotificationSender
 
 # 全局监控实例
-live_monitor_instance: Optional['LiveMonitor'] = None
+live_monitor_instance: Optional["LiveMonitor"] = None
 
 
 class LiveMonitor:
     """B站直播监控核心类
-    
+
     双重监控机制：
     1. WebSocket 弹幕客户端：实时监听开播/关播信号（秒级响应）
     2. API 轮询：定时检查状态（备用，防止 WebSocket 漏消息）
     """
-    
+
     def __init__(self, config: Config):
         self.config = config
         self.is_running = False
@@ -55,22 +56,42 @@ class LiveMonitor:
             include_room_info=config.include_room_info,
             templates=config.message_templates,
         )
-    
+        self._cycle_logger = CheckCycleLogger("直播监控")
+        self.last_check_at: Optional[str] = None
+
+    def _touch_last_check_at(self) -> None:
+        self.last_check_at = datetime.now().isoformat(timespec="seconds")
+
+    def _configured_room_ids(self) -> list[str]:
+        return list(self.config.live_monitor_mapping.keys())
+
+    async def _remove_room(self, room_id: str) -> None:
+        """停止监控并从运行时状态中移除房间。"""
+        client = self._danmaku_clients.pop(room_id, None)
+        if client:
+            try:
+                await client.stop()
+                logger.debug(f"房间 {room_id} WebSocket 监控已停止（配置已移除）")
+            except Exception as e:
+                logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
+        self.room_states.pop(room_id, None)
+        self.initialized_rooms.pop(room_id, None)
+
     async def init_resources(self):
         """初始化资源"""
         # 初始化API管理器
         await api_manager.init(self.config.bilibili_cookie)
-        
+
         # 初始化 WebSocket session
         self._ws_session = aiohttp.ClientSession()
-        
+
         # 初始化房间状态
         for room_id in self.config.live_monitor_mapping.keys():
             if room_id not in self.room_states:
                 self.room_states[room_id] = LiveRoomState(room_id=int(room_id))
             if room_id not in self.initialized_rooms:
                 self.initialized_rooms[room_id] = False
-        
+
         await self._load_persisted_states()
 
         if not self.config.bilibili_cookie:
@@ -87,6 +108,7 @@ class LiveMonitor:
                     state = self.room_states[room_id]
                     if row.previous_status:
                         from utils.bilibili_api import LiveStatus
+
                         try:
                             state.previous_status = LiveStatus[row.previous_status]
                         except KeyError:
@@ -104,16 +126,28 @@ class LiveMonitor:
             if not row:
                 row = LiveMonitorState(room_id=room_id)
                 session.add(row)
-            row.previous_status = state.previous_status.name if state.previous_status else None
+            row.previous_status = (
+                state.previous_status.name if state.previous_status else None
+            )
             row.start_time = state.start_time or None
             row.streamer_name = state.user_info.name if state.user_info else None
 
     async def reload_config(self):
         old_interval = self.config.monitor_interval
         old_ws = self.config.use_websocket
+        old_room_ids = set(self.room_states.keys())
         self.config = Config.from_service()
 
         await api_manager.init(self.config.bilibili_cookie)
+
+        removed_room_ids = old_room_ids - set(self.config.live_monitor_mapping.keys())
+        for room_id in removed_room_ids:
+            await self._remove_room(room_id)
+        if removed_room_ids:
+            logger.info(
+                f"直播监控已移除 {len(removed_room_ids)} 个不再配置的房间: "
+                f"{', '.join(sorted(removed_room_ids))}"
+            )
 
         new_room_ids: list[str] = []
         for room_id in self.config.live_monitor_mapping.keys():
@@ -133,7 +167,10 @@ class LiveMonitor:
                 if self.config.use_websocket
                 else self.config.monitor_interval
             )
-            if old_interval != self.config.monitor_interval or old_ws != self.config.use_websocket:
+            if (
+                old_interval != self.config.monitor_interval
+                or old_ws != self.config.use_websocket
+            ):
                 scheduler.add_job(
                     self._check_all_rooms,
                     "interval",
@@ -171,7 +208,7 @@ class LiveMonitor:
     async def start_monitoring(self):
         """启动监控"""
         self.is_running = True
-        
+
         # 初始化资源
         await self.init_resources()
 
@@ -182,21 +219,23 @@ class LiveMonitor:
         # 首次检查，初始化各房间状态
         logger.info("正在初始化各直播间状态...")
         await self._init_room_states()
-        
+
         # 根据配置决定监控方式
         if self.config.use_websocket:
             # 启动 WebSocket 弹幕客户端（主要监控方式）
             logger.info("正在启动 WebSocket 实时监控...")
             await self._start_danmaku_clients()
-            
+
             # API 轮询作为备用，间隔较长
             poll_interval = max(300, self.config.monitor_interval * 5)
-            logger.info(f"直播监控已启动：WebSocket 实时监控 + API 轮询备用（间隔 {poll_interval}秒）")
+            logger.info(
+                f"直播监控已启动：WebSocket 实时监控 + API 轮询备用（间隔 {poll_interval}秒）"
+            )
         else:
             # 仅使用 API 轮询
             poll_interval = self.config.monitor_interval
             logger.info(f"直播监控已启动：仅 API 轮询模式（间隔 {poll_interval}秒）")
-        
+
         # 使用APScheduler添加定时任务
         scheduler.add_job(
             self._check_all_rooms,
@@ -205,59 +244,59 @@ class LiveMonitor:
             id="live_monitor_check",
             replace_existing=True,
             max_instances=1,
-            misfire_grace_time=60
+            misfire_grace_time=60,
         )
-    
+
     async def stop_monitoring(self):
         """停止监控"""
         logger.info("正在停止直播监控...")
         self.is_running = False
-        
+
         # 停止所有 WebSocket 客户端
         await self._stop_danmaku_clients()
-        
+
         # 关闭 WebSocket session
         if self._ws_session and not self._ws_session.closed:
             await self._ws_session.close()
             self._ws_session = None
-        
+
         # 移除定时任务
         try:
             scheduler.remove_job("live_monitor_check")
             logger.info("直播监控定时任务已移除")
         except Exception as e:
             logger.warning(f"移除定时任务时出错: {e}")
-        
+
         # 关闭API管理器
         await api_manager.close()
-        
+
         logger.info("直播监控已完全停止")
-    
+
     async def _start_danmaku_clients(self):
         """启动所有房间的弹幕客户端"""
-        for room_id in self.room_states.keys():
+        for room_id in self._configured_room_ids():
             try:
                 await self._start_single_danmaku_client(room_id)
             except Exception as e:
                 logger.error(f"房间 {room_id} 弹幕客户端启动失败: {e}")
             # 避免同时连接过多
             await asyncio.sleep(1)
-    
+
     async def _start_single_danmaku_client(self, room_id: str):
         """启动单个房间的弹幕客户端"""
         if room_id in self._danmaku_clients:
             return
-        
+
         # 创建回调函数
         async def on_live():
             await self._handle_live_signal(room_id)
-        
+
         async def on_preparing(round_status: Optional[int]):
             await self._handle_preparing_signal(room_id, round_status)
-        
+
         async def on_room_change(data: dict):
             await self._handle_room_change(room_id, data)
-        
+
         # 创建弹幕客户端
         client = DanmakuClient(
             session=self._ws_session,
@@ -267,11 +306,11 @@ class LiveMonitor:
             on_preparing=on_preparing,
             on_room_change=on_room_change,
         )
-        
+
         self._danmaku_clients[room_id] = client
         await client.start()
-        logger.info(f"房间 {room_id} WebSocket 监控已启动")
-    
+        logger.debug(f"房间 {room_id} WebSocket 监控已启动")
+
     async def _stop_danmaku_clients(self):
         """停止所有弹幕客户端"""
         for room_id, client in self._danmaku_clients.items():
@@ -282,87 +321,120 @@ class LiveMonitor:
                 logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
         self._danmaku_clients.clear()
         logger.info("所有 WebSocket 客户端已停止")
-    
+
+    async def _fetch_room_info_with_prefetch(
+        self, room_id: str, status: str, state: LiveRoomState
+    ):
+        """并行拉取最新房间信息，并在需要卡片时预下载素材。"""
+        prefetch_task = None
+        if self._sender.template_uses_card(status):
+            prefetch_task = asyncio.create_task(
+                prefetch_card_images(state.user_info, state.room_info)
+            )
+
+        room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
+
+        prefetched = None
+        if prefetch_task:
+            try:
+                prefetched = await prefetch_task
+            except Exception as e:
+                logger.warning(f"房间 {room_id} 卡片素材预下载失败: {e}")
+
+        return room_info, user_info, prefetched
+
     async def _handle_live_signal(self, room_id: str):
         """处理开播信号（来自 WebSocket）"""
-        logger.info(f"房间 {room_id} 收到开播信号")
+        logger.debug(f"房间 {room_id} 收到开播信号")
 
         if not self.initialized_rooms.get(room_id, False):
             await self._initialize_room(room_id)
             return
-        
+
         state = self.room_states.get(room_id)
         if not state:
             return
-        
-        # 获取最新房间信息
-        room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
-        
+
+        # 获取最新房间信息（卡片素材与 API 并行预取）
+        room_info, user_info, prefetched = await self._fetch_room_info_with_prefetch(
+            room_id, "start", state
+        )
+
         if not room_info:
-            logger.warning(f"房间 {room_id} 获取信息失败")
+            logger.debug(f"房间 {room_id} 获取信息失败")
             return
-        
+
         # 检查状态变化
         old_status = state.previous_status
-        
+
         if old_status != LiveStatus.LIVE and room_info.live_status == LiveStatus.LIVE:
             # 确认是开播
             state.previous_status = LiveStatus.LIVE
             state.room_info = room_info
             state.user_info = user_info
-            state.start_time = room_info.live_start_time or int(datetime.now().timestamp())
-            
+            state.start_time = room_info.live_start_time or int(
+                datetime.now().timestamp()
+            )
+
             streamer_name = user_info.name if user_info else f"房间{room_id}"
             logger.info(f"确认开播: {streamer_name} (房间 {room_id})")
-            await self._send_live_notification(room_id, "start", state)
+            await self._send_live_notification(
+                room_id, "start", state, prefetched_images=prefetched
+            )
         else:
             # 更新状态但不发送通知（可能是重复信号或已经在直播中）
             state.room_info = room_info
             if user_info:
                 state.user_info = user_info
-    
+
     async def _handle_preparing_signal(self, room_id: str, round_status: Optional[int]):
         """处理关播信号（来自 WebSocket）"""
-        logger.info(f"房间 {room_id} 收到关播信号 (round={round_status})")
+        logger.debug(f"房间 {room_id} 收到关播信号 (round={round_status})")
 
         if not self.initialized_rooms.get(room_id, False):
             await self._initialize_room(room_id)
             return
-        
+
         state = self.room_states.get(room_id)
         if not state:
             return
-        
-        # 获取最新房间信息
-        room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
-        
+
+        # 获取最新房间信息（卡片素材与 API 并行预取）
+        room_info, user_info, prefetched = await self._fetch_room_info_with_prefetch(
+            room_id, "end", state
+        )
+
         old_status = state.previous_status
-        
+
         # 只有之前是直播状态才发送关播通知
         if old_status == LiveStatus.LIVE:
             # 判断是关播还是轮播
             new_status = LiveStatus.ROUND if round_status == 1 else LiveStatus.PREPARING
-            
+
             state.previous_status = new_status
             if room_info:
                 state.room_info = room_info
             if user_info:
                 state.user_info = user_info
-            
-            streamer_name = state.user_info.name if state.user_info else f"房间{room_id}"
+
+            streamer_name = (
+                state.user_info.name if state.user_info else f"房间{room_id}"
+            )
             logger.info(f"确认关播: {streamer_name} (房间 {room_id})")
-            await self._send_live_notification(room_id, "end", state)
-    
+            await self._send_live_notification(
+                room_id, "end", state, prefetched_images=prefetched
+            )
+
     async def _handle_room_change(self, room_id: str, data: dict):
         """处理房间信息变更"""
         state = self.room_states.get(room_id)
         if not state or not state.room_info:
             return
-        
+
         # 更新标题等信息
-        if 'title' in data:
+        if "title" in data:
             logger.debug(f"房间 {room_id} 标题变更: {data['title']}")
-    
+
     async def _initialize_room(self, room_id: str) -> bool:
         """记录房间当前直播状态作为基准，不触发推送"""
         state = self.room_states.get(room_id)
@@ -370,7 +442,9 @@ class LiveMonitor:
             return False
 
         try:
-            room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
+            room_info, user_info = await api_manager.get_room_and_user_info(
+                int(room_id)
+            )
 
             if room_info:
                 state.room_info = room_info
@@ -378,14 +452,18 @@ class LiveMonitor:
                 state.previous_status = room_info.live_status
 
                 if room_info.is_living():
-                    state.start_time = room_info.live_start_time or int(datetime.now().timestamp())
+                    state.start_time = room_info.live_start_time or int(
+                        datetime.now().timestamp()
+                    )
                     streamer_name = user_info.name if user_info else f"房间{room_id}"
                     logger.info(
                         f"房间 {room_id} ({streamer_name}) 首次基准：当前正在直播，不推送"
                     )
                 else:
                     streamer_name = user_info.name if user_info else f"房间{room_id}"
-                    logger.info(f"房间 {room_id} ({streamer_name}) 首次基准：当前未开播")
+                    logger.info(
+                        f"房间 {room_id} ({streamer_name}) 首次基准：当前未开播"
+                    )
 
                 self.initialized_rooms[room_id] = True
                 await self._persist_state(room_id)
@@ -402,36 +480,28 @@ class LiveMonitor:
         for room_id in self.room_states.keys():
             await self._initialize_room(room_id)
             await asyncio.sleep(0.5)
-    
+
     async def _check_all_rooms(self):
         """检查所有房间的直播状态"""
         if not self.is_running:
             logger.debug("监控已停止，跳过本次检查")
             return
 
-        room_list = list(self.room_states.keys())
-        total = len(room_list)
-        failures: list[str] = []
-
-        for room_id in room_list:
+        for room_id in self._configured_room_ids():
             try:
                 ok = await self._check_room_status(room_id)
                 if ok is False:
-                    failures.append(room_id)
+                    self._cycle_logger.record_failure(room_id)
+                else:
+                    self._cycle_logger.record_success()
             except Exception as e:
-                failures.append(room_id)
-                logger.error(f"检查房间 {room_id} 状态失败: {e}")
+                self._cycle_logger.record_error(room_id, e)
 
             # 避免请求过快
             await asyncio.sleep(0.3)
 
-        if failures:
-            logger.warning(
-                f"直播监控本轮检查完成: {total} 个房间, "
-                f"{len(failures)} 个失败 ({', '.join(failures)})"
-            )
-        else:
-            logger.info(f"直播监控本轮检查完成: {total} 个房间")
+        self._cycle_logger.emit_summary()
+        self._touch_last_check_at()
 
     async def _check_room_status(self, room_id: str) -> bool:
         """检查单个房间的直播状态，拉取失败返回 False。"""
@@ -443,31 +513,65 @@ class LiveMonitor:
         if not state:
             return True
 
-        # 获取最新的房间信息
+        need_start_card = self._sender.template_uses_card("start")
+        need_end_card = self._sender.template_uses_card("end")
+        prefetch_task = None
+        if need_start_card or need_end_card:
+            prefetch_task = asyncio.create_task(
+                prefetch_card_images(state.user_info, state.room_info)
+            )
+
         room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
 
+        prefetched = None
+        if prefetch_task:
+            try:
+                prefetched = await prefetch_task
+            except Exception as e:
+                logger.warning(f"房间 {room_id} 卡片素材预下载失败: {e}")
+
         if not room_info:
-            logger.warning(f"无法获取房间 {room_id} 的最新状态")
+            logger.debug(f"无法获取房间 {room_id} 的最新状态")
             return False
-        
+
         # 更新状态并检测变化
         is_live_began, is_live_ended = state.update_status(room_info, user_info)
-        
+
         # 处理开播事件
         if is_live_began:
-            streamer_name = state.user_info.name if state.user_info else f"房间{room_id}"
+            streamer_name = (
+                state.user_info.name if state.user_info else f"房间{room_id}"
+            )
             logger.info(f"检测到开播: {streamer_name} (房间 {room_id})")
-            await self._send_live_notification(room_id, "start", state)
-        
+            await self._send_live_notification(
+                room_id,
+                "start",
+                state,
+                prefetched_images=prefetched if need_start_card else None,
+            )
+
         # 处理关播事件
         if is_live_ended:
-            streamer_name = state.user_info.name if state.user_info else f"房间{room_id}"
+            streamer_name = (
+                state.user_info.name if state.user_info else f"房间{room_id}"
+            )
             logger.info(f"检测到关播: {streamer_name} (房间 {room_id})")
-            await self._send_live_notification(room_id, "end", state)
+            await self._send_live_notification(
+                room_id,
+                "end",
+                state,
+                prefetched_images=prefetched if need_end_card else None,
+            )
 
         return True
-    
-    async def _send_live_notification(self, room_id: str, status: str, state: LiveRoomState):
+
+    async def _send_live_notification(
+        self,
+        room_id: str,
+        status: str,
+        state: LiveRoomState,
+        prefetched_images: Optional[PrefetchImages] = None,
+    ):
         """发送直播通知"""
         # 获取目标群组
         target_groups = self.config.live_monitor_mapping.get(room_id, [])
@@ -475,13 +579,13 @@ class LiveMonitor:
         if not target_groups and not target_users:
             logger.warning(f"房间 {room_id} 没有配置推送目标")
             return
-        
+
         # 获取主播名称
         streamer_name = state.user_info.name if state.user_info else f"房间{room_id}"
-        
+
         # 计算直播时长（仅关播时使用）
         duration_seconds = state.get_duration_seconds() if status == "end" else 0
-        
+
         # 使用发送器发送通知
         await self._sender.send_notification(
             status=status,
@@ -492,28 +596,15 @@ class LiveMonitor:
             user_info=state.user_info,
             duration_seconds=duration_seconds,
             at_all_enabled=self.config.live_at_all.get(room_id, True),
+            prefetched_images=prefetched_images,
         )
 
-        try:
-            await write_audit(
-                AuditAction.LIVE_PUSH,
-                details=get_config_service().serialize_details({
-                    "room_id": room_id,
-                    "status": status,
-                    "streamer": streamer_name,
-                    "groups": target_groups,
-                    "users": target_users,
-                }),
-            )
-        except Exception as exc:
-            logger.warning(f"写入直播推送审计日志失败: {exc}")
-
-        await self._persist_state(room_id)
+        asyncio.create_task(self._persist_state(room_id))
 
     async def check_room_now(self, room_id: str) -> Optional[Dict]:
         """立即检查指定房间的状态（用于手动触发）"""
         room_info, user_info = await api_manager.get_room_and_user_info(int(room_id))
-        
+
         if room_info:
             return {
                 "room_id": room_info.room_id,
@@ -531,11 +622,11 @@ class LiveMonitor:
 async def start_live_monitor():
     """启动直播监控"""
     global live_monitor_instance
-    
+
     if live_monitor_instance is not None:
         logger.warning("直播监控已在运行中")
         return
-    
+
     config = Config.from_service()
 
     # 检查是否有配置的房间
@@ -551,11 +642,11 @@ async def start_live_monitor():
         f"{group_count} 个群推送目标, {user_count} 个好友推送目标, "
         f"模式 {mode}, 间隔 {config.monitor_interval}秒"
     )
-    
+
     try:
         # 创建监控实例
         live_monitor_instance = LiveMonitor(config)
-        
+
         # 启动监控
         await live_monitor_instance.start_monitoring()
 
@@ -566,7 +657,7 @@ async def start_live_monitor():
         get_config_service().register_reload_callback(_on_config_reload)
 
         logger.info("B站直播监控已启动")
-        
+
     except Exception as e:
         logger.error(f"启动直播监控失败: {e}")
         live_monitor_instance = None
@@ -575,17 +666,17 @@ async def start_live_monitor():
 async def stop_live_monitor():
     """停止直播监控"""
     global live_monitor_instance
-    
+
     if not live_monitor_instance:
         return
-    
+
     logger.info("正在停止直播监控...")
-    
+
     try:
         await live_monitor_instance.stop_monitoring()
         live_monitor_instance = None
         logger.info("直播监控已完全停止")
-        
+
     except Exception as e:
         logger.error(f"停止直播监控时出错: {e}")
         live_monitor_instance = None

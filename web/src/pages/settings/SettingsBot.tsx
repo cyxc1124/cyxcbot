@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { patchSettings } from '../../api/client'
 import { useToast } from '../../contexts/ToastContext'
 import { formatApiError } from '../../utils/apiError'
@@ -31,13 +31,15 @@ export function SettingsBotPage() {
   const [saving, setSaving] = useState(false)
   const [superuserText, setSuperuserText] = useState('')
   const [statusCheckText, setStatusCheckText] = useState('')
+  const [syncedSettings, setSyncedSettings] = useState(settings)
 
-  useEffect(() => {
+  if (settings !== syncedSettings) {
+    setSyncedSettings(settings)
     if (settings) {
       setSuperuserText(formatQqInput(settings.nonebot_superusers))
       setStatusCheckText(formatQqInput(settings.status_check_allowed_qq))
     }
-  }, [settings])
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
