@@ -34,6 +34,9 @@ class User(Model):
     )
 
 
+SETUP_COMPLETED_KEY = "__setup_completed__"
+
+
 class SystemSetting(Model):
     """Key-value system settings stored in DB."""
 
