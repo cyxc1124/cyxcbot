@@ -52,6 +52,12 @@ class DynamicMonitor:
     def _uid_list(self) -> List[str]:
         return list(self.config.dynamic_monitor_mapping.keys())
 
+    def _remove_uid(self, uid: str) -> None:
+        """从运行时状态中移除不再配置的 UP 主。"""
+        self.last_dynamic_ids.pop(uid, None)
+        self.initialized_uids.pop(uid, None)
+        self.pinned_dynamic_ids.pop(uid, None)
+
     def _schedule_poll_job(self) -> None:
         uid_list = self._uid_list()
         if not uid_list:
@@ -151,6 +157,15 @@ class DynamicMonitor:
         old_uids = set(self.config.dynamic_monitor_mapping.keys())
         self.config = Config.from_service()
         new_uids_set = set(self.config.dynamic_monitor_mapping.keys())
+
+        removed_uids = old_uids - new_uids_set
+        for uid in removed_uids:
+            self._remove_uid(uid)
+        if removed_uids:
+            logger.info(
+                f"动态监控已移除 {len(removed_uids)} 个不再配置的 UP 主: "
+                f"{', '.join(sorted(removed_uids))}"
+            )
 
         if self.fetcher:
             self.fetcher.cookie = self.config.bilibili_cookie
