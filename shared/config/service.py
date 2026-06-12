@@ -246,7 +246,13 @@ class ConfigService:
         stmt = delete(DynamicMonitorState)
         if active_uids:
             stmt = stmt.where(DynamicMonitorState.uid.not_in(active_uids))
-        await session.execute(stmt)
+        result = await session.execute(stmt)
+        deleted = result.rowcount or 0
+        if deleted:
+            logger.info(
+                f"已清除 {deleted} 条动态监控持久化状态"
+                f"（当前启用目标: {len(active_uids)} 个）"
+            )
 
     async def _load_dynamic_mapping(self, session) -> dict[str, list[str]]:
         stmt = (

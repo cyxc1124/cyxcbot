@@ -118,3 +118,82 @@ async def test_config_load_prunes_disabled_dynamic_monitor_state(
     assert active is not None
     assert active.last_dynamic_id == 100
     assert removed is None
+
+
+@pytest.mark.asyncio
+async def test_config_load_prunes_orphaned_dynamic_monitor_state(
+    db_context: tuple[
+        type,
+        async_sessionmaker[AsyncSession],
+        type,
+        type,
+    ],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """State for a deleted target (no DynamicTarget row) should be removed."""
+    ConfigService, factory, DynamicMonitorState, DynamicTarget = db_context
+
+    async with factory() as session:
+        async with session.begin():
+            session.add(DynamicTarget(uid="111", enabled=True))
+            session.add(
+                DynamicMonitorState(uid="111", last_dynamic_id=100, initialized=True)
+            )
+            session.add(
+                DynamicMonitorState(uid="999", last_dynamic_id=900, initialized=True)
+            )
+
+    monkeypatch.setattr(
+        "shared.config.service.get_session",
+        lambda: factory(),
+    )
+
+    service = ConfigService()
+    await service.load()
+
+    async with factory() as session:
+        active = await session.get(DynamicMonitorState, "111")
+        orphaned = await session.get(DynamicMonitorState, "999")
+
+    assert active is not None
+    assert orphaned is None
+
+
+@pytest.mark.asyncio
+async def test_config_load_prunes_all_states_when_no_enabled_targets(
+    db_context: tuple[
+        type,
+        async_sessionmaker[AsyncSession],
+        type,
+        type,
+    ],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When every target is disabled, all persisted states should be cleared."""
+    ConfigService, factory, DynamicMonitorState, DynamicTarget = db_context
+
+    async with factory() as session:
+        async with session.begin():
+            session.add(DynamicTarget(uid="111", enabled=False))
+            session.add(DynamicTarget(uid="222", enabled=False))
+            session.add(
+                DynamicMonitorState(uid="111", last_dynamic_id=100, initialized=True)
+            )
+            session.add(
+                DynamicMonitorState(uid="222", last_dynamic_id=200, initialized=True)
+            )
+
+    monkeypatch.setattr(
+        "shared.config.service.get_session",
+        lambda: factory(),
+    )
+
+    service = ConfigService()
+    await service.load()
+
+    async with factory() as session:
+        state_111 = await session.get(DynamicMonitorState, "111")
+        state_222 = await session.get(DynamicMonitorState, "222")
+
+    assert state_111 is None
+    assert state_222 is None
