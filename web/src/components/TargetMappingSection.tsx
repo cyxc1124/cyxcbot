@@ -543,7 +543,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
         <p className="py-12 text-center text-sm text-muted-foreground">暂无订阅，点击上方按钮添加</p>
       ) : (
         <div
-          className={`flex min-h-[28rem] overflow-hidden rounded-lg border border-border ${
+          className={`flex min-h-112 overflow-hidden rounded-lg border border-border ${
             showSplit ? 'divide-x divide-border' : ''
           }`}
         >
@@ -553,7 +553,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
               listHiddenOnMobile ? 'hidden lg:block' : ''
             } ${showSplit ? 'w-full lg:w-72' : 'w-full'}`}
           >
-            <div className="flex h-full max-h-[32rem] flex-col lg:max-h-[36rem]">
+            <div className="flex h-full max-h-128 flex-col lg:max-h-144">
               <div className="border-b border-border px-3 py-2.5 border-border">
                 <p className="text-xs font-medium text-muted-foreground">
                   {targetLabel}列表
@@ -611,7 +611,7 @@ export function TargetMappingSection({ type }: TargetMappingSectionProps) {
               ) : selectedTarget ? (
                 renderDetail(selectedTarget)
               ) : (
-                <div className="flex h-full min-h-[20rem] items-center justify-center text-sm text-muted-foreground">
+                <div className="flex h-full min-h-80 items-center justify-center text-sm text-muted-foreground">
                   请从左侧选择一个{targetLabel}
                 </div>
               )}

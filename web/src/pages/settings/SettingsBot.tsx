@@ -89,7 +89,7 @@ export function SettingsBotPage() {
           </label>
           <textarea
             id="nonebot_superusers"
-            className="input min-h-[8rem] font-mono text-sm"
+            className="input min-h-32 font-mono text-sm"
             placeholder={'每行一个 QQ 号，例如：\n120674547'}
             value={superuserText}
             disabled={formDisabled || saving}
@@ -115,7 +115,7 @@ export function SettingsBotPage() {
           </label>
           <textarea
             id="status_check_allowed_qq"
-            className="input min-h-[8rem] font-mono text-sm"
+            className="input min-h-32 font-mono text-sm"
             placeholder={'每行一个 QQ 号'}
             value={statusCheckText}
             disabled={formDisabled || saving}

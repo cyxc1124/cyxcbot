@@ -48,7 +48,7 @@ export function ConfirmDialog({
       role="presentation"
       onClick={loading ? undefined : onCancel}
     >
-      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-background/80 backdrop-blur-xs" />
       <div
         role="dialog"
         aria-modal="true"

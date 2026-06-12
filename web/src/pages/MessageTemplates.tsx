@@ -151,7 +151,7 @@ function TemplateDetailPanel({
               <textarea
                 id={`template-${field.key}`}
                 ref={textareaRef}
-                className="input mt-1 min-h-[8rem] resize-y font-mono text-sm"
+                className="input mt-1 min-h-32 resize-y font-mono text-sm"
                 rows={6}
                 maxLength={500}
                 value={value}

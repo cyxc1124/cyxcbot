@@ -104,7 +104,7 @@ export function BilibiliQrLogin({ onSuccess, onError }: BilibiliQrLoginProps) {
 
       {url && phase === 'waiting' && (
         <div className="flex justify-center py-2">
-          <div className="rounded-lg bg-white p-4 shadow-sm">
+          <div className="rounded-lg bg-white p-4 shadow-xs">
             <QRCodeSVG value={url} size={200} />
           </div>
         </div>

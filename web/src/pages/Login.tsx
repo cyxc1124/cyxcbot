@@ -26,7 +26,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-muted to-secondary p-4 dark:from-background dark:to-card">
+    <div className="flex min-h-screen items-center justify-center bg-linear-to-br from-muted to-secondary p-4 dark:from-background dark:to-card">
       <div className="card w-full max-w-md">
         <div className="mb-8 text-center">
           <h1 className="text-2xl font-bold text-foreground">
