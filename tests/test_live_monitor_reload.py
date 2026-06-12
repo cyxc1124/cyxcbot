@@ -526,6 +526,41 @@ async def test_start_single_danmaku_client_can_retry_after_start_failure(
 
 
 @pytest.mark.asyncio
+async def test_reload_config_starts_websocket_for_rooms_without_active_client(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+    monitor.config.bilibili_cookie = None
+    assert "111" not in monitor._danmaku_clients
+
+    updated_config = Config(
+        live_monitor_mapping={"111": ["group1"]},
+        use_websocket=True,
+        bilibili_cookie="DedeUserID=123; buvid3=abc",
+    )
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.Config.from_service",
+            return_value=updated_config,
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.init",
+            new_callable=AsyncMock,
+        ),
+        patch.object(
+            monitor,
+            "_restart_single_danmaku_client",
+            new_callable=AsyncMock,
+        ) as restart_client,
+    ):
+        await monitor.reload_config()
+
+    restart_client.assert_awaited_once_with("111")
+
+
+@pytest.mark.asyncio
 async def test_reload_config_restarts_websocket_clients_on_logout(
     live_monitor_modules: tuple[Any, Any, Any],
 ) -> None:

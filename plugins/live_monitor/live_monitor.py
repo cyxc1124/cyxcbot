@@ -196,7 +196,7 @@ class LiveMonitor:
                     existing_room_ids = [
                         room_id
                         for room_id in self._configured_room_ids()
-                        if room_id in self._danmaku_clients
+                        if room_id not in new_room_ids
                     ]
                     for room_id in existing_room_ids:
                         try:
