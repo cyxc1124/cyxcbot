@@ -136,6 +136,7 @@ class LiveMonitor:
         old_interval = self.config.monitor_interval
         old_ws = self.config.use_websocket
         old_room_ids = set(self.room_states.keys())
+        old_cookie = self.config.bilibili_cookie
         self.config = Config.from_service()
 
         await api_manager.init(self.config.bilibili_cookie)
@@ -190,6 +191,20 @@ class LiveMonitor:
             elif self.config.use_websocket:
                 for room_id in new_room_ids:
                     await self._start_single_danmaku_client(room_id)
+
+                if old_cookie != self.config.bilibili_cookie:
+                    existing_room_ids = [
+                        room_id
+                        for room_id in self._configured_room_ids()
+                        if room_id in self._danmaku_clients
+                    ]
+                    for room_id in existing_room_ids:
+                        await self._restart_single_danmaku_client(room_id)
+                    if existing_room_ids:
+                        logger.info(
+                            f"直播监控 Cookie 已变更，已重建 "
+                            f"{len(existing_room_ids)} 个 WebSocket 客户端"
+                        )
 
         self._sender.include_room_info = self.config.include_room_info
         self._sender.templates = self.config.message_templates
@@ -281,6 +296,17 @@ class LiveMonitor:
                 logger.error(f"房间 {room_id} 弹幕客户端启动失败: {e}")
             # 避免同时连接过多
             await asyncio.sleep(1)
+
+    async def _restart_single_danmaku_client(self, room_id: str) -> None:
+        """停止并重建单个房间的弹幕客户端（凭据变更等场景）。"""
+        client = self._danmaku_clients.pop(room_id, None)
+        if client:
+            try:
+                await client.stop()
+                logger.debug(f"房间 {room_id} WebSocket 监控已停止（凭据变更）")
+            except Exception as e:
+                logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
+        await self._start_single_danmaku_client(room_id)
 
     async def _start_single_danmaku_client(self, room_id: str):
         """启动单个房间的弹幕客户端"""

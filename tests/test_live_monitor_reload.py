@@ -180,6 +180,124 @@ async def test_check_all_rooms_only_polls_configured_targets(
     assert checked == ["222"]
 
 
+@pytest.mark.asyncio
+async def test_reload_config_restarts_websocket_clients_when_cookie_changes(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111", "222"])
+    monitor.config.bilibili_cookie = None
+    old_client_111 = AsyncMock()
+    old_client_222 = AsyncMock()
+    monitor._danmaku_clients["111"] = old_client_111
+    monitor._danmaku_clients["222"] = old_client_222
+
+    updated_config = Config(
+        live_monitor_mapping={"111": ["group1"], "222": ["group1"]},
+        use_websocket=True,
+        bilibili_cookie="DedeUserID=123; buvid3=abc",
+    )
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.Config.from_service",
+            return_value=updated_config,
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.init",
+            new_callable=AsyncMock,
+        ),
+        patch.object(
+            monitor,
+            "_start_single_danmaku_client",
+            new_callable=AsyncMock,
+        ) as start_client,
+    ):
+        await monitor.reload_config()
+
+    old_client_111.stop.assert_awaited_once()
+    old_client_222.stop.assert_awaited_once()
+    assert start_client.await_count == 2
+    start_client.assert_any_await("111")
+    start_client.assert_any_await("222")
+
+
+@pytest.mark.asyncio
+async def test_reload_config_keeps_websocket_clients_when_cookie_unchanged(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+    cookie = "DedeUserID=123; buvid3=abc"
+    monitor.config.bilibili_cookie = cookie
+    existing_client = AsyncMock()
+    monitor._danmaku_clients["111"] = existing_client
+
+    unchanged_config = Config(
+        live_monitor_mapping={"111": ["group1"]},
+        use_websocket=True,
+        bilibili_cookie=cookie,
+    )
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.Config.from_service",
+            return_value=unchanged_config,
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.init",
+            new_callable=AsyncMock,
+        ),
+        patch.object(
+            monitor,
+            "_restart_single_danmaku_client",
+            new_callable=AsyncMock,
+        ) as restart_client,
+    ):
+        await monitor.reload_config()
+
+    existing_client.stop.assert_not_awaited()
+    restart_client.assert_not_awaited()
+    assert monitor._danmaku_clients["111"] is existing_client
+
+
+@pytest.mark.asyncio
+async def test_reload_config_restarts_websocket_clients_on_logout(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+    monitor.config.bilibili_cookie = "DedeUserID=123; buvid3=abc"
+    old_client = AsyncMock()
+    monitor._danmaku_clients["111"] = old_client
+
+    logged_out_config = Config(
+        live_monitor_mapping={"111": ["group1"]},
+        use_websocket=True,
+        bilibili_cookie=None,
+    )
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.Config.from_service",
+            return_value=logged_out_config,
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.init",
+            new_callable=AsyncMock,
+        ),
+        patch.object(
+            monitor,
+            "_start_single_danmaku_client",
+            new_callable=AsyncMock,
+        ) as start_client,
+    ):
+        await monitor.reload_config()
+
+    old_client.stop.assert_awaited_once()
+    start_client.assert_awaited_once_with("111")
+
+
 def test_plugins_package_available_after_live_monitor_tests() -> None:
     import importlib
 
