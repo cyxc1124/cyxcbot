@@ -23,7 +23,7 @@ function SettingToggleRow({
   return (
     <div className="flex items-center gap-4 py-2">
       <span className="min-w-0 flex-1 text-sm text-foreground">{label}</span>
-      <div className="flex w-[5.75rem] shrink-0 items-center justify-end gap-2">
+      <div className="flex w-23 shrink-0 items-center justify-end gap-2">
         <span
           className={`w-10 shrink-0 text-right text-xs ${
             checked ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'

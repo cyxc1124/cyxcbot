@@ -169,7 +169,7 @@ export function Layout() {
           navCollapsed ? 'lg:pl-12' : 'lg:pl-64'
         }`}
       >
-        <header className="sticky top-0 z-30 flex h-16 items-center border-b border-border bg-background/80 px-4 backdrop-blur lg:px-8">
+        <header className="sticky top-0 z-30 flex h-16 items-center border-b border-border bg-background/80 px-4 backdrop-blur-sm lg:px-8">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -190,7 +190,7 @@ export function Layout() {
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <span className="hidden sm:inline">字体</span>
               <select
-                className="input w-auto min-w-[7rem] py-1.5 text-sm"
+                className="input w-auto min-w-28 py-1.5 text-sm"
                 value={fontFamily}
                 onChange={(e) => handleFontChange(e.target.value as FontFamily)}
                 aria-label="字体"
@@ -202,7 +202,7 @@ export function Layout() {
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <span className="hidden sm:inline">配色</span>
               <select
-                className="input w-auto min-w-[7rem] py-1.5 text-sm"
+                className="input w-auto min-w-28 py-1.5 text-sm"
                 value={colorTheme}
                 onChange={(e) => handleColorThemeChange(e.target.value as ColorTheme)}
                 aria-label="配色方案"

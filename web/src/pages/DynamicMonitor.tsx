@@ -34,7 +34,7 @@ export function DynamicMonitorPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start gap-4">
-        <div className="shrink-0 basis-full md:basis-auto md:max-w-[14rem]">
+        <div className="shrink-0 basis-full md:basis-auto md:max-w-56">
           <h2 className="text-2xl font-bold text-foreground">动态订阅管理</h2>
           <p className="mt-1 text-sm text-muted-foreground">管理 UP 主动态推送到 QQ 群的订阅</p>
         </div>
