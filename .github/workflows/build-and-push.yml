@@ -2,14 +2,15 @@ name: Build and Push to GHCR
 
 on:
   push:
-    branches: 
+    branches:
       - main
       - develop
     tags:
       - 'v*'
   pull_request:
-    branches: 
+    branches:
       - main
+      - develop
 
 env:
   REGISTRY: ghcr.io
@@ -18,6 +19,7 @@ env:
 jobs:
   web:
     name: Web Lint & Build
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -38,6 +40,7 @@ jobs:
 
   python:
     name: Python Lint, Format & Test
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -66,12 +69,12 @@ jobs:
 
   build-and-push:
     name: Build Docker Image
-    needs: [web, python]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -87,20 +90,20 @@ jobs:
           GIT_TAG=""
           BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           BUILD_NUMBER=${{ github.run_number }}
-          
+
           # 如果是tag推送，提取tag名称
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             GIT_TAG=${GITHUB_REF#refs/tags/}
             GIT_BRANCH=""
           fi
-          
+
           # 设置输出变量
           echo "git-commit=${GIT_COMMIT}" >> $GITHUB_OUTPUT
           echo "git-branch=${GIT_BRANCH}" >> $GITHUB_OUTPUT
           echo "git-tag=${GIT_TAG}" >> $GITHUB_OUTPUT
           echo "build-time=${BUILD_TIME}" >> $GITHUB_OUTPUT
           echo "build-number=${BUILD_NUMBER}" >> $GITHUB_OUTPUT
-          
+
           # 打印信息
           echo "Git Tag: ${GIT_TAG}"
           echo "Git Branch: ${GIT_BRANCH}"
@@ -130,8 +133,6 @@ jobs:
             type=ref,event=tag
             # 为分支设置分支名称 (main, develop)
             type=ref,event=branch
-            # 为 PR 设置 pr-number (pr-123)
-            type=ref,event=pr
             # 设置 SHA 短版本用于精确版本控制 (62a0c2d)
             type=sha,format=short
 
@@ -170,4 +171,4 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Web Admin 前端" >> $GITHUB_STEP_SUMMARY
-          echo "- 已在 Docker 多阶段构建中通过 \`npm run build\` 生成 \`web/dist\`" >> $GITHUB_STEP_SUMMARY 
+          echo "- 已在 Docker 多阶段构建中通过 \`npm run build\` 生成 \`web/dist\`" >> $GITHUB_STEP_SUMMARY

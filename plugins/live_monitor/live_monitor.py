@@ -62,6 +62,21 @@ class LiveMonitor:
     def _touch_last_check_at(self) -> None:
         self.last_check_at = datetime.now().isoformat(timespec="seconds")
 
+    def _configured_room_ids(self) -> list[str]:
+        return list(self.config.live_monitor_mapping.keys())
+
+    async def _remove_room(self, room_id: str) -> None:
+        """停止监控并从运行时状态中移除房间。"""
+        client = self._danmaku_clients.pop(room_id, None)
+        if client:
+            try:
+                await client.stop()
+                logger.debug(f"房间 {room_id} WebSocket 监控已停止（配置已移除）")
+            except Exception as e:
+                logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
+        self.room_states.pop(room_id, None)
+        self.initialized_rooms.pop(room_id, None)
+
     async def init_resources(self):
         """初始化资源"""
         # 初始化API管理器
@@ -120,9 +135,19 @@ class LiveMonitor:
     async def reload_config(self):
         old_interval = self.config.monitor_interval
         old_ws = self.config.use_websocket
+        old_room_ids = set(self.room_states.keys())
         self.config = Config.from_service()
 
         await api_manager.init(self.config.bilibili_cookie)
+
+        removed_room_ids = old_room_ids - set(self.config.live_monitor_mapping.keys())
+        for room_id in removed_room_ids:
+            await self._remove_room(room_id)
+        if removed_room_ids:
+            logger.info(
+                f"直播监控已移除 {len(removed_room_ids)} 个不再配置的房间: "
+                f"{', '.join(sorted(removed_room_ids))}"
+            )
 
         new_room_ids: list[str] = []
         for room_id in self.config.live_monitor_mapping.keys():
@@ -249,7 +274,7 @@ class LiveMonitor:
 
     async def _start_danmaku_clients(self):
         """启动所有房间的弹幕客户端"""
-        for room_id in self.room_states.keys():
+        for room_id in self._configured_room_ids():
             try:
                 await self._start_single_danmaku_client(room_id)
             except Exception as e:
@@ -462,7 +487,7 @@ class LiveMonitor:
             logger.debug("监控已停止，跳过本次检查")
             return
 
-        for room_id in self.room_states.keys():
+        for room_id in self._configured_room_ids():
             try:
                 ok = await self._check_room_status(room_id)
                 if ok is False:
