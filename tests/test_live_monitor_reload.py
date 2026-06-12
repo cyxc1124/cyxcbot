@@ -304,6 +304,51 @@ async def test_reload_config_continues_cookie_reload_when_one_room_fails(
 
 
 @pytest.mark.asyncio
+async def test_start_single_danmaku_client_removes_failed_client_from_registry(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+
+    failed_client = AsyncMock()
+    failed_client.start = AsyncMock(side_effect=ConnectionError("start failed"))
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.DanmakuClient",
+            return_value=failed_client,
+        ),
+        pytest.raises(ConnectionError, match="start failed"),
+    ):
+        await monitor._start_single_danmaku_client("111")
+
+    assert "111" not in monitor._danmaku_clients
+
+
+@pytest.mark.asyncio
+async def test_start_single_danmaku_client_can_retry_after_start_failure(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+
+    failed_client = AsyncMock()
+    failed_client.start = AsyncMock(side_effect=ConnectionError("start failed"))
+    success_client = AsyncMock()
+
+    with patch(
+        "plugins.live_monitor.live_monitor.DanmakuClient",
+        side_effect=[failed_client, success_client],
+    ):
+        with pytest.raises(ConnectionError):
+            await monitor._start_single_danmaku_client("111")
+        await monitor._start_single_danmaku_client("111")
+
+    assert monitor._danmaku_clients["111"] is success_client
+    success_client.start.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_reload_config_restarts_websocket_clients_on_logout(
     live_monitor_modules: tuple[Any, Any, Any],
 ) -> None:

@@ -202,9 +202,7 @@ class LiveMonitor:
                         try:
                             await self._restart_single_danmaku_client(room_id)
                         except Exception as e:
-                            logger.error(
-                                f"房间 {room_id} Cookie 热更新重建失败: {e}"
-                            )
+                            logger.error(f"房间 {room_id} Cookie 热更新重建失败: {e}")
                     if existing_room_ids:
                         logger.info(
                             f"直播监控 Cookie 已变更，已重建 "
@@ -339,7 +337,11 @@ class LiveMonitor:
         )
 
         self._danmaku_clients[room_id] = client
-        await client.start()
+        try:
+            await client.start()
+        except Exception:
+            self._danmaku_clients.pop(room_id, None)
+            raise
         logger.debug(f"房间 {room_id} WebSocket 监控已启动")
 
     async def _stop_danmaku_clients(self):
