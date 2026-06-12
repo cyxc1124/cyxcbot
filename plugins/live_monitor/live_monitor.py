@@ -136,13 +136,17 @@ class LiveMonitor:
         old_interval = self.config.monitor_interval
         old_ws = self.config.use_websocket
         old_room_ids = set(self.room_states.keys())
+        old_cookie = self.config.bilibili_cookie
         self.config = Config.from_service()
 
         await api_manager.init(self.config.bilibili_cookie)
 
         removed_room_ids = old_room_ids - set(self.config.live_monitor_mapping.keys())
         for room_id in removed_room_ids:
-            await self._remove_room(room_id)
+            try:
+                await self._remove_room(room_id)
+            except Exception as e:
+                logger.error(f"移除房间 {room_id} 监控失败: {e}")
         if removed_room_ids:
             logger.info(
                 f"直播监控已移除 {len(removed_room_ids)} 个不再配置的房间: "
@@ -188,8 +192,28 @@ class LiveMonitor:
                 else:
                     await self._stop_danmaku_clients()
             elif self.config.use_websocket:
+                if old_cookie != self.config.bilibili_cookie:
+                    existing_room_ids = [
+                        room_id
+                        for room_id in self._configured_room_ids()
+                        if room_id in self._danmaku_clients
+                    ]
+                    for room_id in existing_room_ids:
+                        try:
+                            await self._restart_single_danmaku_client(room_id)
+                        except Exception as e:
+                            logger.error(f"房间 {room_id} Cookie 热更新重建失败: {e}")
+                    if existing_room_ids:
+                        logger.info(
+                            f"直播监控 Cookie 已变更，已重建 "
+                            f"{len(existing_room_ids)} 个 WebSocket 客户端"
+                        )
+
                 for room_id in new_room_ids:
-                    await self._start_single_danmaku_client(room_id)
+                    try:
+                        await self._start_single_danmaku_client(room_id)
+                    except Exception as e:
+                        logger.error(f"房间 {room_id} 弹幕客户端启动失败: {e}")
 
         self._sender.include_room_info = self.config.include_room_info
         self._sender.templates = self.config.message_templates
@@ -282,6 +306,23 @@ class LiveMonitor:
             # 避免同时连接过多
             await asyncio.sleep(1)
 
+    async def _restart_single_danmaku_client(self, room_id: str) -> None:
+        """停止并重建单个房间的弹幕客户端（凭据变更等场景）。"""
+        old_client = self._danmaku_clients.pop(room_id, None)
+        try:
+            await self._start_single_danmaku_client(room_id)
+        except Exception:
+            if old_client is not None:
+                self._danmaku_clients[room_id] = old_client
+            raise
+
+        if old_client:
+            try:
+                await old_client.stop()
+                logger.debug(f"房间 {room_id} WebSocket 监控已停止（凭据变更）")
+            except Exception as e:
+                logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
+
     async def _start_single_danmaku_client(self, room_id: str):
         """启动单个房间的弹幕客户端"""
         if room_id in self._danmaku_clients:
@@ -308,7 +349,11 @@ class LiveMonitor:
         )
 
         self._danmaku_clients[room_id] = client
-        await client.start()
+        try:
+            await client.start()
+        except Exception:
+            self._danmaku_clients.pop(room_id, None)
+            raise
         logger.debug(f"房间 {room_id} WebSocket 监控已启动")
 
     async def _stop_danmaku_clients(self):
