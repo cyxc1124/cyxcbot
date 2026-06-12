@@ -199,7 +199,12 @@ class LiveMonitor:
                         if room_id in self._danmaku_clients
                     ]
                     for room_id in existing_room_ids:
-                        await self._restart_single_danmaku_client(room_id)
+                        try:
+                            await self._restart_single_danmaku_client(room_id)
+                        except Exception as e:
+                            logger.error(
+                                f"房间 {room_id} Cookie 热更新重建失败: {e}"
+                            )
                     if existing_room_ids:
                         logger.info(
                             f"直播监控 Cookie 已变更，已重建 "

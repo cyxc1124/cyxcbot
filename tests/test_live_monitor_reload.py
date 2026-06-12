@@ -262,6 +262,48 @@ async def test_reload_config_keeps_websocket_clients_when_cookie_unchanged(
 
 
 @pytest.mark.asyncio
+async def test_reload_config_continues_cookie_reload_when_one_room_fails(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111", "222"])
+    monitor.config.bilibili_cookie = None
+    monitor._danmaku_clients["111"] = AsyncMock()
+    monitor._danmaku_clients["222"] = AsyncMock()
+
+    updated_config = Config(
+        live_monitor_mapping={"111": ["group1"], "222": ["group1"]},
+        use_websocket=True,
+        bilibili_cookie="DedeUserID=123; buvid3=abc",
+    )
+
+    async def restart_side_effect(room_id: str) -> None:
+        if room_id == "111":
+            raise ConnectionError("websocket reconnect failed")
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.Config.from_service",
+            return_value=updated_config,
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.init",
+            new_callable=AsyncMock,
+        ),
+        patch.object(
+            monitor,
+            "_restart_single_danmaku_client",
+            side_effect=restart_side_effect,
+        ) as restart_client,
+    ):
+        await monitor.reload_config()
+
+    assert restart_client.await_count == 2
+    restart_client.assert_any_await("111")
+    restart_client.assert_any_await("222")
+
+
+@pytest.mark.asyncio
 async def test_reload_config_restarts_websocket_clients_on_logout(
     live_monitor_modules: tuple[Any, Any, Any],
 ) -> None:
