@@ -25,6 +25,12 @@ _DB_MODULE_NAMES = (
 
 
 def _ensure_real_db_modules() -> None:
+    existing = sys.modules.get("shared.db.models")
+    if existing is not None and not isinstance(existing, MagicMock):
+        user = getattr(existing, "User", None)
+        if user is not None and not isinstance(user, MagicMock):
+            return
+
     for name in _DB_MODULE_NAMES:
         module = sys.modules.get(name)
         if module is not None and isinstance(module, MagicMock):

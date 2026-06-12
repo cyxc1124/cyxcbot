@@ -7,7 +7,7 @@ from typing import Awaitable, Callable, List, Optional
 
 from nonebot.log import logger
 from nonebot_plugin_orm import get_session
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from shared.config.link_parser_policy import (
@@ -23,6 +23,7 @@ from shared.config.message_templates import (
 from shared.config.nonebot_superusers import apply_nonebot_superusers
 from shared.config.types import AppConfigSnapshot
 from shared.db.models import (
+    DynamicMonitorState,
     DynamicTarget,
     LinkParserGroupPolicy,
     LinkParserUserPolicy,
@@ -110,6 +111,7 @@ class ConfigService:
             link_parser_user_policies = await self._load_link_parser_user_policies(
                 session
             )
+            await self._prune_dynamic_monitor_states(session, set(dynamic_mapping))
 
         cookie_encrypted = settings.get("bilibili_cookie_encrypted", "")
         cookie = ""
@@ -236,6 +238,15 @@ class ConfigService:
                 result[key] = value
 
         return result
+
+    async def _prune_dynamic_monitor_states(
+        self, session, active_uids: set[str]
+    ) -> None:
+        """Drop persisted dynamic monitor state for disabled or removed targets."""
+        stmt = delete(DynamicMonitorState)
+        if active_uids:
+            stmt = stmt.where(DynamicMonitorState.uid.not_in(active_uids))
+        await session.execute(stmt)
 
     async def _load_dynamic_mapping(self, session) -> dict[str, list[str]]:
         stmt = (
