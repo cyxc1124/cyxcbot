@@ -143,7 +143,10 @@ class LiveMonitor:
 
         removed_room_ids = old_room_ids - set(self.config.live_monitor_mapping.keys())
         for room_id in removed_room_ids:
-            await self._remove_room(room_id)
+            try:
+                await self._remove_room(room_id)
+            except Exception as e:
+                logger.error(f"移除房间 {room_id} 监控失败: {e}")
         if removed_room_ids:
             logger.info(
                 f"直播监控已移除 {len(removed_room_ids)} 个不再配置的房间: "
@@ -189,9 +192,6 @@ class LiveMonitor:
                 else:
                     await self._stop_danmaku_clients()
             elif self.config.use_websocket:
-                for room_id in new_room_ids:
-                    await self._start_single_danmaku_client(room_id)
-
                 if old_cookie != self.config.bilibili_cookie:
                     existing_room_ids = [
                         room_id
@@ -208,6 +208,12 @@ class LiveMonitor:
                             f"直播监控 Cookie 已变更，已重建 "
                             f"{len(existing_room_ids)} 个 WebSocket 客户端"
                         )
+
+                for room_id in new_room_ids:
+                    try:
+                        await self._start_single_danmaku_client(room_id)
+                    except Exception as e:
+                        logger.error(f"房间 {room_id} 弹幕客户端启动失败: {e}")
 
         self._sender.include_room_info = self.config.include_room_info
         self._sender.templates = self.config.message_templates

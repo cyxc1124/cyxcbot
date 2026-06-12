@@ -304,6 +304,136 @@ async def test_reload_config_continues_cookie_reload_when_one_room_fails(
 
 
 @pytest.mark.asyncio
+async def test_reload_config_cookie_reload_before_new_room_start(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+    monitor.config.bilibili_cookie = None
+    monitor._danmaku_clients["111"] = AsyncMock()
+
+    updated_config = Config(
+        live_monitor_mapping={"111": ["group1"], "333": ["group1"]},
+        use_websocket=True,
+        bilibili_cookie="DedeUserID=123; buvid3=abc",
+    )
+    call_order: list[tuple[str, str]] = []
+
+    async def track_restart(room_id: str) -> None:
+        call_order.append(("restart", room_id))
+
+    async def track_start(room_id: str) -> None:
+        call_order.append(("start", room_id))
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.Config.from_service",
+            return_value=updated_config,
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.init",
+            new_callable=AsyncMock,
+        ),
+        patch.object(
+            monitor,
+            "_restart_single_danmaku_client",
+            side_effect=track_restart,
+        ),
+        patch.object(
+            monitor,
+            "_start_single_danmaku_client",
+            side_effect=track_start,
+        ),
+    ):
+        await monitor.reload_config()
+
+    assert call_order == [("restart", "111"), ("start", "333")]
+
+
+@pytest.mark.asyncio
+async def test_reload_config_cookie_reload_continues_when_new_room_start_fails(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+    monitor.config.bilibili_cookie = None
+    old_client = AsyncMock()
+    monitor._danmaku_clients["111"] = old_client
+
+    updated_config = Config(
+        live_monitor_mapping={"111": ["group1"], "333": ["group1"]},
+        use_websocket=True,
+        bilibili_cookie="DedeUserID=123; buvid3=abc",
+    )
+
+    async def start_side_effect(room_id: str) -> None:
+        if room_id == "333":
+            raise ConnectionError("new room start failed")
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.Config.from_service",
+            return_value=updated_config,
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.init",
+            new_callable=AsyncMock,
+        ),
+        patch.object(
+            monitor,
+            "_restart_single_danmaku_client",
+            new_callable=AsyncMock,
+        ) as restart_client,
+        patch.object(
+            monitor,
+            "_start_single_danmaku_client",
+            side_effect=start_side_effect,
+        ) as start_client,
+    ):
+        await monitor.reload_config()
+
+    restart_client.assert_awaited_once_with("111")
+    start_client.assert_awaited_once_with("333")
+
+
+@pytest.mark.asyncio
+async def test_reload_config_continues_when_one_room_removal_fails(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111", "222"])
+
+    reduced_config = Config(
+        live_monitor_mapping={"222": ["group1"]},
+        use_websocket=True,
+    )
+
+    async def remove_side_effect(room_id: str) -> None:
+        if room_id == "111":
+            raise RuntimeError("remove failed")
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.Config.from_service",
+            return_value=reduced_config,
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.init",
+            new_callable=AsyncMock,
+        ),
+        patch.object(
+            monitor,
+            "_remove_room",
+            side_effect=remove_side_effect,
+        ) as remove_room,
+    ):
+        await monitor.reload_config()
+
+    assert remove_room.await_count == 1
+    assert "222" in monitor.room_states
+
+
+@pytest.mark.asyncio
 async def test_restart_single_danmaku_client_preserves_old_client_on_start_failure(
     live_monitor_modules: tuple[Any, Any, Any],
 ) -> None:
