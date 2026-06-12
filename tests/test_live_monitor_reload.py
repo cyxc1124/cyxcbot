@@ -40,9 +40,11 @@ def _load_module(qualified_name: str, filename: str):
 
 def _import_live_monitor_modules():
     if "plugins.live_monitor.live_monitor" in sys.modules:
-        return sys.modules["plugins.live_monitor.config"].Config, sys.modules[
-            "plugins.live_monitor.live_monitor"
-        ].LiveMonitor, sys.modules["plugins.live_monitor.models"].LiveRoomState
+        return (
+            sys.modules["plugins.live_monitor.config"].Config,
+            sys.modules["plugins.live_monitor.live_monitor"].LiveMonitor,
+            sys.modules["plugins.live_monitor.models"].LiveRoomState,
+        )
 
     _ensure_package("plugins")
     _ensure_package("plugins.live_monitor", PLUGIN_ROOT)
