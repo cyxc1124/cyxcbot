@@ -193,6 +193,11 @@ tests/__pycache__/
 # Web Admin (frontend)
 web/node_modules/
 
+# Documentation (Docusaurus)
+docs/node_modules/
+docs/build/
+docs/.docusaurus/
+
 # 系统文件
 .DS_Store
 Thumbs.db

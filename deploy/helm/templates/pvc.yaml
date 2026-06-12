@@ -1,0 +1,18 @@
+{{- /* persistence.enabled 且未指定 existingClaim 时创建 PVC，挂载到 Deployment /app/data */ -}}
+{{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "cyxcbot.fullname" . }}-data
+  labels:
+    {{- include "cyxcbot.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}

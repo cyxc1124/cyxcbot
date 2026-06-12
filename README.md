@@ -2,9 +2,7 @@
 
 基于 [NoneBot2](https://nonebot.dev/) 的 QQ 机器人，专注 B 站动态、直播监控与群消息推送。内置 Web Admin 管理面板，可在浏览器中完成监控配置、权限策略与消息模板管理，无需反复改环境变量。
 
-<p align="center">
-<sub>Made with ❤️ by <a href="https://github.com/cyxc1124">cyxc1124</a></sub>
-</p>
+📖 **完整文档**：https://cyxc1124.github.io/cyxcbot/（源码在 [docs/](docs/)，本地预览：`cd docs && npm start`）
 
 ---
 
@@ -169,6 +167,7 @@ cyxcbot/
 │   ├── group_guard/
 │   └── private_guard/
 ├── web/                   # 管理面板前端
+├── docs/                  # 文档站（Docusaurus）
 ├── utils/                 # B 站 API、截图等工具
 ├── scripts/               # Windows 打包脚本
 ├── Dockerfile
@@ -199,3 +198,9 @@ cyxcbot/
 - **[HarukaBot](https://github.com/SK-415/HarukaBot)** — 动态截图功能的灵感来源
 - **[biliup](https://github.com/biliup/biliup)** — B 站登录功能实现参考
 - **[Cursor](https://cursor.com/)** — 本项目大量功能与重构在 Cursor AI 辅助下完成
+
+---
+
+<p align="center">
+<sub>Made with ❤️ by <a href="https://github.com/cyxc1124">cyxc1124</a></sub>
+</p>

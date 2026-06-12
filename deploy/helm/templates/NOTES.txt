@@ -1,0 +1,20 @@
+机器草 (cyxcbot) 已部署。
+
+1. 获取 Service 地址：
+{{- if contains "LoadBalancer" .Values.service.type }}
+  export SERVICE_IP=$(kubectl get svc {{ include "cyxcbot.fullname" . }}-service -n {{ .Release.Namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+  echo "OneBot:  ws://${SERVICE_IP}:{{ .Values.service.onebot.port }}"
+  echo "Web Admin: http://${SERVICE_IP}:{{ .Values.service.webAdmin.port }}"
+{{- else if contains "NodePort" .Values.service.type }}
+  export NODE_PORT_WEB=$(kubectl get svc {{ include "cyxcbot.fullname" . }}-service -n {{ .Release.Namespace }} -o jsonpath='{.spec.ports[?(@.name=="web-admin")].nodePort}')
+  echo "Web Admin NodePort: ${NODE_PORT_WEB}"
+{{- else }}
+  kubectl port-forward svc/{{ include "cyxcbot.fullname" . }}-service {{ .Values.service.webAdmin.port }}:{{ .Values.service.webAdmin.port }} -n {{ .Release.Namespace }}
+  echo "Web Admin: http://127.0.0.1:{{ .Values.service.webAdmin.port }}"
+{{- end }}
+
+2. 首次访问 Web Admin 完成 /setup 初始化管理员账户。
+
+3. 在 Web Admin 中配置 OneBot 连接、B 站监控等业务项（2.0+ 不再通过 Helm values 注入）。
+
+4. OneBot 协议端（如 NapCat）需反向 WebSocket 连接到 OneBot 端口 {{ .Values.service.onebot.port }}。
