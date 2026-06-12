@@ -3,13 +3,17 @@ FROM node:22-slim AS web-builder
 
 ARG GIT_TAG=""
 ARG GIT_COMMIT=""
+ARG GIT_BRANCH=""
+ARG BUILD_TIME=""
 
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
 ENV GIT_TAG=${GIT_TAG} \
-    GIT_COMMIT=${GIT_COMMIT}
+    GIT_COMMIT=${GIT_COMMIT} \
+    GIT_BRANCH=${GIT_BRANCH} \
+    BUILD_TIME=${BUILD_TIME}
 RUN npm run build
 
 # Python 运行时镜像

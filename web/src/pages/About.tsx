@@ -9,21 +9,43 @@ import { PageLoading } from '../components/LoadingSpinner'
 import { formatApiError } from '../utils/apiError'
 
 const WEB_BUILD_VERSION = import.meta.env.VITE_BUILD_VERSION || 'dev'
+const WEB_GIT_BRANCH = import.meta.env.VITE_GIT_BRANCH
+const WEB_BUILD_TIME = import.meta.env.VITE_BUILD_TIME
 
 interface InfoRowProps {
   label: string
   value: string
   hint?: string
+  badge?: string
 }
 
-function InfoRow({ label, value, hint }: InfoRowProps) {
+function InfoRow({ label, value, hint, badge }: InfoRowProps) {
   return (
     <div className="border-b border-border py-4 last:border-0 border-border">
       <dt className="text-sm font-medium text-muted-foreground">{label}</dt>
-      <dd className="mt-1 text-base font-medium text-foreground">{value}</dd>
+      <dd className="mt-1 flex flex-wrap items-center gap-2">
+        <span className="text-base font-medium text-foreground">{value}</span>
+        {badge && (
+          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+            {badge}
+          </span>
+        )}
+      </dd>
       {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
     </div>
   )
+}
+
+function formatBuildTime(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return date.toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' })
+}
+
+function branchLabel(branch: string | null | undefined): string {
+  if (!branch) return '—'
+  return branch
 }
 
 export function AboutPage() {
@@ -44,9 +66,17 @@ export function AboutPage() {
 
   const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
 
+  const backendBuildTime = useMemo(
+    () => formatBuildTime(about?.build_time),
+    [about?.build_time],
+  )
+  const webBuildTime = useMemo(() => formatBuildTime(WEB_BUILD_TIME), [])
+
   useMountAsync(load)
 
   if (loading && !about && !error) return <PageLoading />
+
+  const isDevelop = about?.git_branch === 'develop'
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -74,7 +104,13 @@ export function AboutPage() {
           <InfoRow
             label="Web UI"
             value={`Powered by ${about?.web_frontend ?? 'React + Tailwind CSS'}`}
-            hint={`前端构建版本 ${WEB_BUILD_VERSION}`}
+            hint={[
+              `前端构建版本 ${WEB_BUILD_VERSION}`,
+              WEB_GIT_BRANCH ? `分支 ${WEB_GIT_BRANCH}` : null,
+              webBuildTime ? `构建时间 ${webBuildTime}` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           />
           <InfoRow
             label="后端框架"
@@ -82,9 +118,28 @@ export function AboutPage() {
             hint={about ? `Python ${about.python_version}` : undefined}
           />
           <InfoRow
+            label="Git 分支"
+            value={branchLabel(about?.git_branch ?? about?.git_tag)}
+            badge={isDevelop ? '开发版' : undefined}
+            hint={
+              about?.git_tag
+                ? `标签 ${about.git_tag}${about.git_commit ? ` · 提交 ${about.git_commit}` : ''}`
+                : about?.git_commit
+                  ? `提交 ${about.git_commit}`
+                  : '由 GIT_BRANCH / GIT_TAG 环境变量注入'
+            }
+          />
+          <InfoRow
             label="构建版本"
             value={about?.build_version ?? '—'}
-            hint="由 GIT_TAG / GIT_COMMIT / BUILD_VERSION 环境变量注入"
+            hint={
+              [
+                about?.build_number ? `构建号 #${about.build_number}` : null,
+                backendBuildTime ? `构建时间 ${backendBuildTime}` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ') || '由 GIT_TAG / GIT_COMMIT / BUILD_VERSION 环境变量注入'
+            }
           />
         </dl>
       </div>

@@ -75,7 +75,7 @@ def log_startup_config() -> None:
         "NoneBot": ["HOST", "PORT", "COMMAND_START", "COMMAND_SEP", "LOG_LEVEL"],
         "Web Admin": ["WEB_HOST", "WEB_PORT", "WEB_ADMIN_ENABLED", "WEB_SECRET_KEY"],
         "数据库": ["SQLALCHEMY_DATABASE_URL"],
-        "构建信息": ["GIT_TAG", "GIT_COMMIT", "BUILD_VERSION"],
+        "构建信息": ["GIT_TAG", "GIT_BRANCH", "GIT_COMMIT", "BUILD_TIME", "BUILD_VERSION"],
     }
 
     for category, keys in startup_vars.items():

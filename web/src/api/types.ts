@@ -304,6 +304,11 @@ export interface AboutInfo {
   web_frontend: string
   backend_framework: string
   build_version: string
+  git_branch: string | null
+  git_tag: string | null
+  git_commit: string | null
+  build_time: string | null
+  build_number: string | null
   python_version: string
 }
 
