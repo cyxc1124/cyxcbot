@@ -1,5 +1,5 @@
 # Web Admin 前端构建阶段
-FROM node:22-slim AS web-builder
+FROM node:26-slim AS web-builder
 
 ARG GIT_TAG=""
 ARG GIT_COMMIT=""
