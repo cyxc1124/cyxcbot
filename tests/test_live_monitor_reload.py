@@ -304,6 +304,53 @@ async def test_reload_config_continues_cookie_reload_when_one_room_fails(
 
 
 @pytest.mark.asyncio
+async def test_restart_single_danmaku_client_preserves_old_client_on_start_failure(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+    old_client = AsyncMock()
+    monitor._danmaku_clients["111"] = old_client
+
+    with (
+        patch.object(
+            monitor,
+            "_start_single_danmaku_client",
+            AsyncMock(side_effect=ConnectionError("start failed")),
+        ),
+        pytest.raises(ConnectionError, match="start failed"),
+    ):
+        await monitor._restart_single_danmaku_client("111")
+
+    assert monitor._danmaku_clients["111"] is old_client
+    old_client.stop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_restart_single_danmaku_client_stops_old_client_after_successful_start(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+    old_client = AsyncMock()
+    new_client = AsyncMock()
+    monitor._danmaku_clients["111"] = old_client
+
+    async def fake_start(room_id: str) -> None:
+        monitor._danmaku_clients[room_id] = new_client
+
+    with patch.object(
+        monitor,
+        "_start_single_danmaku_client",
+        side_effect=fake_start,
+    ):
+        await monitor._restart_single_danmaku_client("111")
+
+    old_client.stop.assert_awaited_once()
+    assert monitor._danmaku_clients["111"] is new_client
+
+
+@pytest.mark.asyncio
 async def test_start_single_danmaku_client_removes_failed_client_from_registry(
     live_monitor_modules: tuple[Any, Any, Any],
 ) -> None:

@@ -302,14 +302,20 @@ class LiveMonitor:
 
     async def _restart_single_danmaku_client(self, room_id: str) -> None:
         """停止并重建单个房间的弹幕客户端（凭据变更等场景）。"""
-        client = self._danmaku_clients.pop(room_id, None)
-        if client:
+        old_client = self._danmaku_clients.pop(room_id, None)
+        try:
+            await self._start_single_danmaku_client(room_id)
+        except Exception:
+            if old_client is not None:
+                self._danmaku_clients[room_id] = old_client
+            raise
+
+        if old_client:
             try:
-                await client.stop()
+                await old_client.stop()
                 logger.debug(f"房间 {room_id} WebSocket 监控已停止（凭据变更）")
             except Exception as e:
                 logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
-        await self._start_single_danmaku_client(room_id)
 
     async def _start_single_danmaku_client(self, room_id: str):
         """启动单个房间的弹幕客户端"""
