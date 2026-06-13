@@ -165,9 +165,13 @@ class DynamicMonitor:
                     self.last_dynamic_ids[uid] = 0
                     self.initialized_uids[uid] = False
 
-    async def _persist_state(self, uid: str):
+    async def _persist_state(self, uid: str, *, check_generation: Optional[int] = None):
         """持久化单个 UID 的监控状态"""
         if not self._is_active_uid(uid):
+            return
+        if check_generation is not None and not self._check_still_valid(
+            uid, check_generation
+        ):
             return
         session = get_session()
         async with session.begin():
@@ -435,22 +439,23 @@ class DynamicMonitor:
         if not self.initialized_uids.get(uid, False):
             if not self._check_still_valid(uid, check_generation):
                 return True
+            new_last_dynamic_id = max(d.id for d in dynamics) if dynamics else None
             if dynamics:
-                self.last_dynamic_ids[uid] = max(d.id for d in dynamics)
                 logger.info(
-                    f"UP主 {uid} 首次监控，已记录最新动态ID: {self.last_dynamic_ids[uid]}"
+                    f"UP主 {uid} 首次监控，已记录最新动态ID: {new_last_dynamic_id}"
                 )
             else:
                 logger.info(f"UP主 {uid} 首次监控，当前无动态")
-
-            self.pinned_dynamic_ids[uid] = new_pinned_id
             if new_pinned_id:
                 logger.info(f"UP主 {uid} 首次监控，已记录置顶动态ID: {new_pinned_id}")
 
-            self.initialized_uids[uid] = True
             if not self._check_still_valid(uid, check_generation):
                 return True
-            await self._persist_state(uid)
+            if new_last_dynamic_id is not None:
+                self.last_dynamic_ids[uid] = new_last_dynamic_id
+            self.pinned_dynamic_ids[uid] = new_pinned_id
+            self.initialized_uids[uid] = True
+            await self._persist_state(uid, check_generation=check_generation)
             return True
 
         # 处理置顶动态变化（只有在非首次启动时才推送置顶动态变化）
@@ -495,7 +500,7 @@ class DynamicMonitor:
         if new_dynamics or new_pinned_id != current_pinned_id:
             if not self._check_still_valid(uid, check_generation):
                 return True
-            await self._persist_state(uid)
+            await self._persist_state(uid, check_generation=check_generation)
 
         return True
 
