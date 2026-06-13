@@ -855,6 +855,54 @@ async def test_reenabled_room_reset_after_stale_inflight_check_repollutes_memory
 
 
 @pytest.mark.asyncio
+async def test_stale_check_skips_notification_after_disable_reenable_replaces_state(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    """停用并重启用会替换 room_states 条目，过期轮询不得基于 detached 状态误推送。"""
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+    monitor.room_states["111"].previous_status = LiveStatus.PREPARING
+
+    fetch_started = asyncio.Event()
+    release_fetch = asyncio.Event()
+
+    class FakeRoomInfo:
+        live_status = LiveStatus.LIVE
+        live_start_time = 1000
+
+    async def slow_fetch(*_args, **_kwargs):
+        fetch_started.set()
+        await release_fetch.wait()
+        return (FakeRoomInfo(), None)
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            side_effect=slow_fetch,
+        ),
+        patch.object(monitor, "_send_live_notification", AsyncMock()) as notify,
+    ):
+        stale_task = asyncio.create_task(monitor._check_room_status("111"))
+        await fetch_started.wait()
+
+        monitor.config = Config(live_monitor_mapping={})
+        monitor.room_states.pop("111")
+
+        monitor.config = Config(live_monitor_mapping={"111": ["group1"]})
+        fresh_state = LiveRoomState(room_id=111)
+        fresh_state.previous_status = LiveStatus.LIVE
+        monitor.room_states["111"] = fresh_state
+        monitor.initialized_rooms["111"] = True
+
+        release_fetch.set()
+        await stale_task
+
+    notify.assert_not_awaited()
+    assert monitor.room_states["111"] is fresh_state
+    assert monitor.room_states["111"].previous_status == LiveStatus.LIVE
+
+
+@pytest.mark.asyncio
 async def test_start_danmaku_clients_retries_failed_room_on_subsequent_call(
     live_monitor_modules: tuple[Any, Any, Any],
 ) -> None:
