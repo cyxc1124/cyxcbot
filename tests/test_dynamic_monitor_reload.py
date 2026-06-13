@@ -161,6 +161,64 @@ async def test_stale_check_skips_notification_after_disable_reenable_bumps_gener
 
 
 @pytest.mark.asyncio
+async def test_stale_check_skips_notification_after_disable_reenable_during_send(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """通知发送过程中停用并重启用时，过期检查不得继续推送或写回状态。"""
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.fetcher = MagicMock()
+    monitor.last_dynamic_ids["111"] = 100
+
+    fetch_started = asyncio.Event()
+    release_fetch = asyncio.Event()
+    first_notify_started = asyncio.Event()
+    release_first_notify = asyncio.Event()
+    notify_calls = 0
+
+    async def slow_fetch(*_args, **_kwargs):
+        fetch_started.set()
+        await release_fetch.wait()
+        return ([_dynamic(200), _dynamic(300)], None)
+
+    async def slow_notify(*_args, **_kwargs):
+        nonlocal notify_calls
+        notify_calls += 1
+        if notify_calls == 1:
+            first_notify_started.set()
+            await release_first_notify.wait()
+
+    monitor.fetcher.fetch_user_dynamics = slow_fetch
+
+    with (
+        patch.object(
+            monitor,
+            "_send_dynamic_notification",
+            side_effect=slow_notify,
+        ) as notify,
+        patch.object(monitor, "_persist_state", AsyncMock()) as persist,
+    ):
+        stale_task = asyncio.create_task(monitor._check_user_dynamic("111"))
+        await fetch_started.wait()
+        release_fetch.set()
+        await first_notify_started.wait()
+
+        monitor._remove_uid("111")
+        monitor.config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+        monitor._bump_check_generation("111")
+        monitor.last_dynamic_ids["111"] = 0
+        monitor.initialized_uids["111"] = False
+
+        release_first_notify.set()
+        await stale_task
+
+    assert notify.await_count == 1
+    persist.assert_not_awaited()
+    assert monitor.last_dynamic_ids["111"] == 0
+    assert monitor.initialized_uids["111"] is False
+
+
+@pytest.mark.asyncio
 async def test_stale_check_skips_notification_when_disable_reenable_during_send(
     dynamic_monitor_modules: tuple[Any, Any],
 ) -> None:
@@ -208,6 +266,61 @@ async def test_stale_check_skips_notification_when_disable_reenable_during_send(
     persist.assert_not_awaited()
     assert monitor.last_dynamic_ids["111"] == 0
     assert monitor.initialized_uids["111"] is False
+
+
+@pytest.mark.asyncio
+async def test_stale_check_skips_pinned_notification_after_disable_reenable_during_send(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """置顶通知发送过程中停用并重启用时，不得写回 pinned_dynamic_ids 或持久化。"""
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.fetcher = MagicMock()
+    monitor.last_dynamic_ids["111"] = 100
+    monitor.pinned_dynamic_ids["111"] = 42
+
+    fetch_started = asyncio.Event()
+    release_fetch = asyncio.Event()
+    pinned_notify_started = asyncio.Event()
+    release_pinned_notify = asyncio.Event()
+
+    async def slow_fetch(*_args, **_kwargs):
+        fetch_started.set()
+        await release_fetch.wait()
+        return ([_dynamic(200), _dynamic(500)], 500)
+
+    async def slow_notify(*_args, is_pinned: bool = False, **_kwargs):
+        if is_pinned:
+            pinned_notify_started.set()
+            await release_pinned_notify.wait()
+
+    monitor.fetcher.fetch_user_dynamics = slow_fetch
+
+    with (
+        patch.object(
+            monitor,
+            "_send_dynamic_notification",
+            side_effect=slow_notify,
+        ) as notify,
+        patch.object(monitor, "_persist_state", AsyncMock()) as persist,
+    ):
+        stale_task = asyncio.create_task(monitor._check_user_dynamic("111"))
+        await fetch_started.wait()
+        release_fetch.set()
+        await pinned_notify_started.wait()
+
+        monitor._remove_uid("111")
+        monitor.config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+        monitor._bump_check_generation("111")
+        monitor.pinned_dynamic_ids["111"] = 42
+        monitor.last_dynamic_ids["111"] = 100
+
+        release_pinned_notify.set()
+        await stale_task
+
+    assert notify.await_count == 1
+    persist.assert_not_awaited()
+    assert monitor.pinned_dynamic_ids["111"] == 42
 
 
 @pytest.mark.asyncio
@@ -281,6 +394,22 @@ async def test_persist_state_skips_inactive_uid(
 
     with patch("plugins.dynamic_monitor.dynamic_monitor.get_session") as get_session:
         await monitor._persist_state("111")
+
+    get_session.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_persist_state_skips_stale_check_generation(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """generation 已过期时不得将内存状态写入 DB。"""
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.last_dynamic_ids["111"] = 999
+
+    with patch("plugins.dynamic_monitor.dynamic_monitor.get_session") as get_session:
+        monitor._bump_check_generation("111")
+        await monitor._persist_state("111", check_generation=0)
 
     get_session.assert_not_called()
 
@@ -379,7 +508,7 @@ async def test_stale_check_skips_notification_after_disable_reenable_via_reload_
     )
 
     notify.assert_not_awaited()
-    persist.assert_awaited_once_with("111")
+    persist.assert_awaited_once_with("111", check_generation=2)
     assert monitor.last_dynamic_ids["111"] == 0
     assert monitor.initialized_uids["111"] is True
     assert monitor.pinned_dynamic_ids["111"] is None
