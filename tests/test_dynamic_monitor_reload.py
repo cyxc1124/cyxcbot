@@ -161,6 +161,64 @@ async def test_stale_check_skips_notification_after_disable_reenable_bumps_gener
 
 
 @pytest.mark.asyncio
+async def test_stale_check_skips_notification_after_disable_reenable_during_send(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """通知发送过程中停用并重启用时，过期检查不得继续推送或写回状态。"""
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.fetcher = MagicMock()
+    monitor.last_dynamic_ids["111"] = 100
+
+    fetch_started = asyncio.Event()
+    release_fetch = asyncio.Event()
+    first_notify_started = asyncio.Event()
+    release_first_notify = asyncio.Event()
+    notify_calls = 0
+
+    async def slow_fetch(*_args, **_kwargs):
+        fetch_started.set()
+        await release_fetch.wait()
+        return ([_dynamic(200), _dynamic(300)], None)
+
+    async def slow_notify(*_args, **_kwargs):
+        nonlocal notify_calls
+        notify_calls += 1
+        if notify_calls == 1:
+            first_notify_started.set()
+            await release_first_notify.wait()
+
+    monitor.fetcher.fetch_user_dynamics = slow_fetch
+
+    with (
+        patch.object(
+            monitor,
+            "_send_dynamic_notification",
+            side_effect=slow_notify,
+        ) as notify,
+        patch.object(monitor, "_persist_state", AsyncMock()) as persist,
+    ):
+        stale_task = asyncio.create_task(monitor._check_user_dynamic("111"))
+        await fetch_started.wait()
+        release_fetch.set()
+        await first_notify_started.wait()
+
+        monitor._remove_uid("111")
+        monitor.config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+        monitor._bump_check_generation("111")
+        monitor.last_dynamic_ids["111"] = 0
+        monitor.initialized_uids["111"] = False
+
+        release_first_notify.set()
+        await stale_task
+
+    assert notify.await_count == 1
+    persist.assert_not_awaited()
+    assert monitor.last_dynamic_ids["111"] == 0
+    assert monitor.initialized_uids["111"] is False
+
+
+@pytest.mark.asyncio
 async def test_reload_config_removes_deleted_uid_runtime_state(
     dynamic_monitor_modules: tuple[Any, Any],
 ) -> None:

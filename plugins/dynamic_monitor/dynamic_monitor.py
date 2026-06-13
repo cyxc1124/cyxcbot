@@ -66,6 +66,12 @@ class DynamicMonitor:
     def _bump_check_generation(self, uid: str) -> None:
         self._check_generation[uid] = self._check_generation.get(uid, 0) + 1
 
+    def _check_still_valid(self, uid: str, check_generation: int) -> bool:
+        """fetch 后的异步阶段是否仍对应当前 generation（停用/重启用后应视为过期）。"""
+        return self._is_active_uid(uid) and (
+            self._check_generation.get(uid, 0) == check_generation
+        )
+
     def _remove_uid(self, uid: str) -> None:
         """从运行时状态中移除不再配置的 UP 主。"""
         self._bump_check_generation(uid)
@@ -411,9 +417,7 @@ class DynamicMonitor:
             logger.debug(f"获取UP主 {uid} 动态失败")
             return False
 
-        if not self._is_active_uid(uid):
-            return True
-        if self._check_generation.get(uid, 0) != check_generation:
+        if not self._check_still_valid(uid, check_generation):
             return True
 
         dynamics, new_pinned_id = result
@@ -429,7 +433,7 @@ class DynamicMonitor:
         # 首次检查只记录基准状态，不推送（避免启动时刷屏）
         # 注意：不能用 last_dynamic_id == 0 判断，无动态用户的基准 ID 也会一直是 0
         if not self.initialized_uids.get(uid, False):
-            if not self._is_active_uid(uid):
+            if not self._check_still_valid(uid, check_generation):
                 return True
             if dynamics:
                 self.last_dynamic_ids[uid] = max(d.id for d in dynamics)
@@ -444,17 +448,18 @@ class DynamicMonitor:
                 logger.info(f"UP主 {uid} 首次监控，已记录置顶动态ID: {new_pinned_id}")
 
             self.initialized_uids[uid] = True
+            if not self._check_still_valid(uid, check_generation):
+                return True
             await self._persist_state(uid)
             return True
 
         # 处理置顶动态变化（只有在非首次启动时才推送置顶动态变化）
         if new_pinned_id != current_pinned_id:
-            if not self._is_active_uid(uid):
+            if not self._check_still_valid(uid, check_generation):
                 return True
             logger.info(
                 f"UP主 {uid} 置顶动态已更新: {current_pinned_id} -> {new_pinned_id}"
             )
-            self.pinned_dynamic_ids[uid] = new_pinned_id
 
             # 只有当前置顶动态ID存在且有变化时，才推送置顶动态通知
             if new_pinned_id and current_pinned_id is not None:
@@ -463,22 +468,33 @@ class DynamicMonitor:
                     (d for d in dynamics if d.id == new_pinned_id), None
                 )
                 if pinned_dynamic:
+                    if not self._check_still_valid(uid, check_generation):
+                        return True
                     await self._send_dynamic_notification(
                         uid, pinned_dynamic, is_pinned=True
                     )
+            if not self._check_still_valid(uid, check_generation):
+                return True
+            self.pinned_dynamic_ids[uid] = new_pinned_id
 
         # 如果有新动态，处理推送
         if new_dynamics:
-            if not self._is_active_uid(uid):
+            if not self._check_still_valid(uid, check_generation):
                 return True
-            # 更新最后动态ID为最新的动态ID
-            self.last_dynamic_ids[uid] = max(d.id for d in new_dynamics)
 
             # 对每个新动态进行推送
             for dynamic in sorted(new_dynamics, key=lambda x: x.timestamp):
+                if not self._check_still_valid(uid, check_generation):
+                    return True
                 await self._send_dynamic_notification(uid, dynamic)
+            if not self._check_still_valid(uid, check_generation):
+                return True
+            # 推送完成后再更新，避免通知过程中重启用被写回旧基准
+            self.last_dynamic_ids[uid] = max(d.id for d in new_dynamics)
 
         if new_dynamics or new_pinned_id != current_pinned_id:
+            if not self._check_still_valid(uid, check_generation):
+                return True
             await self._persist_state(uid)
 
         return True
