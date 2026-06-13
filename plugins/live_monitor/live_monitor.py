@@ -106,9 +106,7 @@ class LiveMonitor:
         """新一轮开播时放弃已过期的待投递下播通知，避免 pending 标志永久滞留。"""
         if not state.pending_end:
             return
-        logger.warning(
-            f"房间 {room_id} 在新一轮开播前仍有未投递的下播通知，已放弃重试"
-        )
+        logger.warning(f"房间 {room_id} 在新一轮开播前仍有未投递的下播通知，已放弃重试")
         state.pending_end = False
 
     async def _delete_persisted_state(self, room_id: str) -> None:
