@@ -526,6 +526,36 @@ async def test_start_single_danmaku_client_can_retry_after_start_failure(
 
 
 @pytest.mark.asyncio
+async def test_start_danmaku_clients_retries_failed_room_on_subsequent_call(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+
+    failed_client = AsyncMock()
+    failed_client.start = AsyncMock(side_effect=ConnectionError("start failed"))
+    success_client = AsyncMock()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.DanmakuClient",
+            side_effect=[failed_client, success_client],
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.asyncio.sleep",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await monitor._start_danmaku_clients()
+        assert "111" not in monitor._danmaku_clients
+
+        await monitor._start_danmaku_clients()
+
+    assert monitor._danmaku_clients["111"] is success_client
+    success_client.start.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_reload_config_starts_websocket_for_rooms_without_active_client(
     live_monitor_modules: tuple[Any, Any, Any],
 ) -> None:
