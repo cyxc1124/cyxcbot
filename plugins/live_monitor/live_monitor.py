@@ -77,6 +77,7 @@ class LiveMonitor:
         return room_id in self.config.live_monitor_mapping
 
     def _is_current_room_state(self, room_id: str, state: LiveRoomState) -> bool:
+        """_is_active_room 校验配置映射；本方法校验 state 是否仍为 room_states 当前条目。"""
         return self.room_states.get(room_id) is state
 
     async def _delete_persisted_state(self, room_id: str) -> None:
