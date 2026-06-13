@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Awaitable, Callable, List, Optional
+from typing import Awaitable, Callable, List, Optional, TypeAlias
 
 from nonebot.log import logger
 from nonebot_plugin_orm import get_session
@@ -34,6 +34,7 @@ from shared.db.models import (
 from shared.security.crypto import decrypt_value
 
 ReloadCallback = Callable[[AppConfigSnapshot], Awaitable[None]]
+UnregisterReloadCallback: TypeAlias = Callable[[], None]
 
 SETTING_KEYS = {
     "dynamic_monitor_interval": ("30", int),
@@ -88,8 +89,20 @@ class ConfigService:
     def get_snapshot(self) -> AppConfigSnapshot:
         return self._snapshot
 
-    def register_reload_callback(self, callback: ReloadCallback) -> None:
-        self._reload_callbacks.append(callback)
+    def register_reload_callback(
+        self, callback: ReloadCallback
+    ) -> UnregisterReloadCallback:
+        """Register a reload callback. Returns a function to unregister it."""
+        if callback not in self._reload_callbacks:
+            self._reload_callbacks.append(callback)
+        return lambda: self.unregister_reload_callback(callback)
+
+    def unregister_reload_callback(self, callback: ReloadCallback) -> None:
+        """Remove a previously registered reload callback."""
+        try:
+            self._reload_callbacks.remove(callback)
+        except ValueError:
+            pass
 
     async def load(self) -> AppConfigSnapshot:
         """Load full config snapshot from database."""
