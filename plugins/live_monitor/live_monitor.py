@@ -352,8 +352,12 @@ class LiveMonitor:
             on_room_change=on_room_change,
         )
 
-        await client.start()
         self._danmaku_clients[room_id] = client
+        try:
+            await client.start()
+        except Exception:
+            self._danmaku_clients.pop(room_id, None)
+            raise
         logger.debug(f"房间 {room_id} WebSocket 监控已启动")
 
     async def _stop_danmaku_clients(self):

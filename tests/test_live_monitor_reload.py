@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import sys
 import types
@@ -523,6 +524,37 @@ async def test_start_single_danmaku_client_can_retry_after_start_failure(
 
     assert monitor._danmaku_clients["111"] is success_client
     success_client.start.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_start_single_danmaku_client_blocks_concurrent_start_while_in_flight(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+
+    start_gate = asyncio.Event()
+    in_flight_client = AsyncMock()
+
+    async def slow_start() -> None:
+        start_gate.set()
+        await asyncio.sleep(0.05)
+
+    in_flight_client.start = slow_start
+    duplicate_client = AsyncMock()
+
+    with patch(
+        "plugins.live_monitor.live_monitor.DanmakuClient",
+        side_effect=[in_flight_client, duplicate_client],
+    ) as create_client:
+        first_task = asyncio.create_task(monitor._start_single_danmaku_client("111"))
+        await start_gate.wait()
+        await monitor._start_single_danmaku_client("111")
+        await first_task
+
+    create_client.assert_called_once()
+    duplicate_client.start.assert_not_awaited()
+    assert monitor._danmaku_clients["111"] is in_flight_client
 
 
 @pytest.mark.asyncio
