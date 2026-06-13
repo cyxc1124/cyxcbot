@@ -481,6 +481,7 @@ class DynamicMonitor:
             return True
 
         # 处理置顶动态变化（只有在非首次启动时才推送置顶动态变化）
+        pinned_updated = False
         if new_pinned_id != current_pinned_id:
             if not self._check_still_valid(uid, check_generation):
                 return True
@@ -488,26 +489,34 @@ class DynamicMonitor:
                 f"UP主 {uid} 置顶动态已更新: {current_pinned_id} -> {new_pinned_id}"
             )
 
+            should_update_pinned_id = True
             # 只有当前置顶动态ID存在且有变化时，才推送置顶动态通知
             if new_pinned_id and current_pinned_id is not None:
-                # 查找置顶动态并推送
                 pinned_dynamic = next(
                     (d for d in dynamics if d.id == new_pinned_id), None
                 )
                 if pinned_dynamic:
                     if not self._check_still_valid(uid, check_generation):
                         return True
-                    await self._send_dynamic_notification(
+                    should_update_pinned_id = await self._send_dynamic_notification(
                         uid,
                         pinned_dynamic,
                         is_pinned=True,
                         check_generation=check_generation,
                     )
-            if not self._check_still_valid(uid, check_generation):
-                return True
-            self.pinned_dynamic_ids[uid] = new_pinned_id
+                    if not should_update_pinned_id:
+                        logger.warning(
+                            f"UP主 {uid} 置顶动态通知投递失败，保留旧置顶游标"
+                        )
+
+            if should_update_pinned_id:
+                if not self._check_still_valid(uid, check_generation):
+                    return True
+                self.pinned_dynamic_ids[uid] = new_pinned_id
+                pinned_updated = True
 
         # 如果有新动态，处理推送
+        delivered_dynamic_ids: List[int] = []
         if new_dynamics:
             if not self._check_still_valid(uid, check_generation):
                 return True
@@ -516,17 +525,22 @@ class DynamicMonitor:
             for dynamic in sorted(new_dynamics, key=lambda x: x.timestamp):
                 if not self._check_still_valid(uid, check_generation):
                     return True
-                await self._send_dynamic_notification(
+                delivered = await self._send_dynamic_notification(
                     uid, dynamic, check_generation=check_generation
                 )
+                if not delivered:
+                    logger.warning(
+                        f"UP主 {uid} 动态 {dynamic.id} 通知投递失败，保留游标待重试"
+                    )
+                    break
+                delivered_dynamic_ids.append(dynamic.id)
                 if not self._check_still_valid(uid, check_generation):
                     return True
-            # 全部推送完成后再更新游标，避免 stale 中断时写回过期 last_dynamic_id。
-            # 若循环中途因 generation 变化退出，已发出的动态下次轮询可能重复推送；
-            # 优先保证游标不被污染（停用→重启用场景会重置 initialized_uids，风险较低）。
-            self.last_dynamic_ids[uid] = max(d.id for d in new_dynamics)
 
-        if new_dynamics or new_pinned_id != current_pinned_id:
+            if delivered_dynamic_ids:
+                self.last_dynamic_ids[uid] = max(delivered_dynamic_ids)
+
+        if delivered_dynamic_ids or pinned_updated:
             if not self._check_still_valid(uid, check_generation):
                 return True
             await self._persist_state(uid, check_generation=check_generation)
@@ -555,19 +569,19 @@ class DynamicMonitor:
         is_pinned: bool = False,
         *,
         check_generation: Optional[int] = None,
-    ):
-        """发送动态通知"""
+    ) -> bool:
+        """发送动态通知，全部目标投递成功时返回 True。"""
         if check_generation is not None and not self._check_still_valid(
             uid, check_generation
         ):
-            return
+            return False
 
         # 获取真实的用户名（只在需要推送时才获取）
         real_name = await self.fetcher._get_user_name_from_api(str(dynamic.uid))
         if check_generation is not None and not self._check_still_valid(
             uid, check_generation
         ):
-            return
+            return False
         if real_name:
             dynamic.name = real_name
             logger.info(
@@ -583,7 +597,7 @@ class DynamicMonitor:
         if check_generation is not None and not self._check_still_valid(
             uid, check_generation
         ):
-            return
+            return False
 
         # 构建通知消息
         message = self.sender.build_dynamic_message(
@@ -598,22 +612,37 @@ class DynamicMonitor:
         user_ids = self.config.dynamic_monitor_user_mapping.get(uid, [])
         if not group_ids and not user_ids:
             logger.warning(f"UP主 {uid} 没有配置推送目标")
-            return
+            return False
 
         if check_generation is not None and not self._check_still_valid(
             uid, check_generation
         ):
-            return
+            return False
 
         at_all_enabled = self.config.dynamic_at_all.get(uid, False)
-        await self.sender.send_to_groups(
-            message, group_ids, at_all_enabled=at_all_enabled
+        delivery = await self.sender.send_message(
+            message,
+            group_ids,
+            user_ids,
+            at_all_enabled=at_all_enabled,
         )
-        await self.sender.send_to_users(message, user_ids)
-        logger.info(
-            f"动态通知已推送: uid={uid} dynamic_id={dynamic.id} "
-            f"groups={len(group_ids)} users={len(user_ids)} pinned={is_pinned}"
+        if delivery.all_succeeded:
+            logger.info(
+                f"动态通知已推送: uid={uid} dynamic_id={dynamic.id} "
+                f"groups={len(group_ids)} users={len(user_ids)} pinned={is_pinned}"
+            )
+            return True
+
+        failed_targets = [
+            f"{target.target_type}:{target.target_id}"
+            for target in delivery.targets
+            if not target.success
+        ]
+        logger.warning(
+            f"动态通知投递未全部成功: uid={uid} dynamic_id={dynamic.id} "
+            f"failed={failed_targets}"
         )
+        return False
 
     async def get_latest_dynamic(self, uid: str, group_id: str):
         """获取并发送指定UP主的最新动态"""

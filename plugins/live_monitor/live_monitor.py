@@ -506,22 +506,21 @@ class LiveMonitor:
             return
 
         # 检查状态变化
-        old_status = state.previous_status
+        is_live_began, _, new_status, start_time = state.detect_status_change(room_info)
 
-        if old_status != LiveStatus.LIVE and room_info.live_status == LiveStatus.LIVE:
-            # 确认是开播
-            state.previous_status = LiveStatus.LIVE
-            state.room_info = room_info
-            state.user_info = user_info
-            state.start_time = room_info.live_start_time or int(
-                datetime.now().timestamp()
-            )
-
+        if is_live_began:
             streamer_name = user_info.name if user_info else f"房间{room_id}"
             logger.info(f"确认开播: {streamer_name} (房间 {room_id})")
-            await self._send_live_notification(
+            delivered = await self._send_live_notification(
                 room_id, "start", state, prefetched_images=prefetched
             )
+            if delivered:
+                state.apply_status(
+                    room_info,
+                    new_status,
+                    new_user_info=user_info,
+                    start_time=start_time,
+                )
         else:
             # 更新状态但不发送通知（可能是重复信号或已经在直播中）
             state.room_info = room_info
@@ -560,19 +559,19 @@ class LiveMonitor:
             # 判断是关播还是轮播
             new_status = LiveStatus.ROUND if round_status == 1 else LiveStatus.PREPARING
 
-            state.previous_status = new_status
-            if room_info:
-                state.room_info = room_info
-            if user_info:
-                state.user_info = user_info
-
             streamer_name = (
                 state.user_info.name if state.user_info else f"房间{room_id}"
             )
             logger.info(f"确认关播: {streamer_name} (房间 {room_id})")
-            await self._send_live_notification(
+            delivered = await self._send_live_notification(
                 room_id, "end", state, prefetched_images=prefetched
             )
+            if delivered:
+                state.apply_status(
+                    room_info or state.room_info,
+                    new_status,
+                    new_user_info=user_info,
+                )
 
     async def _handle_room_change(self, room_id: str, data: dict):
         """处理房间信息变更"""
@@ -702,8 +701,10 @@ class LiveMonitor:
         if not self._is_current_room_state(room_id, state):
             return True
 
-        # 更新状态并检测变化
-        is_live_began, is_live_ended = state.update_status(room_info, user_info)
+        # 检测状态变化，仅在通知投递成功后再确认状态
+        is_live_began, is_live_ended, new_status, start_time = (
+            state.detect_status_change(room_info)
+        )
 
         # 处理开播事件
         if is_live_began:
@@ -711,25 +712,40 @@ class LiveMonitor:
                 state.user_info.name if state.user_info else f"房间{room_id}"
             )
             logger.info(f"检测到开播: {streamer_name} (房间 {room_id})")
-            await self._send_live_notification(
+            delivered = await self._send_live_notification(
                 room_id,
                 "start",
                 state,
                 prefetched_images=prefetched if need_start_card else None,
             )
+            if delivered:
+                state.apply_status(
+                    room_info,
+                    new_status,
+                    new_user_info=user_info,
+                    start_time=start_time,
+                )
 
         # 处理关播事件
-        if is_live_ended:
+        elif is_live_ended:
             streamer_name = (
                 state.user_info.name if state.user_info else f"房间{room_id}"
             )
             logger.info(f"检测到关播: {streamer_name} (房间 {room_id})")
-            await self._send_live_notification(
+            delivered = await self._send_live_notification(
                 room_id,
                 "end",
                 state,
                 prefetched_images=prefetched if need_end_card else None,
             )
+            if delivered:
+                state.apply_status(
+                    room_info,
+                    new_status,
+                    new_user_info=user_info,
+                )
+        else:
+            state.apply_status(room_info, new_status, new_user_info=user_info)
 
         return True
 
@@ -739,14 +755,14 @@ class LiveMonitor:
         status: str,
         state: LiveRoomState,
         prefetched_images: Optional[PrefetchImages] = None,
-    ):
-        """发送直播通知"""
+    ) -> bool:
+        """发送直播通知，全部目标投递成功时返回 True。"""
         # 获取目标群组
         target_groups = self.config.live_monitor_mapping.get(room_id, [])
         target_users = self.config.live_monitor_user_mapping.get(room_id, [])
         if not target_groups and not target_users:
             logger.warning(f"房间 {room_id} 没有配置推送目标")
-            return
+            return False
 
         # 获取主播名称
         streamer_name = state.user_info.name if state.user_info else f"房间{room_id}"
@@ -754,8 +770,7 @@ class LiveMonitor:
         # 计算直播时长（仅关播时使用）
         duration_seconds = state.get_duration_seconds() if status == "end" else 0
 
-        # 使用发送器发送通知
-        await self._sender.send_notification(
+        delivery = await self._sender.send_notification(
             status=status,
             streamer_name=streamer_name,
             room_info=state.room_info,
@@ -766,8 +781,19 @@ class LiveMonitor:
             at_all_enabled=self.config.live_at_all.get(room_id, True),
             prefetched_images=prefetched_images,
         )
+        if delivery.all_succeeded:
+            asyncio.create_task(self._persist_state(room_id))
+            return True
 
-        asyncio.create_task(self._persist_state(room_id))
+        failed_targets = [
+            f"{target.target_type}:{target.target_id}"
+            for target in delivery.targets
+            if not target.success
+        ]
+        logger.warning(
+            f"直播{status}通知投递未全部成功: room_id={room_id} failed={failed_targets}"
+        )
+        return False
 
     async def check_room_now(self, room_id: str) -> Optional[Dict]:
         """立即检查指定房间的状态（用于手动触发）"""

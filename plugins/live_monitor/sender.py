@@ -15,6 +15,7 @@ from nonebot.log import logger
 
 from shared.config.message_templates import LiveMessageTemplates
 from shared.notify.at_all import LIVE_AT_ALL_FALLBACK, bot_can_at_all
+from shared.notify.delivery import DeliveryResult, TargetDelivery, empty_delivery_result
 from shared.notify.message_template import build_message_from_template
 from utils.bilibili_api import RoomInfo, UserInfo
 
@@ -239,18 +240,20 @@ class LiveNotificationSender:
         group_id: str,
         message: Message,
         status: str,
-    ) -> None:
+    ) -> TargetDelivery:
         try:
             await bot.send_group_msg(
                 group_id=int(group_id),
                 message=message,
             )
             logger.success(f"直播{status}通知已发送到群组 {group_id}")
-        except Exception as e:
-            logger.error(f"发送通知到群组 {group_id} 失败: {e}")
+            return TargetDelivery("group", group_id, True)
+        except Exception as exc:
+            logger.error(f"发送通知到群组 {group_id} 失败: {exc}")
             import traceback
 
             logger.debug(f"错误详情: {traceback.format_exc()}")
+            return TargetDelivery("group", group_id, False, str(exc))
 
     async def _send_private_message(
         self,
@@ -258,18 +261,20 @@ class LiveNotificationSender:
         user_id: str,
         message: Message,
         status: str,
-    ) -> None:
+    ) -> TargetDelivery:
         try:
             await bot.send_private_msg(
                 user_id=int(user_id),
                 message=message,
             )
             logger.success(f"直播{status}通知已发送到好友 {user_id}")
-        except Exception as e:
-            logger.error(f"发送通知到好友 {user_id} 失败: {e}")
+            return TargetDelivery("user", user_id, True)
+        except Exception as exc:
+            logger.error(f"发送通知到好友 {user_id} 失败: {exc}")
             import traceback
 
             logger.debug(f"错误详情: {traceback.format_exc()}")
+            return TargetDelivery("user", user_id, False, str(exc))
 
     async def send_notification(
         self,
@@ -282,12 +287,12 @@ class LiveNotificationSender:
         at_all_enabled: bool = False,
         target_users: Optional[List[str]] = None,
         prefetched_images: Optional[PrefetchImages] = None,
-    ):
-        """发送直播通知到指定群组与好友"""
+    ) -> DeliveryResult:
+        """发送直播通知到指定群组与好友，返回结构化投递结果。"""
         target_users = target_users or []
         if not target_groups and not target_users:
             logger.warning("没有配置推送目标，跳过发送通知")
-            return
+            return empty_delivery_result()
 
         logger.info(
             f"开始发送直播{status}通知 - 主播: {streamer_name}, "
@@ -298,14 +303,36 @@ class LiveNotificationSender:
 
         if not bots:
             logger.warning("没有可用的机器人实例")
-            return
+            return DeliveryResult(
+                targets=[
+                    TargetDelivery("group", group_id, False, "没有可用的机器人实例")
+                    for group_id in target_groups
+                ]
+                + [
+                    TargetDelivery("user", user_id, False, "没有可用的机器人实例")
+                    for user_id in target_users
+                ]
+            )
 
         valid_bots: List[Tuple[str, Bot]] = [
             (bot_id, bot) for bot_id, bot in bots.items() if isinstance(bot, Bot)
         ]
         if not valid_bots:
             logger.warning("没有可用的 OneBot 机器人实例")
-            return
+            return DeliveryResult(
+                targets=[
+                    TargetDelivery(
+                        "group", group_id, False, "没有可用的 OneBot 机器人实例"
+                    )
+                    for group_id in target_groups
+                ]
+                + [
+                    TargetDelivery(
+                        "user", user_id, False, "没有可用的 OneBot 机器人实例"
+                    )
+                    for user_id in target_users
+                ]
+            )
 
         parallel_tasks: List = [
             self._generate_card_if_needed(
@@ -393,8 +420,19 @@ class LiveNotificationSender:
                     self._send_private_message(bot, user_id, message, status)
                 )
 
-        if send_tasks:
-            await asyncio.gather(*send_tasks, return_exceptions=True)
+        if not send_tasks:
+            return empty_delivery_result()
+
+        deliveries = await asyncio.gather(*send_tasks, return_exceptions=True)
+        targets: List[TargetDelivery] = []
+        for delivery in deliveries:
+            if isinstance(delivery, TargetDelivery):
+                targets.append(delivery)
+            else:
+                targets.append(
+                    TargetDelivery("unknown", "unknown", False, str(delivery))
+                )
+        return DeliveryResult(targets=targets)
 
 
 notification_sender: Optional[LiveNotificationSender] = None

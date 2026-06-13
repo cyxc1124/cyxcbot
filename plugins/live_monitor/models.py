@@ -20,6 +20,46 @@ class LiveRoomState:
     previous_status: LiveStatus = LiveStatus.PREPARING
     start_time: int = 0  # 记录的开播时间戳
 
+    def detect_status_change(
+        self, new_room_info: RoomInfo
+    ) -> tuple[bool, bool, LiveStatus, int]:
+        """
+        检测状态变化，不修改 previous_status。
+        返回: (是否开播, 是否关播, 新状态, 开播时间戳)
+        """
+        is_live_began = False
+        is_live_ended = False
+
+        old_status = self.previous_status
+        new_status = new_room_info.live_status
+        start_time = self.start_time
+
+        if old_status != LiveStatus.LIVE and new_status == LiveStatus.LIVE:
+            is_live_began = True
+            start_time = new_room_info.live_start_time or int(
+                datetime.now().timestamp()
+            )
+        elif old_status == LiveStatus.LIVE and new_status != LiveStatus.LIVE:
+            is_live_ended = True
+
+        return is_live_began, is_live_ended, new_status, start_time
+
+    def apply_status(
+        self,
+        new_room_info: RoomInfo,
+        new_status: LiveStatus,
+        *,
+        new_user_info: Optional[UserInfo] = None,
+        start_time: Optional[int] = None,
+    ) -> None:
+        """在通知投递成功后确认状态。"""
+        self.previous_status = new_status
+        self.room_info = new_room_info
+        if new_user_info:
+            self.user_info = new_user_info
+        if start_time is not None:
+            self.start_time = start_time
+
     def update_status(
         self, new_room_info: RoomInfo, new_user_info: Optional[UserInfo] = None
     ) -> tuple[bool, bool]:
@@ -27,29 +67,15 @@ class LiveRoomState:
         更新状态并返回状态变化
         返回: (是否开播, 是否关播)
         """
-        is_live_began = False
-        is_live_ended = False
-
-        old_status = self.previous_status
-        new_status = new_room_info.live_status
-
-        # 检测状态变化
-        if old_status != LiveStatus.LIVE and new_status == LiveStatus.LIVE:
-            # 开播
-            is_live_began = True
-            self.start_time = new_room_info.live_start_time or int(
-                datetime.now().timestamp()
-            )
-        elif old_status == LiveStatus.LIVE and new_status != LiveStatus.LIVE:
-            # 关播
-            is_live_ended = True
-
-        # 更新状态
-        self.previous_status = new_status
-        self.room_info = new_room_info
-        if new_user_info:
-            self.user_info = new_user_info
-
+        is_live_began, is_live_ended, new_status, start_time = (
+            self.detect_status_change(new_room_info)
+        )
+        self.apply_status(
+            new_room_info,
+            new_status,
+            new_user_info=new_user_info,
+            start_time=start_time if is_live_began else None,
+        )
         return is_live_began, is_live_ended
 
     def get_duration_seconds(self) -> int:

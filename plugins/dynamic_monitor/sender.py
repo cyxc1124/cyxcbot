@@ -10,6 +10,7 @@ from nonebot.log import logger
 
 from shared.config.message_templates import DynamicMessageTemplates
 from shared.notify.at_all import DYNAMIC_AT_ALL_FALLBACK, resolve_at_all_prefix
+from shared.notify.delivery import DeliveryResult, TargetDelivery, empty_delivery_result
 from shared.notify.message_template import build_message_from_template
 from utils.bilibili_api import DynamicItem
 
@@ -86,70 +87,99 @@ class DynamicSender:
         group_ids: List[str],
         *,
         at_all_enabled: bool = False,
-    ):
-        """发送消息到多个群组"""
+    ) -> DeliveryResult:
+        """发送消息到多个群组，返回结构化投递结果。"""
+        if not group_ids:
+            return empty_delivery_result()
+
+        deliveries: List[TargetDelivery] = []
         for group_id in group_ids:
             try:
                 await self._send_to_group(
                     group_id, message, at_all_enabled=at_all_enabled
                 )
                 logger.info(f"动态消息已发送到群组 {group_id}")
-            except Exception as e:
-                logger.error(f"发送消息到群组 {group_id} 失败: {e}")
+                deliveries.append(
+                    TargetDelivery("group", group_id, True),
+                )
+            except Exception as exc:
+                logger.error(f"发送消息到群组 {group_id} 失败: {exc}")
+                deliveries.append(
+                    TargetDelivery("group", group_id, False, str(exc)),
+                )
+        return DeliveryResult(targets=deliveries)
 
     async def _send_to_group(
         self, group_id: str, message: Message, *, at_all_enabled: bool = False
     ):
         """发送消息到指定群组"""
-        try:
-            from nonebot import get_bot
+        from nonebot import get_bot
 
-            bot = get_bot()
+        bot = get_bot()
 
-            if not bot:
-                logger.warning(f"机器人未连接，跳过发送到群组 {group_id}")
-                return
+        if not bot:
+            raise RuntimeError(f"机器人未连接，无法发送到群组 {group_id}")
 
-            if at_all_enabled:
-                prefix = await resolve_at_all_prefix(
-                    bot,
-                    group_id,
-                    enabled=True,
-                    fallback=DYNAMIC_AT_ALL_FALLBACK,
-                )
-                payload = prefix + message
-            else:
-                payload = message
+        if at_all_enabled:
+            prefix = await resolve_at_all_prefix(
+                bot,
+                group_id,
+                enabled=True,
+                fallback=DYNAMIC_AT_ALL_FALLBACK,
+            )
+            payload = prefix + message
+        else:
+            payload = message
 
-            await bot.send_group_msg(group_id=int(group_id), message=payload)
-        except Exception as e:
-            logger.error(f"发送消息到群组 {group_id} 失败: {e}")
-            raise
+        await bot.send_group_msg(group_id=int(group_id), message=payload)
 
-    async def send_to_users(self, message: Message, user_ids: List[str]):
-        """发送消息到多个好友"""
+    async def send_to_users(
+        self, message: Message, user_ids: List[str]
+    ) -> DeliveryResult:
+        """发送消息到多个好友，返回结构化投递结果。"""
+        if not user_ids:
+            return empty_delivery_result()
+
+        deliveries: List[TargetDelivery] = []
         for user_id in user_ids:
             try:
                 await self._send_to_user(user_id, message)
                 logger.info(f"动态消息已发送到好友 {user_id}")
-            except Exception as e:
-                logger.error(f"发送消息到好友 {user_id} 失败: {e}")
+                deliveries.append(
+                    TargetDelivery("user", user_id, True),
+                )
+            except Exception as exc:
+                logger.error(f"发送消息到好友 {user_id} 失败: {exc}")
+                deliveries.append(
+                    TargetDelivery("user", user_id, False, str(exc)),
+                )
+        return DeliveryResult(targets=deliveries)
 
     async def _send_to_user(self, user_id: str, message: Message):
         """发送消息到指定好友"""
-        try:
-            from nonebot import get_bot
+        from nonebot import get_bot
 
-            bot = get_bot()
+        bot = get_bot()
 
-            if not bot:
-                logger.warning(f"机器人未连接，跳过发送到好友 {user_id}")
-                return
+        if not bot:
+            raise RuntimeError(f"机器人未连接，无法发送到好友 {user_id}")
 
-            await bot.send_private_msg(
-                user_id=int(user_id),
-                message=message,
-            )
-        except Exception as e:
-            logger.error(f"发送消息到好友 {user_id} 失败: {e}")
-            raise
+        await bot.send_private_msg(
+            user_id=int(user_id),
+            message=message,
+        )
+
+    async def send_message(
+        self,
+        message: Message,
+        group_ids: List[str],
+        user_ids: List[str],
+        *,
+        at_all_enabled: bool = False,
+    ) -> DeliveryResult:
+        """向群组与好友发送同一条消息，并合并投递结果。"""
+        group_result = await self.send_to_groups(
+            message, group_ids, at_all_enabled=at_all_enabled
+        )
+        user_result = await self.send_to_users(message, user_ids)
+        return group_result.merge(user_result)
