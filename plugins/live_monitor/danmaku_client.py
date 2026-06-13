@@ -156,6 +156,7 @@ class DanmakuClient:
         self._running = False
         self._heartbeat_task: Optional[asyncio.Task] = None
         self._message_task: Optional[asyncio.Task] = None
+        self._reconnect_task: Optional[asyncio.Task] = None
 
         # 从 cookie 提取 uid 和 buvid
         self._uid = self._extract_uid_from_cookie(cookie) if cookie else 0
@@ -236,6 +237,12 @@ class DanmakuClient:
             self._message_task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._message_task
+
+        if self._reconnect_task:
+            self._reconnect_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._reconnect_task
+            self._reconnect_task = None
 
         # 关闭 WebSocket
         if self._ws and not self._ws.closed:
@@ -466,8 +473,7 @@ class DanmakuClient:
                 break
             except Exception as e:
                 logger.warning(f"房间 {self.room_id} 心跳发送失败: {e}")
-                # 尝试重连
-                asyncio.create_task(self._reconnect())
+                self.schedule_reconnect()
                 break
 
     async def _message_loop(self) -> None:
@@ -480,7 +486,7 @@ class DanmakuClient:
                     await self._handle_message(msg.data)
                 elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                     logger.warning(f"房间 {self.room_id} WebSocket 连接断开")
-                    asyncio.create_task(self._reconnect())
+                    self.schedule_reconnect()
                     break
 
             except asyncio.TimeoutError:
@@ -489,7 +495,7 @@ class DanmakuClient:
                 break
             except Exception as e:
                 logger.warning(f"房间 {self.room_id} 消息接收异常: {e}")
-                asyncio.create_task(self._reconnect())
+                self.schedule_reconnect()
                 break
 
     async def _handle_message(self, data: bytes) -> None:
@@ -546,33 +552,54 @@ class DanmakuClient:
                 except Exception as e:
                     logger.error(f"房间 {self.room_id} 房间变更回调执行失败: {e}")
 
+    def schedule_reconnect(self) -> None:
+        """调度重连；若已有未完成的重连任务则忽略。"""
+        if not self._running:
+            return
+        if self._reconnect_task is not None and not self._reconnect_task.done():
+            return
+        self._reconnect_task = asyncio.create_task(self._reconnect())
+
+    async def _cancel_io_tasks(self) -> None:
+        """取消心跳与消息接收任务。"""
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._heartbeat_task
+            self._heartbeat_task = None
+
+        if self._message_task:
+            self._message_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._message_task
+            self._message_task = None
+
     async def _reconnect(self) -> None:
         """重新连接"""
         if not self._running:
             return
 
-        logger.debug(f"房间 {self.room_id} 正在重新连接...")
+        try:
+            while self._running:
+                logger.debug(f"房间 {self.room_id} 正在重新连接...")
 
-        # 取消现有任务
-        if self._heartbeat_task:
-            self._heartbeat_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._heartbeat_task
+                await self._cancel_io_tasks()
 
-        if self._ws and not self._ws.closed:
-            with suppress(Exception):
-                await self._ws.close()
+                if self._ws and not self._ws.closed:
+                    with suppress(Exception):
+                        await self._ws.close()
 
-        # 等待一段时间后重连
-        await asyncio.sleep(3)
+                await asyncio.sleep(3)
+                if not self._running:
+                    break
 
-        if self._running:
-            try:
-                await self._connect()
-                logger.debug(f"房间 {self.room_id} 重新连接成功")
-            except Exception as e:
-                logger.warning(f"房间 {self.room_id} 重新连接失败: {e}")
-                # 继续尝试重连
-                await asyncio.sleep(10)
-                if self._running:
-                    asyncio.create_task(self._reconnect())
+                try:
+                    await self._connect()
+                    logger.debug(f"房间 {self.room_id} 重新连接成功")
+                    break
+                except Exception as e:
+                    logger.warning(f"房间 {self.room_id} 重新连接失败: {e}")
+                    await asyncio.sleep(10)
+        finally:
+            if self._reconnect_task is asyncio.current_task():
+                self._reconnect_task = None
