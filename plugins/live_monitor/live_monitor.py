@@ -43,6 +43,8 @@ async def sync_from_config_reload(snapshot) -> None:
         return
 
     if not has_targets:
+        # 先同步配置并移除房间状态，避免 in-flight 检查仍持有旧 mapping 误推送。
+        await live_monitor_instance.reload_config()
         await stop_live_monitor()
         return
 
