@@ -42,5 +42,30 @@ class DeliveryResult:
         return DeliveryResult(targets=[*self.targets, *other.targets])
 
 
+def aggregate_by_target(result: DeliveryResult) -> DeliveryResult:
+    """按配置目标聚合投递结果，任一 bot 成功即视为该目标成功。"""
+    grouped: dict[tuple[str, str], list[TargetDelivery]] = {}
+    for target in result.targets:
+        key = (target.target_type, target.target_id)
+        grouped.setdefault(key, []).append(target)
+
+    aggregated: List[TargetDelivery] = []
+    for (target_type, target_id), attempts in grouped.items():
+        if any(attempt.success for attempt in attempts):
+            aggregated.append(TargetDelivery(target_type, target_id, True))
+            continue
+
+        errors = [attempt.error for attempt in attempts if attempt.error]
+        aggregated.append(
+            TargetDelivery(
+                target_type,
+                target_id,
+                False,
+                errors[0] if errors else None,
+            )
+        )
+    return DeliveryResult(targets=aggregated)
+
+
 def empty_delivery_result() -> DeliveryResult:
     return DeliveryResult()

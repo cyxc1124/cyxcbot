@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from nonebot.adapters.onebot.v11.message import Message
 
-from shared.notify.delivery import DeliveryResult, TargetDelivery
+from shared.notify.delivery import DeliveryResult, TargetDelivery, aggregate_by_target
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGINS_ROOT = ROOT / "plugins"
@@ -143,6 +143,38 @@ def test_delivery_result_properties(
     assert result.all_failed is all_failed
 
 
+def test_aggregate_by_target_any_bot_success_counts_as_delivered() -> None:
+    raw = DeliveryResult(
+        targets=[
+            TargetDelivery("group", "1001", True),
+            TargetDelivery("group", "1001", False, "bot2 failed"),
+            TargetDelivery("user", "2002", False, "bot1 failed"),
+            TargetDelivery("user", "2002", True),
+        ]
+    )
+
+    aggregated = aggregate_by_target(raw)
+
+    assert len(aggregated.targets) == 2
+    assert aggregated.all_succeeded
+    assert all(target.success for target in aggregated.targets)
+
+
+def test_aggregate_by_target_all_bots_failed_marks_target_failed() -> None:
+    raw = DeliveryResult(
+        targets=[
+            TargetDelivery("group", "1001", False, "bot1 failed"),
+            TargetDelivery("group", "1001", False, "bot2 failed"),
+        ]
+    )
+
+    aggregated = aggregate_by_target(raw)
+
+    assert len(aggregated.targets) == 1
+    assert aggregated.all_failed
+    assert aggregated.targets[0].error == "bot1 failed"
+
+
 @pytest.mark.asyncio
 async def test_dynamic_sender_no_bot_marks_all_targets_failed(
     dynamic_sender_module,
@@ -236,6 +268,45 @@ async def test_live_sender_partial_failure(live_sender_module) -> None:
 
     assert result.any_succeeded
     assert not result.all_succeeded
+
+
+@pytest.mark.asyncio
+async def test_live_sender_aggregates_multi_bot_delivery_by_target(
+    live_sender_module,
+) -> None:
+    from nonebot.adapters.onebot.v11 import Bot
+
+    sender = live_sender_module.LiveNotificationSender()
+    bot_ok = MagicMock(spec=Bot)
+    bot_ok.send_group_msg = AsyncMock()
+    bot_ok.send_private_msg = AsyncMock()
+    bot_fail = MagicMock(spec=Bot)
+    bot_fail.send_group_msg = AsyncMock(side_effect=RuntimeError("no access"))
+    bot_fail.send_private_msg = AsyncMock(side_effect=RuntimeError("no access"))
+    driver = SimpleNamespace(bots={"ok": bot_ok, "fail": bot_fail})
+
+    with (
+        patch("plugins.live_monitor.sender.get_driver", return_value=driver),
+        patch.object(sender, "_generate_card_if_needed", AsyncMock(return_value=None)),
+        patch.object(
+            sender,
+            "_resolve_at_all_map",
+            AsyncMock(return_value={"1001": False}),
+        ),
+    ):
+        result = await sender.send_notification(
+            status="start",
+            streamer_name="tester",
+            room_info=None,
+            target_groups=["1001"],
+            target_users=[],
+            at_all_enabled=False,
+        )
+
+    assert len(result.targets) == 1
+    assert result.all_succeeded
+    bot_ok.send_group_msg.assert_awaited_once()
+    bot_fail.send_group_msg.assert_awaited_once()
 
 
 def _room_info(live_models_module, status):

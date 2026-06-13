@@ -20,7 +20,7 @@ from nonebot_plugin_orm import get_session
 from shared.config.service import get_config_service
 from shared.db.models import LiveMonitorState
 from shared.monitor.check_cycle import CheckCycleLogger
-from utils.bilibili_api import LiveStatus, api_manager
+from utils.bilibili_api import LiveStatus, RoomInfo, UserInfo, api_manager
 
 from .card_generator import PrefetchImages, prefetch_card_images
 from .config import Config
@@ -512,7 +512,12 @@ class LiveMonitor:
             streamer_name = user_info.name if user_info else f"房间{room_id}"
             logger.info(f"确认开播: {streamer_name} (房间 {room_id})")
             delivered = await self._send_live_notification(
-                room_id, "start", state, prefetched_images=prefetched
+                room_id,
+                "start",
+                state,
+                prefetched_images=prefetched,
+                room_info=room_info,
+                user_info=user_info,
             )
             if delivered:
                 state.apply_status(
@@ -564,7 +569,12 @@ class LiveMonitor:
             )
             logger.info(f"确认关播: {streamer_name} (房间 {room_id})")
             delivered = await self._send_live_notification(
-                room_id, "end", state, prefetched_images=prefetched
+                room_id,
+                "end",
+                state,
+                prefetched_images=prefetched,
+                room_info=room_info or state.room_info,
+                user_info=user_info,
             )
             if delivered:
                 state.apply_status(
@@ -708,15 +718,15 @@ class LiveMonitor:
 
         # 处理开播事件
         if is_live_began:
-            streamer_name = (
-                state.user_info.name if state.user_info else f"房间{room_id}"
-            )
+            streamer_name = user_info.name if user_info else f"房间{room_id}"
             logger.info(f"检测到开播: {streamer_name} (房间 {room_id})")
             delivered = await self._send_live_notification(
                 room_id,
                 "start",
                 state,
                 prefetched_images=prefetched if need_start_card else None,
+                room_info=room_info,
+                user_info=user_info,
             )
             if delivered:
                 state.apply_status(
@@ -728,15 +738,15 @@ class LiveMonitor:
 
         # 处理关播事件
         elif is_live_ended:
-            streamer_name = (
-                state.user_info.name if state.user_info else f"房间{room_id}"
-            )
+            streamer_name = user_info.name if user_info else f"房间{room_id}"
             logger.info(f"检测到关播: {streamer_name} (房间 {room_id})")
             delivered = await self._send_live_notification(
                 room_id,
                 "end",
                 state,
                 prefetched_images=prefetched if need_end_card else None,
+                room_info=room_info,
+                user_info=user_info,
             )
             if delivered:
                 state.apply_status(
@@ -755,6 +765,9 @@ class LiveMonitor:
         status: str,
         state: LiveRoomState,
         prefetched_images: Optional[PrefetchImages] = None,
+        *,
+        room_info: Optional[RoomInfo] = None,
+        user_info: Optional[UserInfo] = None,
     ) -> bool:
         """发送直播通知，全部目标投递成功时返回 True。"""
         # 获取目标群组
@@ -764,8 +777,13 @@ class LiveMonitor:
             logger.warning(f"房间 {room_id} 没有配置推送目标")
             return False
 
+        effective_room_info = room_info if room_info is not None else state.room_info
+        effective_user_info = user_info if user_info is not None else state.user_info
+
         # 获取主播名称
-        streamer_name = state.user_info.name if state.user_info else f"房间{room_id}"
+        streamer_name = (
+            effective_user_info.name if effective_user_info else f"房间{room_id}"
+        )
 
         # 计算直播时长（仅关播时使用）
         duration_seconds = state.get_duration_seconds() if status == "end" else 0
@@ -773,10 +791,10 @@ class LiveMonitor:
         delivery = await self._sender.send_notification(
             status=status,
             streamer_name=streamer_name,
-            room_info=state.room_info,
+            room_info=effective_room_info,
             target_groups=target_groups,
             target_users=target_users,
-            user_info=state.user_info,
+            user_info=effective_user_info,
             duration_seconds=duration_seconds,
             at_all_enabled=self.config.live_at_all.get(room_id, True),
             prefetched_images=prefetched_images,

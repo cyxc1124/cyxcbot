@@ -15,7 +15,12 @@ from nonebot.log import logger
 
 from shared.config.message_templates import LiveMessageTemplates
 from shared.notify.at_all import LIVE_AT_ALL_FALLBACK, bot_can_at_all
-from shared.notify.delivery import DeliveryResult, TargetDelivery, empty_delivery_result
+from shared.notify.delivery import (
+    DeliveryResult,
+    TargetDelivery,
+    aggregate_by_target,
+    empty_delivery_result,
+)
 from shared.notify.message_template import build_message_from_template
 from utils.bilibili_api import RoomInfo, UserInfo
 
@@ -432,7 +437,7 @@ class LiveNotificationSender:
                 targets.append(
                     TargetDelivery("unknown", "unknown", False, str(delivery))
                 )
-        return DeliveryResult(targets=targets)
+        return aggregate_by_target(DeliveryResult(targets=targets))
 
 
 notification_sender: Optional[LiveNotificationSender] = None
