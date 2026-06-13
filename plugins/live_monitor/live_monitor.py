@@ -76,6 +76,9 @@ class LiveMonitor:
     def _is_active_room(self, room_id: str) -> bool:
         return room_id in self.config.live_monitor_mapping
 
+    def _is_current_room_state(self, room_id: str, state: LiveRoomState) -> bool:
+        return self.room_states.get(room_id) is state
+
     async def _delete_persisted_state(self, room_id: str) -> None:
         """清除 DB 中已停用/移除房间的持久化状态。"""
         session = get_session()
@@ -473,6 +476,8 @@ class LiveMonitor:
 
         if not self._is_active_room(room_id):
             return
+        if not self._is_current_room_state(room_id, state):
+            return
 
         # 检查状态变化
         old_status = state.previous_status
@@ -518,6 +523,8 @@ class LiveMonitor:
         )
 
         if not self._is_active_room(room_id):
+            return
+        if not self._is_current_room_state(room_id, state):
             return
 
         old_status = state.previous_status
@@ -567,6 +574,8 @@ class LiveMonitor:
 
             if room_info:
                 if not self._is_active_room(room_id):
+                    return False
+                if not self._is_current_room_state(room_id, state):
                     return False
 
                 state.room_info = room_info
@@ -657,6 +666,8 @@ class LiveMonitor:
             return False
 
         if not self._is_active_room(room_id):
+            return True
+        if not self._is_current_room_state(room_id, state):
             return True
 
         # 更新状态并检测变化
