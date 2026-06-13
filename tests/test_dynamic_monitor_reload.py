@@ -128,9 +128,16 @@ async def test_reload_config_removes_deleted_uid_runtime_state(
         dynamic_monitor_mapping={"222": ["group1"]},
     )
 
-    with patch(
-        "plugins.dynamic_monitor.dynamic_monitor.Config.from_service",
-        return_value=reduced_config,
+    with (
+        patch(
+            "plugins.dynamic_monitor.dynamic_monitor.Config.from_service",
+            return_value=reduced_config,
+        ),
+        patch.object(
+            monitor,
+            "_delete_persisted_state",
+            new_callable=AsyncMock,
+        ),
     ):
         await monitor.reload_config()
 
@@ -150,9 +157,16 @@ async def test_reenabled_uid_treated_as_new_after_reload_removal(
     disabled_config = Config(dynamic_monitor_mapping={})
     reenabled_config = Config(dynamic_monitor_mapping={"111": ["group1"]})
 
-    with patch(
-        "plugins.dynamic_monitor.dynamic_monitor.Config.from_service",
-        side_effect=[disabled_config, reenabled_config],
+    with (
+        patch(
+            "plugins.dynamic_monitor.dynamic_monitor.Config.from_service",
+            side_effect=[disabled_config, reenabled_config],
+        ),
+        patch.object(
+            monitor,
+            "_delete_persisted_state",
+            new_callable=AsyncMock,
+        ),
     ):
         await monitor.reload_config()
         await monitor.reload_config()
@@ -160,3 +174,67 @@ async def test_reenabled_uid_treated_as_new_after_reload_removal(
     assert monitor.last_dynamic_ids["111"] == 0
     assert monitor.initialized_uids["111"] is False
     assert monitor.pinned_dynamic_ids["111"] is None
+
+
+@pytest.mark.asyncio
+async def test_persist_state_skips_inactive_uid(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.config = Config(dynamic_monitor_mapping={})
+    monitor.last_dynamic_ids["111"] = 999
+    monitor.initialized_uids["111"] = True
+
+    with patch("plugins.dynamic_monitor.dynamic_monitor.get_session") as get_session:
+        await monitor._persist_state("111")
+
+    get_session.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_check_user_dynamic_does_not_persist_after_target_removed_during_fetch(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.fetcher = MagicMock()
+
+    async def fetch_after_disable(*_args, **_kwargs):
+        monitor.config = Config(dynamic_monitor_mapping={})
+        return ([], None)
+
+    monitor.fetcher.fetch_user_dynamics = fetch_after_disable
+
+    with patch.object(monitor, "_persist_state", AsyncMock()) as persist:
+        result = await monitor._check_user_dynamic("111")
+
+    assert result is True
+    persist.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reload_config_deletes_persisted_state_for_removed_uid(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111", "222"])
+
+    reduced_config = Config(
+        dynamic_monitor_mapping={"222": ["group1"]},
+    )
+
+    with (
+        patch(
+            "plugins.dynamic_monitor.dynamic_monitor.Config.from_service",
+            return_value=reduced_config,
+        ),
+        patch.object(
+            monitor,
+            "_delete_persisted_state",
+            new_callable=AsyncMock,
+        ) as delete_state,
+    ):
+        await monitor.reload_config()
+
+    delete_state.assert_awaited_once_with("111")

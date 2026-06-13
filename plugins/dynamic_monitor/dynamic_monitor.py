@@ -52,11 +52,22 @@ class DynamicMonitor:
     def _uid_list(self) -> List[str]:
         return list(self.config.dynamic_monitor_mapping.keys())
 
+    def _is_active_uid(self, uid: str) -> bool:
+        return uid in self.config.dynamic_monitor_mapping
+
     def _remove_uid(self, uid: str) -> None:
         """从运行时状态中移除不再配置的 UP 主。"""
         self.last_dynamic_ids.pop(uid, None)
         self.initialized_uids.pop(uid, None)
         self.pinned_dynamic_ids.pop(uid, None)
+
+    async def _delete_persisted_state(self, uid: str) -> None:
+        """清除 DB 中已停用/移除目标的持久化状态。"""
+        session = get_session()
+        async with session.begin():
+            row = await session.get(DynamicMonitorState, uid)
+            if row:
+                await session.delete(row)
 
     def _schedule_poll_job(self) -> None:
         uid_list = self._uid_list()
@@ -138,6 +149,8 @@ class DynamicMonitor:
 
     async def _persist_state(self, uid: str):
         """持久化单个 UID 的监控状态"""
+        if not self._is_active_uid(uid):
+            return
         session = get_session()
         async with session.begin():
             row = await session.get(DynamicMonitorState, uid)
@@ -161,6 +174,7 @@ class DynamicMonitor:
         removed_uids = old_uids - new_uids_set
         for uid in removed_uids:
             self._remove_uid(uid)
+            await self._delete_persisted_state(uid)
         if removed_uids:
             logger.info(
                 f"动态监控已移除 {len(removed_uids)} 个不再配置的 UP 主: "
@@ -354,6 +368,9 @@ class DynamicMonitor:
 
     async def _check_user_dynamic(self, uid: str) -> bool:
         """检查单个UP主的动态，成功返回 True，拉取失败返回 False。"""
+        if not self._is_active_uid(uid):
+            return True
+
         logger.debug(f"检查UP主 {uid} 的动态")
 
         # 获取用户的动态列表，传递当前置顶动态ID用于比较
@@ -365,6 +382,9 @@ class DynamicMonitor:
         if not result:
             logger.debug(f"获取UP主 {uid} 动态失败")
             return False
+
+        if not self._is_active_uid(uid):
+            return True
 
         dynamics, new_pinned_id = result
 
