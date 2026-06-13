@@ -27,6 +27,7 @@ from shared.db.models import (
     DynamicTarget,
     LinkParserGroupPolicy,
     LinkParserUserPolicy,
+    LiveMonitorState,
     LiveTarget,
     SystemSetting,
 )
@@ -112,6 +113,7 @@ class ConfigService:
                 session
             )
             await self._prune_dynamic_monitor_states(session, set(dynamic_mapping))
+            await self._prune_live_monitor_states(session, set(live_mapping))
 
         cookie_encrypted = settings.get("bilibili_cookie_encrypted", "")
         cookie = ""
@@ -252,6 +254,21 @@ class ConfigService:
             logger.info(
                 f"已清除 {deleted} 条动态监控持久化状态"
                 f"（当前启用目标: {len(active_uids)} 个）"
+            )
+
+    async def _prune_live_monitor_states(
+        self, session, active_room_ids: set[str]
+    ) -> None:
+        """Drop persisted live monitor state for disabled or removed targets."""
+        stmt = delete(LiveMonitorState)
+        if active_room_ids:
+            stmt = stmt.where(LiveMonitorState.room_id.not_in(active_room_ids))
+        result = await session.execute(stmt)
+        deleted = result.rowcount or 0
+        if deleted:
+            logger.info(
+                f"已清除 {deleted} 条直播监控持久化状态"
+                f"（当前启用目标: {len(active_room_ids)} 个）"
             )
 
     async def _load_dynamic_mapping(self, session) -> dict[str, list[str]]:
