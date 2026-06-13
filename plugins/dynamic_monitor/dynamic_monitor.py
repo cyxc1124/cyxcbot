@@ -183,11 +183,15 @@ class DynamicMonitor:
 
         readded_uids = new_uids_set - old_uids
         for uid in readded_uids:
-            self._remove_uid(uid)
             self.last_dynamic_ids[uid] = 0
             self.initialized_uids[uid] = False
             self.pinned_dynamic_ids[uid] = None
             await self._delete_persisted_state(uid)
+        if readded_uids:
+            logger.info(
+                f"动态监控已重新启用 {len(readded_uids)} 个 UP 主，已重置监控状态: "
+                f"{', '.join(sorted(readded_uids))}"
+            )
 
         if self.fetcher:
             self.fetcher.cookie = self.config.bilibili_cookie
