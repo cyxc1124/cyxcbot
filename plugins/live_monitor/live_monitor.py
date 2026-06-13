@@ -356,7 +356,10 @@ class LiveMonitor:
         try:
             await client.start()
         except Exception:
-            self._danmaku_clients.pop(room_id, None)
+            # 仅移除本次启动注册的客户端，避免 Cookie 热重载等场景下
+            # 过期的 in-flight 启动失败误删已替换的新客户端。
+            if self._danmaku_clients.get(room_id) is client:
+                self._danmaku_clients.pop(room_id, None)
             raise
         logger.debug(f"房间 {room_id} WebSocket 监控已启动")
 
