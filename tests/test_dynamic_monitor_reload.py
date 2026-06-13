@@ -156,6 +156,7 @@ async def test_stale_check_skips_notification_after_disable_reenable_bumps_gener
 
         release_fetch.set()
         await stale_task
+        await monitor._drain_pending_deliveries()
 
     notify.assert_not_awaited()
     persist.assert_not_awaited()
@@ -203,6 +204,7 @@ async def test_stale_check_skips_notification_after_disable_reenable_during_send
         stale_task = asyncio.create_task(monitor._check_user_dynamic("111"))
         await fetch_started.wait()
         release_fetch.set()
+        await stale_task
         await first_notify_started.wait()
 
         monitor._remove_uid("111")
@@ -212,7 +214,7 @@ async def test_stale_check_skips_notification_after_disable_reenable_during_send
         monitor.initialized_uids["111"] = False
 
         release_first_notify.set()
-        await stale_task
+        await monitor._drain_pending_deliveries()
 
     assert notify.await_count == 1
     persist.assert_not_awaited()
@@ -262,6 +264,7 @@ async def test_stale_check_skips_notification_when_disable_reenable_during_send(
 
         release_send.set()
         await stale_task
+        await monitor._drain_pending_deliveries()
 
     monitor.sender.send_to_groups.assert_not_awaited()
     monitor.sender.send_to_users.assert_not_awaited()
@@ -309,6 +312,7 @@ async def test_stale_check_skips_pinned_notification_after_disable_reenable_duri
         stale_task = asyncio.create_task(monitor._check_user_dynamic("111"))
         await fetch_started.wait()
         release_fetch.set()
+        await stale_task
         await pinned_notify_started.wait()
 
         monitor._remove_uid("111")
@@ -318,7 +322,7 @@ async def test_stale_check_skips_pinned_notification_after_disable_reenable_duri
         monitor.last_dynamic_ids["111"] = 100
 
         release_pinned_notify.set()
-        await stale_task
+        await monitor._drain_pending_deliveries()
 
     assert notify.await_count == 1
     persist.assert_not_awaited()
@@ -490,6 +494,7 @@ async def _run_stale_check_during_disable_reenable_via_reload_config(
 
         release_fetch.set()
         await stale_task
+        await monitor._drain_pending_deliveries()
 
     return notify, persist
 
@@ -707,6 +712,7 @@ async def test_stale_check_skips_notification_when_all_targets_cleared_via_sync(
 
             release_fetch.set()
             await stale_task
+            await monitor._drain_pending_deliveries()
 
         notify.assert_not_awaited()
         persist.assert_not_awaited()

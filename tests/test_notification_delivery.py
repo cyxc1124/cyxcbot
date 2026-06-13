@@ -456,6 +456,7 @@ async def test_dynamic_monitor_does_not_advance_cursor_when_send_fails(
     monitor._persist_state = AsyncMock()
 
     ok = await monitor._check_user_dynamic("123")
+    await monitor._drain_pending_deliveries()
 
     assert ok is True
     assert monitor.last_dynamic_ids["123"] == 10
@@ -499,6 +500,7 @@ async def test_dynamic_monitor_advances_cursor_when_send_succeeds(
     monitor._persist_state = AsyncMock()
 
     ok = await monitor._check_user_dynamic("123")
+    await monitor._drain_pending_deliveries()
 
     assert ok is True
     assert monitor.last_dynamic_ids["123"] == 11
