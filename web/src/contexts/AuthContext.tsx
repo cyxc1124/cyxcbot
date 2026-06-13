@@ -18,9 +18,11 @@ import {
   setToken,
 } from '../api/client'
 import type { LoginRequest, SetupRequest, User } from '../api/types'
+import { getInitErrorOnRefreshFailure } from './authRefresh'
 
 interface AuthState {
   initialized: boolean | null
+  initError: string | null
   user: User | null
   loading: boolean
   isAuthenticated: boolean
@@ -37,13 +39,19 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [initialized, setInitialized] = useState<boolean | null>(null)
+  const [initError, setInitError] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useLoadingOnKeyChange('auth')
 
   const refresh = useCallback(async () => {
+    setLoading(true)
+    setInitError(null)
+    let setupKnown = false
+
     try {
       const status = await getSetupStatus()
       setInitialized(status.initialized)
+      setupKnown = true
 
       if (!status.initialized) {
         setUser(null)
@@ -58,8 +66,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const me = await getMe()
       setUser(me)
-    } catch {
+    } catch (err) {
       setUser(null)
+      const errorMessage = getInitErrorOnRefreshFailure(setupKnown, err)
+      if (errorMessage) {
+        setInitError(errorMessage)
+      }
     } finally {
       setLoading(false)
     }
@@ -91,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       initialized,
+      initError,
       user,
       loading,
       isAuthenticated: !!user,
@@ -99,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setup,
       logout,
     }),
-    [initialized, user, loading, refresh, login, setup, logout],
+    [initialized, initError, user, loading, refresh, login, setup, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
