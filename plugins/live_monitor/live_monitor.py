@@ -536,6 +536,9 @@ class LiveMonitor:
 
     async def _handle_room_change(self, room_id: str, data: dict):
         """处理房间信息变更"""
+        if not self._is_active_room(room_id):
+            return
+
         state = self.room_states.get(room_id)
         if not state or not state.room_info:
             return

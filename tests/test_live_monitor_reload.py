@@ -200,6 +200,37 @@ async def test_reload_config_removes_deleted_room_state_and_websocket(
 
 
 @pytest.mark.asyncio
+async def test_reload_config_deletes_persisted_state_for_removed_room(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111", "222"])
+
+    reduced_config = Config(
+        live_monitor_mapping={"222": ["group1"]},
+    )
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.Config.from_service",
+            return_value=reduced_config,
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.init",
+            new_callable=AsyncMock,
+        ),
+        patch.object(
+            monitor,
+            "_delete_persisted_state",
+            new_callable=AsyncMock,
+        ) as delete_state,
+    ):
+        await monitor.reload_config()
+
+    delete_state.assert_awaited_once_with("111")
+
+
+@pytest.mark.asyncio
 async def test_check_all_rooms_only_polls_configured_targets(
     live_monitor_modules: tuple[Any, Any, Any],
 ) -> None:
