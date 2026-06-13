@@ -20,6 +20,7 @@ from nonebot_plugin_orm import get_session
 from shared.config.service import get_config_service
 from shared.db.models import LiveMonitorState
 from shared.monitor.check_cycle import CheckCycleLogger
+from shared.notify.delivery import DeliveryResult, empty_delivery_result
 from utils.bilibili_api import LiveStatus, RoomInfo, UserInfo, api_manager
 
 from .card_generator import PrefetchImages, prefetch_card_images
@@ -31,6 +32,20 @@ from .sender import LiveNotificationSender
 # 全局监控实例
 live_monitor_instance: Optional["LiveMonitor"] = None
 _config_reload_registered = False
+
+
+def _failed_target_ids(delivery: DeliveryResult) -> tuple[list[str], list[str]]:
+    groups = [
+        target.target_id
+        for target in delivery.targets
+        if target.target_type == "group" and not target.success
+    ]
+    users = [
+        target.target_id
+        for target in delivery.targets
+        if target.target_type == "user" and not target.success
+    ]
+    return groups, users
 
 
 async def sync_from_config_reload(snapshot) -> None:
@@ -583,7 +598,7 @@ class LiveMonitor:
                 else f"房间{room_id}"
             )
             logger.info(f"确认关播: {streamer_name} (房间 {room_id})")
-            state.pending_start = False
+            state.clear_pending_start()
             await self._deliver_end_notification(
                 room_id,
                 state,
@@ -643,8 +658,8 @@ class LiveMonitor:
                 state.room_info = room_info
                 state.user_info = user_info
                 state.previous_status = room_info.live_status
-                state.pending_start = False
-                state.pending_end = False
+                state.clear_pending_start()
+                state.clear_pending_end()
 
                 if room_info.is_living():
                     state.start_time = room_info.live_start_time or int(
@@ -774,7 +789,7 @@ class LiveMonitor:
         elif is_live_ended:
             streamer_name = user_info.name if user_info else f"房间{room_id}"
             logger.info(f"检测到关播: {streamer_name} (房间 {room_id})")
-            state.pending_start = False
+            state.clear_pending_start()
             await self._deliver_end_notification(
                 room_id,
                 state,
@@ -844,16 +859,34 @@ class LiveMonitor:
         user_info: Optional[UserInfo],
         prefetched_images: Optional[PrefetchImages] = None,
     ) -> bool:
-        delivered = await self._send_live_notification(
+        if state.pending_start and (
+            state.pending_start_groups or state.pending_start_users
+        ):
+            target_groups = state.pending_start_groups
+            target_users = state.pending_start_users
+        else:
+            target_groups = None
+            target_users = None
+
+        delivery = await self._send_live_notification(
             room_id,
             "start",
             state,
             prefetched_images=prefetched_images,
             room_info=room_info,
             user_info=user_info,
+            target_groups=target_groups,
+            target_users=target_users,
         )
-        state.pending_start = not delivered
-        return delivered
+        if delivery.all_succeeded:
+            state.clear_pending_start()
+            return True
+
+        failed_groups, failed_users = _failed_target_ids(delivery)
+        state.pending_start = True
+        state.pending_start_groups = failed_groups
+        state.pending_start_users = failed_users
+        return False
 
     async def _deliver_end_notification(
         self,
@@ -864,16 +897,32 @@ class LiveMonitor:
         user_info: Optional[UserInfo],
         prefetched_images: Optional[PrefetchImages] = None,
     ) -> bool:
-        delivered = await self._send_live_notification(
+        if state.pending_end and (state.pending_end_groups or state.pending_end_users):
+            target_groups = state.pending_end_groups
+            target_users = state.pending_end_users
+        else:
+            target_groups = None
+            target_users = None
+
+        delivery = await self._send_live_notification(
             room_id,
             "end",
             state,
             prefetched_images=prefetched_images,
             room_info=room_info,
             user_info=user_info,
+            target_groups=target_groups,
+            target_users=target_users,
         )
-        state.pending_end = not delivered
-        return delivered
+        if delivery.all_succeeded:
+            state.clear_pending_end()
+            return True
+
+        failed_groups, failed_users = _failed_target_ids(delivery)
+        state.pending_end = True
+        state.pending_end_groups = failed_groups
+        state.pending_end_users = failed_users
+        return False
 
     async def _retry_pending_notifications(
         self,
@@ -926,14 +975,23 @@ class LiveMonitor:
         *,
         room_info: Optional[RoomInfo] = None,
         user_info: Optional[UserInfo] = None,
-    ) -> bool:
-        """发送直播通知，全部目标投递成功时返回 True。"""
-        # 获取目标群组
-        target_groups = self.config.live_monitor_mapping.get(room_id, [])
-        target_users = self.config.live_monitor_user_mapping.get(room_id, [])
-        if not target_groups and not target_users:
+        target_groups: Optional[list[str]] = None,
+        target_users: Optional[list[str]] = None,
+    ) -> DeliveryResult:
+        """发送直播通知，全部目标投递成功时返回 all_succeeded。"""
+        groups = (
+            target_groups
+            if target_groups is not None
+            else self.config.live_monitor_mapping.get(room_id, [])
+        )
+        users = (
+            target_users
+            if target_users is not None
+            else self.config.live_monitor_user_mapping.get(room_id, [])
+        )
+        if not groups and not users:
             logger.warning(f"房间 {room_id} 没有配置推送目标")
-            return False
+            return empty_delivery_result()
 
         effective_room_info = room_info if room_info is not None else state.room_info
         effective_user_info = user_info if user_info is not None else state.user_info
@@ -950,15 +1008,15 @@ class LiveMonitor:
             status=status,
             streamer_name=streamer_name,
             room_info=effective_room_info,
-            target_groups=target_groups,
-            target_users=target_users,
+            target_groups=groups,
+            target_users=users,
             user_info=effective_user_info,
             duration_seconds=duration_seconds,
             at_all_enabled=self.config.live_at_all.get(room_id, True),
             prefetched_images=prefetched_images,
         )
         if delivery.all_succeeded:
-            return True
+            return delivery
 
         failed_targets = [
             f"{target.target_type}:{target.target_id}"
@@ -968,7 +1026,7 @@ class LiveMonitor:
         logger.warning(
             f"直播{status}通知投递未全部成功: room_id={room_id} failed={failed_targets}"
         )
-        return False
+        return delivery
 
     async def check_room_now(self, room_id: str) -> Optional[Dict]:
         """立即检查指定房间的状态（用于手动触发）"""
