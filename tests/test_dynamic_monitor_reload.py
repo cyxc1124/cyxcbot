@@ -698,9 +698,7 @@ async def test_stale_check_skips_notification_when_all_targets_cleared_via_sync(
             patch.object(monitor, "_delete_persisted_state", new_callable=AsyncMock),
             patch.object(monitor, "_send_dynamic_notification", AsyncMock()) as notify,
             patch.object(monitor, "_persist_state", AsyncMock()) as persist,
-            patch.object(
-                monitor_mod, "stop_dynamic_monitor", new_callable=AsyncMock
-            ),
+            patch.object(monitor_mod, "stop_dynamic_monitor", new_callable=AsyncMock),
         ):
             stale_task = asyncio.create_task(monitor._check_user_dynamic("111"))
             await fetch_started.wait()

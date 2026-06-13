@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from shared.config.types import AppConfigSnapshot
 from utils.bilibili_api import LiveStatus
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -906,6 +907,60 @@ async def _run_stale_handler_during_disable_reenable(
         await stale_task
 
     return fresh_state, notify
+
+
+@pytest.mark.asyncio
+async def test_stale_check_skips_notification_when_all_targets_cleared_via_sync(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    """清空全部目标时 sync 须先 reload_config，否则 in-flight 检查会误推送。"""
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor_mod = sys.modules["plugins.live_monitor.live_monitor"]
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+    monitor.room_states["111"].previous_status = LiveStatus.PREPARING
+    monitor_mod.live_monitor_instance = monitor
+
+    empty_config = Config(live_monitor_mapping={})
+    snapshot = AppConfigSnapshot()
+
+    fetch_started = asyncio.Event()
+    release_fetch = asyncio.Event()
+
+    async def slow_fetch(*_args, **_kwargs):
+        fetch_started.set()
+        await release_fetch.wait()
+        return (_FakeLiveRoomInfo(), None)
+
+    try:
+        with (
+            patch(
+                "plugins.live_monitor.live_monitor.Config.from_service",
+                return_value=empty_config,
+            ),
+            patch(
+                "plugins.live_monitor.live_monitor.api_manager.init",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+                side_effect=slow_fetch,
+            ),
+            patch.object(monitor, "_delete_persisted_state", new_callable=AsyncMock),
+            patch.object(monitor, "_send_live_notification", AsyncMock()) as notify,
+            patch.object(monitor_mod, "stop_live_monitor", new_callable=AsyncMock),
+        ):
+            stale_task = asyncio.create_task(monitor._check_room_status("111"))
+            await fetch_started.wait()
+
+            await monitor_mod.sync_from_config_reload(snapshot)
+
+            release_fetch.set()
+            await stale_task
+
+        notify.assert_not_awaited()
+        assert "111" not in monitor.room_states
+    finally:
+        monitor_mod.live_monitor_instance = None
 
 
 @pytest.mark.asyncio
