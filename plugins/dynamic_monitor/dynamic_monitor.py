@@ -28,6 +28,12 @@ from .sender import DynamicSender
 
 # 全局监控实例
 dynamic_monitor_instance: Optional["DynamicMonitor"] = None
+_config_reload_registered = False
+
+
+async def _on_config_reload(_snapshot):
+    if dynamic_monitor_instance:
+        await dynamic_monitor_instance.reload_config()
 
 
 class DynamicMonitor:
@@ -649,7 +655,7 @@ class DynamicMonitor:
 # 插件启动和关闭函数
 async def start_dynamic_monitor():
     """启动动态监控"""
-    global dynamic_monitor_instance
+    global dynamic_monitor_instance, _config_reload_registered
 
     if dynamic_monitor_instance is not None:
         logger.warning("动态监控已在运行中")
@@ -679,11 +685,9 @@ async def start_dynamic_monitor():
         # 启动监控（会添加APScheduler定时任务）
         await dynamic_monitor_instance.start_monitoring()
 
-        async def _on_config_reload(_snapshot):
-            if dynamic_monitor_instance:
-                await dynamic_monitor_instance.reload_config()
-
-        get_config_service().register_reload_callback(_on_config_reload)
+        if not _config_reload_registered:
+            get_config_service().register_reload_callback(_on_config_reload)
+            _config_reload_registered = True
 
         logger.info("UP主动态监控已启动")
 
