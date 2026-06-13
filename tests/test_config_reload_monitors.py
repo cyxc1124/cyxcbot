@@ -189,14 +189,56 @@ async def test_dynamic_on_config_reload_stops_when_targets_cleared(
     fake_monitor.reload_config = AsyncMock()
     dynamic_monitor_mod.dynamic_monitor_instance = fake_monitor
     snapshot = AppConfigSnapshot()
+    call_order: list[str] = []
+
+    async def reload_then_mark():
+        call_order.append("reload")
+
+    async def stop_then_mark():
+        call_order.append("stop")
+
+    fake_monitor.reload_config.side_effect = reload_then_mark
 
     with patch.object(
-        dynamic_monitor_mod, "stop_dynamic_monitor", new_callable=AsyncMock
+        dynamic_monitor_mod,
+        "stop_dynamic_monitor",
+        new_callable=AsyncMock,
+        side_effect=stop_then_mark,
     ) as stop:
         await dynamic_monitor_mod.sync_from_config_reload(snapshot)
 
+    fake_monitor.reload_config.assert_awaited_once()
     stop.assert_awaited_once()
-    fake_monitor.reload_config.assert_not_awaited()
+    assert call_order == ["reload", "stop"]
+
+
+@pytest.mark.asyncio
+async def test_live_on_config_reload_stops_when_targets_cleared(live_monitor_mod):
+    fake_monitor = MagicMock()
+    fake_monitor.reload_config = AsyncMock()
+    live_monitor_mod.live_monitor_instance = fake_monitor
+    snapshot = AppConfigSnapshot()
+    call_order: list[str] = []
+
+    async def reload_then_mark():
+        call_order.append("reload")
+
+    async def stop_then_mark():
+        call_order.append("stop")
+
+    fake_monitor.reload_config.side_effect = reload_then_mark
+
+    with patch.object(
+        live_monitor_mod,
+        "stop_live_monitor",
+        new_callable=AsyncMock,
+        side_effect=stop_then_mark,
+    ) as stop:
+        await live_monitor_mod.sync_from_config_reload(snapshot)
+
+    fake_monitor.reload_config.assert_awaited_once()
+    stop.assert_awaited_once()
+    assert call_order == ["reload", "stop"]
 
 
 @pytest.mark.asyncio

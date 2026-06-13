@@ -14,6 +14,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from shared.config.types import AppConfigSnapshot
+
 ROOT = Path(__file__).resolve().parents[1]
 PLUGINS_ROOT = ROOT / "plugins"
 PLUGIN_ROOT = PLUGINS_ROOT / "dynamic_monitor"
@@ -661,3 +663,53 @@ async def test_start_dynamic_monitor_registers_config_reload_once(
     assert register.call_count == 1
     monitor_mod._config_reload_registered = False
     monitor_mod.dynamic_monitor_instance = None
+
+
+@pytest.mark.asyncio
+async def test_stale_check_skips_notification_when_all_targets_cleared_via_sync(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """清空全部目标时 sync 须先 reload_config，否则 in-flight 检查会误推送。"""
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor_mod = sys.modules["plugins.dynamic_monitor.dynamic_monitor"]
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.fetcher = MagicMock()
+    monitor_mod.dynamic_monitor_instance = monitor
+
+    empty_config = Config(dynamic_monitor_mapping={})
+    snapshot = AppConfigSnapshot()
+
+    fetch_started = asyncio.Event()
+    release_fetch = asyncio.Event()
+
+    async def slow_fetch(*_args, **_kwargs):
+        fetch_started.set()
+        await release_fetch.wait()
+        return ([_dynamic(200), _dynamic(300)], None)
+
+    monitor.fetcher.fetch_user_dynamics = slow_fetch
+
+    try:
+        with (
+            patch(
+                "plugins.dynamic_monitor.dynamic_monitor.Config.from_service",
+                return_value=empty_config,
+            ),
+            patch.object(monitor, "_delete_persisted_state", new_callable=AsyncMock),
+            patch.object(monitor, "_send_dynamic_notification", AsyncMock()) as notify,
+            patch.object(monitor, "_persist_state", AsyncMock()) as persist,
+            patch.object(monitor_mod, "stop_dynamic_monitor", new_callable=AsyncMock),
+        ):
+            stale_task = asyncio.create_task(monitor._check_user_dynamic("111"))
+            await fetch_started.wait()
+
+            await monitor_mod.sync_from_config_reload(snapshot)
+
+            release_fetch.set()
+            await stale_task
+
+        notify.assert_not_awaited()
+        persist.assert_not_awaited()
+        assert "111" not in monitor.last_dynamic_ids
+    finally:
+        monitor_mod.dynamic_monitor_instance = None

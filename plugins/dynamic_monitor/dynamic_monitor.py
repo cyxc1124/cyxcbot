@@ -41,6 +41,8 @@ async def sync_from_config_reload(snapshot) -> None:
         return
 
     if not has_targets:
+        # 先同步配置并 bump generation，避免 in-flight 检查仍持有旧 mapping 误推送。
+        await dynamic_monitor_instance.reload_config()
         await stop_dynamic_monitor()
         return
 
