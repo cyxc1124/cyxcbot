@@ -161,6 +161,56 @@ async def test_stale_check_skips_notification_after_disable_reenable_bumps_gener
 
 
 @pytest.mark.asyncio
+async def test_stale_check_skips_notification_when_disable_reenable_during_send(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """fetch 完成后发送通知期间停用→重启用，不得误推送或写回旧状态。"""
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.fetcher = MagicMock()
+    monitor.last_dynamic_ids["111"] = 100
+
+    send_started = asyncio.Event()
+    release_send = asyncio.Event()
+
+    async def fetch_dynamics(*_args, **_kwargs):
+        return ([_dynamic(200)], None)
+
+    async def slow_user_name(*_args, **_kwargs):
+        send_started.set()
+        await release_send.wait()
+        return "name"
+
+    monitor.fetcher.fetch_user_dynamics = fetch_dynamics
+    monitor.fetcher._get_user_name_from_api = slow_user_name
+    monitor.sender = MagicMock()
+    monitor.sender.build_dynamic_message = MagicMock(return_value="msg")
+    monitor.sender.send_to_groups = AsyncMock()
+    monitor.sender.send_to_users = AsyncMock()
+
+    with (
+        patch.object(monitor, "_persist_state", AsyncMock()) as persist,
+    ):
+        stale_task = asyncio.create_task(monitor._check_user_dynamic("111"))
+        await send_started.wait()
+
+        monitor._remove_uid("111")
+        monitor.config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+        monitor._bump_check_generation("111")
+        monitor.last_dynamic_ids["111"] = 0
+        monitor.initialized_uids["111"] = False
+
+        release_send.set()
+        await stale_task
+
+    monitor.sender.send_to_groups.assert_not_awaited()
+    monitor.sender.send_to_users.assert_not_awaited()
+    persist.assert_not_awaited()
+    assert monitor.last_dynamic_ids["111"] == 0
+    assert monitor.initialized_uids["111"] is False
+
+
+@pytest.mark.asyncio
 async def test_reload_config_removes_deleted_uid_runtime_state(
     dynamic_monitor_modules: tuple[Any, Any],
 ) -> None:
@@ -257,7 +307,12 @@ async def test_check_user_dynamic_does_not_persist_after_target_removed_during_f
 
 
 def _dynamic(dynamic_id: int, timestamp: int = 0) -> SimpleNamespace:
-    return SimpleNamespace(id=dynamic_id, timestamp=timestamp)
+    return SimpleNamespace(
+        id=dynamic_id,
+        timestamp=timestamp,
+        uid=111,
+        get_type_description=lambda: "test",
+    )
 
 
 async def _run_stale_check_during_disable_reenable_via_reload_config(

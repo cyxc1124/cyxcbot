@@ -66,6 +66,12 @@ class DynamicMonitor:
     def _bump_check_generation(self, uid: str) -> None:
         self._check_generation[uid] = self._check_generation.get(uid, 0) + 1
 
+    def _is_stale_check(self, uid: str, check_generation: int) -> bool:
+        return (
+            not self._is_active_uid(uid)
+            or self._check_generation.get(uid, 0) != check_generation
+        )
+
     def _remove_uid(self, uid: str) -> None:
         """从运行时状态中移除不再配置的 UP 主。"""
         self._bump_check_generation(uid)
@@ -411,9 +417,7 @@ class DynamicMonitor:
             logger.debug(f"获取UP主 {uid} 动态失败")
             return False
 
-        if not self._is_active_uid(uid):
-            return True
-        if self._check_generation.get(uid, 0) != check_generation:
+        if self._is_stale_check(uid, check_generation):
             return True
 
         dynamics, new_pinned_id = result
@@ -429,7 +433,7 @@ class DynamicMonitor:
         # 首次检查只记录基准状态，不推送（避免启动时刷屏）
         # 注意：不能用 last_dynamic_id == 0 判断，无动态用户的基准 ID 也会一直是 0
         if not self.initialized_uids.get(uid, False):
-            if not self._is_active_uid(uid):
+            if self._is_stale_check(uid, check_generation):
                 return True
             if dynamics:
                 self.last_dynamic_ids[uid] = max(d.id for d in dynamics)
@@ -449,7 +453,7 @@ class DynamicMonitor:
 
         # 处理置顶动态变化（只有在非首次启动时才推送置顶动态变化）
         if new_pinned_id != current_pinned_id:
-            if not self._is_active_uid(uid):
+            if self._is_stale_check(uid, check_generation):
                 return True
             logger.info(
                 f"UP主 {uid} 置顶动态已更新: {current_pinned_id} -> {new_pinned_id}"
@@ -463,22 +467,38 @@ class DynamicMonitor:
                     (d for d in dynamics if d.id == new_pinned_id), None
                 )
                 if pinned_dynamic:
+                    if self._is_stale_check(uid, check_generation):
+                        return True
                     await self._send_dynamic_notification(
-                        uid, pinned_dynamic, is_pinned=True
+                        uid,
+                        pinned_dynamic,
+                        is_pinned=True,
+                        check_generation=check_generation,
                     )
+                    if self._is_stale_check(uid, check_generation):
+                        return True
 
         # 如果有新动态，处理推送
         if new_dynamics:
-            if not self._is_active_uid(uid):
+            if self._is_stale_check(uid, check_generation):
                 return True
-            # 更新最后动态ID为最新的动态ID
-            self.last_dynamic_ids[uid] = max(d.id for d in new_dynamics)
 
             # 对每个新动态进行推送
             for dynamic in sorted(new_dynamics, key=lambda x: x.timestamp):
-                await self._send_dynamic_notification(uid, dynamic)
+                if self._is_stale_check(uid, check_generation):
+                    return True
+                await self._send_dynamic_notification(
+                    uid, dynamic, check_generation=check_generation
+                )
+                if self._is_stale_check(uid, check_generation):
+                    return True
+
+            # 全部推送完成后再更新最后动态ID
+            self.last_dynamic_ids[uid] = max(d.id for d in new_dynamics)
 
         if new_dynamics or new_pinned_id != current_pinned_id:
+            if self._is_stale_check(uid, check_generation):
+                return True
             await self._persist_state(uid)
 
         return True
@@ -499,11 +519,25 @@ class DynamicMonitor:
             return None
 
     async def _send_dynamic_notification(
-        self, uid: str, dynamic, is_pinned: bool = False
+        self,
+        uid: str,
+        dynamic,
+        is_pinned: bool = False,
+        *,
+        check_generation: Optional[int] = None,
     ):
         """发送动态通知"""
+        if check_generation is not None and self._is_stale_check(
+            uid, check_generation
+        ):
+            return
+
         # 获取真实的用户名（只在需要推送时才获取）
         real_name = await self.fetcher._get_user_name_from_api(str(dynamic.uid))
+        if check_generation is not None and self._is_stale_check(
+            uid, check_generation
+        ):
+            return
         if real_name:
             dynamic.name = real_name
             logger.info(
@@ -516,6 +550,10 @@ class DynamicMonitor:
             )
 
         screenshot_image = await self._fetch_dynamic_screenshot(dynamic.id)
+        if check_generation is not None and self._is_stale_check(
+            uid, check_generation
+        ):
+            return
 
         # 构建通知消息
         message = self.sender.build_dynamic_message(
@@ -530,6 +568,11 @@ class DynamicMonitor:
         user_ids = self.config.dynamic_monitor_user_mapping.get(uid, [])
         if not group_ids and not user_ids:
             logger.warning(f"UP主 {uid} 没有配置推送目标")
+            return
+
+        if check_generation is not None and self._is_stale_check(
+            uid, check_generation
+        ):
             return
 
         at_all_enabled = self.config.dynamic_at_all.get(uid, False)
