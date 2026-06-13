@@ -19,6 +19,8 @@ class LiveRoomState:
     user_info: Optional[UserInfo] = None
     previous_status: LiveStatus = LiveStatus.PREPARING
     start_time: int = 0  # 记录的开播时间戳
+    pending_start: bool = False
+    pending_end: bool = False
 
     def detect_status_change(
         self, new_room_info: RoomInfo
@@ -44,6 +46,22 @@ class LiveRoomState:
 
         return is_live_began, is_live_ended, new_status, start_time
 
+    def sync_observed_status(
+        self,
+        new_room_info: RoomInfo,
+        new_status: LiveStatus,
+        *,
+        new_user_info: Optional[UserInfo] = None,
+        start_time: Optional[int] = None,
+    ) -> None:
+        """同步房间观测状态，与通知投递结果解耦。"""
+        self.previous_status = new_status
+        self.room_info = new_room_info
+        if new_user_info:
+            self.user_info = new_user_info
+        if start_time is not None:
+            self.start_time = start_time
+
     def apply_status(
         self,
         new_room_info: RoomInfo,
@@ -52,13 +70,13 @@ class LiveRoomState:
         new_user_info: Optional[UserInfo] = None,
         start_time: Optional[int] = None,
     ) -> None:
-        """在通知投递成功后确认状态。"""
-        self.previous_status = new_status
-        self.room_info = new_room_info
-        if new_user_info:
-            self.user_info = new_user_info
-        if start_time is not None:
-            self.start_time = start_time
+        """兼容旧调用方，语义同 sync_observed_status。"""
+        self.sync_observed_status(
+            new_room_info,
+            new_status,
+            new_user_info=new_user_info,
+            start_time=start_time,
+        )
 
     def update_status(
         self, new_room_info: RoomInfo, new_user_info: Optional[UserInfo] = None
@@ -70,7 +88,7 @@ class LiveRoomState:
         is_live_began, is_live_ended, new_status, start_time = (
             self.detect_status_change(new_room_info)
         )
-        self.apply_status(
+        self.sync_observed_status(
             new_room_info,
             new_status,
             new_user_info=new_user_info,
