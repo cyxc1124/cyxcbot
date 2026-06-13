@@ -543,6 +543,9 @@ class LiveMonitor:
 
     async def _handle_room_change(self, room_id: str, data: dict):
         """处理房间信息变更"""
+        if not self._is_active_room(room_id):
+            return
+
         state = self.room_states.get(room_id)
         if not state or not state.room_info:
             return
@@ -627,6 +630,9 @@ class LiveMonitor:
 
     async def _check_room_status(self, room_id: str) -> bool:
         """检查单个房间的直播状态，拉取失败返回 False。"""
+        if not self._is_active_room(room_id):
+            return True
+
         if not self.initialized_rooms.get(room_id, False):
             await self._initialize_room(room_id)
             return True
