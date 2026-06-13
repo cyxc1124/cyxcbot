@@ -181,16 +181,25 @@ class DynamicMonitor:
                 f"{', '.join(sorted(removed_uids))}"
             )
 
+        readded_uids = new_uids_set - old_uids
+        for uid in readded_uids:
+            self._remove_uid(uid)
+            self.last_dynamic_ids[uid] = 0
+            self.initialized_uids[uid] = False
+            self.pinned_dynamic_ids[uid] = None
+            await self._delete_persisted_state(uid)
+
         if self.fetcher:
             self.fetcher.cookie = self.config.bilibili_cookie
 
-        new_uids: list[str] = []
+        new_uids: list[str] = list(readded_uids)
         for uid in self.config.dynamic_monitor_mapping.keys():
             if uid not in self.last_dynamic_ids:
                 self.last_dynamic_ids[uid] = 0
                 self.initialized_uids[uid] = False
                 self.pinned_dynamic_ids[uid] = None
-                new_uids.append(uid)
+                if uid not in new_uids:
+                    new_uids.append(uid)
 
         if self.is_running:
             for uid in new_uids:
@@ -399,6 +408,8 @@ class DynamicMonitor:
         # 首次检查只记录基准状态，不推送（避免启动时刷屏）
         # 注意：不能用 last_dynamic_id == 0 判断，无动态用户的基准 ID 也会一直是 0
         if not self.initialized_uids.get(uid, False):
+            if not self._is_active_uid(uid):
+                return True
             if dynamics:
                 self.last_dynamic_ids[uid] = max(d.id for d in dynamics)
                 logger.info(
@@ -417,6 +428,8 @@ class DynamicMonitor:
 
         # 处理置顶动态变化（只有在非首次启动时才推送置顶动态变化）
         if new_pinned_id != current_pinned_id:
+            if not self._is_active_uid(uid):
+                return True
             logger.info(
                 f"UP主 {uid} 置顶动态已更新: {current_pinned_id} -> {new_pinned_id}"
             )
@@ -435,6 +448,8 @@ class DynamicMonitor:
 
         # 如果有新动态，处理推送
         if new_dynamics:
+            if not self._is_active_uid(uid):
+                return True
             # 更新最后动态ID为最新的动态ID
             self.last_dynamic_ids[uid] = max(d.id for d in new_dynamics)
 

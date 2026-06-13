@@ -214,6 +214,59 @@ async def test_check_user_dynamic_does_not_persist_after_target_removed_during_f
 
 
 @pytest.mark.asyncio
+async def test_reenabled_uid_reset_after_stale_inflight_check_repollutes_memory(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """停用后进行中的检查可能把旧基准写回内存，重新启用时必须强制重置。"""
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+
+    disabled_config = Config(dynamic_monitor_mapping={})
+    reenabled_config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+
+    with (
+        patch(
+            "plugins.dynamic_monitor.dynamic_monitor.Config.from_service",
+            return_value=disabled_config,
+        ),
+        patch.object(
+            monitor,
+            "_delete_persisted_state",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await monitor.reload_config()
+
+    # 模拟停用后过期检查把 initialized=true 的旧基准写回内存（DB 已被拦截）
+    monitor.last_dynamic_ids["111"] = 100
+    monitor.initialized_uids["111"] = True
+
+    with (
+        patch(
+            "plugins.dynamic_monitor.dynamic_monitor.Config.from_service",
+            return_value=reenabled_config,
+        ),
+        patch.object(
+            monitor,
+            "_delete_persisted_state",
+            new_callable=AsyncMock,
+        ) as delete_state,
+        patch.object(
+            monitor,
+            "_check_user_dynamic",
+            new_callable=AsyncMock,
+        ) as check_user,
+    ):
+        await monitor.reload_config()
+
+    assert monitor.last_dynamic_ids["111"] == 0
+    assert monitor.initialized_uids["111"] is False
+    assert monitor.pinned_dynamic_ids["111"] is None
+    delete_state.assert_awaited_once_with("111")
+    check_user.assert_awaited_once_with("111")
+
+
+@pytest.mark.asyncio
 async def test_reload_config_deletes_persisted_state_for_removed_uid(
     dynamic_monitor_modules: tuple[Any, Any],
 ) -> None:
