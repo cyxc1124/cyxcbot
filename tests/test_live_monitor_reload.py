@@ -590,6 +590,42 @@ async def test_stale_start_failure_does_not_remove_replacement_client(
 
 
 @pytest.mark.asyncio
+async def test_stale_start_failure_does_not_remove_restored_client_after_restart_failure(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+
+    stale_start_gate = asyncio.Event()
+    stale_client = AsyncMock()
+    failed_replacement_client = AsyncMock()
+
+    async def slow_then_fail() -> None:
+        stale_start_gate.set()
+        await asyncio.sleep(0.05)
+        raise ConnectionError("stale start failed")
+
+    async def replacement_fail() -> None:
+        raise ConnectionError("replacement start failed")
+
+    stale_client.start = slow_then_fail
+    failed_replacement_client.start = replacement_fail
+
+    with patch(
+        "plugins.live_monitor.live_monitor.DanmakuClient",
+        side_effect=[stale_client, failed_replacement_client],
+    ):
+        stale_task = asyncio.create_task(monitor._start_single_danmaku_client("111"))
+        await stale_start_gate.wait()
+        with pytest.raises(ConnectionError, match="replacement start failed"):
+            await monitor._restart_single_danmaku_client("111")
+        with pytest.raises(ConnectionError, match="stale start failed"):
+            await stale_task
+
+    assert monitor._danmaku_clients["111"] is stale_client
+
+
+@pytest.mark.asyncio
 async def test_start_danmaku_clients_retries_failed_room_on_subsequent_call(
     live_monitor_modules: tuple[Any, Any, Any],
 ) -> None:
