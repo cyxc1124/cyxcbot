@@ -76,6 +76,7 @@ class LiveMonitor:
                 logger.debug(f"房间 {room_id} WebSocket 监控已停止（配置已移除）")
             except Exception as e:
                 logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
+        self._danmaku_client_epoch.pop(room_id, None)
         self.room_states.pop(room_id, None)
         self.initialized_rooms.pop(room_id, None)
 
@@ -379,6 +380,7 @@ class LiveMonitor:
             except Exception as e:
                 logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
         self._danmaku_clients.clear()
+        self._danmaku_client_epoch.clear()
         logger.info("所有 WebSocket 客户端已停止")
 
     async def _fetch_room_info_with_prefetch(

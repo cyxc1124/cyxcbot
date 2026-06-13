@@ -123,6 +123,44 @@ def _make_monitor(
     return monitor
 
 
+async def _run_stale_start_during_restart(
+    monitor: Any,
+    *,
+    replacement_start: Any = None,
+    restart_expects_error: bool = False,
+    restart_error_match: str | None = None,
+) -> tuple[AsyncMock, AsyncMock]:
+    """在 stale start 尚未完成时触发 restart，并等待 stale start 失败。"""
+    stale_start_gate = asyncio.Event()
+    stale_client = AsyncMock()
+    replacement_client = AsyncMock()
+
+    async def slow_then_fail() -> None:
+        stale_start_gate.set()
+        await asyncio.sleep(0.05)
+        raise ConnectionError("stale start failed")
+
+    stale_client.start = slow_then_fail
+    if replacement_start is not None:
+        replacement_client.start = replacement_start
+
+    with patch(
+        "plugins.live_monitor.live_monitor.DanmakuClient",
+        side_effect=[stale_client, replacement_client],
+    ):
+        stale_task = asyncio.create_task(monitor._start_single_danmaku_client("111"))
+        await stale_start_gate.wait()
+        if restart_expects_error:
+            with pytest.raises(ConnectionError, match=restart_error_match):
+                await monitor._restart_single_danmaku_client("111")
+        else:
+            await monitor._restart_single_danmaku_client("111")
+        with pytest.raises(ConnectionError, match="stale start failed"):
+            await stale_task
+
+    return stale_client, replacement_client
+
+
 @pytest.mark.asyncio
 async def test_reload_config_removes_deleted_room_state_and_websocket(
     live_monitor_modules: tuple[Any, Any, Any],
@@ -153,6 +191,7 @@ async def test_reload_config_removes_deleted_room_state_and_websocket(
     assert "111" not in monitor.room_states
     assert "111" not in monitor.initialized_rooms
     assert "111" not in monitor._danmaku_clients
+    assert "111" not in monitor._danmaku_client_epoch
     removed_client.stop.assert_awaited_once()
     assert "222" in monitor.room_states
     assert "222" in monitor._danmaku_clients
@@ -564,26 +603,7 @@ async def test_stale_start_failure_does_not_remove_replacement_client(
     Config, LiveMonitor, LiveRoomState = live_monitor_modules
     monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
 
-    stale_start_gate = asyncio.Event()
-    stale_client = AsyncMock()
-    replacement_client = AsyncMock()
-
-    async def slow_then_fail() -> None:
-        stale_start_gate.set()
-        await asyncio.sleep(0.05)
-        raise ConnectionError("stale start failed")
-
-    stale_client.start = slow_then_fail
-
-    with patch(
-        "plugins.live_monitor.live_monitor.DanmakuClient",
-        side_effect=[stale_client, replacement_client],
-    ):
-        stale_task = asyncio.create_task(monitor._start_single_danmaku_client("111"))
-        await stale_start_gate.wait()
-        await monitor._restart_single_danmaku_client("111")
-        with pytest.raises(ConnectionError, match="stale start failed"):
-            await stale_task
+    _, replacement_client = await _run_stale_start_during_restart(monitor)
 
     assert monitor._danmaku_clients["111"] is replacement_client
     replacement_client.start.assert_awaited_once()
@@ -596,31 +616,15 @@ async def test_stale_start_failure_does_not_remove_restored_client_after_restart
     Config, LiveMonitor, LiveRoomState = live_monitor_modules
     monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
 
-    stale_start_gate = asyncio.Event()
-    stale_client = AsyncMock()
-    failed_replacement_client = AsyncMock()
-
-    async def slow_then_fail() -> None:
-        stale_start_gate.set()
-        await asyncio.sleep(0.05)
-        raise ConnectionError("stale start failed")
-
     async def replacement_fail() -> None:
         raise ConnectionError("replacement start failed")
 
-    stale_client.start = slow_then_fail
-    failed_replacement_client.start = replacement_fail
-
-    with patch(
-        "plugins.live_monitor.live_monitor.DanmakuClient",
-        side_effect=[stale_client, failed_replacement_client],
-    ):
-        stale_task = asyncio.create_task(monitor._start_single_danmaku_client("111"))
-        await stale_start_gate.wait()
-        with pytest.raises(ConnectionError, match="replacement start failed"):
-            await monitor._restart_single_danmaku_client("111")
-        with pytest.raises(ConnectionError, match="stale start failed"):
-            await stale_task
+    stale_client, _ = await _run_stale_start_during_restart(
+        monitor,
+        replacement_start=replacement_fail,
+        restart_expects_error=True,
+        restart_error_match="replacement start failed",
+    )
 
     assert monitor._danmaku_clients["111"] is stale_client
 
