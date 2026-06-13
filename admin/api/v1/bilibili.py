@@ -15,7 +15,6 @@ from admin.services.connection_status import (
     bilibili_status_message,
     get_bilibili_connection_status,
 )
-from admin.services.monitor_bridge import reload_all_monitors
 from shared.bilibili.qrcode_login import (
     BilibiliQrcodeError,
     cookie_info_to_header,
@@ -63,7 +62,6 @@ async def poll_qrcode_login(body: QrcodePollRequest, _: AdminUser):
     svc = get_config_service()
     await svc.set_settings({"bilibili_cookie_encrypted": encrypt_value(cookie_header)})
     await svc.reload()
-    await reload_all_monitors()
 
     conn = await get_bilibili_connection_status()
 
@@ -90,6 +88,5 @@ async def logout_bilibili(_: AdminUser):
 
     await svc.set_settings({"bilibili_cookie_encrypted": ""})
     await svc.reload()
-    await reload_all_monitors()
 
     return LogoutResponse(success=True, message="已退出 B 站登录")

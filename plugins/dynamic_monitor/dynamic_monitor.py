@@ -31,9 +31,24 @@ dynamic_monitor_instance: Optional["DynamicMonitor"] = None
 _config_reload_registered = False
 
 
-async def _on_config_reload(_snapshot):
-    if dynamic_monitor_instance:
-        await dynamic_monitor_instance.reload_config()
+async def sync_from_config_reload(snapshot) -> None:
+    """Start, stop, or hot-reload dynamic monitor to match config snapshot."""
+    has_targets = bool(snapshot.dynamic_monitor_mapping)
+
+    if dynamic_monitor_instance is None:
+        if has_targets:
+            await start_dynamic_monitor()
+        return
+
+    if not has_targets:
+        await stop_dynamic_monitor()
+        return
+
+    await dynamic_monitor_instance.reload_config()
+
+
+async def _on_config_reload(snapshot):
+    await sync_from_config_reload(snapshot)
 
 
 class DynamicMonitor:

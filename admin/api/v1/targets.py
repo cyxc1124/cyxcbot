@@ -16,7 +16,6 @@ from admin.schemas.targets import (
     LiveTargetResponse,
     LiveTargetUpdate,
 )
-from admin.services.monitor_bridge import reload_all_monitors
 from admin.services.target_metadata import (
     resolve_dynamic_target_name,
     resolve_live_streamer_name,
@@ -198,7 +197,6 @@ async def create_dynamic_target(body: DynamicTargetCreate, _: AdminUser):
         response = _dynamic_to_response(target)
 
     await get_config_service().reload()
-    await reload_all_monitors()
 
     return response
 
@@ -289,7 +287,6 @@ async def update_dynamic_target(
         response = _dynamic_to_response(target)
 
     await get_config_service().reload()
-    await reload_all_monitors()
 
     return response
 
@@ -306,7 +303,6 @@ async def delete_dynamic_target(target_id: int, _: AdminUser):
         await session.delete(target)
 
     await get_config_service().reload()
-    await reload_all_monitors()
 
 
 # --- Live targets ---
@@ -362,7 +358,6 @@ async def create_live_target(body: LiveTargetCreate, _: AdminUser):
         response = _live_to_response(target)
 
     await get_config_service().reload()
-    await reload_all_monitors()
 
     return response
 
@@ -451,7 +446,6 @@ async def update_live_target(target_id: int, body: LiveTargetUpdate, _: AdminUse
         response = _live_to_response(target)
 
     await get_config_service().reload()
-    await reload_all_monitors()
 
     return response
 
@@ -468,4 +462,3 @@ async def delete_live_target(target_id: int, _: AdminUser):
         await session.delete(target)
 
     await get_config_service().reload()
-    await reload_all_monitors()
