@@ -239,7 +239,7 @@ async def test_live_sender_partial_failure(live_sender_module) -> None:
 
 
 def _room_info(live_models_module, status):
-    from utils.bilibili_api import LiveStatus, RoomInfo
+    from utils.bilibili_api import RoomInfo
 
     return RoomInfo(
         uid=2,
