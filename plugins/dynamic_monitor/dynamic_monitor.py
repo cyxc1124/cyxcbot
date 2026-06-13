@@ -44,6 +44,8 @@ class DynamicMonitor:
         self.last_dynamic_ids: Dict[str, int] = {}  # UID -> 最后动态ID
         self.initialized_uids: Dict[str, bool] = {}  # UID -> 是否已完成首次基准记录
         self.pinned_dynamic_ids: Dict[str, Optional[int]] = {}  # UID -> 当前置顶动态ID
+        # 每次移除/重新启用 UID 时递增，用于忽略过期的 in-flight 检查
+        self._check_generation: Dict[str, int] = {}
         self.is_running = False
         self.session: Optional[aiohttp.ClientSession] = None
         self.fetcher: Optional[DynamicFetcher] = None
@@ -61,8 +63,12 @@ class DynamicMonitor:
     def _is_active_uid(self, uid: str) -> bool:
         return uid in self.config.dynamic_monitor_mapping
 
+    def _bump_check_generation(self, uid: str) -> None:
+        self._check_generation[uid] = self._check_generation.get(uid, 0) + 1
+
     def _remove_uid(self, uid: str) -> None:
         """从运行时状态中移除不再配置的 UP 主。"""
+        self._bump_check_generation(uid)
         self.last_dynamic_ids.pop(uid, None)
         self.initialized_uids.pop(uid, None)
         self.pinned_dynamic_ids.pop(uid, None)
@@ -189,6 +195,7 @@ class DynamicMonitor:
 
         readded_uids = new_uids_set - old_uids
         for uid in readded_uids:
+            self._bump_check_generation(uid)
             self.last_dynamic_ids[uid] = 0
             self.initialized_uids[uid] = False
             self.pinned_dynamic_ids[uid] = None
@@ -390,6 +397,8 @@ class DynamicMonitor:
         if not self._is_active_uid(uid):
             return True
 
+        check_generation = self._check_generation.get(uid, 0)
+
         logger.debug(f"检查UP主 {uid} 的动态")
 
         # 获取用户的动态列表，传递当前置顶动态ID用于比较
@@ -403,6 +412,8 @@ class DynamicMonitor:
             return False
 
         if not self._is_active_uid(uid):
+            return True
+        if self._check_generation.get(uid, 0) != check_generation:
             return True
 
         dynamics, new_pinned_id = result

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import sys
 import types
@@ -116,6 +117,47 @@ def _make_monitor(
         monitor.initialized_uids[uid] = True
         monitor.pinned_dynamic_ids[uid] = 42
     return monitor
+
+
+@pytest.mark.asyncio
+async def test_stale_check_skips_notification_after_disable_reenable_bumps_generation(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """停用并重启用会递增 check generation，过期 fetch 不得误推送或写回状态。"""
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.fetcher = MagicMock()
+    monitor.last_dynamic_ids["111"] = 100
+
+    fetch_started = asyncio.Event()
+    release_fetch = asyncio.Event()
+
+    async def slow_fetch(*_args, **_kwargs):
+        fetch_started.set()
+        await release_fetch.wait()
+        return ([_dynamic(200), _dynamic(300)], None)
+
+    monitor.fetcher.fetch_user_dynamics = slow_fetch
+
+    with (
+        patch.object(monitor, "_send_dynamic_notification", AsyncMock()) as notify,
+        patch.object(monitor, "_persist_state", AsyncMock()) as persist,
+    ):
+        stale_task = asyncio.create_task(monitor._check_user_dynamic("111"))
+        await fetch_started.wait()
+
+        monitor._remove_uid("111")
+        monitor.config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+        monitor._bump_check_generation("111")
+        monitor.last_dynamic_ids["111"] = 100
+        monitor.initialized_uids["111"] = True
+
+        release_fetch.set()
+        await stale_task
+
+    notify.assert_not_awaited()
+    persist.assert_not_awaited()
+    assert monitor.last_dynamic_ids["111"] == 100
 
 
 @pytest.mark.asyncio

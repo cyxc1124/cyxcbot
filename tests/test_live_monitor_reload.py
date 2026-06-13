@@ -978,6 +978,33 @@ async def test_stale_preparing_signal_skips_notification_after_disable_reenable_
 
 
 @pytest.mark.asyncio
+async def test_stale_danmaku_client_callback_ignored_after_client_replaced(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    """Cookie 热重载等场景下旧 WebSocket 客户端回调不得触发通知处理。"""
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+
+    old_client = AsyncMock()
+    replacement_client = AsyncMock()
+
+    with patch(
+        "plugins.live_monitor.live_monitor.DanmakuClient",
+        side_effect=[old_client, replacement_client],
+    ):
+        await monitor._start_single_danmaku_client("111")
+        stale_on_live = old_client.on_live
+        await monitor._restart_single_danmaku_client("111")
+
+    with patch.object(
+        monitor, "_handle_live_signal", new_callable=AsyncMock
+    ) as handle_live:
+        await stale_on_live()
+
+    handle_live.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_start_danmaku_clients_retries_failed_room_on_subsequent_call(
     live_monitor_modules: tuple[Any, Any, Any],
 ) -> None:

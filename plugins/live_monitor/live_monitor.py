@@ -382,25 +382,28 @@ class LiveMonitor:
         if room_id in self._danmaku_clients:
             return
 
-        # 创建回调函数
-        async def on_live():
-            await self._handle_live_signal(room_id)
-
-        async def on_preparing(round_status: Optional[int]):
-            await self._handle_preparing_signal(room_id, round_status)
-
-        async def on_room_change(data: dict):
-            await self._handle_room_change(room_id, data)
-
         # 创建弹幕客户端
         client = DanmakuClient(
             session=self._ws_session,
             room_id=int(room_id),
             cookie=self.config.bilibili_cookie,
-            on_live=on_live,
-            on_preparing=on_preparing,
-            on_room_change=on_room_change,
         )
+
+        async def on_live():
+            if self._danmaku_clients.get(room_id) is client:
+                await self._handle_live_signal(room_id)
+
+        async def on_preparing(round_status: Optional[int]):
+            if self._danmaku_clients.get(room_id) is client:
+                await self._handle_preparing_signal(room_id, round_status)
+
+        async def on_room_change(data: dict):
+            if self._danmaku_clients.get(room_id) is client:
+                await self._handle_room_change(room_id, data)
+
+        client.on_live = on_live
+        client.on_preparing = on_preparing
+        client.on_room_change = on_room_change
 
         start_epoch = self._danmaku_client_epoch.get(room_id, 0) + 1
         self._danmaku_client_epoch[room_id] = start_epoch
