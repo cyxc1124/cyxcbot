@@ -44,9 +44,21 @@ def _ensure_real_db_modules():
         if user is not None and not isinstance(user, MagicMock):
             from shared.config.service import ConfigService
             from shared.db.base import Model
-            from shared.db.models import DynamicMonitorState, DynamicTarget
+            from shared.db.models import (
+                DynamicMonitorState,
+                DynamicTarget,
+                LiveMonitorState,
+                LiveTarget,
+            )
 
-            return ConfigService, Model, DynamicMonitorState, DynamicTarget
+            return (
+                ConfigService,
+                Model,
+                DynamicMonitorState,
+                DynamicTarget,
+                LiveMonitorState,
+                LiveTarget,
+            )
 
     for name in (
         "shared.config.service",
@@ -79,9 +91,21 @@ def _ensure_real_db_modules():
 
     from shared.config.service import ConfigService
     from shared.db.base import Model
-    from shared.db.models import DynamicMonitorState, DynamicTarget
+    from shared.db.models import (
+        DynamicMonitorState,
+        DynamicTarget,
+        LiveMonitorState,
+        LiveTarget,
+    )
 
-    return ConfigService, Model, DynamicMonitorState, DynamicTarget
+    return (
+        ConfigService,
+        Model,
+        DynamicMonitorState,
+        DynamicTarget,
+        LiveMonitorState,
+        LiveTarget,
+    )
 
 
 def _ensure_package(name: str, path: Path) -> types.ModuleType:
@@ -152,7 +176,14 @@ def dynamic_monitor_plugin_modules() -> Iterator[tuple[Any, Any]]:
 
 @pytest.fixture
 async def db_context():
-    ConfigService, Model, DynamicMonitorState, DynamicTarget = _ensure_real_db_modules()
+    (
+        ConfigService,
+        Model,
+        DynamicMonitorState,
+        DynamicTarget,
+        LiveMonitorState,
+        LiveTarget,
+    ) = _ensure_real_db_modules()
 
     engine = create_async_engine(_shared_sqlite_url())
     async with engine.begin() as conn:
@@ -160,7 +191,14 @@ async def db_context():
 
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
-        yield ConfigService, factory, DynamicMonitorState, DynamicTarget
+        yield (
+            ConfigService,
+            factory,
+            DynamicMonitorState,
+            DynamicTarget,
+            LiveMonitorState,
+            LiveTarget,
+        )
     finally:
         await engine.dispose()
 
@@ -175,7 +213,7 @@ async def test_config_load_prunes_disabled_dynamic_monitor_state(
     ],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    ConfigService, factory, DynamicMonitorState, DynamicTarget = db_context
+    ConfigService, factory, DynamicMonitorState, DynamicTarget, _, _ = db_context
 
     async with factory() as session:
         async with session.begin():
@@ -216,7 +254,7 @@ async def test_config_load_prunes_orphaned_dynamic_monitor_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """State for a deleted target (no DynamicTarget row) should be removed."""
-    ConfigService, factory, DynamicMonitorState, DynamicTarget = db_context
+    ConfigService, factory, DynamicMonitorState, DynamicTarget, _, _ = db_context
 
     async with factory() as session:
         async with session.begin():
@@ -255,7 +293,7 @@ async def test_config_load_prunes_all_states_when_no_enabled_targets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When every target is disabled, all persisted states should be cleared."""
-    ConfigService, factory, DynamicMonitorState, DynamicTarget = db_context
+    ConfigService, factory, DynamicMonitorState, DynamicTarget, _, _ = db_context
 
     async with factory() as session:
         async with session.begin():
@@ -294,7 +332,7 @@ async def test_dynamic_monitor_reload_config_deletes_persisted_state_from_db(
     ],
     dynamic_monitor_plugin_modules: None,
 ) -> None:
-    _ConfigService, factory, DynamicMonitorState, _DynamicTarget = db_context
+    _ConfigService, factory, DynamicMonitorState, _DynamicTarget, _, _ = db_context
     Config, DynamicMonitor = _import_dynamic_monitor_modules(factory)
 
     monitor = DynamicMonitor(
@@ -333,3 +371,158 @@ async def test_dynamic_monitor_reload_config_deletes_persisted_state_from_db(
     assert kept is not None
     assert kept.last_dynamic_id == 200
     assert kept.initialized is True
+
+
+@pytest.mark.asyncio
+async def test_config_load_prunes_disabled_live_monitor_state(
+    db_context: tuple[
+        type,
+        async_sessionmaker[AsyncSession],
+        type,
+        type,
+        type,
+        type,
+    ],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ConfigService, factory, _, _, LiveMonitorState, LiveTarget = db_context
+
+    async with factory() as session:
+        async with session.begin():
+            session.add(LiveTarget(room_id="111", enabled=True))
+            session.add(LiveTarget(room_id="222", enabled=False))
+            session.add(
+                LiveMonitorState(
+                    room_id="111",
+                    previous_status="live",
+                    start_time=1000,
+                    streamer_name="A",
+                )
+            )
+            session.add(
+                LiveMonitorState(
+                    room_id="222",
+                    previous_status="offline",
+                    start_time=2000,
+                    streamer_name="B",
+                )
+            )
+
+    monkeypatch.setattr(
+        "shared.config.service.get_session",
+        lambda: factory(),
+    )
+
+    service = ConfigService()
+    await service.load()
+
+    async with factory() as session:
+        active = await session.get(LiveMonitorState, "111")
+        removed = await session.get(LiveMonitorState, "222")
+
+    assert active is not None
+    assert active.previous_status == "live"
+    assert removed is None
+
+
+@pytest.mark.asyncio
+async def test_config_load_prunes_orphaned_live_monitor_state(
+    db_context: tuple[
+        type,
+        async_sessionmaker[AsyncSession],
+        type,
+        type,
+        type,
+        type,
+    ],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """State for a deleted target (no LiveTarget row) should be removed."""
+    ConfigService, factory, _, _, LiveMonitorState, LiveTarget = db_context
+
+    async with factory() as session:
+        async with session.begin():
+            session.add(LiveTarget(room_id="111", enabled=True))
+            session.add(
+                LiveMonitorState(
+                    room_id="111",
+                    previous_status="live",
+                    start_time=1000,
+                    streamer_name="A",
+                )
+            )
+            session.add(
+                LiveMonitorState(
+                    room_id="999",
+                    previous_status="offline",
+                    start_time=9000,
+                    streamer_name="Orphan",
+                )
+            )
+
+    monkeypatch.setattr(
+        "shared.config.service.get_session",
+        lambda: factory(),
+    )
+
+    service = ConfigService()
+    await service.load()
+
+    async with factory() as session:
+        active = await session.get(LiveMonitorState, "111")
+        orphaned = await session.get(LiveMonitorState, "999")
+
+    assert active is not None
+    assert orphaned is None
+
+
+@pytest.mark.asyncio
+async def test_config_load_prunes_all_live_states_when_no_enabled_targets(
+    db_context: tuple[
+        type,
+        async_sessionmaker[AsyncSession],
+        type,
+        type,
+        type,
+        type,
+    ],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When every live target is disabled, all persisted states should be cleared."""
+    ConfigService, factory, _, _, LiveMonitorState, LiveTarget = db_context
+
+    async with factory() as session:
+        async with session.begin():
+            session.add(LiveTarget(room_id="111", enabled=False))
+            session.add(LiveTarget(room_id="222", enabled=False))
+            session.add(
+                LiveMonitorState(
+                    room_id="111",
+                    previous_status="live",
+                    start_time=1000,
+                    streamer_name="A",
+                )
+            )
+            session.add(
+                LiveMonitorState(
+                    room_id="222",
+                    previous_status="offline",
+                    start_time=2000,
+                    streamer_name="B",
+                )
+            )
+
+    monkeypatch.setattr(
+        "shared.config.service.get_session",
+        lambda: factory(),
+    )
+
+    service = ConfigService()
+    await service.load()
+
+    async with factory() as session:
+        state_111 = await session.get(LiveMonitorState, "111")
+        state_222 = await session.get(LiveMonitorState, "222")
+
+    assert state_111 is None
+    assert state_222 is None
