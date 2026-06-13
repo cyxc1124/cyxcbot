@@ -20,7 +20,7 @@ from nonebot_plugin_orm import get_session
 from shared.config.service import get_config_service
 from shared.db.models import LiveMonitorState
 from shared.monitor.check_cycle import CheckCycleLogger
-from utils.bilibili_api import LiveStatus, api_manager
+from utils.bilibili_api import LiveStatus, RoomInfo, UserInfo, api_manager
 
 from .card_generator import PrefetchImages, prefetch_card_images
 from .config import Config
@@ -506,27 +506,40 @@ class LiveMonitor:
             return
 
         # 检查状态变化
-        old_status = state.previous_status
+        is_live_began, _, new_status, start_time = state.detect_status_change(room_info)
 
-        if old_status != LiveStatus.LIVE and room_info.live_status == LiveStatus.LIVE:
-            # 确认是开播
-            state.previous_status = LiveStatus.LIVE
-            state.room_info = room_info
-            state.user_info = user_info
-            state.start_time = room_info.live_start_time or int(
-                datetime.now().timestamp()
-            )
-
+        if is_live_began:
             streamer_name = user_info.name if user_info else f"房间{room_id}"
             logger.info(f"确认开播: {streamer_name} (房间 {room_id})")
-            await self._send_live_notification(
-                room_id, "start", state, prefetched_images=prefetched
+            await self._deliver_start_notification(
+                room_id,
+                state,
+                room_info=room_info,
+                user_info=user_info,
+                prefetched_images=prefetched,
+            )
+            await self._confirm_observed_status(
+                room_id,
+                state,
+                room_info,
+                user_info,
+                new_status,
+                start_time=start_time,
+            )
+            await self._retry_pending_notifications(
+                room_id,
+                state,
+                room_info,
+                user_info,
+                prefetched_start=prefetched,
+                skip_start=True,
             )
         else:
-            # 更新状态但不发送通知（可能是重复信号或已经在直播中）
-            state.room_info = room_info
-            if user_info:
-                state.user_info = user_info
+            state.sync_observed_status(
+                room_info,
+                room_info.live_status,
+                new_user_info=user_info,
+            )
 
     async def _handle_preparing_signal(self, room_id: str, round_status: Optional[int]):
         """处理关播信号（来自 WebSocket）"""
@@ -553,25 +566,43 @@ class LiveMonitor:
         if not self._is_current_room_state(room_id, state):
             return
 
-        old_status = state.previous_status
+        if room_info:
+            _, is_live_ended, observed_status, _ = state.detect_status_change(room_info)
+        else:
+            is_live_ended = state.previous_status == LiveStatus.LIVE
+            observed_status = (
+                LiveStatus.ROUND if round_status == 1 else LiveStatus.PREPARING
+            )
 
-        # 只有之前是直播状态才发送关播通知
-        if old_status == LiveStatus.LIVE:
-            # 判断是关播还是轮播
-            new_status = LiveStatus.ROUND if round_status == 1 else LiveStatus.PREPARING
-
-            state.previous_status = new_status
-            if room_info:
-                state.room_info = room_info
-            if user_info:
-                state.user_info = user_info
-
+        if is_live_ended:
             streamer_name = (
-                state.user_info.name if state.user_info else f"房间{room_id}"
+                (user_info or state.user_info).name
+                if (user_info or state.user_info)
+                else f"房间{room_id}"
             )
             logger.info(f"确认关播: {streamer_name} (房间 {room_id})")
-            await self._send_live_notification(
-                room_id, "end", state, prefetched_images=prefetched
+            state.pending_start = False
+            await self._deliver_end_notification(
+                room_id,
+                state,
+                room_info=room_info or state.room_info,
+                user_info=user_info,
+                prefetched_images=prefetched,
+            )
+            await self._confirm_observed_status(
+                room_id,
+                state,
+                room_info or state.room_info,
+                user_info,
+                observed_status,
+            )
+            await self._retry_pending_notifications(
+                room_id,
+                state,
+                room_info or state.room_info,
+                user_info,
+                prefetched_end=prefetched,
+                skip_end=True,
             )
 
     async def _handle_room_change(self, room_id: str, data: dict):
@@ -610,6 +641,8 @@ class LiveMonitor:
                 state.room_info = room_info
                 state.user_info = user_info
                 state.previous_status = room_info.live_status
+                state.pending_start = False
+                state.pending_end = False
 
                 if room_info.is_living():
                     state.start_time = room_info.live_start_time or int(
@@ -702,36 +735,185 @@ class LiveMonitor:
         if not self._is_current_room_state(room_id, state):
             return True
 
-        # 更新状态并检测变化
-        is_live_began, is_live_ended = state.update_status(room_info, user_info)
+        # 检测状态变化；观测状态与待投递通知分开跟踪
+        is_live_began, is_live_ended, new_status, start_time = (
+            state.detect_status_change(room_info)
+        )
 
         # 处理开播事件
         if is_live_began:
-            streamer_name = (
-                state.user_info.name if state.user_info else f"房间{room_id}"
-            )
+            streamer_name = user_info.name if user_info else f"房间{room_id}"
             logger.info(f"检测到开播: {streamer_name} (房间 {room_id})")
-            await self._send_live_notification(
+            await self._deliver_start_notification(
                 room_id,
-                "start",
                 state,
+                room_info=room_info,
+                user_info=user_info,
                 prefetched_images=prefetched if need_start_card else None,
+            )
+            await self._confirm_observed_status(
+                room_id,
+                state,
+                room_info,
+                user_info,
+                new_status,
+                start_time=start_time,
+            )
+            await self._retry_pending_notifications(
+                room_id,
+                state,
+                room_info,
+                user_info,
+                prefetched_start=prefetched if need_start_card else None,
+                skip_start=True,
             )
 
         # 处理关播事件
-        if is_live_ended:
-            streamer_name = (
-                state.user_info.name if state.user_info else f"房间{room_id}"
-            )
+        elif is_live_ended:
+            streamer_name = user_info.name if user_info else f"房间{room_id}"
             logger.info(f"检测到关播: {streamer_name} (房间 {room_id})")
-            await self._send_live_notification(
+            state.pending_start = False
+            await self._deliver_end_notification(
                 room_id,
-                "end",
                 state,
+                room_info=room_info,
+                user_info=user_info,
                 prefetched_images=prefetched if need_end_card else None,
+            )
+            await self._confirm_observed_status(
+                room_id,
+                state,
+                room_info,
+                user_info,
+                new_status,
+            )
+            await self._retry_pending_notifications(
+                room_id,
+                state,
+                room_info,
+                user_info,
+                prefetched_end=prefetched if need_end_card else None,
+                skip_end=True,
+            )
+        else:
+            await self._confirm_observed_status(
+                room_id,
+                state,
+                room_info,
+                user_info,
+                new_status,
+            )
+            await self._retry_pending_notifications(
+                room_id,
+                state,
+                room_info,
+                user_info,
+                prefetched_start=prefetched if need_start_card else None,
+                prefetched_end=prefetched if need_end_card else None,
             )
 
         return True
+
+    async def _confirm_observed_status(
+        self,
+        room_id: str,
+        state: LiveRoomState,
+        room_info: RoomInfo,
+        user_info: Optional[UserInfo],
+        new_status: LiveStatus,
+        *,
+        start_time: Optional[int] = None,
+    ) -> None:
+        """同步观测状态并持久化。"""
+        state.sync_observed_status(
+            room_info,
+            new_status,
+            new_user_info=user_info,
+            start_time=start_time,
+        )
+        asyncio.create_task(self._persist_state(room_id))
+
+    async def _deliver_start_notification(
+        self,
+        room_id: str,
+        state: LiveRoomState,
+        *,
+        room_info: RoomInfo,
+        user_info: Optional[UserInfo],
+        prefetched_images: Optional[PrefetchImages] = None,
+    ) -> bool:
+        delivered = await self._send_live_notification(
+            room_id,
+            "start",
+            state,
+            prefetched_images=prefetched_images,
+            room_info=room_info,
+            user_info=user_info,
+        )
+        state.pending_start = not delivered
+        return delivered
+
+    async def _deliver_end_notification(
+        self,
+        room_id: str,
+        state: LiveRoomState,
+        *,
+        room_info: Optional[RoomInfo],
+        user_info: Optional[UserInfo],
+        prefetched_images: Optional[PrefetchImages] = None,
+    ) -> bool:
+        delivered = await self._send_live_notification(
+            room_id,
+            "end",
+            state,
+            prefetched_images=prefetched_images,
+            room_info=room_info,
+            user_info=user_info,
+        )
+        state.pending_end = not delivered
+        return delivered
+
+    async def _retry_pending_notifications(
+        self,
+        room_id: str,
+        state: LiveRoomState,
+        room_info: RoomInfo,
+        user_info: Optional[UserInfo],
+        *,
+        prefetched_start: Optional[PrefetchImages] = None,
+        prefetched_end: Optional[PrefetchImages] = None,
+        skip_start: bool = False,
+        skip_end: bool = False,
+    ) -> None:
+        if (
+            not skip_start
+            and state.pending_start
+            and state.previous_status == LiveStatus.LIVE
+        ):
+            logger.info(f"重试房间 {room_id} 待投递的开播通知")
+            await self._deliver_start_notification(
+                room_id,
+                state,
+                room_info=room_info,
+                user_info=user_info,
+                prefetched_images=prefetched_start,
+            )
+
+        effective_room_info = room_info or state.room_info
+        if (
+            not skip_end
+            and state.pending_end
+            and state.previous_status != LiveStatus.LIVE
+            and effective_room_info is not None
+        ):
+            logger.info(f"重试房间 {room_id} 待投递的下播通知")
+            await self._deliver_end_notification(
+                room_id,
+                state,
+                room_info=effective_room_info,
+                user_info=user_info,
+                prefetched_images=prefetched_end,
+            )
 
     async def _send_live_notification(
         self,
@@ -739,35 +921,52 @@ class LiveMonitor:
         status: str,
         state: LiveRoomState,
         prefetched_images: Optional[PrefetchImages] = None,
-    ):
-        """发送直播通知"""
+        *,
+        room_info: Optional[RoomInfo] = None,
+        user_info: Optional[UserInfo] = None,
+    ) -> bool:
+        """发送直播通知，全部目标投递成功时返回 True。"""
         # 获取目标群组
         target_groups = self.config.live_monitor_mapping.get(room_id, [])
         target_users = self.config.live_monitor_user_mapping.get(room_id, [])
         if not target_groups and not target_users:
             logger.warning(f"房间 {room_id} 没有配置推送目标")
-            return
+            return False
+
+        effective_room_info = room_info if room_info is not None else state.room_info
+        effective_user_info = user_info if user_info is not None else state.user_info
 
         # 获取主播名称
-        streamer_name = state.user_info.name if state.user_info else f"房间{room_id}"
+        streamer_name = (
+            effective_user_info.name if effective_user_info else f"房间{room_id}"
+        )
 
         # 计算直播时长（仅关播时使用）
         duration_seconds = state.get_duration_seconds() if status == "end" else 0
 
-        # 使用发送器发送通知
-        await self._sender.send_notification(
+        delivery = await self._sender.send_notification(
             status=status,
             streamer_name=streamer_name,
-            room_info=state.room_info,
+            room_info=effective_room_info,
             target_groups=target_groups,
             target_users=target_users,
-            user_info=state.user_info,
+            user_info=effective_user_info,
             duration_seconds=duration_seconds,
             at_all_enabled=self.config.live_at_all.get(room_id, True),
             prefetched_images=prefetched_images,
         )
+        if delivery.all_succeeded:
+            return True
 
-        asyncio.create_task(self._persist_state(room_id))
+        failed_targets = [
+            f"{target.target_type}:{target.target_id}"
+            for target in delivery.targets
+            if not target.success
+        ]
+        logger.warning(
+            f"直播{status}通知投递未全部成功: room_id={room_id} failed={failed_targets}"
+        )
+        return False
 
     async def check_room_now(self, room_id: str) -> Optional[Dict]:
         """立即检查指定房间的状态（用于手动触发）"""
