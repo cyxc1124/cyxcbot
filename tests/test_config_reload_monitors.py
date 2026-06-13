@@ -272,3 +272,125 @@ async def test_config_service_reload_invokes_monitor_sync_once(dynamic_monitor_m
         await svc.reload()
 
     fake_monitor.reload_config.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_register_reload_callback_deduplicates_same_callable():
+    from shared.config.service import ConfigService
+
+    svc = ConfigService.get_instance()
+    svc._reload_callbacks.clear()
+
+    callback = AsyncMock()
+    unregister_first = svc.register_reload_callback(callback)
+    unregister_second = svc.register_reload_callback(callback)
+
+    assert len(svc._reload_callbacks) == 1
+    assert unregister_first is not unregister_second
+
+    unregister_first()
+    assert len(svc._reload_callbacks) == 0
+
+    unregister_second()
+    assert len(svc._reload_callbacks) == 0
+
+
+@pytest.mark.asyncio
+async def test_reload_dispatches_all_callbacks_when_one_unregisters_during_dispatch():
+    from shared.config.service import ConfigService
+
+    svc = ConfigService.get_instance()
+    svc._reload_callbacks.clear()
+    snapshot = AppConfigSnapshot()
+    invoked: list[str] = []
+
+    async def first_callback(_snapshot):
+        invoked.append("first")
+        svc.unregister_reload_callback(first_callback)
+
+    async def second_callback(_snapshot):
+        invoked.append("second")
+
+    svc.register_reload_callback(first_callback)
+    svc.register_reload_callback(second_callback)
+
+    with patch.object(svc, "load", new_callable=AsyncMock, return_value=snapshot):
+        await svc.reload()
+
+    assert invoked == ["first", "second"]
+    assert len(svc._reload_callbacks) == 1
+    assert svc._reload_callbacks[0] is second_callback
+
+
+@pytest.mark.asyncio
+async def test_dynamic_monitor_stop_start_keeps_single_reload_callback(
+    dynamic_monitor_mod,
+):
+    """反复停启监控时，ConfigService 回调列表不应累积。"""
+    from shared.config.service import ConfigService
+
+    svc = ConfigService.get_instance()
+    svc._reload_callbacks.clear()
+    dynamic_monitor_mod._config_reload_registered = False
+    dynamic_monitor_mod.dynamic_monitor_instance = None
+
+    config = MagicMock(dynamic_monitor_mapping={"111": ["group1"]})
+    fake_monitor = AsyncMock()
+    fake_monitor.start_monitoring = AsyncMock()
+    fake_monitor.stop_monitoring = AsyncMock()
+
+    with (
+        patch.object(dynamic_monitor_mod, "Config") as config_cls,
+        patch.object(
+            dynamic_monitor_mod,
+            "DynamicMonitor",
+            return_value=fake_monitor,
+        ),
+    ):
+        config_cls.from_service.return_value = config
+
+        for _ in range(3):
+            await dynamic_monitor_mod.start_dynamic_monitor()
+            assert len(svc._reload_callbacks) == 1
+            await dynamic_monitor_mod.stop_dynamic_monitor()
+            assert len(svc._reload_callbacks) == 1
+
+    dynamic_monitor_mod._config_reload_registered = False
+    dynamic_monitor_mod.dynamic_monitor_instance = None
+
+
+@pytest.mark.asyncio
+async def test_live_monitor_stop_start_keeps_single_reload_callback(
+    live_monitor_mod,
+):
+    """反复停启直播监控时，ConfigService 回调列表不应累积。"""
+    from shared.config.service import ConfigService
+
+    svc = ConfigService.get_instance()
+    svc._reload_callbacks.clear()
+    live_monitor_mod._config_reload_registered = False
+    live_monitor_mod.live_monitor_instance = None
+
+    config = MagicMock(live_monitor_mapping={"111": ["group1"]})
+    fake_monitor = AsyncMock()
+    fake_monitor.start_monitoring = AsyncMock()
+    fake_monitor.stop_monitoring = AsyncMock()
+
+    with (
+        patch.object(live_monitor_mod, "Config") as config_cls,
+        patch.object(
+            live_monitor_mod,
+            "LiveMonitor",
+            return_value=fake_monitor,
+        ),
+    ):
+        config_cls.from_service.return_value = config
+
+        for _ in range(3):
+            await live_monitor_mod.start_live_monitor()
+            assert len(svc._reload_callbacks) == 1
+            await live_monitor_mod.stop_live_monitor()
+            assert len(svc._reload_callbacks) == 1
+
+    live_monitor_mod._config_reload_registered = False
+    live_monitor_mod.live_monitor_instance = None
