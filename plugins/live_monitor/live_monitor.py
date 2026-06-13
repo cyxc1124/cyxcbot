@@ -30,6 +30,12 @@ from .sender import LiveNotificationSender
 
 # 全局监控实例
 live_monitor_instance: Optional["LiveMonitor"] = None
+_config_reload_registered = False
+
+
+async def _on_config_reload(_snapshot):
+    if live_monitor_instance:
+        await live_monitor_instance.reload_config()
 
 
 class LiveMonitor:
@@ -66,6 +72,17 @@ class LiveMonitor:
 
     def _configured_room_ids(self) -> list[str]:
         return list(self.config.live_monitor_mapping.keys())
+
+    def _is_active_room(self, room_id: str) -> bool:
+        return room_id in self.config.live_monitor_mapping
+
+    async def _delete_persisted_state(self, room_id: str) -> None:
+        """清除 DB 中已停用/移除房间的持久化状态。"""
+        session = get_session()
+        async with session.begin():
+            row = await session.get(LiveMonitorState, room_id)
+            if row:
+                await session.delete(row)
 
     async def _remove_room(self, room_id: str) -> None:
         """停止监控并从运行时状态中移除房间。"""
@@ -120,6 +137,8 @@ class LiveMonitor:
                         state.start_time = row.start_time
 
     async def _persist_state(self, room_id: str):
+        if not self._is_active_room(room_id):
+            return
         state = self.room_states.get(room_id)
         if not state:
             return
@@ -138,16 +157,19 @@ class LiveMonitor:
     async def reload_config(self):
         old_interval = self.config.monitor_interval
         old_ws = self.config.use_websocket
+        old_configured_room_ids = set(self.config.live_monitor_mapping.keys())
         old_room_ids = set(self.room_states.keys())
         old_cookie = self.config.bilibili_cookie
         self.config = Config.from_service()
 
         await api_manager.init(self.config.bilibili_cookie)
 
-        removed_room_ids = old_room_ids - set(self.config.live_monitor_mapping.keys())
+        new_room_ids_set = set(self.config.live_monitor_mapping.keys())
+        removed_room_ids = old_room_ids - new_room_ids_set
         for room_id in removed_room_ids:
             try:
                 await self._remove_room(room_id)
+                await self._delete_persisted_state(room_id)
             except Exception as e:
                 logger.error(f"移除房间 {room_id} 监控失败: {e}")
         if removed_room_ids:
@@ -156,12 +178,33 @@ class LiveMonitor:
                 f"{', '.join(sorted(removed_room_ids))}"
             )
 
-        new_room_ids: list[str] = []
+        readded_room_ids = new_room_ids_set - old_configured_room_ids
+        for room_id in readded_room_ids:
+            try:
+                self.room_states.pop(room_id, None)
+                self.initialized_rooms.pop(room_id, None)
+                stale_client = self._danmaku_clients.pop(room_id, None)
+                if stale_client:
+                    try:
+                        await stale_client.stop()
+                    except Exception as e:
+                        logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
+                await self._delete_persisted_state(room_id)
+            except Exception as e:
+                logger.error(f"重置房间 {room_id} 持久化状态失败: {e}")
+        if readded_room_ids:
+            logger.info(
+                f"直播监控已重新启用 {len(readded_room_ids)} 个房间，已重置监控状态: "
+                f"{', '.join(sorted(readded_room_ids))}"
+            )
+
+        new_room_ids: list[str] = list(readded_room_ids)
         for room_id in self.config.live_monitor_mapping.keys():
             if room_id not in self.room_states:
                 self.room_states[room_id] = LiveRoomState(room_id=int(room_id))
                 self.initialized_rooms[room_id] = False
-                new_room_ids.append(room_id)
+                if room_id not in new_room_ids:
+                    new_room_ids.append(room_id)
             elif room_id not in self.initialized_rooms:
                 self.initialized_rooms[room_id] = False
 
@@ -408,6 +451,9 @@ class LiveMonitor:
         """处理开播信号（来自 WebSocket）"""
         logger.debug(f"房间 {room_id} 收到开播信号")
 
+        if not self._is_active_room(room_id):
+            return
+
         if not self.initialized_rooms.get(room_id, False):
             await self._initialize_room(room_id)
             return
@@ -423,6 +469,9 @@ class LiveMonitor:
 
         if not room_info:
             logger.debug(f"房间 {room_id} 获取信息失败")
+            return
+
+        if not self._is_active_room(room_id):
             return
 
         # 检查状态变化
@@ -452,6 +501,9 @@ class LiveMonitor:
         """处理关播信号（来自 WebSocket）"""
         logger.debug(f"房间 {room_id} 收到关播信号 (round={round_status})")
 
+        if not self._is_active_room(room_id):
+            return
+
         if not self.initialized_rooms.get(room_id, False):
             await self._initialize_room(room_id)
             return
@@ -464,6 +516,9 @@ class LiveMonitor:
         room_info, user_info, prefetched = await self._fetch_room_info_with_prefetch(
             room_id, "end", state
         )
+
+        if not self._is_active_room(room_id):
+            return
 
         old_status = state.previous_status
 
@@ -498,6 +553,9 @@ class LiveMonitor:
 
     async def _initialize_room(self, room_id: str) -> bool:
         """记录房间当前直播状态作为基准，不触发推送"""
+        if not self._is_active_room(room_id):
+            return False
+
         state = self.room_states.get(room_id)
         if not state:
             return False
@@ -508,6 +566,9 @@ class LiveMonitor:
             )
 
             if room_info:
+                if not self._is_active_room(room_id):
+                    return False
+
                 state.room_info = room_info
                 state.user_info = user_info
                 state.previous_status = room_info.live_status
@@ -594,6 +655,9 @@ class LiveMonitor:
         if not room_info:
             logger.debug(f"无法获取房间 {room_id} 的最新状态")
             return False
+
+        if not self._is_active_room(room_id):
+            return True
 
         # 更新状态并检测变化
         is_live_began, is_live_ended = state.update_status(room_info, user_info)
@@ -682,7 +746,7 @@ class LiveMonitor:
 # 插件启动和关闭函数
 async def start_live_monitor():
     """启动直播监控"""
-    global live_monitor_instance
+    global live_monitor_instance, _config_reload_registered
 
     if live_monitor_instance is not None:
         logger.warning("直播监控已在运行中")
@@ -711,11 +775,9 @@ async def start_live_monitor():
         # 启动监控
         await live_monitor_instance.start_monitoring()
 
-        async def _on_config_reload(_snapshot):
-            if live_monitor_instance:
-                await live_monitor_instance.reload_config()
-
-        get_config_service().register_reload_callback(_on_config_reload)
+        if not _config_reload_registered:
+            get_config_service().register_reload_callback(_on_config_reload)
+            _config_reload_registered = True
 
         logger.info("B站直播监控已启动")
 

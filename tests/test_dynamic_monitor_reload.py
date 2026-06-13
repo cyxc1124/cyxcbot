@@ -334,3 +334,34 @@ async def test_reload_config_deletes_persisted_state_for_removed_uid(
         await monitor.reload_config()
 
     delete_state.assert_awaited_once_with("111")
+
+
+@pytest.mark.asyncio
+async def test_start_dynamic_monitor_registers_config_reload_once(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    _Config, _DynamicMonitor = dynamic_monitor_modules
+    monitor_mod = sys.modules["plugins.dynamic_monitor.dynamic_monitor"]
+    monitor_mod._config_reload_registered = False
+    monitor_mod.dynamic_monitor_instance = None
+
+    config = _Config(dynamic_monitor_mapping={"111": ["group1"]})
+    fake_monitor = AsyncMock()
+    fake_monitor.start_monitoring = AsyncMock()
+
+    with (
+        patch.object(monitor_mod, "Config") as config_cls,
+        patch.object(monitor_mod, "DynamicMonitor", return_value=fake_monitor),
+        patch.object(
+            monitor_mod.get_config_service(),
+            "register_reload_callback",
+        ) as register,
+    ):
+        config_cls.from_service.return_value = config
+        await monitor_mod.start_dynamic_monitor()
+        await monitor_mod.stop_dynamic_monitor()
+        await monitor_mod.start_dynamic_monitor()
+
+    assert register.call_count == 1
+    monitor_mod._config_reload_registered = False
+    monitor_mod.dynamic_monitor_instance = None
