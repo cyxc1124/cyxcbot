@@ -362,6 +362,9 @@ class DynamicMonitor:
         except Exception as e:
             logger.warning(f"移除定时任务时出错: {e}")
 
+        # 等待后台投递完成后再关闭 session/截图服务，避免慢投递被中断后游标不前进
+        await self._drain_pending_deliveries()
+
         # 清理资源
         await self._cleanup_resources()
         logger.info("UP主动态监控已完全停止")

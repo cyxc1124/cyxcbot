@@ -719,3 +719,52 @@ async def test_stale_check_skips_notification_when_all_targets_cleared_via_sync(
         assert "111" not in monitor.last_dynamic_ids
     finally:
         monitor_mod.dynamic_monitor_instance = None
+
+
+@pytest.mark.asyncio
+async def test_stop_monitoring_drains_background_deliveries_before_cleanup(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """停止监控时应先等待后台投递完成，再关闭 session/截图服务。"""
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.fetcher = MagicMock()
+    monitor.last_dynamic_ids["111"] = 100
+
+    delivery_started = asyncio.Event()
+    release_delivery = asyncio.Event()
+
+    async def fetch_dynamics(*_args, **_kwargs):
+        return ([_dynamic(200)], None)
+
+    async def slow_notify(*_args, **_kwargs):
+        delivery_started.set()
+        await release_delivery.wait()
+        return True
+
+    monitor.fetcher.fetch_user_dynamics = fetch_dynamics
+
+    with (
+        patch.object(
+            monitor,
+            "_send_dynamic_notification",
+            side_effect=slow_notify,
+        ) as notify,
+        patch.object(monitor, "_persist_state", AsyncMock()) as persist,
+        patch.object(monitor, "_cleanup_resources", AsyncMock()) as cleanup,
+    ):
+        check_task = asyncio.create_task(monitor._check_user_dynamic("111"))
+        await delivery_started.wait()
+
+        stop_task = asyncio.create_task(monitor.stop_monitoring())
+        await asyncio.sleep(0)
+        cleanup.assert_not_awaited()
+
+        release_delivery.set()
+        await check_task
+        await stop_task
+
+    notify.assert_awaited_once()
+    persist.assert_awaited_once()
+    cleanup.assert_awaited_once()
+    assert monitor.last_dynamic_ids["111"] == 200
