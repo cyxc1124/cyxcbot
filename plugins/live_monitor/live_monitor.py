@@ -53,6 +53,13 @@ async def _on_config_reload(snapshot):
     await sync_from_config_reload(snapshot)
 
 
+def _ensure_config_reload_registered() -> None:
+    global _config_reload_registered
+    if not _config_reload_registered:
+        get_config_service().register_reload_callback(_on_config_reload)
+        _config_reload_registered = True
+
+
 class LiveMonitor:
     """B站直播监控核心类
 
@@ -782,7 +789,9 @@ class LiveMonitor:
 # 插件启动和关闭函数
 async def start_live_monitor():
     """启动直播监控"""
-    global live_monitor_instance, _config_reload_registered
+    global live_monitor_instance
+
+    _ensure_config_reload_registered()
 
     if live_monitor_instance is not None:
         logger.warning("直播监控已在运行中")
@@ -810,10 +819,6 @@ async def start_live_monitor():
 
         # 启动监控
         await live_monitor_instance.start_monitoring()
-
-        if not _config_reload_registered:
-            get_config_service().register_reload_callback(_on_config_reload)
-            _config_reload_registered = True
 
         logger.info("B站直播监控已启动")
 

@@ -212,6 +212,50 @@ async def test_live_on_config_reload_calls_reload_config_once(live_monitor_mod):
 
 
 @pytest.mark.asyncio
+async def test_dynamic_start_with_no_targets_registers_reload_callback(
+    dynamic_monitor_mod,
+):
+    dynamic_monitor_mod._config_reload_registered = False
+    dynamic_monitor_mod.dynamic_monitor_instance = None
+
+    with (
+        patch.object(dynamic_monitor_mod, "Config") as config_cls,
+        patch.object(
+            dynamic_monitor_mod.get_config_service(),
+            "register_reload_callback",
+        ) as register,
+    ):
+        config_cls.from_service.return_value = MagicMock(dynamic_monitor_mapping={})
+        await dynamic_monitor_mod.start_dynamic_monitor()
+
+    register.assert_called_once_with(dynamic_monitor_mod._on_config_reload)
+    dynamic_monitor_mod._config_reload_registered = False
+
+
+@pytest.mark.asyncio
+async def test_config_reload_starts_monitor_after_empty_boot(dynamic_monitor_mod):
+    """Bot 无目标启动后，配置热重载添加首个目标应能启动监控。"""
+    dynamic_monitor_mod._config_reload_registered = False
+    dynamic_monitor_mod.dynamic_monitor_instance = None
+
+    with patch.object(dynamic_monitor_mod, "Config") as config_cls:
+        config_cls.from_service.return_value = MagicMock(dynamic_monitor_mapping={})
+        await dynamic_monitor_mod.start_dynamic_monitor()
+
+    assert dynamic_monitor_mod._config_reload_registered
+
+    with patch.object(
+        dynamic_monitor_mod, "start_dynamic_monitor", new_callable=AsyncMock
+    ) as start:
+        await dynamic_monitor_mod.sync_from_config_reload(
+            AppConfigSnapshot(dynamic_monitor_mapping={"111": ["group1"]})
+        )
+
+    start.assert_awaited_once()
+    dynamic_monitor_mod._config_reload_registered = False
+
+
+@pytest.mark.asyncio
 async def test_config_service_reload_invokes_monitor_sync_once(dynamic_monitor_mod):
     from shared.config.service import ConfigService
 
