@@ -718,6 +718,107 @@ async def test_start_live_monitor_registers_config_reload_once(
 
 
 @pytest.mark.asyncio
+async def test_reload_config_deletes_persisted_state_for_removed_room(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111", "222"])
+
+    reduced_config = Config(
+        live_monitor_mapping={"222": ["group1"]},
+        use_websocket=True,
+    )
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.Config.from_service",
+            return_value=reduced_config,
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.init",
+            new_callable=AsyncMock,
+        ),
+        patch.object(
+            monitor,
+            "_delete_persisted_state",
+            new_callable=AsyncMock,
+        ) as delete_state,
+    ):
+        await monitor.reload_config()
+
+    delete_state.assert_awaited_once_with("111")
+
+
+@pytest.mark.asyncio
+async def test_reenabled_room_reset_after_stale_inflight_check_repollutes_memory(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    """停用后进行中的检查可能把旧基准写回内存，重新启用时必须强制重置。"""
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+
+    disabled_config = Config(live_monitor_mapping={})
+    reenabled_config = Config(
+        live_monitor_mapping={"111": ["group1"]},
+        use_websocket=True,
+    )
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.Config.from_service",
+            return_value=disabled_config,
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.init",
+            new_callable=AsyncMock,
+        ),
+        patch.object(
+            monitor,
+            "_delete_persisted_state",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await monitor.reload_config()
+
+    # 模拟停用后过期检查把 initialized=true 的旧基准写回内存（DB 已被拦截）
+    monitor.room_states["111"] = LiveRoomState(room_id=111)
+    monitor.room_states["111"].previous_status = LiveStatus.LIVE
+    monitor.initialized_rooms["111"] = True
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.Config.from_service",
+            return_value=reenabled_config,
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.init",
+            new_callable=AsyncMock,
+        ),
+        patch.object(
+            monitor,
+            "_delete_persisted_state",
+            new_callable=AsyncMock,
+        ) as delete_state,
+        patch.object(
+            monitor,
+            "_initialize_room",
+            new_callable=AsyncMock,
+        ) as initialize_room,
+        patch.object(
+            monitor,
+            "_start_single_danmaku_client",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await monitor.reload_config()
+
+    assert monitor.initialized_rooms["111"] is False
+    assert monitor.room_states["111"].previous_status == LiveStatus.PREPARING
+    delete_state.assert_awaited_once_with("111")
+    initialize_room.assert_awaited_once_with("111")
+
+
+@pytest.mark.asyncio
 async def test_start_danmaku_clients_retries_failed_room_on_subsequent_call(
     live_monitor_modules: tuple[Any, Any, Any],
 ) -> None:
