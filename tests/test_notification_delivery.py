@@ -607,3 +607,69 @@ async def test_pending_start_retried_while_room_stays_live(
     assert state.pending_start is False
     assert send_mock.await_count == 2
     assert all(call.args[1] == "start" for call in send_mock.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_pending_end_cleared_when_new_live_begins_before_retry(
+    live_monitor_module,
+) -> None:
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=False,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.LIVE)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        def __init__(self, status: LiveStatus):
+            self.live_status = status
+            self.live_start_time = 1000
+            self.title = "title"
+            self.cover = ""
+
+        def is_living(self) -> bool:
+            return self.live_status == LiveStatus.LIVE
+
+    end_room = FakeRoomInfo(LiveStatus.PREPARING)
+    live_room = FakeRoomInfo(LiveStatus.LIVE)
+    fetch_results = iter([(end_room, None), (live_room, None)])
+
+    async def fetch_room(*_args, **_kwargs):
+        return next(fetch_results)
+
+    send_mock = AsyncMock(side_effect=[False, True])
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            side_effect=fetch_room,
+        ),
+        patch.object(monitor, "_send_live_notification", send_mock),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        await monitor._check_room_status("111")
+        assert state.pending_end is True
+        assert state.previous_status == LiveStatus.PREPARING
+
+        await monitor._check_room_status("111")
+
+    assert state.pending_end is False
+    assert state.previous_status == LiveStatus.LIVE
+    assert send_mock.await_count == 2
+    assert send_mock.await_args_list[0].args[1] == "end"
+    assert send_mock.await_args_list[1].args[1] == "start"

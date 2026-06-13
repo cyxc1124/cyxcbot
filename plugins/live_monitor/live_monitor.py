@@ -102,6 +102,15 @@ class LiveMonitor:
         """_is_active_room 校验配置映射；本方法校验 state 是否仍为 room_states 当前条目。"""
         return self.room_states.get(room_id) is state
 
+    def _supersede_pending_end(self, room_id: str, state: LiveRoomState) -> None:
+        """新一轮开播时放弃已过期的待投递下播通知，避免 pending 标志永久滞留。"""
+        if not state.pending_end:
+            return
+        logger.warning(
+            f"房间 {room_id} 在新一轮开播前仍有未投递的下播通知，已放弃重试"
+        )
+        state.pending_end = False
+
     async def _delete_persisted_state(self, room_id: str) -> None:
         """清除 DB 中已停用/移除房间的持久化状态。"""
         session = get_session()
@@ -511,6 +520,7 @@ class LiveMonitor:
         if is_live_began:
             streamer_name = user_info.name if user_info else f"房间{room_id}"
             logger.info(f"确认开播: {streamer_name} (房间 {room_id})")
+            self._supersede_pending_end(room_id, state)
             await self._deliver_start_notification(
                 room_id,
                 state,
@@ -744,6 +754,7 @@ class LiveMonitor:
         if is_live_began:
             streamer_name = user_info.name if user_info else f"房间{room_id}"
             logger.info(f"检测到开播: {streamer_name} (房间 {room_id})")
+            self._supersede_pending_end(room_id, state)
             await self._deliver_start_notification(
                 room_id,
                 state,
