@@ -157,7 +157,8 @@ class LiveMonitor:
     async def reload_config(self):
         old_interval = self.config.monitor_interval
         old_ws = self.config.use_websocket
-        old_room_ids = set(self.config.live_monitor_mapping.keys())
+        old_configured_room_ids = set(self.config.live_monitor_mapping.keys())
+        old_room_ids = set(self.room_states.keys())
         old_cookie = self.config.bilibili_cookie
         self.config = Config.from_service()
 
@@ -177,11 +178,17 @@ class LiveMonitor:
                 f"{', '.join(sorted(removed_room_ids))}"
             )
 
-        readded_room_ids = new_room_ids_set - old_room_ids
+        readded_room_ids = new_room_ids_set - old_configured_room_ids
         for room_id in readded_room_ids:
             try:
-                self.room_states[room_id] = LiveRoomState(room_id=int(room_id))
-                self.initialized_rooms[room_id] = False
+                self.room_states.pop(room_id, None)
+                self.initialized_rooms.pop(room_id, None)
+                stale_client = self._danmaku_clients.pop(room_id, None)
+                if stale_client:
+                    try:
+                        await stale_client.stop()
+                    except Exception as e:
+                        logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
                 await self._delete_persisted_state(room_id)
             except Exception as e:
                 logger.error(f"重置房间 {room_id} 持久化状态失败: {e}")
