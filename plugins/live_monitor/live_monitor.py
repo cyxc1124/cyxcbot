@@ -49,6 +49,8 @@ class LiveMonitor:
         self.initialized_rooms: Dict[str, bool] = {}
         # WebSocket 客户端: room_id -> DanmakuClient
         self._danmaku_clients: Dict[str, DanmakuClient] = {}
+        # 每次注册客户端时递增，用于忽略过期的 in-flight start 失败
+        self._danmaku_client_epoch: Dict[str, int] = {}
         # aiohttp session for WebSocket
         self._ws_session: Optional[aiohttp.ClientSession] = None
         # 通知发送器
@@ -352,13 +354,18 @@ class LiveMonitor:
             on_room_change=on_room_change,
         )
 
+        start_epoch = self._danmaku_client_epoch.get(room_id, 0) + 1
+        self._danmaku_client_epoch[room_id] = start_epoch
         self._danmaku_clients[room_id] = client
         try:
             await client.start()
         except Exception:
-            # 仅移除本次启动注册的客户端，避免 Cookie 热重载等场景下
-            # 过期的 in-flight 启动失败误删已替换的新客户端。
-            if self._danmaku_clients.get(room_id) is client:
+            # 仅移除本次 epoch 仍有效的注册，避免 Cookie 热重载等场景下
+            # 过期的 in-flight 启动失败误删已替换或已恢复的旧客户端。
+            if (
+                self._danmaku_client_epoch.get(room_id) == start_epoch
+                and self._danmaku_clients.get(room_id) is client
+            ):
                 self._danmaku_clients.pop(room_id, None)
             raise
         logger.debug(f"房间 {room_id} WebSocket 监控已启动")
