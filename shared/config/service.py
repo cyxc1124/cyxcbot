@@ -193,7 +193,7 @@ class ConfigService:
         """Reload config and notify registered monitors."""
         logger.info("正在从数据库热重载配置…")
         snapshot = await self.load()
-        for callback in self._reload_callbacks:
+        for callback in list(self._reload_callbacks):
             try:
                 await callback(snapshot)
             except Exception as exc:

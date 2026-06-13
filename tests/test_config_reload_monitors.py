@@ -296,6 +296,33 @@ async def test_register_reload_callback_deduplicates_same_callable():
 
 
 @pytest.mark.asyncio
+async def test_reload_dispatches_all_callbacks_when_one_unregisters_during_dispatch():
+    from shared.config.service import ConfigService
+
+    svc = ConfigService.get_instance()
+    svc._reload_callbacks.clear()
+    snapshot = AppConfigSnapshot()
+    invoked: list[str] = []
+
+    async def first_callback(_snapshot):
+        invoked.append("first")
+        svc.unregister_reload_callback(first_callback)
+
+    async def second_callback(_snapshot):
+        invoked.append("second")
+
+    svc.register_reload_callback(first_callback)
+    svc.register_reload_callback(second_callback)
+
+    with patch.object(svc, "load", new_callable=AsyncMock, return_value=snapshot):
+        await svc.reload()
+
+    assert invoked == ["first", "second"]
+    assert len(svc._reload_callbacks) == 1
+    assert svc._reload_callbacks[0] is second_callback
+
+
+@pytest.mark.asyncio
 async def test_dynamic_monitor_stop_start_keeps_single_reload_callback(
     dynamic_monitor_mod,
 ):
