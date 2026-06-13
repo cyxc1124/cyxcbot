@@ -3,9 +3,9 @@ B站直播监控数据模型
 提供监控专用的状态类
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from utils.bilibili_api import LiveStatus, RoomInfo, UserInfo
 
@@ -21,6 +21,20 @@ class LiveRoomState:
     start_time: int = 0  # 记录的开播时间戳
     pending_start: bool = False
     pending_end: bool = False
+    pending_start_groups: List[str] = field(default_factory=list)
+    pending_start_users: List[str] = field(default_factory=list)
+    pending_end_groups: List[str] = field(default_factory=list)
+    pending_end_users: List[str] = field(default_factory=list)
+
+    def clear_pending_start(self) -> None:
+        self.pending_start = False
+        self.pending_start_groups = []
+        self.pending_start_users = []
+
+    def clear_pending_end(self) -> None:
+        self.pending_end = False
+        self.pending_end_groups = []
+        self.pending_end_users = []
 
     def detect_status_change(
         self, new_room_info: RoomInfo

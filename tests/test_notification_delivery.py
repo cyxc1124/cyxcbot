@@ -15,6 +15,16 @@ from nonebot.adapters.onebot.v11.message import Message
 from shared.notify.delivery import DeliveryResult, TargetDelivery, aggregate_by_target
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _delivery_failed() -> DeliveryResult:
+    return DeliveryResult(
+        targets=[TargetDelivery("group", "1001", False, "offline")]
+    )
+
+
+def _delivery_succeeded() -> DeliveryResult:
+    return DeliveryResult(targets=[TargetDelivery("group", "1001", True)])
 PLUGINS_ROOT = ROOT / "plugins"
 DYNAMIC_MONITOR_ROOT = PLUGINS_ROOT / "dynamic_monitor"
 LIVE_MONITOR_ROOT = PLUGINS_ROOT / "live_monitor"
@@ -538,7 +548,7 @@ async def test_end_notification_sent_after_start_delivery_failed(
     async def fetch_room(*_args, **_kwargs):
         return next(fetch_results)
 
-    send_mock = AsyncMock(side_effect=[False, True])
+    send_mock = AsyncMock(side_effect=[_delivery_failed(), _delivery_succeeded()])
 
     with (
         patch(
@@ -590,7 +600,7 @@ async def test_pending_start_retried_while_room_stays_live(
         title = "title"
         cover = ""
 
-    send_mock = AsyncMock(side_effect=[False, True])
+    send_mock = AsyncMock(side_effect=[_delivery_failed(), _delivery_succeeded()])
 
     with (
         patch(
@@ -607,3 +617,60 @@ async def test_pending_start_retried_while_room_stays_live(
     assert state.pending_start is False
     assert send_mock.await_count == 2
     assert all(call.args[1] == "start" for call in send_mock.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_pending_start_retry_only_targets_failed_groups(
+    live_monitor_module,
+) -> None:
+    """部分投递失败时，重试只应向未成功的群组发送，避免重复推送。"""
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001", "1002"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=False,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111)
+    monitor.room_states["111"] = state
+
+    partial = DeliveryResult(
+        targets=[
+            TargetDelivery("group", "1001", True),
+            TargetDelivery("group", "1002", False, "offline"),
+        ]
+    )
+    success = DeliveryResult(targets=[TargetDelivery("group", "1002", True)])
+    send_notify = AsyncMock(side_effect=[partial, success])
+
+    with patch.object(monitor._sender, "send_notification", send_notify):
+        first_ok = await monitor._deliver_start_notification(
+            "111",
+            state,
+            room_info=SimpleNamespace(title="title", cover=""),
+            user_info=None,
+        )
+        second_ok = await monitor._deliver_start_notification(
+            "111",
+            state,
+            room_info=SimpleNamespace(title="title", cover=""),
+            user_info=None,
+        )
+
+    assert first_ok is False
+    assert second_ok is True
+    assert state.pending_start is False
+    assert state.pending_start_groups == []
+    assert send_notify.await_count == 2
+    assert send_notify.await_args_list[0].kwargs["target_groups"] == ["1001", "1002"]
+    assert send_notify.await_args_list[1].kwargs["target_groups"] == ["1002"]
+    assert send_notify.await_args_list[1].kwargs["target_users"] == []
