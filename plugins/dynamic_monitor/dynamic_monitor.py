@@ -31,9 +31,31 @@ dynamic_monitor_instance: Optional["DynamicMonitor"] = None
 _config_reload_registered = False
 
 
-async def _on_config_reload(_snapshot):
-    if dynamic_monitor_instance:
-        await dynamic_monitor_instance.reload_config()
+async def sync_from_config_reload(snapshot) -> None:
+    """Start, stop, or hot-reload dynamic monitor to match config snapshot."""
+    has_targets = bool(snapshot.dynamic_monitor_mapping)
+
+    if dynamic_monitor_instance is None:
+        if has_targets:
+            await start_dynamic_monitor()
+        return
+
+    if not has_targets:
+        await stop_dynamic_monitor()
+        return
+
+    await dynamic_monitor_instance.reload_config()
+
+
+async def _on_config_reload(snapshot):
+    await sync_from_config_reload(snapshot)
+
+
+def _ensure_config_reload_registered() -> None:
+    global _config_reload_registered
+    if not _config_reload_registered:
+        get_config_service().register_reload_callback(_on_config_reload)
+        _config_reload_registered = True
 
 
 class DynamicMonitor:
@@ -717,7 +739,9 @@ class DynamicMonitor:
 # 插件启动和关闭函数
 async def start_dynamic_monitor():
     """启动动态监控"""
-    global dynamic_monitor_instance, _config_reload_registered
+    global dynamic_monitor_instance
+
+    _ensure_config_reload_registered()
 
     if dynamic_monitor_instance is not None:
         logger.warning("动态监控已在运行中")
@@ -746,10 +770,6 @@ async def start_dynamic_monitor():
 
         # 启动监控（会添加APScheduler定时任务）
         await dynamic_monitor_instance.start_monitoring()
-
-        if not _config_reload_registered:
-            get_config_service().register_reload_callback(_on_config_reload)
-            _config_reload_registered = True
 
         logger.info("UP主动态监控已启动")
 

@@ -16,7 +16,6 @@ from admin.services.connection_status import (
     bilibili_status_message,
     get_bilibili_connection_status,
 )
-from admin.services.monitor_bridge import reload_all_monitors
 from shared.config.message_templates import MESSAGE_TEMPLATE_KEYS
 from shared.config.service import get_config_service
 
@@ -83,10 +82,6 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
     if updates:
         await svc.set_settings(updates)
         await svc.reload()
-        if any(
-            k not in ("status_check_allowed_qq", "nonebot_superusers") for k in updates
-        ):
-            await reload_all_monitors()
 
     return SettingsResponse(**svc.settings_for_api())
 
