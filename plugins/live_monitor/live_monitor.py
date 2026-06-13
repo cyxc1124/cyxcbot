@@ -111,6 +111,40 @@ class LiveMonitor:
         logger.warning(f"房间 {room_id} 在新一轮开播前仍有未投递的下播通知，已放弃重试")
         state.pending_end = False
 
+    async def _deliver_pending_start_before_end(
+        self,
+        room_id: str,
+        state: LiveRoomState,
+        *,
+        user_info: Optional[UserInfo],
+        prefetched_images: Optional[PrefetchImages] = None,
+    ) -> None:
+        """关播前补发仍未投递成功的开播通知，避免短播时首播失败后标志被直接清除。"""
+        if not state.pending_start:
+            return
+
+        effective_room_info = state.room_info
+        if effective_room_info is None:
+            logger.warning(
+                f"房间 {room_id} 关播时仍有待投递开播通知，但缺少房间快照，已放弃"
+            )
+            state.pending_start = False
+            return
+
+        logger.info(f"房间 {room_id} 关播前补发待投递的开播通知")
+        await self._deliver_start_notification(
+            room_id,
+            state,
+            room_info=effective_room_info,
+            user_info=user_info or state.user_info,
+            prefetched_images=prefetched_images,
+        )
+        if state.pending_start:
+            logger.warning(
+                f"房间 {room_id} 关播前补发开播通知仍未成功，已放弃待投递标志"
+            )
+            state.pending_start = False
+
     async def _delete_persisted_state(self, room_id: str) -> None:
         """清除 DB 中已停用/移除房间的持久化状态。"""
         session = get_session()
@@ -591,7 +625,14 @@ class LiveMonitor:
                 else f"房间{room_id}"
             )
             logger.info(f"确认关播: {streamer_name} (房间 {room_id})")
-            state.pending_start = False
+            await self._deliver_pending_start_before_end(
+                room_id,
+                state,
+                user_info=user_info,
+                prefetched_images=prefetched
+                if self._sender.template_uses_card("start")
+                else None,
+            )
             await self._deliver_end_notification(
                 room_id,
                 state,
@@ -783,7 +824,12 @@ class LiveMonitor:
         elif is_live_ended:
             streamer_name = user_info.name if user_info else f"房间{room_id}"
             logger.info(f"检测到关播: {streamer_name} (房间 {room_id})")
-            state.pending_start = False
+            await self._deliver_pending_start_before_end(
+                room_id,
+                state,
+                user_info=user_info,
+                prefetched_images=prefetched if need_start_card else None,
+            )
             await self._deliver_end_notification(
                 room_id,
                 state,

@@ -538,7 +538,7 @@ async def test_end_notification_sent_after_start_delivery_failed(
     async def fetch_room(*_args, **_kwargs):
         return next(fetch_results)
 
-    send_mock = AsyncMock(side_effect=[False, True])
+    send_mock = AsyncMock(side_effect=[False, True, True])
 
     with (
         patch(
@@ -554,9 +554,84 @@ async def test_end_notification_sent_after_start_delivery_failed(
     assert state.previous_status == LiveStatus.PREPARING
     assert state.pending_start is False
     assert state.pending_end is False
+    assert send_mock.await_count == 3
     assert send_mock.await_args_list[0].args[1] == "start"
-    assert send_mock.await_args_list[1].args[1] == "end"
+    assert send_mock.await_args_list[1].args[1] == "start"
+    assert send_mock.await_args_list[2].args[1] == "end"
 
+
+@pytest.mark.asyncio
+async def test_pending_start_flushed_before_end_on_websocket_short_stream(
+    live_monitor_module,
+) -> None:
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.PREPARING)
+    state.room_info = SimpleNamespace(
+        live_status=LiveStatus.LIVE,
+        live_start_time=1000,
+        title="title",
+        cover="",
+    )
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        def __init__(self, status: LiveStatus):
+            self.live_status = status
+            self.live_start_time = 1000
+            self.title = "title"
+            self.cover = ""
+
+        def is_living(self) -> bool:
+            return self.live_status == LiveStatus.LIVE
+
+    live_room = FakeRoomInfo(LiveStatus.LIVE)
+    end_room = FakeRoomInfo(LiveStatus.PREPARING)
+    fetch_results = iter([(live_room, None), (end_room, None)])
+
+    async def fetch_room(*_args, **_kwargs):
+        return next(fetch_results)
+
+    send_mock = AsyncMock(side_effect=[False, True, True])
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            side_effect=fetch_room,
+        ),
+        patch.object(monitor, "_send_live_notification", send_mock),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        await monitor._handle_live_signal("111")
+        assert state.pending_start is True
+        assert state.previous_status == LiveStatus.LIVE
+
+        await monitor._handle_preparing_signal("111", round_status=None)
+
+    assert state.pending_start is False
+    assert state.pending_end is False
+    assert state.previous_status == LiveStatus.PREPARING
+    assert send_mock.await_count == 3
+    assert send_mock.await_args_list[0].args[1] == "start"
+    assert send_mock.await_args_list[1].args[1] == "start"
+    assert send_mock.await_args_list[2].args[1] == "end"
 
 @pytest.mark.asyncio
 async def test_pending_start_retried_while_room_stays_live(
