@@ -493,7 +493,9 @@ class DynamicMonitor:
                 if self._is_stale_check(uid, check_generation):
                     return True
 
-            # 全部推送完成后再更新最后动态ID
+            # 全部推送完成后再更新游标，避免 stale 中断时写回过期 last_dynamic_id。
+            # 若循环中途因 generation 变化退出，已发出的动态下次轮询可能重复推送；
+            # 优先保证游标不被污染（停用→重启用场景会重置 initialized_uids，风险较低）。
             self.last_dynamic_ids[uid] = max(d.id for d in new_dynamics)
 
         if new_dynamics or new_pinned_id != current_pinned_id:
@@ -527,16 +529,12 @@ class DynamicMonitor:
         check_generation: Optional[int] = None,
     ):
         """发送动态通知"""
-        if check_generation is not None and self._is_stale_check(
-            uid, check_generation
-        ):
+        if check_generation is not None and self._is_stale_check(uid, check_generation):
             return
 
         # 获取真实的用户名（只在需要推送时才获取）
         real_name = await self.fetcher._get_user_name_from_api(str(dynamic.uid))
-        if check_generation is not None and self._is_stale_check(
-            uid, check_generation
-        ):
+        if check_generation is not None and self._is_stale_check(uid, check_generation):
             return
         if real_name:
             dynamic.name = real_name
@@ -550,9 +548,7 @@ class DynamicMonitor:
             )
 
         screenshot_image = await self._fetch_dynamic_screenshot(dynamic.id)
-        if check_generation is not None and self._is_stale_check(
-            uid, check_generation
-        ):
+        if check_generation is not None and self._is_stale_check(uid, check_generation):
             return
 
         # 构建通知消息
@@ -570,9 +566,7 @@ class DynamicMonitor:
             logger.warning(f"UP主 {uid} 没有配置推送目标")
             return
 
-        if check_generation is not None and self._is_stale_check(
-            uid, check_generation
-        ):
+        if check_generation is not None and self._is_stale_check(uid, check_generation):
             return
 
         at_all_enabled = self.config.dynamic_at_all.get(uid, False)
