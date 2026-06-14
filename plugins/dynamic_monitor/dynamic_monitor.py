@@ -129,7 +129,7 @@ class DynamicMonitor:
         task.add_done_callback(self._delivery_tasks.discard)
 
     async def _drain_pending_deliveries(self) -> None:
-        """等待所有后台投递任务完成（测试用）。"""
+        """等待所有后台投递任务完成。"""
         while self._delivery_tasks:
             tasks = list(self._delivery_tasks)
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -361,6 +361,9 @@ class DynamicMonitor:
             logger.info("动态监控定时任务已从调度器移除")
         except Exception as e:
             logger.warning(f"移除定时任务时出错: {e}")
+
+        # 等待后台投递完成后再关闭 session/截图服务，避免慢投递被中断后游标不前进
+        await self._drain_pending_deliveries()
 
         # 清理资源
         await self._cleanup_resources()
@@ -597,9 +600,9 @@ class DynamicMonitor:
                         break
                     delivered_dynamic_ids.append(dynamic.id)
 
-                if (delivered_dynamic_ids or persist_pinned) and self._check_still_valid(
-                    uid, check_generation
-                ):
+                if (
+                    delivered_dynamic_ids or persist_pinned
+                ) and self._check_still_valid(uid, check_generation):
                     if delivered_dynamic_ids:
                         self.last_dynamic_ids[uid] = max(delivered_dynamic_ids)
                     await self._persist_state(uid, check_generation=check_generation)
