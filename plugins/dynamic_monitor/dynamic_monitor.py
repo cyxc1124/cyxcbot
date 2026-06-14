@@ -6,7 +6,7 @@ UP主动态监控核心模块
 import asyncio
 from collections import defaultdict
 from datetime import datetime
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set
 
 import aiohttp
 from nonebot.adapters.onebot.v11.message import Message
@@ -81,7 +81,6 @@ class DynamicMonitor:
         self.last_check_at: Optional[str] = None
         # 后台投递：避免截图等慢操作阻塞 APScheduler 轮询任务
         self._delivery_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
-        self._delivery_inflight: Set[Tuple[str, int]] = set()
         self._delivery_tasks: Set[asyncio.Task] = set()
 
     def _touch_last_check_at(self) -> None:
@@ -108,20 +107,7 @@ class DynamicMonitor:
         self.last_dynamic_ids.pop(uid, None)
         self.initialized_uids.pop(uid, None)
         self.pinned_dynamic_ids.pop(uid, None)
-        self._delivery_inflight = {
-            key for key in self._delivery_inflight if key[0] != uid
-        }
         self._delivery_locks.pop(uid, None)
-
-    def _mark_delivery_inflight(self, uid: str, dynamic_id: int) -> bool:
-        key = (uid, dynamic_id)
-        if key in self._delivery_inflight:
-            return False
-        self._delivery_inflight.add(key)
-        return True
-
-    def _clear_delivery_inflight(self, uid: str, dynamic_id: int) -> None:
-        self._delivery_inflight.discard((uid, dynamic_id))
 
     def _spawn_delivery_task(self, coro) -> None:
         task = asyncio.create_task(coro)
@@ -534,16 +520,15 @@ class DynamicMonitor:
                 if pinned_dynamic:
                     if not self._check_still_valid(uid, check_generation):
                         return True
-                    if self._mark_delivery_inflight(uid, pinned_dynamic.id):
-                        self._spawn_delivery_task(
-                            self._deliver_pinned_change(
-                                uid,
-                                pinned_dynamic,
-                                new_pinned_id,
-                                current_pinned_id,
-                                check_generation,
-                            )
+                    self._spawn_delivery_task(
+                        self._deliver_pinned_change(
+                            uid,
+                            pinned_dynamic,
+                            new_pinned_id,
+                            current_pinned_id,
+                            check_generation,
                         )
+                    )
                     should_update_pinned_id = False
 
             if should_update_pinned_id:
@@ -559,8 +544,7 @@ class DynamicMonitor:
                 return True
 
             for dynamic in sorted(new_dynamics, key=lambda x: x.timestamp):
-                if self._mark_delivery_inflight(uid, dynamic.id):
-                    to_deliver.append(dynamic)
+                to_deliver.append(dynamic)
 
         if to_deliver:
             self._spawn_delivery_task(
@@ -584,31 +568,29 @@ class DynamicMonitor:
         persist_pinned: bool = False,
     ) -> None:
         """后台顺序投递新动态，失败时保留游标待下次重试。"""
-        try:
-            async with self._delivery_locks[uid]:
-                delivered_dynamic_ids: List[int] = []
-                for dynamic in dynamics:
-                    if not self._check_still_valid(uid, check_generation):
-                        break
-                    delivered = await self._send_dynamic_notification(
-                        uid, dynamic, check_generation=check_generation
-                    )
-                    if not delivered:
-                        logger.warning(
-                            f"UP主 {uid} 动态 {dynamic.id} 通知投递失败，保留游标待重试"
-                        )
-                        break
-                    delivered_dynamic_ids.append(dynamic.id)
-
-                if (
-                    delivered_dynamic_ids or persist_pinned
-                ) and self._check_still_valid(uid, check_generation):
-                    if delivered_dynamic_ids:
-                        self.last_dynamic_ids[uid] = max(delivered_dynamic_ids)
-                    await self._persist_state(uid, check_generation=check_generation)
-        finally:
+        async with self._delivery_locks[uid]:
+            delivered_dynamic_ids: List[int] = []
             for dynamic in dynamics:
-                self._clear_delivery_inflight(uid, dynamic.id)
+                if dynamic.id <= self.last_dynamic_ids.get(uid, 0):
+                    continue
+                if not self._check_still_valid(uid, check_generation):
+                    break
+                delivered = await self._send_dynamic_notification(
+                    uid, dynamic, check_generation=check_generation
+                )
+                if not delivered:
+                    logger.warning(
+                        f"UP主 {uid} 动态 {dynamic.id} 通知投递失败，保留游标待重试"
+                    )
+                    break
+                delivered_dynamic_ids.append(dynamic.id)
+
+            if (
+                delivered_dynamic_ids or persist_pinned
+            ) and self._check_still_valid(uid, check_generation):
+                if delivered_dynamic_ids:
+                    self.last_dynamic_ids[uid] = max(delivered_dynamic_ids)
+                await self._persist_state(uid, check_generation=check_generation)
 
     async def _deliver_pinned_change(
         self,
@@ -619,27 +601,26 @@ class DynamicMonitor:
         check_generation: int,
     ) -> None:
         """后台投递置顶动态变更通知。"""
-        try:
-            async with self._delivery_locks[uid]:
-                if not self._check_still_valid(uid, check_generation):
-                    return
+        async with self._delivery_locks[uid]:
+            if self.pinned_dynamic_ids.get(uid) == new_pinned_id:
+                return
+            if not self._check_still_valid(uid, check_generation):
+                return
 
-                should_update_pinned_id = await self._send_dynamic_notification(
-                    uid,
-                    pinned_dynamic,
-                    is_pinned=True,
-                    check_generation=check_generation,
-                )
-                if not should_update_pinned_id:
-                    logger.warning(f"UP主 {uid} 置顶动态通知投递失败，保留旧置顶游标")
-                    return
+            should_update_pinned_id = await self._send_dynamic_notification(
+                uid,
+                pinned_dynamic,
+                is_pinned=True,
+                check_generation=check_generation,
+            )
+            if not should_update_pinned_id:
+                logger.warning(f"UP主 {uid} 置顶动态通知投递失败，保留旧置顶游标")
+                return
 
-                if not self._check_still_valid(uid, check_generation):
-                    return
-                self.pinned_dynamic_ids[uid] = new_pinned_id
-                await self._persist_state(uid, check_generation=check_generation)
-        finally:
-            self._clear_delivery_inflight(uid, pinned_dynamic.id)
+            if not self._check_still_valid(uid, check_generation):
+                return
+            self.pinned_dynamic_ids[uid] = new_pinned_id
+            await self._persist_state(uid, check_generation=check_generation)
 
     async def _fetch_dynamic_screenshot(self, dynamic_id: int) -> Optional[bytes]:
         """获取动态截图，未启用时直接返回 None"""

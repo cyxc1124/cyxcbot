@@ -768,3 +768,55 @@ async def test_stop_monitoring_drains_background_deliveries_before_cleanup(
     persist.assert_awaited_once()
     cleanup.assert_awaited_once()
     assert monitor.last_dynamic_ids["111"] == 200
+
+
+@pytest.mark.asyncio
+async def test_slow_delivery_still_schedules_retry_on_next_poll(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """慢投递进行中时后续轮询仍应调度重试，避免 inflight 去重导致通知永久丢失。"""
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.fetcher = MagicMock()
+    monitor.last_dynamic_ids["111"] = 100
+
+    delivery_started = asyncio.Event()
+    release_delivery = asyncio.Event()
+    notify_calls = 0
+
+    async def fetch_dynamics(*_args, **_kwargs):
+        return ([_dynamic(200)], 42)
+
+    async def slow_notify(*_args, **_kwargs):
+        nonlocal notify_calls
+        notify_calls += 1
+        if notify_calls == 1:
+            delivery_started.set()
+            await release_delivery.wait()
+            return False
+        return True
+
+    monitor.fetcher.fetch_user_dynamics = fetch_dynamics
+
+    with (
+        patch.object(
+            monitor,
+            "_send_dynamic_notification",
+            side_effect=slow_notify,
+        ) as notify,
+        patch.object(monitor, "_persist_state", AsyncMock()) as persist,
+    ):
+        first_check = asyncio.create_task(monitor._check_user_dynamic("111"))
+        await delivery_started.wait()
+
+        second_check = asyncio.create_task(monitor._check_user_dynamic("111"))
+        await second_check
+        assert len(monitor._delivery_tasks) >= 2
+
+        release_delivery.set()
+        await first_check
+        await monitor._drain_pending_deliveries()
+
+    assert notify.await_count == 2
+    persist.assert_awaited_once()
+    assert monitor.last_dynamic_ids["111"] == 200
