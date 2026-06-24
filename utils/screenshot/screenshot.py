@@ -347,7 +347,8 @@ class DynamicScreenshot:
 
                 await page.wait_for_load_state(state="domcontentloaded", timeout=10000)
                 await self._wait_for_dynamic_content(page)
-                if "/opus/" in url and not await self._is_opus_page_ready(page):
+                # 按页面 DOM 校验，不按请求 URL；t.bilibili.com 无 .bili-opus-view 时 _is_opus_page_ready 直接通过
+                if not await self._is_opus_page_ready(page):
                     continue
                 card = await self._find_dynamic_card(page)
                 if card and not await self._is_login_interstitial(page):
@@ -360,7 +361,7 @@ class DynamicScreenshot:
                     return card
 
                 if await self._is_login_interstitial(page):
-                    logger.debug(f"页面需要登录，尝试下一个 URL: {url}")
+                    logger.debug(f"页面需要登录，尝试下一个 URL: {current_url}")
             except Notfound:
                 raise
             except Exception as e:
