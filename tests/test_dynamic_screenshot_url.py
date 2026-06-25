@@ -172,3 +172,28 @@ async def test_fetch_dynamic_screenshot_skipped_when_disabled(
     assert result is None
     screenshot_mock.get_dynamic_screenshot.assert_not_called()
     assert dynamic.url == "https://t.bilibili.com/1234567890"
+
+
+@pytest.mark.asyncio
+async def test_navigate_dynamic_page_returns_post_navigation_url() -> None:
+    from utils.screenshot.screenshot import DynamicScreenshot
+
+    canonical_url = "https://www.bilibili.com/opus/1234567890?from=feed"
+    page = AsyncMock()
+    page.url = canonical_url
+    page.goto = AsyncMock(return_value=MagicMock(status=200))
+    page.wait_for_load_state = AsyncMock()
+    page.wait_for_timeout = AsyncMock()
+
+    card = MagicMock()
+    shot = DynamicScreenshot()
+    shot._wait_for_dynamic_content = AsyncMock(return_value=True)
+    shot._is_opus_page_ready = AsyncMock(return_value=True)
+    shot._find_dynamic_card = AsyncMock(return_value=card)
+    shot._is_login_interstitial = AsyncMock(return_value=False)
+
+    result_card, page_url = await shot._navigate_dynamic_page(page, 1234567890)
+
+    assert result_card is card
+    assert page_url == canonical_url
+    assert page_url != "https://www.bilibili.com/opus/1234567890"

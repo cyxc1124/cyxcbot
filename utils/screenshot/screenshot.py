@@ -358,7 +358,7 @@ class DynamicScreenshot:
                     except Exception as e:
                         logger.warning(f"等待网络空闲超时: {e}")
                     await page.wait_for_timeout(500)
-                    return card, url
+                    return card, page.url
 
                 if await self._is_login_interstitial(page):
                     logger.debug(f"页面需要登录，尝试下一个 URL: {current_url}")
