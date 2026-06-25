@@ -19,7 +19,7 @@ slug: /intro
 | 业务配置 | 大量依赖环境变量 | **Web Admin + 数据库** |
 | 管理界面 | 无 | React 管理面板 |
 
-如果你还在用 `DYNAMIC_MONITOR_*`、`LIVE_MONITOR_*`、`STATUS_CHECK_*` 等旧环境变量，启动时会有弃用提示——请改到 Web Admin 里配置。详见 [1.x 迁移指南](./configuration/migration-2.0)。
+如果你还在用 `DYNAMIC_MONITOR_*`、`LIVE_MONITOR_*`、`STATUS_CHECK_*`、`SUPERUSERS` 等旧环境变量，启动时会有弃用提示——请改到 Web Admin 里配置。详见 [1.x 迁移指南](./configuration/migration-2.0)。
 
 ## 功能概览
 
@@ -27,12 +27,13 @@ slug: /intro
 
 - **直播监控**（`live_monitor`）：WebSocket 弹幕 + API 轮询双重机制，开播/下播秒级推送
 - **动态监控**（`dynamic_monitor`）：轮询 UP 主动态，可选 Playwright 网页截图
-- **视频投稿监控**（`video_monitor`）：监控 UP 主新投稿
+- **视频查询**（`video_monitor`）：在已配置映射的群中响应 `最新视频` / `最新投稿` 命令
 
 ### 消息与解析
 
 - **链接解析**（`bilibili_link_parser`）：群内/好友 B 站链接自动解析
 - **动态图片提取**：`#提取` / `#获取` 命令，按动态 ID 拉取图片
+- **主动查询**：群内发送 `最新动态` / `置顶动态` / `最新视频` 等命令
 - **消息模板**：开播、下播、动态等推送文案可在面板自定义
 
 ### 权限与安全

@@ -12,7 +12,7 @@ cyxcbot/
 ├── plugins/               # NoneBot 插件
 │   ├── live_monitor/      # 直播监控
 │   ├── dynamic_monitor/   # 动态监控
-│   ├── video_monitor/     # 投稿监控
+│   ├── video_monitor/     # 视频查询命令
 │   ├── bilibili_link_parser/
 │   ├── status_check/
 │   ├── group_guard/
@@ -40,8 +40,10 @@ FastAPI 应用，提供 Web Admin REST API 与 WebSocket 日志推送。启动�
 
 - `shared/db/` — SQLAlchemy 模型与 Alembic 迁移
 - `shared/config/` — 配置服务与策略
-- `shared/bilibili/` — B 站登录等
+- `shared/bilibili/` — B 站扫码登录
 - `shared/monitor/` — 监控调度公共逻辑
+- `shared/logging/` — Web 日志广播
+- `utils/bilibili_api/` — B 站 HTTP API 封装
 
 ### `plugins/`
 
