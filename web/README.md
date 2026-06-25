@@ -2,6 +2,8 @@
 
 React + TypeScript + Tailwind CSS 管理面板，对接后端 `/api/v1` API。
 
+完整文档：[Web Admin 概览](https://cyxc1124.github.io/cyxcbot/docs/web-admin/overview)
+
 ## 后端（项目根目录）
 
 API 由 NoneBot / Admin 服务提供，本地请使用项目虚拟环境启动，勿用系统 Python：
@@ -41,6 +43,15 @@ npm run build
 | `/setup` | 首次初始化管理员账户 |
 | `/login` | 登录 |
 | `/` | 仪表盘 |
-| `/dynamic` | 动态监控（运行状态 + 映射 CRUD） |
-| `/live` | 直播监控（运行状态 + 映射 CRUD） |
-| `/settings` | 系统设置 |
+| `/dynamic` | 动态监控（运行状态 + UP 主映射 CRUD） |
+| `/live` | 直播监控（运行状态 + 房间映射 CRUD） |
+| `/groups` | 群组管理（守卫、链接解析、状态查询策略） |
+| `/private` | 好友管理（守卫、链接解析、状态查询策略） |
+| `/templates` | 消息模板（动态 / 直播 / 链接解析） |
+| `/settings/monitor` | 监控参数（间隔、WebSocket、截图等） |
+| `/settings/account` | B 站账号（扫码登录 / Cookie） |
+| `/settings/bot` | 机器人（超级用户、状态查询白名单） |
+| `/logs` | 实时运行日志（WebSocket） |
+| `/about` | 版本与构建信息 |
+
+旧路径 `/mappings`、`/settings/templates`、`/audit`、`/events` 会自动重定向到新位置。

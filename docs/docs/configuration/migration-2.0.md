@@ -12,7 +12,8 @@ sidebar_position: 3
 |--------|-----|-----|
 | 直播/动态监控映射 | `LIVE_MONITOR_MAPPING` 等环境变量 | Web Admin `/live`、`/dynamic` |
 | B 站 Cookie | `BILIBILI_COOKIE` 环境变量 | Web Admin → 设置 → B 站账号 |
-| 状态查询权限 | `STATUS_CHECK_ALLOWED_QQ` | Web Admin → 群组/好友策略 |
+| 超级用户 | `SUPERUSERS` 环境变量 | Web Admin → 设置 → 机器人 |
+| 状态查询权限 | `STATUS_CHECK_ALLOWED_QQ` | Web Admin → 设置 → 机器人 / 群组/好友策略 |
 | 链接解析开关 | 环境变量 | Web Admin → 群组/好友策略 |
 | 消息模板 | 硬编码或环境变量 | Web Admin → 消息模板 |
 | 部署 | 仅 Docker | Docker + Windows 可执行包 |
@@ -27,7 +28,7 @@ sidebar_position: 3
    - 监控映射（对照旧 `*_MAPPING` 环境变量）
    - B 站账号（对照旧 `BILIBILI_COOKIE`）
    - 权限策略与消息模板
-6. **删除旧环境变量**：移除 `LIVE_MONITOR_*`、`DYNAMIC_MONITOR_*` 等，避免混淆
+6. **删除旧环境变量**：移除 `LIVE_MONITOR_*`、`DYNAMIC_MONITOR_*`、`SUPERUSERS` 等，避免混淆
 
 ## 弃用提示
 
