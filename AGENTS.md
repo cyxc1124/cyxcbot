@@ -51,10 +51,10 @@ deploy/             # Docker Compose / Helm
 
 ## 开发与测试
 
-- 使用仓库根目录 `venv/`，勿用系统全局 Python。
-- 格式化/检查：`./venv/bin/ruff check .`、`./venv/bin/ruff format .`
-- 测试：`./venv/bin/pytest`
-- 本地启动：`./venv/bin/python bot.py`；前端另开终端 `cd web && npm run dev`
+- 使用仓库根目录 `.venv/`，勿用系统全局 Python。不存在时：`python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt`
+- 格式化/检查：`./.venv/bin/ruff check .`、`./.venv/bin/ruff format .`
+- 测试：`./.venv/bin/pytest`
+- 本地启动：`./.venv/bin/python bot.py`；前端另开终端 `cd web && npm run dev`
 - 前端构建/类型检查：`cd web && npm run build`
 - 文档站：`cd docs && npm start`（预览）/ `npm run build`
 - `bot.py` 有 intentional E402（`nonebot.init()` 之后的 import），ruff 已忽略
