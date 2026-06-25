@@ -36,6 +36,8 @@ npm run build   # 构建静态文档
 npm start       # 本地预览（http://localhost:3000）
 ```
 
+CI 在 `develop` 推送与 PR 上仅执行 `npm run build`；合并到 `main` 后自动部署 GitHub Pages。
+
 ## 编写测试
 
 - 新功能优先在 `tests/` 添加单元测试
