@@ -585,9 +585,9 @@ class DynamicMonitor:
                     break
                 delivered_dynamic_ids.append(dynamic.id)
 
-            if (
-                delivered_dynamic_ids or persist_pinned
-            ) and self._check_still_valid(uid, check_generation):
+            if (delivered_dynamic_ids or persist_pinned) and self._check_still_valid(
+                uid, check_generation
+            ):
                 if delivered_dynamic_ids:
                     self.last_dynamic_ids[uid] = max(delivered_dynamic_ids)
                 await self._persist_state(uid, check_generation=check_generation)
