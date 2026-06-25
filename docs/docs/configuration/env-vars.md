@@ -61,5 +61,7 @@ SQLALCHEMY_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/cyxcbo
 - `DYNAMIC_MONITOR_*`
 - `STATUS_CHECK_*`
 - `BILIBILI_COOKIE`（改到 Web Admin → 设置 → B 站账号）
+- `SUPERUSERS`（改到 Web Admin → 设置 → 机器人）
+- `NOTIFY_GROUPS`（改到各监控页面的目标群/好友映射）
 
 详见 [1.x 迁移指南](./migration-2.0)。

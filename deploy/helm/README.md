@@ -113,7 +113,7 @@ helm uninstall cyxcbot
 ```yaml
 # my-values.yaml
 image:
-  tag: "v2.1.0"
+  tag: "v2.2.0"
 
 secret:
   name: cyxcbot-secret

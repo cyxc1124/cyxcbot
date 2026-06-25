@@ -1,18 +1,7 @@
 """
-B站直播监控插件
-主动监控B站直播间开播/关播状态并发送通知
+B 站直播监控插件：WebSocket 弹幕 + API 轮询，开播/下播推送。
 
-功能特点：
-1. 定时轮询B站API检测直播状态
-2. 自动发送开播/关播通知
-3. 支持多房间多群组配置
-4. 开播时支持@全体成员（需要管理员权限）
-
-配置说明：
-- LIVE_MONITOR_MAPPING: 房间号-群组映射，格式: {"房间号": ["群号1", "群号2"], ...}
-- LIVE_MONITOR_INTERVAL: 检查间隔（秒），默认60秒，最小30秒
-- LIVE_MONITOR_INCLUDE_INFO: 是否包含详细信息，默认true
-- B 站 Cookie: 在 Web Admin 账号设置中登录
+配置见 Web Admin → 直播监控 / 设置；详见 plugins/live_monitor/README.md。
 """
 
 from nonebot import get_driver, on_command
@@ -28,15 +17,14 @@ __plugin_meta__ = PluginMetadata(
     name="B站直播监控",
     description="主动监控B站直播间开播/关播状态并发送通知",
     usage="""
-配置环境变量后自动启动监控：
-- LIVE_MONITOR_MAPPING: 房间号-群组映射
-- LIVE_MONITOR_INTERVAL: 检查间隔（秒）
+在 Web Admin 配置房间映射后自动监控。
 
 命令：
 - 直播状态 [房间号]: 查询指定房间的直播状态
+- 监控列表: 列出当前群监控的房间
 """,
     type="application",
-    homepage="https://github.com/your-repo",
+    homepage="https://github.com/cyxc1124/cyxcbot",
     config=Config,
     supported_adapters={"~onebot.v11"},
 )

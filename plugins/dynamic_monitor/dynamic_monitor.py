@@ -622,16 +622,18 @@ class DynamicMonitor:
             self.pinned_dynamic_ids[uid] = new_pinned_id
             await self._persist_state(uid, check_generation=check_generation)
 
-    async def _fetch_dynamic_screenshot(self, dynamic_id: int) -> Optional[bytes]:
-        """获取动态截图，未启用时直接返回 None"""
+    async def _fetch_dynamic_screenshot(self, dynamic) -> Optional[bytes]:
+        """获取动态截图，未启用时直接返回 None；同步截图来源 URL。"""
         if not self.config.enable_screenshot:
             return None
         try:
-            screenshot_image, screenshot_error = await get_dynamic_screenshot(
-                dynamic_id
+            screenshot_image, screenshot_error, page_url = await get_dynamic_screenshot(
+                dynamic.id
             )
             if screenshot_error:
-                logger.warning(f"获取动态{dynamic_id}截图失败: {screenshot_error}")
+                logger.warning(f"获取动态{dynamic.id}截图失败: {screenshot_error}")
+            elif page_url and dynamic.url.startswith("https://t.bilibili.com/"):
+                dynamic.url = page_url
             return screenshot_image
         except Exception as e:
             logger.warning(f"截图服务异常: {e}")
@@ -668,7 +670,7 @@ class DynamicMonitor:
                 f"发现新动态: UP主_{dynamic.uid} - {dynamic.get_type_description()}"
             )
 
-        screenshot_image = await self._fetch_dynamic_screenshot(dynamic.id)
+        screenshot_image = await self._fetch_dynamic_screenshot(dynamic)
         if check_generation is not None and not self._check_still_valid(
             uid, check_generation
         ):
@@ -756,7 +758,7 @@ class DynamicMonitor:
             f"UP主 {uid} 最新动态ID: {latest_dynamic.id}, 类型: {latest_dynamic.get_type_description()}"
         )
 
-        screenshot_image = await self._fetch_dynamic_screenshot(latest_dynamic.id)
+        screenshot_image = await self._fetch_dynamic_screenshot(latest_dynamic)
 
         # 构建主动查询的消息（包含截图）
         logger.debug(f"开始构建UP主 {uid} 的主动查询消息")
@@ -811,7 +813,7 @@ class DynamicMonitor:
             logger.warning(f"未找到UP主 {uid} 的置顶动态 {pinned_id}")
             raise Exception(f"未找到UP主 {uid} 的置顶动态")
 
-        screenshot_image = await self._fetch_dynamic_screenshot(pinned_dynamic.id)
+        screenshot_image = await self._fetch_dynamic_screenshot(pinned_dynamic)
 
         # 获取用户名
         real_name = await self.fetcher._get_user_name_from_api(str(pinned_dynamic.uid))
