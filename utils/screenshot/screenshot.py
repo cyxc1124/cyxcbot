@@ -324,7 +324,7 @@ class DynamicScreenshot:
 
     async def _navigate_dynamic_page(
         self, page: Page, dynamic_id: int
-    ) -> ElementHandle:
+    ) -> Tuple[ElementHandle, str]:
         # opus 详情优先；旧版动态页 fallback 到 t.bilibili.com（截图区域见 DYNAMIC_CARD_SELECTORS）
         urls = [
             f"https://www.bilibili.com/opus/{dynamic_id}",
@@ -358,7 +358,7 @@ class DynamicScreenshot:
                     except Exception as e:
                         logger.warning(f"等待网络空闲超时: {e}")
                     await page.wait_for_timeout(500)
-                    return card
+                    return card, page.url
 
                 if await self._is_login_interstitial(page):
                     logger.debug(f"页面需要登录，尝试下一个 URL: {current_url}")
@@ -420,8 +420,8 @@ class DynamicScreenshot:
             await page.set_viewport_size({"width": 1920, "height": 1080})
             page.set_default_timeout(30000)
 
-            card = await self._navigate_dynamic_page(page, dynamic_id)
-            return page, card
+            card, page_url = await self._navigate_dynamic_page(page, dynamic_id)
+            return page, card, page_url
 
         except Notfound:
             raise
@@ -431,7 +431,7 @@ class DynamicScreenshot:
 
     async def get_dynamic_screenshot(
         self, dynamic_id: int, timeout: int = 30000
-    ) -> Tuple[Optional[bytes], Optional[str]]:
+    ) -> Tuple[Optional[bytes], Optional[str], Optional[str]]:
         """
         获取动态截图
 
@@ -440,10 +440,10 @@ class DynamicScreenshot:
             timeout: 超时时间（毫秒）
 
         Returns:
-            Tuple[图片bytes, 错误信息]
+            Tuple[图片bytes, 错误信息, 实际截图页面 URL]
         """
         if not self.browser_context:
-            return None, "浏览器未初始化"
+            return None, "浏览器未初始化", None
 
         page = None
         try:
@@ -453,26 +453,28 @@ class DynamicScreenshot:
 
             # 首先尝试完整版截图
             try:
-                page, card = await self.get_dynamic_screenshot_pc(dynamic_id, page)
+                page, card, page_url = await self.get_dynamic_screenshot_pc(
+                    dynamic_id, page
+                )
                 screenshot = await self._capture_dynamic_card(page, card, dynamic_id)
                 screenshot_size = len(screenshot)
                 logger.info(
                     f"动态 {dynamic_id} 截图成功，大小: {screenshot_size} bytes"
                 )
 
-                return screenshot, None
+                return screenshot, None, page_url
 
             except Exception as full_screenshot_error:
                 logger.error(f"PC端截图失败: {full_screenshot_error}")
-                return None, f"截图失败: {str(full_screenshot_error)}"
+                return None, f"截图失败: {str(full_screenshot_error)}", None
 
         except Notfound:
             logger.warning(f"动态 {dynamic_id} 不存在")
-            return None, "动态不存在"
+            return None, "动态不存在", None
         except Exception as e:
             error_msg = f"截图失败: {str(e)}"
             logger.warning(f"动态{dynamic_id}截图失败: {error_msg}")
-            return None, error_msg
+            return None, error_msg, None
 
         finally:
             if page:
@@ -488,7 +490,7 @@ dynamic_screenshot = DynamicScreenshot()
 
 async def get_dynamic_screenshot(
     dynamic_id: int,
-) -> Tuple[Optional[bytes], Optional[str]]:
+) -> Tuple[Optional[bytes], Optional[str], Optional[str]]:
     """
     获取动态截图的便捷函数
 
@@ -496,7 +498,7 @@ async def get_dynamic_screenshot(
         dynamic_id: 动态ID
 
     Returns:
-        Tuple[图片bytes, 错误信息]
+        Tuple[图片bytes, 错误信息, 实际截图页面 URL]
     """
     global dynamic_screenshot
     logger.debug(f"请求获取动态 {dynamic_id} 截图")
@@ -507,14 +509,16 @@ async def get_dynamic_screenshot(
         success = await dynamic_screenshot.init_browser()
         if not success:
             logger.error("浏览器初始化失败")
-            return None, "浏览器初始化失败"
+            return None, "浏览器初始化失败", None
 
-    result = await dynamic_screenshot.get_dynamic_screenshot(dynamic_id)
-    if result[1]:  # 如果有错误
-        logger.warning(f"动态 {dynamic_id} 截图失败: {result[1]}")
+    screenshot, error, page_url = await dynamic_screenshot.get_dynamic_screenshot(
+        dynamic_id
+    )
+    if error:
+        logger.warning(f"动态 {dynamic_id} 截图失败: {error}")
     else:
         logger.debug(f"动态 {dynamic_id} 截图请求完成")
-    return result
+    return screenshot, error, page_url
 
 
 async def init_screenshot_service():
