@@ -10,11 +10,11 @@ API 由 NoneBot / Admin 服务提供，本地请使用项目虚拟环境启动�
 
 ```bash
 # 在仓库根目录
-./venv/bin/python bot.py
-# 或先激活 venv：source venv/bin/activate，再执行 python bot.py
+./.venv/bin/python bot.py
+# 或先激活 venv：source .venv/bin/activate，再执行 python bot.py
 ```
 
-首次开发请先按根目录 [README.md](../README.md) 创建 `venv` 并安装 `requirements.txt`。
+首次开发请先按根目录 [README.md](../README.md) 创建 `.venv` 并安装 `requirements.txt`。
 
 ## 开发
 

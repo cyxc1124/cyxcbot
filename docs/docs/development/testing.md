@@ -7,7 +7,7 @@ sidebar_position: 2
 ## 运行测试
 
 ```bash
-./venv/bin/pytest
+./.venv/bin/pytest
 ```
 
 测试文件位于 `tests/` 目录，使用 pytest + pytest-asyncio。
@@ -15,11 +15,11 @@ sidebar_position: 2
 ## 代码检查
 
 ```bash
-./venv/bin/ruff check .
-./venv/bin/ruff format .
+./.venv/bin/ruff check .
+./.venv/bin/ruff format .
 ```
 
-Ruff 配置见 `pyproject.toml`，`web/` 与 `venv/` 已排除。
+Ruff 配置见 `pyproject.toml`，`web/` 与 `.venv/` 已排除。
 
 ## 前端
 

@@ -109,30 +109,30 @@ CI 流程见 [`.github/workflows/build-windows.yml`](.github/workflows/build-win
 
 ### 方式三：本地开发
 
-本地开发请使用仓库根目录下的 `venv/`，不要使用系统全局 Python。
+本地开发请使用仓库根目录下的 `.venv/`，不要使用系统全局 Python。
 
 ```bash
 # 1. 创建虚拟环境
-python3 -m venv venv
+python3 -m venv .venv
 
 # 2. 安装依赖
-./venv/bin/pip install -r requirements.txt
+./.venv/bin/pip install -r requirements.txt
 
 # 3. Playwright 浏览器（动态截图需要，安装一次即可）
-./venv/bin/playwright install chromium
+./.venv/bin/playwright install chromium
 
 # 4. 配置环境
 cp env.example .env
 # 编辑 .env：WEB_SECRET_KEY、SQLALCHEMY_DATABASE_URL 等
 
 # 5. 启动机器人（首次启动自动建表 / 迁移）
-./venv/bin/python bot.py
+./.venv/bin/python bot.py
 
 # 6. 另开终端启动前端开发服务器
 cd web && npm install && npm run dev
 ```
 
-Windows（PowerShell）创建 venv：`py -3.11 -m venv venv`，激活：`.\venv\Scripts\Activate.ps1`。
+Windows（PowerShell）创建 venv：`py -3.11 -m venv .venv`，激活：`.\.venv\Scripts\Activate.ps1`。
 
 ---
 
@@ -182,11 +182,11 @@ cyxcbot/
 
 ```bash
 # 代码格式化 / 检查
-./venv/bin/ruff check .
-./venv/bin/ruff format .
+./.venv/bin/ruff check .
+./.venv/bin/ruff format .
 
 # 单元测试
-./venv/bin/pytest
+./.venv/bin/pytest
 ```
 
 ---
