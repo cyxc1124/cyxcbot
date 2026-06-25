@@ -1,0 +1,174 @@
+"""Tests for dynamic push URL sync with screenshot page source."""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+import types
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from utils.bilibili_api.dynamic_models import DynamicItem
+
+ROOT = Path(__file__).resolve().parents[1]
+PLUGINS_ROOT = ROOT / "plugins"
+PLUGIN_ROOT = PLUGINS_ROOT / "dynamic_monitor"
+
+
+def _ensure_package(name: str, path: Path) -> types.ModuleType:
+    if name in sys.modules:
+        module = sys.modules[name]
+        if not getattr(module, "__path__", None):
+            module.__path__ = [str(path)]
+        return module
+    module = types.ModuleType(name)
+    module.__path__ = [str(path)]
+    sys.modules[name] = module
+    return module
+
+
+def _load_dynamic_monitor_module():
+    _ensure_package("plugins", PLUGINS_ROOT)
+    _ensure_package("plugins.dynamic_monitor", PLUGIN_ROOT)
+    sys.modules.setdefault(
+        "nonebot_plugin_apscheduler",
+        MagicMock(scheduler=MagicMock()),
+    )
+    sys.modules.setdefault(
+        "nonebot_plugin_orm",
+        MagicMock(get_session=MagicMock()),
+    )
+    _load_module("plugins.dynamic_monitor.config", "config.py")
+    _load_module("plugins.dynamic_monitor.sender", "sender.py")
+    return _load_module("plugins.dynamic_monitor.dynamic_monitor", "dynamic_monitor.py")
+
+
+def _load_module(qualified_name: str, filename: str):
+    path = PLUGIN_ROOT / filename
+    spec = importlib.util.spec_from_file_location(
+        qualified_name,
+        path,
+        submodule_search_locations=[str(PLUGIN_ROOT)],
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[qualified_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _make_dynamic(
+    dynamic_id: int = 1234567890,
+    *,
+    url: str | None = None,
+) -> DynamicItem:
+    item = DynamicItem(
+        dynamic_id=dynamic_id,
+        uid=1,
+        name="tester",
+        timestamp=1700000000,
+        dynamic_type=0,
+    )
+    if url is not None:
+        item.url = url
+    return item
+
+
+@pytest.fixture
+def dynamic_monitor_module():
+    touched = {
+        key: sys.modules.get(key)
+        for key in (
+            "plugins",
+            "plugins.dynamic_monitor",
+            "plugins.dynamic_monitor.config",
+            "plugins.dynamic_monitor.sender",
+            "plugins.dynamic_monitor.dynamic_monitor",
+            "nonebot_plugin_apscheduler",
+            "nonebot_plugin_orm",
+            "utils.screenshot",
+        )
+    }
+    screenshot_mock = MagicMock(
+        init_screenshot_service=AsyncMock(),
+        close_screenshot_service=AsyncMock(),
+        get_dynamic_screenshot=AsyncMock(),
+    )
+    sys.modules["utils.screenshot"] = screenshot_mock
+    try:
+        module = _load_dynamic_monitor_module()
+        yield module, screenshot_mock
+    finally:
+        for key, original in touched.items():
+            if original is None:
+                sys.modules.pop(key, None)
+            else:
+                sys.modules[key] = original
+
+
+@pytest.mark.asyncio
+async def test_fetch_dynamic_screenshot_syncs_opus_url(dynamic_monitor_module) -> None:
+    monitor_mod, screenshot_mock = dynamic_monitor_module
+    DynamicMonitor = monitor_mod.DynamicMonitor
+    monitor = DynamicMonitor(SimpleNamespace(enable_screenshot=True))
+    dynamic = _make_dynamic()
+    opus_url = "https://www.bilibili.com/opus/1234567890"
+    screenshot_mock.get_dynamic_screenshot.return_value = (b"png", None, opus_url)
+
+    result = await monitor._fetch_dynamic_screenshot(dynamic)
+
+    assert result == b"png"
+    assert dynamic.url == opus_url
+
+
+@pytest.mark.asyncio
+async def test_fetch_dynamic_screenshot_syncs_t_bilibili_fallback(
+    dynamic_monitor_module,
+) -> None:
+    monitor_mod, screenshot_mock = dynamic_monitor_module
+    DynamicMonitor = monitor_mod.DynamicMonitor
+    monitor = DynamicMonitor(SimpleNamespace(enable_screenshot=True))
+    dynamic = _make_dynamic()
+    t_url = "https://t.bilibili.com/1234567890"
+    screenshot_mock.get_dynamic_screenshot.return_value = (b"png", None, t_url)
+
+    await monitor._fetch_dynamic_screenshot(dynamic)
+
+    assert dynamic.url == t_url
+
+
+@pytest.mark.asyncio
+async def test_fetch_dynamic_screenshot_keeps_video_url(dynamic_monitor_module) -> None:
+    monitor_mod, screenshot_mock = dynamic_monitor_module
+    DynamicMonitor = monitor_mod.DynamicMonitor
+    monitor = DynamicMonitor(SimpleNamespace(enable_screenshot=True))
+    video_url = "https://www.bilibili.com/video/BV1test"
+    dynamic = _make_dynamic(url=video_url)
+    screenshot_mock.get_dynamic_screenshot.return_value = (
+        b"png",
+        None,
+        "https://www.bilibili.com/opus/1234567890",
+    )
+
+    await monitor._fetch_dynamic_screenshot(dynamic)
+
+    assert dynamic.url == video_url
+
+
+@pytest.mark.asyncio
+async def test_fetch_dynamic_screenshot_skipped_when_disabled(
+    dynamic_monitor_module,
+) -> None:
+    monitor_mod, screenshot_mock = dynamic_monitor_module
+    DynamicMonitor = monitor_mod.DynamicMonitor
+    monitor = DynamicMonitor(SimpleNamespace(enable_screenshot=False))
+    dynamic = _make_dynamic()
+
+    result = await monitor._fetch_dynamic_screenshot(dynamic)
+
+    assert result is None
+    screenshot_mock.get_dynamic_screenshot.assert_not_called()
+    assert dynamic.url == "https://t.bilibili.com/1234567890"
