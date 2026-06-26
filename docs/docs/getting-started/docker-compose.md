@@ -29,11 +29,11 @@ OneBot 协议端反向 WebSocket 连接 **8080** 端口。
 |------|------|
 | `image` | 镜像与版本 tag |
 | `ports` | 宿主机端口映射（默认 8080 / 8081） |
-| `volumes` | 数据目录（默认 `./data` → `/app/data`） |
+| `volumes` | 数据目录（默认 `./data` → `/app/data`，含数据库与 `logs/` 磁盘日志） |
 | `environment.WEB_SECRET_KEY` | **必填**，JWT 签名密钥 |
 | `environment.*` | 其他启动级配置，见 [环境变量](../configuration/env-vars) |
 
-业务配置（监控映射、B 站 Cookie 等）在 Web Admin 面板中管理。
+业务配置（监控映射、B 站 Cookie 等）在 Web Admin 面板中管理。磁盘日志默认写入 `./data/logs/`，见 [日志配置](../configuration/logging)。
 
 ## 常用命令
 

@@ -51,7 +51,16 @@ sidebar_position: 2
 
 ## 日志 `/logs`
 
-实时查看机器人运行日志，支持按级别过滤。通过 WebSocket 推送，无需刷新页面。
+实时查看机器人运行日志（WebSocket 推送，无需刷新页面）。
+
+| 能力 | 说明 |
+|------|------|
+| 级别筛选 | `DEBUG` / `INFO` / `WARNING` / `ERROR`（**默认 `INFO`**） |
+| 历史缓冲 | 服务端内存约 2000 条（`DEBUG`+）；打开页面先拉约 500 条 |
+| 与终端差异 | 缓冲含 `DEBUG`，但默认筛选为 `INFO`；要看 `DEBUG` 需手动改级别 |
+| 持久化 | **不**替代磁盘日志；重启后缓冲清空 |
+
+排障、跨天查日志请使用 `data/logs/` 下文件或容器 `docker compose logs`。详见 [日志配置](../configuration/logging)。
 
 ## 关于 `/about`
 
