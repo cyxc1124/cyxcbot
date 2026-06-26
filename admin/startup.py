@@ -47,6 +47,7 @@ async def start_web_admin_server():
             port=port,
             log_level=os.getenv("LOG_LEVEL", "info").lower(),
             log_config=None,
+            access_log=False,
             loop="asyncio",
         )
         bridge_uvicorn_loggers()

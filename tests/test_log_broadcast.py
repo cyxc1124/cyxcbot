@@ -31,9 +31,13 @@ def test_bridge_uvicorn_loggers_after_default_config() -> None:
 
     bridge_uvicorn_loggers()
 
-    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.asgi"):
         std_logger = logging.getLogger(name)
         assert not std_logger.handlers
         assert std_logger.propagate is True
+
+    access_logger = logging.getLogger("uvicorn.access")
+    assert not access_logger.handlers
+    assert access_logger.propagate is False
 
     assert isinstance(root.handlers[0], LoguruHandler)

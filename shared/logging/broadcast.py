@@ -122,20 +122,28 @@ def _loguru_sink(message: Any) -> None:
     get_log_hub().publish(entry)
 
 
-UVICORN_LOGGER_NAMES = ("uvicorn", "uvicorn.error", "uvicorn.access", "uvicorn.asgi")
+UVICORN_SERVICE_LOGGER_NAMES = ("uvicorn", "uvicorn.error", "uvicorn.asgi")
+UVICORN_ACCESS_LOGGER_NAME = "uvicorn.access"
 
 
 def bridge_uvicorn_loggers() -> None:
-    """Route uvicorn stdlib loggers through the root LoguruHandler.
+    """Route uvicorn service loggers through the root LoguruHandler.
 
     Uvicorn's default ``LOGGING_CONFIG`` installs StreamHandlers and sets
     ``propagate=False`` on its logger tree, so records never reach the bridge
     installed in ``bot.py``. Call after ``uvicorn.Config(..., log_config=None)``.
+
+    ``uvicorn.access`` is silenced here; pair with ``access_log=False`` on
+    ``uvicorn.Config`` so HTTP request lines do not flood Web /logs.
     """
-    for name in UVICORN_LOGGER_NAMES:
+    for name in UVICORN_SERVICE_LOGGER_NAMES:
         std_logger = logging.getLogger(name)
         std_logger.handlers.clear()
         std_logger.propagate = True
+
+    access_logger = logging.getLogger(UVICORN_ACCESS_LOGGER_NAME)
+    access_logger.handlers.clear()
+    access_logger.propagate = False
 
 
 def install_log_broadcast() -> None:
