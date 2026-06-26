@@ -7,7 +7,7 @@ from pathlib import Path
 import nonebot
 from nonebot.adapters.console import Adapter as ConsoleAdapter  # 避免重复命名
 from nonebot.adapters.onebot.v11 import Adapter as OneBotAdapter  # 添加OneBot适配器
-from nonebot.log import logger
+from nonebot.log import LoguruHandler, logger
 
 # 启动时记录仍通过环境变量生效的配置
 _SECRET_ENV_VARS = frozenset({"WEB_SECRET_KEY"})
@@ -98,34 +98,26 @@ def log_startup_config() -> None:
     logger.info("业务配置（监控、Cookie、模板、权限等）由 Web Admin / 数据库管理")
 
 
-# 配置日志级别
-def configure_logging():
-    """根据NoneBot最佳实践配置日志级别"""
-    # 从环境变量获取日志级别，默认为INFO
+def _install_stdlib_log_bridge() -> None:
+    """Bridge stdlib logging into the NoneBot/loguru pipeline."""
+    root = logging.getLogger()
+    root.handlers = [LoguruHandler()]
+    root.setLevel(logging.DEBUG)
+
+
+def configure_logging() -> None:
+    """Tune noisy third-party stdlib loggers.
+
+    LOG_LEVEL is read by NoneBot during nonebot.init() and controls terminal
+    output only; this does not change nonebot.log.logger filtering.
+    """
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-
-    # 验证日志级别
-    valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-    if log_level not in valid_levels:
-        log_level = "INFO"
-
-    # 设置标准库日志级别（影响第三方库的日志）
-    numeric_level = getattr(logging, log_level)
-    logging.getLogger().setLevel(numeric_level)
-
-    # 为特定模块设置更详细的日志级别（如果需要）
     if log_level == "DEBUG":
-        # 在调试模式下，为关键模块启用更详细的日志
-        logging.getLogger("aiohttp").setLevel(logging.WARNING)  # 减少aiohttp的噪声
-        logging.getLogger("playwright").setLevel(
-            logging.WARNING
-        )  # 减少playwright的噪声
+        logging.getLogger("aiohttp").setLevel(logging.WARNING)
+        logging.getLogger("playwright").setLevel(logging.WARNING)
     else:
-        # 在生产模式下，减少第三方库的日志
         logging.getLogger("aiohttp").setLevel(logging.ERROR)
         logging.getLogger("playwright").setLevel(logging.ERROR)
-
-    return log_level
 
 
 def _ensure_sqlite_parent_dir(url: str) -> None:
@@ -176,9 +168,9 @@ nonebot.load_plugin("nonebot_plugin_orm")
 import admin.startup  # noqa: F401
 import shared.db.models  # noqa: F401
 
-# 配置日志级别
-log_level = configure_logging()
-logger.info(f"日志级别设置为: {log_level}")
+_install_stdlib_log_bridge()
+configure_logging()
+logger.info("日志级别: {}", os.getenv("LOG_LEVEL", "INFO").upper())
 
 from shared.logging.broadcast import install_log_broadcast
 

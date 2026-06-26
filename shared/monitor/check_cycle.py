@@ -50,11 +50,18 @@ class CheckCycleLogger:
             )
             self._success_cycles = 0
         else:
-            message = f"{self.label}本轮检查完成: {self._checked} 个目标, 全部成功"
             if log_success_at_info:
-                logger.info(message)
+                logger.info(
+                    "{}本轮检查完成: {} 个目标, 全部成功",
+                    self.label,
+                    self._checked,
+                )
             else:
-                logger.debug(message)
+                logger.debug(
+                    "{}本轮检查完成: {} 个目标, 全部成功",
+                    self.label,
+                    self._checked,
+                )
             self._success_cycles += 1
             if self._success_cycles % SUCCESS_HEARTBEAT_CYCLES == 0:
                 logger.info(

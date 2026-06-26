@@ -18,16 +18,16 @@ async def init_shared_services():
 
     try:
         await get_config_service().load()
-        logger.info("Shared services initialized")
+        logger.info("共享服务初始化完成")
     except Exception as exc:
-        logger.warning(f"Shared services init failed: {exc}")
+        logger.warning("共享服务初始化失败: {}", exc)
 
 
 @driver.on_startup
 async def start_web_admin_server():
     """Launch FastAPI on WEB_PORT alongside NoneBot."""
     if os.getenv("WEB_ADMIN_ENABLED", "true").lower() in ("0", "false", "no"):
-        logger.info("Web Admin disabled via WEB_ADMIN_ENABLED")
+        logger.info("已通过 WEB_ADMIN_ENABLED 禁用 Web Admin")
         return
 
     try:
@@ -50,8 +50,8 @@ async def start_web_admin_server():
         server = uvicorn.Server(config)
         asyncio.create_task(server.serve())
 
-        logger.info(f"Web Admin API started on http://{host}:{port}")
+        logger.info("Web Admin API 已启动: http://{}:{}", host, port)
     except ValueError as exc:
-        logger.warning(f"Web Admin not started: {exc}")
+        logger.warning("Web Admin 未启动: {}", exc)
     except Exception as exc:
-        logger.error(f"Failed to start Web Admin: {exc}")
+        logger.error("Web Admin 启动失败: {}", exc)

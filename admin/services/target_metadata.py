@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import logging
-
 import aiohttp
+from nonebot.log import logger
 
 from shared.config.service import get_config_service
 from utils.bilibili_api.dynamic_api import DynamicFetcher
 from utils.bilibili_api.live_api import LiveApi
-
-logger = logging.getLogger(__name__)
 
 
 def _bilibili_cookie() -> str | None:
@@ -28,7 +25,7 @@ async def resolve_up_name(uid: str) -> str | None:
             fetcher = DynamicFetcher(session, _bilibili_cookie())
             return await fetcher._get_user_name_from_api(uid)
     except Exception as exc:
-        logger.warning("Failed to resolve UP name for %s: %s", uid, exc)
+        logger.warning("解析 UP 主 {} 昵称失败: {}", uid, exc)
         return None
 
 
@@ -48,9 +45,7 @@ async def resolve_live_streamer_name(room_id: str) -> str | None:
             if user_info and user_info.name:
                 return user_info.name
     except Exception as exc:
-        logger.warning(
-            "Failed to resolve live streamer name for room %s: %s", room_id, exc
-        )
+        logger.warning("解析直播间 {} 主播昵称失败: {}", room_id, exc)
     return None
 
 

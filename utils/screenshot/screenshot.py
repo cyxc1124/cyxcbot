@@ -292,7 +292,7 @@ class DynamicScreenshot:
         for selector in DYNAMIC_CONTENT_WAIT_SELECTORS:
             try:
                 await page.wait_for_selector(selector, state="visible", timeout=8000)
-                logger.debug(f"找到动态内容元素: {selector}")
+                logger.debug("找到动态内容元素: {}", selector)
                 return True
             except Exception:
                 continue
@@ -334,7 +334,7 @@ class DynamicScreenshot:
 
         for url in urls:
             try:
-                logger.debug(f"正在加载页面: {url}")
+                logger.debug("正在加载页面: {}", url)
                 response = await page.goto(
                     url, wait_until="domcontentloaded", timeout=20000
                 )
@@ -361,12 +361,12 @@ class DynamicScreenshot:
                     return card, page.url
 
                 if await self._is_login_interstitial(page):
-                    logger.debug(f"页面需要登录，尝试下一个 URL: {current_url}")
+                    logger.debug("页面需要登录，尝试下一个 URL: {}", current_url)
             except Notfound:
                 raise
             except Exception as e:
                 last_error = e
-                logger.debug(f"加载页面失败 {url}: {e}")
+                logger.debug("加载页面失败 {}: {}", url, e)
 
         if last_error:
             raise last_error
@@ -399,7 +399,9 @@ class DynamicScreenshot:
         await self._prepare_dynamic_card(page, card)
 
         box = await card.evaluate(_MEASURE_ELEMENT_JS)
-        logger.debug(f"动态 {dynamic_id} 内容区域大小: {box['width']}x{box['height']}")
+        logger.debug(
+            "动态 {} 内容区域大小: {}x{}", dynamic_id, box["width"], box["height"]
+        )
 
         if box["height"] > MAX_DYNAMIC_SCREENSHOT_HEIGHT:
             logger.warning(
@@ -501,7 +503,7 @@ async def get_dynamic_screenshot(
         Tuple[图片bytes, 错误信息, 实际截图页面 URL]
     """
     global dynamic_screenshot
-    logger.debug(f"请求获取动态 {dynamic_id} 截图")
+    logger.debug("请求获取动态 {} 截图", dynamic_id)
 
     # 如果浏览器未初始化，尝试初始化
     if not dynamic_screenshot.browser_context:
@@ -517,7 +519,7 @@ async def get_dynamic_screenshot(
     if error:
         logger.warning(f"动态 {dynamic_id} 截图失败: {error}")
     else:
-        logger.debug(f"动态 {dynamic_id} 截图请求完成")
+        logger.debug("动态 {} 截图请求完成", dynamic_id)
     return screenshot, error, page_url
 
 

@@ -453,7 +453,7 @@ class DynamicMonitor:
 
         check_generation = self._check_generation.get(uid, 0)
 
-        logger.debug(f"检查UP主 {uid} 的动态")
+        logger.debug("检查UP主 {} 的动态", uid)
 
         # 获取用户的动态列表，传递当前置顶动态ID用于比较
         current_pinned_id = self.pinned_dynamic_ids.get(uid)
@@ -462,7 +462,7 @@ class DynamicMonitor:
         result = await self.fetcher.fetch_user_dynamics(uid, current_pinned_id, cookie)
 
         if not result:
-            logger.debug(f"获取UP主 {uid} 动态失败")
+            logger.debug("获取UP主 {} 动态失败", uid)
             return False
 
         if not self._check_still_valid(uid, check_generation):
@@ -727,16 +727,16 @@ class DynamicMonitor:
 
         # 获取用户的动态列表
         cookie = self.config.bilibili_cookie if self.config.bilibili_cookie else None
-        logger.debug(f"开始获取UP主 {uid} 的动态数据")
+        logger.debug("开始获取UP主 {} 的动态数据", uid)
         result = await self.fetcher.fetch_user_dynamics(uid, None, cookie)
-        logger.debug(f"获取UP主 {uid} 的动态数据完成: {result is not None}")
+        logger.debug("获取UP主 {} 的动态数据完成: {}", uid, result is not None)
 
         if not result:
             logger.warning(f"获取UP主 {uid} 动态失败")
             raise Exception(f"无法获取UP主 {uid} 的动态数据")
 
         dynamics, _ = result
-        logger.debug(f"UP主 {uid} 动态数量: {len(dynamics)}")
+        logger.debug("UP主 {} 动态数量: {}", uid, len(dynamics))
 
         if not dynamics:
             logger.info(f"UP主 {uid} 没有动态")
@@ -755,13 +755,16 @@ class DynamicMonitor:
 
         latest_dynamic = max(filtered_dynamics, key=lambda x: x.timestamp)
         logger.debug(
-            f"UP主 {uid} 最新动态ID: {latest_dynamic.id}, 类型: {latest_dynamic.get_type_description()}"
+            "UP主 {} 最新动态ID: {}, 类型: {}",
+            uid,
+            latest_dynamic.id,
+            latest_dynamic.get_type_description(),
         )
 
         screenshot_image = await self._fetch_dynamic_screenshot(latest_dynamic)
 
         # 构建主动查询的消息（包含截图）
-        logger.debug(f"开始构建UP主 {uid} 的主动查询消息")
+        logger.debug("开始构建UP主 {} 的主动查询消息", uid)
 
         # 获取用户名
         real_name = await self.fetcher._get_user_name_from_api(str(latest_dynamic.uid))
@@ -780,7 +783,7 @@ class DynamicMonitor:
             include_dynamic_media=not self.config.enable_screenshot,
         )
 
-        logger.debug(f"主动查询消息构建完成，开始发送到群组 {group_id}")
+        logger.debug("主动查询消息构建完成，开始发送到群组 {}", group_id)
 
         # 发送到指定群组
         await self.sender.send_to_groups(message, [group_id])
@@ -792,9 +795,9 @@ class DynamicMonitor:
 
         # 获取用户的动态列表
         cookie = self.config.bilibili_cookie if self.config.bilibili_cookie else None
-        logger.debug(f"开始获取UP主 {uid} 的动态数据")
+        logger.debug("开始获取UP主 {} 的动态数据", uid)
         result = await self.fetcher.fetch_user_dynamics(uid, None, cookie)
-        logger.debug(f"获取UP主 {uid} 的动态数据完成: {result is not None}")
+        logger.debug("获取UP主 {} 的动态数据完成: {}", uid, result is not None)
 
         if not result:
             logger.warning(f"获取UP主 {uid} 动态失败")
@@ -823,7 +826,7 @@ class DynamicMonitor:
             pinned_dynamic.name = f"UP主_{pinned_dynamic.uid}"
 
         # 构建主动查询的消息（包含截图）
-        logger.debug(f"开始构建UP主 {uid} 的置顶动态主动查询消息")
+        logger.debug("开始构建UP主 {} 的置顶动态主动查询消息", uid)
 
         # 使用统一的消息构建方法
         message = self.sender.build_dynamic_message(
@@ -835,7 +838,7 @@ class DynamicMonitor:
             include_dynamic_media=not self.config.enable_screenshot,
         )
 
-        logger.debug(f"置顶动态主动查询消息构建完成，开始发送到群组 {group_id}")
+        logger.debug("置顶动态主动查询消息构建完成，开始发送到群组 {}", group_id)
 
         # 发送到指定群组
         await self.sender.send_to_groups(message, [group_id])

@@ -1,9 +1,8 @@
-"""Capture loguru/stdlib logs into a ring buffer and fan-out to WebSocket subscribers."""
+"""Capture loguru logs into a ring buffer and fan-out to WebSocket subscribers."""
 
 from __future__ import annotations
 
 import asyncio
-import logging
 import threading
 from collections import deque
 from dataclasses import asdict, dataclass
@@ -51,18 +50,6 @@ class LogEntry:
             level=str(record["level"].name),
             logger=str(record["name"]),
             message=str(record["message"]),
-        )
-
-    @classmethod
-    def from_logging_record(cls, record: logging.LogRecord) -> LogEntry:
-        ts = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S.%f")[
-            :-3
-        ]
-        return cls(
-            ts=ts,
-            level=record.levelname,
-            logger=record.name,
-            message=record.getMessage(),
         )
 
 
@@ -134,17 +121,12 @@ def _loguru_sink(message: Any) -> None:
     get_log_hub().publish(entry)
 
 
-class _BroadcastLogHandler(logging.Handler):
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            entry = LogEntry.from_logging_record(record)
-            get_log_hub().publish(entry)
-        except Exception:
-            self.handleError(record)
-
-
 def install_log_broadcast() -> None:
-    """Register loguru sink and stdlib handler (idempotent)."""
+    """Register loguru sink for Web Admin /logs (idempotent).
+
+    Stdlib logs (e.g. uvicorn) reach this sink via LoguruHandler in bot.py;
+    do not attach separate stdlib handlers here to avoid duplicate entries.
+    """
     global _installed
     if _installed:
         return
@@ -158,9 +140,3 @@ def install_log_broadcast() -> None:
         enqueue=True,
         catch=True,
     )
-
-    handler = _BroadcastLogHandler()
-    handler.setLevel(logging.DEBUG)
-    for name in ("uvicorn", "uvicorn.error"):
-        std_logger = logging.getLogger(name)
-        std_logger.addHandler(handler)

@@ -174,7 +174,7 @@ class LiveMonitor:
         if client:
             try:
                 await client.stop()
-                logger.debug(f"房间 {room_id} WebSocket 监控已停止（配置已移除）")
+                logger.debug("房间 {} WebSocket 监控已停止（配置已移除）", room_id)
             except Exception as e:
                 logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
         self._danmaku_client_epoch.pop(room_id, None)
@@ -453,7 +453,7 @@ class LiveMonitor:
         if old_client:
             try:
                 await old_client.stop()
-                logger.debug(f"房间 {room_id} WebSocket 监控已停止（凭据变更）")
+                logger.debug("房间 {} WebSocket 监控已停止（凭据变更）", room_id)
             except Exception as e:
                 logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
 
@@ -499,14 +499,14 @@ class LiveMonitor:
             ):
                 self._danmaku_clients.pop(room_id, None)
             raise
-        logger.debug(f"房间 {room_id} WebSocket 监控已启动")
+        logger.debug("房间 {} WebSocket 监控已启动", room_id)
 
     async def _stop_danmaku_clients(self):
         """停止所有弹幕客户端"""
         for room_id, client in self._danmaku_clients.items():
             try:
                 await client.stop()
-                logger.debug(f"房间 {room_id} 弹幕客户端已停止")
+                logger.debug("房间 {} 弹幕客户端已停止", room_id)
             except Exception as e:
                 logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
         self._danmaku_clients.clear()
@@ -536,7 +536,7 @@ class LiveMonitor:
 
     async def _handle_live_signal(self, room_id: str):
         """处理开播信号（来自 WebSocket）"""
-        logger.debug(f"房间 {room_id} 收到开播信号")
+        logger.debug("房间 {} 收到开播信号", room_id)
 
         if not self._is_active_room(room_id):
             return
@@ -555,7 +555,7 @@ class LiveMonitor:
         )
 
         if not room_info:
-            logger.debug(f"房间 {room_id} 获取信息失败")
+            logger.debug("房间 {} 获取信息失败", room_id)
             return
 
         if not self._is_active_room(room_id):
@@ -602,7 +602,7 @@ class LiveMonitor:
 
     async def _handle_preparing_signal(self, room_id: str, round_status: Optional[int]):
         """处理关播信号（来自 WebSocket）"""
-        logger.debug(f"房间 {room_id} 收到关播信号 (round={round_status})")
+        logger.debug("房间 {} 收到关播信号 (round={})", room_id, round_status)
 
         if not self._is_active_room(room_id):
             return
@@ -682,7 +682,7 @@ class LiveMonitor:
 
         # 更新标题等信息
         if "title" in data:
-            logger.debug(f"房间 {room_id} 标题变更: {data['title']}")
+            logger.debug("房间 {} 标题变更: {}", room_id, data["title"])
 
     async def _initialize_room(self, room_id: str) -> bool:
         """记录房间当前直播状态作为基准，不触发推送"""
@@ -793,7 +793,7 @@ class LiveMonitor:
                 logger.warning(f"房间 {room_id} 卡片素材预下载失败: {e}")
 
         if not room_info:
-            logger.debug(f"无法获取房间 {room_id} 的最新状态")
+            logger.debug("无法获取房间 {} 的最新状态", room_id)
             return False
 
         if not self._is_active_room(room_id):
