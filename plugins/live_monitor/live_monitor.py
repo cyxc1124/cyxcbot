@@ -564,7 +564,9 @@ class LiveMonitor:
             return
 
         # 检查状态变化
-        is_live_began, _, new_status, start_time = state.detect_status_change(room_info)
+        is_live_began, is_live_ended, new_status, start_time = (
+            state.detect_status_change(room_info)
+        )
 
         if is_live_began:
             streamer_name = user_info.name if user_info else f"房间{room_id}"
@@ -592,6 +594,39 @@ class LiveMonitor:
                 user_info,
                 prefetched_start=prefetched,
                 skip_start=True,
+            )
+        elif is_live_ended:
+            streamer_name = user_info.name if user_info else f"房间{room_id}"
+            logger.info(f"确认关播: {streamer_name} (房间 {room_id})")
+            await self._deliver_pending_start_before_end(
+                room_id,
+                state,
+                user_info=user_info,
+                prefetched_images=prefetched
+                if self._sender.template_uses_card("start")
+                else None,
+            )
+            await self._deliver_end_notification(
+                room_id,
+                state,
+                room_info=room_info,
+                user_info=user_info,
+                prefetched_images=prefetched,
+            )
+            await self._confirm_observed_status(
+                room_id,
+                state,
+                room_info,
+                user_info,
+                new_status,
+            )
+            await self._retry_pending_notifications(
+                room_id,
+                state,
+                room_info,
+                user_info,
+                prefetched_end=prefetched,
+                skip_end=True,
             )
         else:
             state.sync_observed_status(
