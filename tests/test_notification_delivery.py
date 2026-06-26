@@ -1015,3 +1015,59 @@ async def test_pending_end_cleared_when_websocket_live_signal_before_retry(
     assert send_mock.await_count == 2
     assert send_mock.await_args_list[0].args[1] == "end"
     assert send_mock.await_args_list[1].args[1] == "start"
+
+
+@pytest.mark.asyncio
+async def test_live_signal_delivers_end_when_api_already_offline(
+    live_monitor_module,
+) -> None:
+    """LIVE WS 信号到达时 API 已下播，应补发关播通知而非仅同步状态。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.LIVE)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        def __init__(self, status: LiveStatus):
+            self.live_status = status
+            self.live_start_time = 1000
+            self.title = "title"
+            self.cover = ""
+
+        def is_living(self) -> bool:
+            return self.live_status == LiveStatus.LIVE
+
+    offline_room = FakeRoomInfo(LiveStatus.PREPARING)
+    send_mock = AsyncMock(return_value=_delivery_succeeded())
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            AsyncMock(return_value=(offline_room, None)),
+        ),
+        patch.object(monitor, "_send_live_notification", send_mock),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        await monitor._handle_live_signal("111")
+
+    assert state.previous_status == LiveStatus.PREPARING
+    assert state.pending_end is False
+    send_mock.assert_awaited_once()
+    assert send_mock.await_args.args[1] == "end"
