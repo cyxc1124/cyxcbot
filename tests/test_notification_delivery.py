@@ -662,7 +662,7 @@ async def test_pending_start_flushed_before_end_on_websocket_short_stream(
 async def test_live_signal_delivers_end_when_api_already_offline(
     live_monitor_module,
 ) -> None:
-    """Stale LIVE WebSocket signal after stream ended must still deliver end notification."""
+    """API 已下播时收到延迟 LIVE 信号，仍应投递关播通知。"""
     from utils.bilibili_api import LiveStatus
 
     LiveMonitor = live_monitor_module.LiveMonitor

@@ -11,7 +11,6 @@ import pytest
 
 import shared.logging.file_sink as file_sink
 from shared.logging.file_sink import (
-    _archive_legacy_active_log,
     build_session_log_path,
     install_file_log_sink,
     managed_log_name_pattern,
@@ -140,16 +139,24 @@ def test_install_archives_legacy_active_log(
     assert session_path.name.startswith("cyxcbot.20")
 
 
-def test_archive_legacy_active_log_avoids_rename_collision(tmp_path: Path) -> None:
+def test_install_archives_legacy_active_log_on_name_collision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     base = tmp_path / "cyxcbot.log"
     base.write_text("legacy session\n", encoding="utf-8")
     moment = datetime.fromtimestamp(base.stat().st_mtime)
     ts = moment.strftime("%Y-%m-%d_%H-%M-%S") + f".{moment.microsecond // 1000:03d}"
     existing = tmp_path / f"cyxcbot.archived-{ts}.log"
     existing.write_text("already archived\n", encoding="utf-8")
+    monkeypatch.setenv("LOG_FILE_ENABLED", "true")
+    monkeypatch.setenv("LOG_FILE_PATH", str(base))
+    file_sink._installed = False
 
-    _archive_legacy_active_log(base)
+    with patch.object(file_sink.nb_logger, "add"):
+        session_path = install_file_log_sink()
 
+    assert session_path is not None
     assert not base.exists()
     assert existing.exists()
     archived = [p for p in tmp_path.glob("cyxcbot.archived-*.log") if p != existing]
@@ -197,4 +204,4 @@ def test_install_file_log_sink_skips_on_add_failure(
 
     with patch.object(file_sink.nb_logger, "add", side_effect=OSError("disk full")):
         assert install_file_log_sink() is None
-    assert not base.parent.exists() or not list(base.parent.glob("cyxcbot.*.log"))
+    assert not list(base.parent.glob("cyxcbot.*.log"))
