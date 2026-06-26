@@ -159,7 +159,8 @@ def build_signed_query(key: str, params: Dict[str, Any]) -> str:
     query = "&".join(parts)
 
     # B站 WBI 协议规定 w_rid = MD5(query + key)，非本地安全哈希
-    sign = hashlib.md5((query + key).encode()).hexdigest()  # codeql[py/weak-sensitive-data-hashing]
+    # codeql[py/weak-sensitive-data-hashing]
+    sign = hashlib.md5((query + key).encode()).hexdigest()
     query += f"&w_rid={sign}"
 
     return query
