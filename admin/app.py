@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from admin.api.router import api_router
+from admin.spa_path import path_under_base
 
 
 def create_app() -> FastAPI:
@@ -50,9 +51,7 @@ def create_app() -> FastAPI:
         async def serve_spa(full_path: str):
             if full_path.startswith("api/"):
                 raise HTTPException(status_code=404, detail="Not found")
-            file_path = (web_dist / full_path).resolve()
-            if not file_path.is_relative_to(web_dist):
-                raise HTTPException(status_code=404, detail="Not found")
+            file_path = path_under_base(web_dist, full_path)
             if file_path.is_file():
                 return FileResponse(file_path)
             index = web_dist / "index.html"
