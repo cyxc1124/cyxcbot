@@ -56,6 +56,10 @@ def parse_retention(raw: str) -> timedelta:
     return timedelta(seconds=count * _RETENTION_UNIT_SECONDS[unit])
 
 
+def _session_timestamp(moment: datetime) -> str:
+    return moment.strftime("%Y-%m-%d_%H-%M-%S") + f".{moment.microsecond // 1000:03d}"
+
+
 def build_session_log_path(
     base_path: Path,
     *,
@@ -63,7 +67,7 @@ def build_session_log_path(
 ) -> Path:
     """Build ``{stem}.{YYYY-MM-DD_HH-MM-SS.mmm}{suffix}`` under the same directory."""
     moment = started_at or datetime.now()
-    ts = moment.strftime("%Y-%m-%d_%H-%M-%S") + f".{moment.microsecond // 1000:03d}"
+    ts = _session_timestamp(moment)
     return base_path.parent / f"{base_path.stem}.{ts}{base_path.suffix}"
 
 
@@ -72,8 +76,14 @@ def _archive_legacy_active_log(base_path: Path) -> None:
     if not base_path.is_file():
         return
     moment = datetime.fromtimestamp(base_path.stat().st_mtime)
-    ts = moment.strftime("%Y-%m-%d_%H-%M-%S") + f".{moment.microsecond // 1000:03d}"
+    ts = _session_timestamp(moment)
     archived = base_path.parent / f"{base_path.stem}.archived-{ts}{base_path.suffix}"
+    if archived.exists():
+        now_ts = _session_timestamp(datetime.now())
+        archived = (
+            base_path.parent
+            / f"{base_path.stem}.archived-{ts}-{now_ts}{base_path.suffix}"
+        )
     base_path.rename(archived)
 
 
@@ -128,44 +138,49 @@ def install_file_log_sink() -> Path | None:
     if not _env_bool("LOG_FILE_ENABLED", default=True):
         return None
 
-    base_path = resolve_log_file_path()
-    base_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        base_path = resolve_log_file_path()
+        base_path.parent.mkdir(parents=True, exist_ok=True)
 
-    retention_raw = (
-        os.getenv("LOG_FILE_RETENTION", DEFAULT_RETENTION).strip() or DEFAULT_RETENTION
-    )
-    retention = parse_retention(retention_raw)
+        retention_raw = (
+            os.getenv("LOG_FILE_RETENTION", DEFAULT_RETENTION).strip()
+            or DEFAULT_RETENTION
+        )
+        retention = parse_retention(retention_raw)
 
-    _archive_legacy_active_log(base_path)
-    removed = prune_old_session_logs(
-        base_path.parent,
-        stem=base_path.stem,
-        suffix=base_path.suffix,
-        retention=retention,
-    )
+        _archive_legacy_active_log(base_path)
+        removed = prune_old_session_logs(
+            base_path.parent,
+            stem=base_path.stem,
+            suffix=base_path.suffix,
+            retention=retention,
+        )
 
-    file_path = build_session_log_path(base_path)
-    level = os.getenv("LOG_FILE_LEVEL") or os.getenv("LOG_LEVEL", "INFO")
-    rotation = (
-        os.getenv("LOG_FILE_ROTATION", DEFAULT_ROTATION).strip() or DEFAULT_ROTATION
-    )
+        file_path = build_session_log_path(base_path)
+        level = os.getenv("LOG_FILE_LEVEL") or os.getenv("LOG_LEVEL", "INFO")
+        rotation = (
+            os.getenv("LOG_FILE_ROTATION", DEFAULT_ROTATION).strip() or DEFAULT_ROTATION
+        )
 
-    nb_logger.add(
-        str(file_path),
-        format=_FILE_LOG_FORMAT,
-        level=level.upper(),
-        rotation=rotation,
-        retention=retention_raw,
-        encoding="utf-8",
-        enqueue=True,
-        catch=True,
-    )
-    nb_logger.info(
-        "文件日志已启用: {} (level={}, rotation={}, retention={}, pruned={})",
-        file_path,
-        level.upper(),
-        rotation,
-        retention_raw,
-        removed,
-    )
-    return file_path
+        nb_logger.add(
+            str(file_path),
+            format=_FILE_LOG_FORMAT,
+            level=level.upper(),
+            rotation=rotation,
+            retention=retention_raw,
+            encoding="utf-8",
+            enqueue=True,
+            catch=True,
+        )
+        nb_logger.info(
+            "文件日志已启用: {} (level={}, rotation={}, retention={}, pruned={})",
+            file_path,
+            level.upper(),
+            rotation,
+            retention_raw,
+            removed,
+        )
+        return file_path
+    except Exception:
+        nb_logger.opt(exception=True).warning("文件日志 sink 注册失败，已跳过")
+        return None

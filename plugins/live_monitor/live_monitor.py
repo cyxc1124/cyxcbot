@@ -160,6 +160,55 @@ class LiveMonitor:
             )
             state.clear_pending_start()
 
+    async def _deliver_observed_live_end(
+        self,
+        room_id: str,
+        state: LiveRoomState,
+        *,
+        room_info,
+        user_info: Optional[UserInfo],
+        prefetched,
+        observed_status,
+    ) -> None:
+        """WebSocket 路径确认关播：补发 pending start、投递关播、同步观测状态。"""
+        resolved_room_info = room_info or state.room_info
+        streamer_name = (
+            (user_info or state.user_info).name
+            if (user_info or state.user_info)
+            else f"房间{room_id}"
+        )
+        logger.info(f"确认关播: {streamer_name} (房间 {room_id})")
+        await self._deliver_pending_start_before_end(
+            room_id,
+            state,
+            user_info=user_info,
+            prefetched_images=prefetched
+            if self._sender.template_uses_card("start")
+            else None,
+        )
+        await self._deliver_end_notification(
+            room_id,
+            state,
+            room_info=resolved_room_info,
+            user_info=user_info,
+            prefetched_images=prefetched,
+        )
+        await self._confirm_observed_status(
+            room_id,
+            state,
+            resolved_room_info,
+            user_info,
+            observed_status,
+        )
+        await self._retry_pending_notifications(
+            room_id,
+            state,
+            resolved_room_info,
+            user_info,
+            prefetched_end=prefetched,
+            skip_end=True,
+        )
+
     async def _delete_persisted_state(self, room_id: str) -> None:
         """清除 DB 中已停用/移除房间的持久化状态。"""
         session = get_session()
@@ -564,7 +613,9 @@ class LiveMonitor:
             return
 
         # 检查状态变化
-        is_live_began, _, new_status, start_time = state.detect_status_change(room_info)
+        is_live_began, is_live_ended, new_status, start_time = (
+            state.detect_status_change(room_info)
+        )
 
         if is_live_began:
             streamer_name = user_info.name if user_info else f"房间{room_id}"
@@ -592,6 +643,15 @@ class LiveMonitor:
                 user_info,
                 prefetched_start=prefetched,
                 skip_start=True,
+            )
+        elif is_live_ended:
+            await self._deliver_observed_live_end(
+                room_id,
+                state,
+                room_info=room_info,
+                user_info=user_info,
+                prefetched=prefetched,
+                observed_status=new_status,
             )
         else:
             state.sync_observed_status(
@@ -634,41 +694,13 @@ class LiveMonitor:
             )
 
         if is_live_ended:
-            streamer_name = (
-                (user_info or state.user_info).name
-                if (user_info or state.user_info)
-                else f"房间{room_id}"
-            )
-            logger.info(f"确认关播: {streamer_name} (房间 {room_id})")
-            await self._deliver_pending_start_before_end(
+            await self._deliver_observed_live_end(
                 room_id,
                 state,
+                room_info=room_info,
                 user_info=user_info,
-                prefetched_images=prefetched
-                if self._sender.template_uses_card("start")
-                else None,
-            )
-            await self._deliver_end_notification(
-                room_id,
-                state,
-                room_info=room_info or state.room_info,
-                user_info=user_info,
-                prefetched_images=prefetched,
-            )
-            await self._confirm_observed_status(
-                room_id,
-                state,
-                room_info or state.room_info,
-                user_info,
-                observed_status,
-            )
-            await self._retry_pending_notifications(
-                room_id,
-                state,
-                room_info or state.room_info,
-                user_info,
-                prefetched_end=prefetched,
-                skip_end=True,
+                prefetched=prefetched,
+                observed_status=observed_status,
             )
 
     async def _handle_room_change(self, room_id: str, data: dict):

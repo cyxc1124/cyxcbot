@@ -139,6 +139,31 @@ def test_install_archives_legacy_active_log(
     assert session_path.name.startswith("cyxcbot.20")
 
 
+def test_install_archives_legacy_active_log_on_name_collision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = tmp_path / "cyxcbot.log"
+    base.write_text("legacy session\n", encoding="utf-8")
+    moment = datetime.fromtimestamp(base.stat().st_mtime)
+    ts = moment.strftime("%Y-%m-%d_%H-%M-%S") + f".{moment.microsecond // 1000:03d}"
+    existing = tmp_path / f"cyxcbot.archived-{ts}.log"
+    existing.write_text("already archived\n", encoding="utf-8")
+    monkeypatch.setenv("LOG_FILE_ENABLED", "true")
+    monkeypatch.setenv("LOG_FILE_PATH", str(base))
+    file_sink._installed = False
+
+    with patch.object(file_sink.nb_logger, "add"):
+        session_path = install_file_log_sink()
+
+    assert session_path is not None
+    assert not base.exists()
+    assert existing.exists()
+    archived = [p for p in tmp_path.glob("cyxcbot.archived-*.log") if p != existing]
+    assert len(archived) == 1
+    assert archived[0].read_text(encoding="utf-8") == "legacy session\n"
+
+
 def test_install_passes_rotation_and_retention_to_loguru(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -166,3 +191,17 @@ def test_install_file_log_sink_disabled(
 
     assert install_file_log_sink() is None
     assert not list(tmp_path.glob("*.log"))
+
+
+def test_install_file_log_sink_skips_on_add_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = tmp_path / "logs" / "cyxcbot.log"
+    monkeypatch.setenv("LOG_FILE_ENABLED", "true")
+    monkeypatch.setenv("LOG_FILE_PATH", str(base))
+    file_sink._installed = False
+
+    with patch.object(file_sink.nb_logger, "add", side_effect=OSError("disk full")):
+        assert install_file_log_sink() is None
+    assert not list(base.parent.glob("cyxcbot.*.log"))

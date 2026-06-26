@@ -659,6 +659,56 @@ async def test_pending_start_flushed_before_end_on_websocket_short_stream(
 
 
 @pytest.mark.asyncio
+async def test_live_signal_delivers_end_when_api_already_offline(
+    live_monitor_module,
+) -> None:
+    """API 已下播时收到延迟 LIVE 信号，仍应投递关播通知。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.LIVE)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        live_status = LiveStatus.PREPARING
+        live_start_time = 1000
+        title = "title"
+        cover = ""
+
+    send_mock = AsyncMock(return_value=_delivery_succeeded())
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(FakeRoomInfo(), None),
+        ),
+        patch.object(monitor, "_send_live_notification", send_mock),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        await monitor._handle_live_signal("111")
+
+    assert state.previous_status == LiveStatus.PREPARING
+    assert send_mock.await_count == 1
+    assert send_mock.await_args_list[0].args[1] == "end"
+
+
+@pytest.mark.asyncio
 async def test_pending_start_retried_while_room_stays_live(
     live_monitor_module,
 ) -> None:
