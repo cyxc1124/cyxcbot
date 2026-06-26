@@ -17,6 +17,8 @@ _spec.loader.exec_module(miniapp)
 normalize_bilibili_url = miniapp.normalize_bilibili_url
 extract_bilibili_miniapp_urls = miniapp.extract_bilibili_miniapp_urls
 parse_json_segment_data = miniapp.parse_json_segment_data
+is_bilibili_host = miniapp.is_bilibili_host
+looks_bilibili_related = miniapp.looks_bilibili_related
 
 
 def test_normalize_bilibili_url_bvid() -> None:
@@ -56,3 +58,18 @@ def test_extract_bilibili_miniapp_urls_from_share_card() -> None:
     }
     urls = extract_bilibili_miniapp_urls(payload)
     assert urls == ["https://www.bilibili.com/video/BV1GJ411x7h7"]
+
+
+def test_is_bilibili_host() -> None:
+    assert is_bilibili_host("www.bilibili.com")
+    assert is_bilibili_host("live.bilibili.com")
+    assert is_bilibili_host("b23.tv")
+    assert not is_bilibili_host("evil.com")
+    assert not is_bilibili_host(None)
+
+
+def test_looks_bilibili_related_rejects_substring_bypass() -> None:
+    assert not looks_bilibili_related("http://evil.com/bilibili.com")
+    assert looks_bilibili_related("https://www.bilibili.com/video/BV1GJ411x7h7")
+    assert looks_bilibili_related("b23.tv/abc123")
+    assert looks_bilibili_related("BV1GJ411x7h7")
