@@ -132,7 +132,7 @@ async def get_bot_status() -> str:
             process_memory = process.memory_info().rss / (1024**2)
             status_msg += f"进程内存: {process_memory:.1f}MB\n"
         except Exception as e:
-            logger.debug(f"获取进程内存失败: {e}")
+            logger.debug("获取进程内存失败: {}", e)
             status_msg += "进程内存: 无法获取\n"
 
         if config.show_detailed_status:
@@ -370,12 +370,12 @@ def get_container_memory_info():
                         debug_info.append(f"读取失败 {pattern}: {e}")
 
         # 记录调试信息
-        logger.debug(f"容器内存检测调试: {'; '.join(debug_info)}")
+        logger.debug("容器内存检测调试: {}", "; ".join(debug_info))
 
         if limit_bytes and usage_bytes is not None:
             # 处理无限制的情况（通常是一个很大的数字）
             if limit_bytes > 1024**4:  # 大于1TB，可能是无限制
-                logger.debug(f"检测到无限制内存设置: {limit_bytes} bytes")
+                logger.debug("检测到无限制内存设置: {} bytes", limit_bytes)
                 return None
 
             limit_gb = limit_bytes / (1024**3)
@@ -402,7 +402,7 @@ def get_container_memory_info():
             )
 
     except Exception as e:
-        logger.debug(f"容器内存检测异常: {e}")
+        logger.debug("容器内存检测异常: {}", e)
 
     return None
 
@@ -496,7 +496,7 @@ def get_container_cpu_limit():
             return cpu_limit_cores
 
     except Exception as e:
-        logger.debug(f"读取容器CPU限制失败: {e}")
+        logger.debug("读取容器CPU限制失败: {}", e)
 
     return None
 

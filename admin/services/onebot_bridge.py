@@ -14,7 +14,7 @@ async def get_group_list() -> List[dict]:
     groups: List[dict] = []
     bots = get_bots()
     if not bots:
-        logger.warning("No OneBot bots connected for group list")
+        logger.warning("无已连接的 OneBot 机器人，无法获取群列表")
         return groups
 
     for bot in bots.values():
@@ -29,7 +29,7 @@ async def get_group_list() -> List[dict]:
                     }
                 )
         except Exception as exc:
-            logger.error(f"Failed to get group list from bot {bot.self_id}: {exc}")
+            logger.error("从机器人 {} 获取群列表失败: {}", bot.self_id, exc)
 
     # Deduplicate by group_id
     seen = set()
@@ -82,7 +82,7 @@ async def get_friend_list() -> List[dict]:
     users: dict[str, dict] = {}
     bots = get_bots()
     if not bots:
-        logger.warning("No OneBot bots connected for friend list")
+        logger.warning("无已连接的 OneBot 机器人，无法获取好友列表")
         return []
 
     bot_list = list(bots.values())
@@ -97,7 +97,7 @@ async def get_friend_list() -> List[dict]:
                     users, str(item.get("user_id", "")), nickname, self_ids=self_ids
                 )
         except Exception as exc:
-            logger.error(f"Failed to get friend list from bot {bot.self_id}: {exc}")
+            logger.error("从机器人 {} 获取好友列表失败: {}", bot.self_id, exc)
 
     result = sorted(users.values(), key=lambda item: item["user_id"])
     _FRIEND_LIST_CACHE = (now, result)

@@ -1,4 +1,4 @@
-"""Capture loguru/stdlib logs into a ring buffer and fan-out to WebSocket subscribers."""
+"""Capture loguru logs into a ring buffer and fan-out to WebSocket subscribers."""
 
 from __future__ import annotations
 
@@ -51,18 +51,6 @@ class LogEntry:
             level=str(record["level"].name),
             logger=str(record["name"]),
             message=str(record["message"]),
-        )
-
-    @classmethod
-    def from_logging_record(cls, record: logging.LogRecord) -> LogEntry:
-        ts = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S.%f")[
-            :-3
-        ]
-        return cls(
-            ts=ts,
-            level=record.levelname,
-            logger=record.name,
-            message=record.getMessage(),
         )
 
 
@@ -134,17 +122,29 @@ def _loguru_sink(message: Any) -> None:
     get_log_hub().publish(entry)
 
 
-class _BroadcastLogHandler(logging.Handler):
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            entry = LogEntry.from_logging_record(record)
-            get_log_hub().publish(entry)
-        except Exception:
-            self.handleError(record)
+UVICORN_LOGGER_NAMES = ("uvicorn", "uvicorn.error", "uvicorn.access", "uvicorn.asgi")
+
+
+def bridge_uvicorn_loggers() -> None:
+    """Route uvicorn stdlib loggers through the root LoguruHandler.
+
+    Uvicorn's default ``LOGGING_CONFIG`` installs StreamHandlers and sets
+    ``propagate=False`` on its logger tree, so records never reach the bridge
+    installed in ``bot.py``. Call after ``uvicorn.Config(..., log_config=None)``.
+    """
+    for name in UVICORN_LOGGER_NAMES:
+        std_logger = logging.getLogger(name)
+        std_logger.handlers.clear()
+        std_logger.propagate = True
 
 
 def install_log_broadcast() -> None:
-    """Register loguru sink and stdlib handler (idempotent)."""
+    """Register loguru sink for Web Admin /logs (idempotent).
+
+    Stdlib logs (e.g. uvicorn) reach this sink via LoguruHandler in bot.py.
+    Uvicorn must use ``log_config=None`` plus ``bridge_uvicorn_loggers()`` so its
+    loggers propagate to root; do not attach separate stdlib handlers here.
+    """
     global _installed
     if _installed:
         return
@@ -158,9 +158,3 @@ def install_log_broadcast() -> None:
         enqueue=True,
         catch=True,
     )
-
-    handler = _BroadcastLogHandler()
-    handler.setLevel(logging.DEBUG)
-    for name in ("uvicorn", "uvicorn.error"):
-        std_logger = logging.getLogger(name)
-        std_logger.addHandler(handler)
