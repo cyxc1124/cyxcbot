@@ -116,7 +116,9 @@ def test_install_passes_rotation_and_retention_to_loguru(
         assert kwargs["retention"] == "7 days"
 
 
-def test_install_file_log_sink_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_install_file_log_sink_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("LOG_FILE_ENABLED", "false")
     monkeypatch.setenv("LOG_FILE_PATH", str(tmp_path / "unused.log"))
     file_sink._installed = False

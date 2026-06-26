@@ -12,9 +12,7 @@ from nonebot.log import logger as nb_logger
 DEFAULT_LOG_FILE = "data/logs/cyxcbot.log"
 DEFAULT_ROTATION = "10 MB"
 DEFAULT_RETENTION = "7 days"
-_FILE_LOG_FORMAT = (
-    "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name} | {message}"
-)
+_FILE_LOG_FORMAT = "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name} | {message}"
 _RETENTION_RE = re.compile(
     r"^(\d+)\s*(second|minute|hour|day|week)s?$",
     re.IGNORECASE,
@@ -118,7 +116,9 @@ def install_file_log_sink() -> Path | None:
     base_path = resolve_log_file_path()
     base_path.parent.mkdir(parents=True, exist_ok=True)
 
-    retention_raw = os.getenv("LOG_FILE_RETENTION", DEFAULT_RETENTION).strip() or DEFAULT_RETENTION
+    retention_raw = (
+        os.getenv("LOG_FILE_RETENTION", DEFAULT_RETENTION).strip() or DEFAULT_RETENTION
+    )
     retention = parse_retention(retention_raw)
 
     _archive_legacy_active_log(base_path)
@@ -131,7 +131,9 @@ def install_file_log_sink() -> Path | None:
 
     file_path = build_session_log_path(base_path)
     level = os.getenv("LOG_FILE_LEVEL") or os.getenv("LOG_LEVEL", "INFO")
-    rotation = os.getenv("LOG_FILE_ROTATION", DEFAULT_ROTATION).strip() or DEFAULT_ROTATION
+    rotation = (
+        os.getenv("LOG_FILE_ROTATION", DEFAULT_ROTATION).strip() or DEFAULT_ROTATION
+    )
 
     nb_logger.add(
         str(file_path),
