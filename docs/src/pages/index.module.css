@@ -1,23 +1,153 @@
-/**
- * CSS files with the .module.css suffix will be treated as CSS modules
- * and scoped locally.
- */
-
 .heroBanner {
-  padding: 4rem 0;
+  padding: 5rem 0 4.5rem;
   text-align: center;
   position: relative;
   overflow: hidden;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% -5%, rgba(201, 100, 66, 0.18) 0%, transparent 65%),
+    radial-gradient(ellipse 45% 35% at 85% 90%, rgba(233, 230, 220, 0.8) 0%, transparent 60%),
+    linear-gradient(180deg, rgb(250, 249, 245) 0%, rgb(245, 244, 238) 100%);
+  color: rgb(61, 57, 41);
 }
 
-@media screen and (max-width: 996px) {
-  .heroBanner {
-    padding: 2rem;
-  }
+.heroBanner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(61, 57, 41, 0.04) 1px, transparent 1px);
+  background-size: 24px 24px;
+  pointer-events: none;
+}
+
+[data-theme='dark'] .heroBanner {
+  background:
+    radial-gradient(ellipse 70% 55% at 50% -5%, rgba(217, 119, 87, 0.22) 0%, transparent 65%),
+    radial-gradient(ellipse 45% 35% at 85% 90%, rgba(62, 62, 56, 0.5) 0%, transparent 60%),
+    linear-gradient(180deg, rgb(31, 30, 29) 0%, rgb(38, 38, 36) 100%);
+  color: rgb(195, 192, 182);
+}
+
+.heroInner {
+  position: relative;
+  z-index: 1;
+}
+
+.logoWrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.logo {
+  width: 4.5rem;
+  height: 4.5rem;
+  filter: drop-shadow(0 8px 20px rgba(201, 100, 66, 0.35));
+}
+
+[data-theme='dark'] .logo {
+  filter: drop-shadow(0 8px 20px rgba(217, 119, 87, 0.4));
+}
+
+.heroTitle {
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  margin-bottom: 0.75rem;
+  color: rgb(20, 20, 19);
+}
+
+[data-theme='dark'] .heroTitle {
+  color: rgb(250, 249, 245);
+}
+
+.heroSubtitle {
+  font-size: 1.125rem;
+  color: rgb(131, 130, 125);
+  max-width: 36rem;
+  margin: 0 auto 2rem;
+  line-height: 1.7;
+}
+
+[data-theme='dark'] .heroSubtitle {
+  color: rgb(183, 181, 169);
 }
 
 .buttons {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.btnPrimary {
+  composes: button button--lg from global;
+  background: rgb(201, 100, 66);
+  color: #fff;
+  border: none;
+  border-radius: 0.625rem;
+  font-weight: 600;
+  padding: 0.75rem 1.75rem;
+  box-shadow: 0 4px 16px rgba(201, 100, 66, 0.35);
+  transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.btnPrimary:hover {
+  background: rgb(181, 90, 59);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(201, 100, 66, 0.45);
+}
+
+[data-theme='dark'] .btnPrimary {
+  background: rgb(217, 119, 87);
+  box-shadow: 0 4px 16px rgba(217, 119, 87, 0.35);
+}
+
+[data-theme='dark'] .btnPrimary:hover {
+  background: rgb(201, 109, 79);
+  box-shadow: 0 6px 20px rgba(217, 119, 87, 0.45);
+}
+
+.btnGhost {
+  composes: button button--lg from global;
+  background: rgb(255, 255, 255);
+  color: rgb(61, 57, 41);
+  border: 1px solid rgb(218, 217, 212);
+  border-radius: 0.625rem;
+  font-weight: 600;
+  padding: 0.75rem 1.75rem;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btnGhost:hover {
+  background: rgb(233, 230, 220);
+  color: rgb(40, 38, 27);
+  border-color: rgb(201, 100, 66);
+}
+
+[data-theme='dark'] .btnGhost {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgb(195, 192, 182);
+  border-color: rgb(62, 62, 56);
+}
+
+[data-theme='dark'] .btnGhost:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgb(245, 244, 238);
+  border-color: rgb(217, 119, 87);
+}
+
+@media screen and (max-width: 996px) {
+  .heroBanner {
+    padding: 3rem 1.5rem 2.5rem;
+  }
+
+  .heroTitle {
+    font-size: 2.25rem;
+  }
+
+  .heroSubtitle {
+    font-size: 1rem;
+  }
 }

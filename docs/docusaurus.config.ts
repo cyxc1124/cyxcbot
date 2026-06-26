@@ -65,7 +65,6 @@ const config: Config = {
       ],
     },
     footer: {
-      style: 'dark',
       links: [
         {
           title: '文档',
@@ -73,6 +72,16 @@ const config: Config = {
             {label: '快速开始', to: '/docs/getting-started/quick-start'},
             {label: '环境变量', to: '/docs/configuration/env-vars'},
             {label: 'Web Admin', to: '/docs/web-admin/overview'},
+            {label: '插件', to: '/docs/plugins/dynamic-monitor'},
+          ],
+        },
+        {
+          title: '部署',
+          items: [
+            {label: 'Docker', to: '/docs/getting-started/docker'},
+            {label: 'Docker Compose', to: '/docs/getting-started/docker-compose'},
+            {label: 'Helm', to: '/docs/getting-started/helm'},
+            {label: 'Windows', to: '/docs/getting-started/windows'},
           ],
         },
         {
@@ -89,12 +98,12 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} cyxc1124. Built with Docusaurus.`,
+      copyright: `© ${new Date().getFullYear()} cyxc1124 · 机器草 cyxcbot`,
     },
     prism: {
-      theme: prismThemes.github,
-      darkTheme: prismThemes.dracula,
-      additionalLanguages: ['bash', 'powershell', 'json'],
+      theme: prismThemes.oneLight,
+      darkTheme: prismThemes.oneDark,
+      additionalLanguages: ['bash', 'powershell', 'json', 'python', 'toml', 'yaml'],
     },
   } satisfies Preset.ThemeConfig,
 };

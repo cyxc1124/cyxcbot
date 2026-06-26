@@ -11,20 +11,27 @@ import styles from './index.module.css';
 function HomepageHeader() {
   const {siteConfig} = useDocusaurusContext();
   return (
-    <header className={clsx('hero hero--primary', styles.heroBanner)}>
-      <div className="container">
-        <Heading as="h1" className="hero__title">
+    <header className={clsx(styles.heroBanner)}>
+      <div className={clsx('container', styles.heroInner)}>
+        <div className={styles.logoWrap}>
+          <img
+            src={`${siteConfig.baseUrl}img/favicon.svg`}
+            alt=""
+            className={styles.logo}
+            width={72}
+            height={69}
+          />
+        </div>
+        <Heading as="h1" className={styles.heroTitle}>
           {siteConfig.title}
         </Heading>
-        <p className="hero__subtitle">{siteConfig.tagline}</p>
+        <p className={styles.heroSubtitle}>{siteConfig.tagline}</p>
         <div className={styles.buttons}>
-          <Link
-            className="button button--secondary button--lg"
-            to="/docs/intro">
+          <Link className={styles.btnPrimary} to="/docs/intro">
             阅读文档
           </Link>
           <Link
-            className="button button--outline button--secondary button--lg"
+            className={styles.btnGhost}
             href="https://github.com/cyxc1124/cyxcbot">
             GitHub
           </Link>
