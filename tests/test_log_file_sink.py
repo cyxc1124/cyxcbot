@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -95,6 +96,24 @@ def test_install_archives_legacy_active_log(
     assert not base.exists()
     assert list(base.parent.glob("cyxcbot.archived-*.log"))
     assert session_path.name.startswith("cyxcbot.20")
+
+
+def test_install_passes_rotation_and_retention_to_loguru(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = tmp_path / "logs" / "cyxcbot.log"
+    monkeypatch.setenv("LOG_FILE_ENABLED", "true")
+    monkeypatch.setenv("LOG_FILE_PATH", str(base))
+    monkeypatch.setenv("LOG_FILE_ROTATION", "10 MB")
+    monkeypatch.setenv("LOG_FILE_RETENTION", "7 days")
+    file_sink._installed = False
+
+    with patch.object(file_sink.nb_logger, "add") as mock_add:
+        install_file_log_sink()
+        kwargs = mock_add.call_args.kwargs
+        assert kwargs["rotation"] == "10 MB"
+        assert kwargs["retention"] == "7 days"
 
 
 def test_install_file_log_sink_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
