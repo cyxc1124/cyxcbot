@@ -35,6 +35,7 @@ async def start_web_admin_server():
 
         from admin.app import create_app
         from admin.config import get_web_host, get_web_port
+        from shared.logging.broadcast import bridge_uvicorn_loggers
 
         app = create_app()
         host = get_web_host()
@@ -45,8 +46,10 @@ async def start_web_admin_server():
             host=host,
             port=port,
             log_level=os.getenv("LOG_LEVEL", "info").lower(),
+            log_config=None,
             loop="asyncio",
         )
+        bridge_uvicorn_loggers()
         server = uvicorn.Server(config)
         asyncio.create_task(server.serve())
 

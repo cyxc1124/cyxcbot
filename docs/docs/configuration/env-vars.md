@@ -46,7 +46,7 @@ SQLALCHEMY_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/cyxcbo
 |------|--------|------|
 | `LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`；由 NoneBot 在启动时读取，**仅控制终端 stdout 的过滤级别** |
 
-Web Admin 的 `/logs` 页面 intentionally 比终端更 verbose：广播 sink 固定为 `DEBUG`，因此 `LOG_LEVEL=INFO` 或 `WARNING` 时终端不显示 DEBUG，但 Web 日志页仍会缓冲并推送 DEBUG 及以上。第三方库（如 uvicorn）的 stdlib 日志经 `LoguruHandler` 汇入同一管道。
+Web Admin 的 `/logs` 页面 intentionally 比终端更 verbose：广播 sink 固定为 `DEBUG`，因此 `LOG_LEVEL=INFO` 或 `WARNING` 时终端不显示 DEBUG，但 Web 日志页仍会缓冲并推送 DEBUG 及以上。Uvicorn 等第三方 stdlib 日志经 `LoguruHandler` 汇入同一管道；Web Admin 启动时须设 `log_config=None` 并调用 `bridge_uvicorn_loggers()`，否则 Uvicorn 默认 logging 配置会阻断传播。
 
 ## JWT 可选配置
 

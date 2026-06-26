@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from collections import deque
 from dataclasses import asdict, dataclass
@@ -121,11 +122,28 @@ def _loguru_sink(message: Any) -> None:
     get_log_hub().publish(entry)
 
 
+UVICORN_LOGGER_NAMES = ("uvicorn", "uvicorn.error", "uvicorn.access", "uvicorn.asgi")
+
+
+def bridge_uvicorn_loggers() -> None:
+    """Route uvicorn stdlib loggers through the root LoguruHandler.
+
+    Uvicorn's default ``LOGGING_CONFIG`` installs StreamHandlers and sets
+    ``propagate=False`` on its logger tree, so records never reach the bridge
+    installed in ``bot.py``. Call after ``uvicorn.Config(..., log_config=None)``.
+    """
+    for name in UVICORN_LOGGER_NAMES:
+        std_logger = logging.getLogger(name)
+        std_logger.handlers.clear()
+        std_logger.propagate = True
+
+
 def install_log_broadcast() -> None:
     """Register loguru sink for Web Admin /logs (idempotent).
 
-    Stdlib logs (e.g. uvicorn) reach this sink via LoguruHandler in bot.py;
-    do not attach separate stdlib handlers here to avoid duplicate entries.
+    Stdlib logs (e.g. uvicorn) reach this sink via LoguruHandler in bot.py.
+    Uvicorn must use ``log_config=None`` plus ``bridge_uvicorn_loggers()`` so its
+    loggers propagate to root; do not attach separate stdlib handlers here.
     """
     global _installed
     if _installed:
