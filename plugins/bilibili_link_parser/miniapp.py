@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
+from urllib.parse import urlparse
+
+_BILIBILI_HOST_SUFFIXES = ("bilibili.com", "b23.tv")
 
 _BILIBILI_MINIAPP_APP = "com.tencent.miniapp_01"
 _BILIBILI_EXTRA_APPIDS = {100951776}
@@ -47,7 +50,7 @@ def extract_bilibili_miniapp_urls(payload: object) -> list[str]:
                 found.extend(_urls_from_detail(payload, detail))
 
     return _dedupe_preserve_order(
-        url for url in found if _looks_bilibili_related(url) or _BVID.fullmatch(url)
+        url for url in found if looks_bilibili_related(url) or _BVID.fullmatch(url)
     )
 
 
@@ -66,7 +69,7 @@ def normalize_bilibili_url(raw: str) -> str | None:
     if value.startswith(("b23.tv/", "www.b23.tv/")):
         return f"https://{value.removeprefix('www.')}"
 
-    if "bilibili.com" in value or "b23.tv" in value:
+    if is_bilibili_host(_bilibili_hostname(value)):
         return f"https://{value.lstrip('/')}"
 
     return None
@@ -112,7 +115,7 @@ def _has_bilibili_share_hints(payload: dict, detail: dict) -> bool:
     qqdocurl = detail.get("qqdocurl")
     if isinstance(qqdocurl, str):
         cleaned = qqdocurl.replace("\\/", "/")
-        if _looks_bilibili_related(cleaned):
+        if looks_bilibili_related(cleaned):
             return True
 
     return False
@@ -129,7 +132,7 @@ def _urls_from_detail(payload: dict, detail: dict) -> list[str]:
                 found.extend(_unwrap_qqdocurl(value))
             elif hints:
                 normalized = normalize_bilibili_url(value)
-                if normalized and _looks_bilibili_related(normalized):
+                if normalized and looks_bilibili_related(normalized):
                     found.append(normalized)
 
     if hints:
@@ -151,9 +154,7 @@ def _unwrap_qqdocurl(raw: str) -> list[str]:
 
     if cleaned.startswith(("http://", "https://")):
         normalized = normalize_bilibili_url(cleaned)
-        return (
-            [normalized] if normalized and _looks_bilibili_related(normalized) else []
-        )
+        return [normalized] if normalized and looks_bilibili_related(normalized) else []
 
     if cleaned.startswith("b23.tv/"):
         normalized = normalize_bilibili_url(cleaned)
@@ -173,7 +174,7 @@ def _unwrap_qqdocurl(raw: str) -> list[str]:
             return _unwrap_qqdocurl(nested)
 
     normalized = normalize_bilibili_url(cleaned)
-    return [normalized] if normalized and _looks_bilibili_related(normalized) else []
+    return [normalized] if normalized and looks_bilibili_related(normalized) else []
 
 
 def _urls_from_nested_payload(payload: dict) -> list[str]:
@@ -205,13 +206,28 @@ def _urls_from_share_template(template: dict) -> list[str]:
     return found
 
 
-def _looks_bilibili_related(value: str) -> bool:
-    lowered = value.lower()
-    return (
-        "bilibili.com" in lowered
-        or "b23.tv" in lowered
-        or _BVID.search(value) is not None
+def is_bilibili_host(host: str | None) -> bool:
+    if not host:
+        return False
+    host = host.lower().rstrip(".")
+    return any(
+        host == suffix or host.endswith(f".{suffix}")
+        for suffix in _BILIBILI_HOST_SUFFIXES
     )
+
+
+def _bilibili_hostname(value: str) -> str | None:
+    text = value.strip()
+    if not text or _BVID.fullmatch(text):
+        return None
+    parsed = urlparse(text if "://" in text else f"https://{text.lstrip('/')}")
+    return parsed.hostname
+
+
+def looks_bilibili_related(value: str) -> bool:
+    if _BVID.search(value) is not None:
+        return True
+    return is_bilibili_host(_bilibili_hostname(value))
 
 
 def _dedupe_preserve_order(items: list[str]) -> list[str]:

@@ -9,6 +9,7 @@ from nonebot.adapters.onebot.v11 import GroupMessageEvent, PrivateMessageEvent
 
 from .miniapp import (
     extract_bilibili_miniapp_urls,
+    looks_bilibili_related,
     normalize_bilibili_url,
     parse_json_segment_data,
 )
@@ -21,7 +22,7 @@ def _urls_from_json_payload(payload: object) -> list[str]:
 
     def walk(value: object) -> None:
         if isinstance(value, str):
-            if "bilibili.com" in value or "b23.tv" in value:
+            if looks_bilibili_related(value):
                 normalized = normalize_bilibili_url(value)
                 if normalized:
                     found.append(normalized)
@@ -57,11 +58,7 @@ def _urls_from_json_segment(raw: str | dict[str, Any]) -> list[str]:
 def _urls_from_xml_segment(raw: str) -> list[str]:
     if not raw:
         return []
-    return [
-        url
-        for url in _URL_IN_TEXT.findall(raw)
-        if "bilibili.com" in url or "b23.tv" in url
-    ]
+    return [url for url in _URL_IN_TEXT.findall(raw) if looks_bilibili_related(url)]
 
 
 def collect_message_text(event: GroupMessageEvent | PrivateMessageEvent) -> str:
