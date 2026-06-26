@@ -111,8 +111,14 @@ def test_install_file_log_sink_writes_session_file(
     assert result.name.endswith(".log")
     assert result != base
     assert result.is_file()
-    assert "文件日志已启用" in result.read_text(encoding="utf-8")
-    assert "rotation=10 MB" in result.read_text(encoding="utf-8")
+    content = ""
+    for _ in range(100):
+        content = result.read_text(encoding="utf-8")
+        if "文件日志已启用" in content:
+            break
+        time.sleep(0.02)
+    assert "文件日志已启用" in content
+    assert "rotation=10 MB" in content
 
 
 def test_install_archives_legacy_active_log(
