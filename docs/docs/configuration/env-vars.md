@@ -45,8 +45,15 @@ SQLALCHEMY_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/cyxcbo
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`；由 NoneBot 在启动时读取，**仅控制终端 stdout 的过滤级别** |
+| `LOG_FILE_ENABLED` | `true` | 设为 `false` 可禁用磁盘日志 |
+| `LOG_FILE_PATH` | `data/logs/cyxcbot.log` | 日志文件路径（相对路径基于进程工作目录） |
+| `LOG_FILE_LEVEL` | 同 `LOG_LEVEL` | 写入文件的最低级别 |
+| `LOG_FILE_ROTATION` | `10 MB` | loguru 轮转条件（大小或时间，见 [loguru 文档](https://loguru.readthedocs.io/en/stable/api/logger.html#loguru._logger.Logger.add)） |
+| `LOG_FILE_RETENTION` | `7 days` | 旧日志保留时长 |
 
-Web Admin 的 `/logs` 页面 intentionally 比终端更 verbose：广播 sink 固定为 `DEBUG`，因此 `LOG_LEVEL=INFO` 或 `WARNING` 时终端不显示 DEBUG，但 Web 日志页仍会缓冲并推送 DEBUG 及以上。Uvicorn 服务级日志（启动、错误）经 `LoguruHandler` 汇入同一管道；HTTP access 日志默认关闭（`access_log=False`），`uvicorn.access` 不进入 Web /logs。Web Admin 启动时须设 `log_config=None` 并调用 `bridge_uvicorn_loggers()`，否则 Uvicorn 默认 logging 配置会阻断传播。
+默认将日志写入 `data/logs/`，与 SQLite 同目录；Docker Compose / Helm 已挂载 `data/` 卷时，重启后日志仍会保留。
+
+Web Admin 的 `/logs` 页面 intentionally 比终端更 verbose：广播 sink 固定为 `DEBUG`，因此 `LOG_LEVEL=INFO` 或 `WARNING` 时终端不显示 DEBUG，但 Web 日志页仍会缓冲并推送 DEBUG 及以上。Uvicorn 服务级日志（启动、错误）经 `LoguruHandler` 汇入同一管道；HTTP access 日志默认关闭（`access_log=False`），`uvicorn.access` 不进入 Web /logs。Web Admin 启动时须设 `log_config=None` 并调用 `bridge_uvicorn_loggers()`，否则 Uvicorn 默认 logging 配置会阻断传播。磁盘文件 sink 经 `install_file_log_sink()` 注册，级别由 `LOG_FILE_LEVEL` 控制，与 Web 环形缓冲独立。
 
 ## JWT 可选配置
 
