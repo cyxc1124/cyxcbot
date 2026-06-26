@@ -77,6 +77,7 @@ def log_startup_config() -> None:
             "LOG_FILE_ENABLED",
             "LOG_FILE_PATH",
             "LOG_FILE_LEVEL",
+            "LOG_FILE_ROTATION",
             "LOG_FILE_RETENTION",
         ],
         "Web Admin": ["WEB_HOST", "WEB_PORT", "WEB_ADMIN_ENABLED", "WEB_SECRET_KEY"],

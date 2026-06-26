@@ -76,6 +76,7 @@ def test_install_file_log_sink_writes_session_file(
     assert result != base
     assert result.is_file()
     assert "文件日志已启用" in result.read_text(encoding="utf-8")
+    assert "rotation=10 MB" in result.read_text(encoding="utf-8")
 
 
 def test_install_archives_legacy_active_log(
@@ -92,9 +93,8 @@ def test_install_archives_legacy_active_log(
     session_path = install_file_log_sink()
     assert session_path is not None
     assert not base.exists()
-    archived = list(base.parent.glob("cyxcbot.*.log"))
-    assert len(archived) == 2
-    assert session_path in archived
+    assert list(base.parent.glob("cyxcbot.archived-*.log"))
+    assert session_path.name.startswith("cyxcbot.20")
 
 
 def test_install_file_log_sink_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
