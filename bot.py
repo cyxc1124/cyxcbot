@@ -73,6 +73,13 @@ def log_startup_config() -> None:
 
     startup_vars = {
         "NoneBot": ["HOST", "PORT", "COMMAND_START", "COMMAND_SEP", "LOG_LEVEL"],
+        "日志文件": [
+            "LOG_FILE_ENABLED",
+            "LOG_FILE_PATH",
+            "LOG_FILE_LEVEL",
+            "LOG_FILE_ROTATION",
+            "LOG_FILE_RETENTION",
+        ],
         "Web Admin": ["WEB_HOST", "WEB_PORT", "WEB_ADMIN_ENABLED", "WEB_SECRET_KEY"],
         "数据库": ["SQLALCHEMY_DATABASE_URL"],
         "构建信息": [
@@ -173,8 +180,10 @@ configure_logging()
 logger.info("日志级别: {}", os.getenv("LOG_LEVEL", "INFO").upper())
 
 from shared.logging.broadcast import install_log_broadcast
+from shared.logging.file_sink import install_file_log_sink
 
 install_log_broadcast()
+install_file_log_sink()
 
 # 记录启动配置（在 NoneBot 初始化之后）
 log_startup_config()
