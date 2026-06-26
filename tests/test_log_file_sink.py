@@ -1,13 +1,21 @@
-"""Tests for rotating file log sink."""
+"""Tests for per-startup file log sink."""
 
 from __future__ import annotations
 
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 import shared.logging.file_sink as file_sink
-from shared.logging.file_sink import install_file_log_sink, resolve_log_file_path
+from shared.logging.file_sink import (
+    build_session_log_path,
+    install_file_log_sink,
+    parse_retention,
+    prune_old_session_logs,
+    resolve_log_file_path,
+)
 
 
 def test_resolve_log_file_path_relative() -> None:
@@ -15,17 +23,78 @@ def test_resolve_log_file_path_relative() -> None:
     assert path == Path.cwd() / "data/logs/test.log"
 
 
-def test_install_file_log_sink_writes_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    log_file = tmp_path / "logs" / "cyxcbot.log"
+def test_build_session_log_path() -> None:
+    base = Path("data/logs/cyxcbot.log")
+    started = datetime(2026, 6, 26, 14, 30, 52, 123000)
+    assert build_session_log_path(base, started_at=started) == Path(
+        "data/logs/cyxcbot.2026-06-26_14-30-52.123.log"
+    )
+
+
+def test_parse_retention() -> None:
+    assert parse_retention("7 days") == timedelta(days=7)
+    assert parse_retention("bad") == timedelta(days=7)
+
+
+def test_prune_old_session_logs(tmp_path: Path) -> None:
+    old = tmp_path / "cyxcbot.2026-01-01_00-00-00.log"
+    recent = tmp_path / "cyxcbot.2026-06-26_00-00-00.log"
+    old.write_text("old", encoding="utf-8")
+    recent.write_text("recent", encoding="utf-8")
+    old_time = time.time() - 10 * 86400
+    old.touch()
+    import os
+
+    os.utime(old, (old_time, old_time))
+
+    removed = prune_old_session_logs(
+        tmp_path,
+        stem="cyxcbot",
+        suffix=".log",
+        retention=timedelta(days=7),
+    )
+    assert removed == 1
+    assert not old.exists()
+    assert recent.exists()
+
+
+def test_install_file_log_sink_writes_session_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = tmp_path / "logs" / "cyxcbot.log"
     monkeypatch.setenv("LOG_FILE_ENABLED", "true")
-    monkeypatch.setenv("LOG_FILE_PATH", str(log_file))
+    monkeypatch.setenv("LOG_FILE_PATH", str(base))
     monkeypatch.setenv("LOG_FILE_LEVEL", "INFO")
     file_sink._installed = False
 
     result = install_file_log_sink()
-    assert result == log_file
-    assert log_file.is_file()
-    assert "文件日志已启用" in log_file.read_text(encoding="utf-8")
+    assert result is not None
+    assert result.parent == base.parent
+    assert result.name.startswith("cyxcbot.")
+    assert result.name.endswith(".log")
+    assert result != base
+    assert result.is_file()
+    assert "文件日志已启用" in result.read_text(encoding="utf-8")
+
+
+def test_install_archives_legacy_active_log(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = tmp_path / "logs" / "cyxcbot.log"
+    base.parent.mkdir(parents=True)
+    base.write_text("legacy session\n", encoding="utf-8")
+    monkeypatch.setenv("LOG_FILE_ENABLED", "true")
+    monkeypatch.setenv("LOG_FILE_PATH", str(base))
+    file_sink._installed = False
+
+    session_path = install_file_log_sink()
+    assert session_path is not None
+    assert not base.exists()
+    archived = list(base.parent.glob("cyxcbot.*.log"))
+    assert len(archived) == 2
+    assert session_path in archived
 
 
 def test_install_file_log_sink_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -34,4 +103,4 @@ def test_install_file_log_sink_disabled(tmp_path: Path, monkeypatch: pytest.Monk
     file_sink._installed = False
 
     assert install_file_log_sink() is None
-    assert not (tmp_path / "unused.log").exists()
+    assert not list(tmp_path.glob("*.log"))
