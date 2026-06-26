@@ -13,6 +13,7 @@ import shared.logging.file_sink as file_sink
 from shared.logging.file_sink import (
     build_session_log_path,
     install_file_log_sink,
+    managed_log_name_pattern,
     parse_retention,
     prune_old_session_logs,
     resolve_log_file_path,
@@ -37,9 +38,21 @@ def test_parse_retention() -> None:
     assert parse_retention("bad") == timedelta(days=7)
 
 
+def test_managed_log_name_pattern() -> None:
+    pattern = managed_log_name_pattern("cyxcbot", ".log")
+    assert pattern.match("cyxcbot.2026-06-26_14-30-52.123.log")
+    assert pattern.match(
+        "cyxcbot.2026-06-26_14-30-52.123.2026-06-26_15-00-00_182160.log"
+    )
+    assert pattern.match("cyxcbot.archived-2026-06-26_14-30-52.123.log")
+    assert pattern.match("cyxcbot.2026-06-26_00-00-00.000.log")
+    assert not pattern.match("cyxcbot.access.log")
+    assert not pattern.match("cyxcbot.log")
+
+
 def test_prune_old_session_logs(tmp_path: Path) -> None:
-    old = tmp_path / "cyxcbot.2026-01-01_00-00-00.log"
-    recent = tmp_path / "cyxcbot.2026-06-26_00-00-00.log"
+    old = tmp_path / "cyxcbot.2026-01-01_00-00-00.000.log"
+    recent = tmp_path / "cyxcbot.2026-06-26_00-00-00.000.log"
     old.write_text("old", encoding="utf-8")
     recent.write_text("recent", encoding="utf-8")
     old_time = time.time() - 10 * 86400
@@ -57,6 +70,28 @@ def test_prune_old_session_logs(tmp_path: Path) -> None:
     assert removed == 1
     assert not old.exists()
     assert recent.exists()
+
+
+def test_prune_skips_unrelated_log_files(tmp_path: Path) -> None:
+    old_managed = tmp_path / "cyxcbot.2026-01-01_00-00-00.000.log"
+    unrelated = tmp_path / "cyxcbot.access.log"
+    old_managed.write_text("old", encoding="utf-8")
+    unrelated.write_text("access", encoding="utf-8")
+    old_time = time.time() - 10 * 86400
+    import os
+
+    os.utime(old_managed, (old_time, old_time))
+    os.utime(unrelated, (old_time, old_time))
+
+    removed = prune_old_session_logs(
+        tmp_path,
+        stem="cyxcbot",
+        suffix=".log",
+        retention=timedelta(days=7),
+    )
+    assert removed == 1
+    assert not old_managed.exists()
+    assert unrelated.exists()
 
 
 def test_install_file_log_sink_writes_session_file(

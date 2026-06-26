@@ -24,6 +24,8 @@ _RETENTION_UNIT_SECONDS = {
     "day": 86400,
     "week": 604800,
 }
+_SESSION_TS = r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.\d{3}"
+_LOGURU_ROT_TS = r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_\d+"
 
 _installed = False
 
@@ -75,6 +77,16 @@ def _archive_legacy_active_log(base_path: Path) -> None:
     base_path.rename(archived)
 
 
+def managed_log_name_pattern(stem: str, suffix: str) -> re.Pattern[str]:
+    """Match only session / rotated / legacy-archive names produced by this sink."""
+    return re.compile(
+        f"^{re.escape(stem)}(?:"
+        f"\\.{_SESSION_TS}(?:\\.{_LOGURU_ROT_TS})?"
+        f"|\\.archived-{_SESSION_TS}"
+        f"){re.escape(suffix)}$"
+    )
+
+
 def prune_old_session_logs(
     log_dir: Path,
     *,
@@ -82,12 +94,15 @@ def prune_old_session_logs(
     suffix: str,
     retention: timedelta,
 ) -> int:
-    """Delete archived session logs older than ``retention``; returns removed count."""
+    """Delete managed session logs older than ``retention``; returns removed count."""
     if not log_dir.is_dir():
         return 0
     cutoff = datetime.now().timestamp() - retention.total_seconds()
+    pattern = managed_log_name_pattern(stem, suffix)
     removed = 0
-    for path in log_dir.glob(f"{stem}.*{suffix}"):
+    for path in log_dir.iterdir():
+        if not path.is_file() or not pattern.match(path.name):
+            continue
         try:
             if path.stat().st_mtime < cutoff:
                 path.unlink()
