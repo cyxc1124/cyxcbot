@@ -40,7 +40,7 @@ video_command = on_message(priority=5, block=False)
 async def _video_monitor_startup() -> None:
     config = get_cached_config()
     uid_count = len(config.dynamic_monitor_mapping)
-    logger.info(f"视频查询插件已就绪: 监控映射含 {uid_count} 个UP主")
+    logger.info("视频查询插件已就绪: 监控映射含 {} 个UP主", uid_count)
     if not config.bilibili_cookie:
         logger.warning("视频查询: 未配置 B 站 Cookie，视频接口可能受限")
 
@@ -48,7 +48,8 @@ async def _video_monitor_startup() -> None:
 async def _on_config_reload(_snapshot) -> None:
     config = reload_config()
     logger.info(
-        f"视频查询: 配置已热重载, 监控映射含 {len(config.dynamic_monitor_mapping)} 个UP主"
+        "视频查询: 配置已热重载, 监控映射含 {} 个UP主",
+        len(config.dynamic_monitor_mapping),
     )
 
 
@@ -58,7 +59,7 @@ def _register_config_reload() -> None:
 
         get_config_service().register_reload_callback(_on_config_reload)
     except Exception as exc:
-        logger.warning(f"视频查询: 配置热重载注册失败: {exc}")
+        logger.warning("视频查询: 配置热重载注册失败: {}", exc)
 
 
 _register_config_reload()
@@ -68,7 +69,7 @@ _register_config_reload()
 async def handle_video_commands(event: GroupMessageEvent):
     """处理视频查询命令"""
     message_text = event.get_plaintext().strip()
-    logger.debug(f"收到群消息: {message_text}")
+    logger.debug("收到群消息: {}", message_text)
 
     config = get_cached_config()
 
@@ -78,7 +79,7 @@ async def handle_video_commands(event: GroupMessageEvent):
     # 查找该群对应的UP主
     uids = config.get_uids_by_group_id(group_id)
     if not uids:
-        logger.debug(f"群组 {group_id} 未配置任何UP主监控")
+        logger.debug("群组 {} 未配置任何UP主监控", group_id)
         return
 
     # 检查是否是视频查询命令
@@ -104,11 +105,11 @@ async def handle_video_commands(event: GroupMessageEvent):
         is_command = True
 
     if not is_command:
-        logger.debug(f"消息 '{message_text}' 不是视频查询命令")
+        logger.debug("消息 '{}' 不是视频查询命令", message_text)
         return
 
     try:
-        logger.info(f"处理视频查询命令: {message_text} in group {group_id}")
+        logger.info("处理视频查询命令: {} in group {}", message_text, group_id)
 
         from utils.bilibili_api import video_api_manager
 
@@ -121,7 +122,7 @@ async def handle_video_commands(event: GroupMessageEvent):
         # 为每个UP主获取最新视频
         for uid in uids:
             try:
-                logger.info(f"为UP主 {uid} 获取最新视频")
+                logger.info("为UP主 {} 获取最新视频", uid)
 
                 videos = await video_api_manager.get_user_videos(
                     int(uid), page=1, page_size=5
@@ -130,9 +131,9 @@ async def handle_video_commands(event: GroupMessageEvent):
                 if videos:
                     message = video_sender.build_video_message(videos)
                     await video_sender.send_to_group(group_id, message)
-                    logger.info(f"UP主 {uid} 最新视频已回复到群 {group_id}")
+                    logger.info("UP主 {} 最新视频已回复到群 {}", uid, group_id)
                 else:
-                    logger.warning(f"无法获取UP主 {uid} 的视频")
+                    logger.warning("无法获取UP主 {} 的视频", uid)
                     from nonebot import get_bot
 
                     bot = get_bot()
@@ -142,11 +143,8 @@ async def handle_video_commands(event: GroupMessageEvent):
                             message=f"无法获取UP主 {uid} 的视频，请检查UID是否正确",
                         )
 
-            except Exception as e:
-                logger.error(f"获取UP主 {uid} 最新视频失败: {e}")
-                import traceback
-
-                logger.error(f"详细错误信息: {traceback.format_exc()}")
+            except Exception:
+                logger.opt(exception=True).error("获取UP主 {} 最新视频失败", uid)
                 try:
                     from nonebot import get_bot
 
@@ -156,14 +154,11 @@ async def handle_video_commands(event: GroupMessageEvent):
                             group_id=int(group_id),
                             message=f"UP主 {uid} 视频查询失败，请稍后重试",
                         )
-                except Exception as send_e:
-                    logger.error(f"发送失败提示消息失败: {send_e}")
+                except Exception:
+                    logger.opt(exception=True).error("发送失败提示消息失败")
 
-    except Exception as e:
-        logger.error(f"处理视频查询命令失败: {e}")
-        import traceback
-
-        logger.error(f"全局异常详细错误信息: {traceback.format_exc()}")
+    except Exception:
+        logger.opt(exception=True).error("处理视频查询命令失败")
         try:
             from nonebot import get_bot
 
@@ -172,5 +167,5 @@ async def handle_video_commands(event: GroupMessageEvent):
                 await bot.send_group_msg(
                     group_id=int(group_id), message="系统错误，请稍后重试"
                 )
-        except Exception as send_e:
-            logger.error(f"发送系统错误消息失败: {send_e}")
+        except Exception:
+            logger.opt(exception=True).error("发送系统错误消息失败")

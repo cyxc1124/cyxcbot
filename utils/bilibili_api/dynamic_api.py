@@ -90,7 +90,7 @@ class DynamicFetcher:
 
             # 构建完整的请求URL用于日志
             full_url = f"{api_url}?{urlencode(params)}"
-            logger.debug(f"请求B站动态API: {full_url}")
+            logger.debug("请求B站动态API: {}", full_url)
 
             # 动态设置请求头
             request_headers = self._request_headers(
@@ -98,34 +98,34 @@ class DynamicFetcher:
                 referer=f"https://space.bilibili.com/{uid}/dynamic",
             )
             if self._effective_cookie(cookie):
-                logger.debug(f"使用 Cookie 进行 B 站动态列表请求: uid={uid}")
+                logger.debug("使用 Cookie 进行 B 站动态列表请求: uid={}", uid)
 
             async with self.session.get(
                 api_url, params=params, headers=request_headers, timeout=30
             ) as response:
                 if response.status != 200:
-                    logger.debug(f"B站API请求失败 {uid}: HTTP {response.status}")
+                    logger.debug("B站API请求失败 {}: HTTP {}", uid, response.status)
                     return None
 
                 response_text = await response.text()
-                logger.debug(f"B站API响应长度: {len(response_text)}")
+                logger.debug("B站API响应长度: {}", len(response_text))
 
                 try:
                     data = json.loads(response_text)
                 except json.JSONDecodeError as e:
-                    logger.debug(f"解析B站API响应失败 {uid}: {e}")
-                    logger.debug(f"原始响应: {response_text[:500]}")
+                    logger.debug("解析B站API响应失败 {}: {}", uid, e)
+                    logger.debug("原始响应: {}", response_text[:500])
                     return None
 
                 # 检查API响应状态
                 if data.get("code") != 0:
                     error_msg = data.get("message", "未知错误")
-                    logger.debug(f"B站API返回错误 {uid}: {error_msg}")
+                    logger.debug("B站API返回错误 {}: {}", uid, error_msg)
                     return None
 
                 items = data.get("data", {}).get("items", [])
                 if not items:
-                    logger.debug(f"用户 {uid} 没有动态数据")
+                    logger.debug("用户 {} 没有动态数据", uid)
                     return [], None
 
                 dynamics = []
@@ -150,7 +150,7 @@ class DynamicFetcher:
                             # 置顶动态总是包含在结果中，由调用方决定是否推送
                             should_include = True
                             if should_include:
-                                logger.debug(f"解析到置顶动态: {pinned_id}")
+                                logger.debug("解析到置顶动态: {}", pinned_id)
                         else:
                             # 非置顶动态直接包含
                             should_include = True
@@ -163,19 +163,19 @@ class DynamicFetcher:
                                 dynamics.append(dynamic_item)
 
                     except Exception as e:
-                        logger.warning(f"解析动态项失败 {uid}: {e}")
+                        logger.warning("解析动态项失败 {}: {}", uid, e)
                         continue
 
                 # 按时间倒序排列（最新的在前面）
                 dynamics.sort(key=lambda x: x.timestamp, reverse=True)
-                logger.debug(f"成功获取用户 {uid} 的 {len(dynamics)} 条动态")
+                logger.debug("成功获取用户 {} 的 {} 条动态", uid, len(dynamics))
                 return dynamics, current_pinned_id
 
         except asyncio.TimeoutError:
-            logger.debug(f"B站API请求超时 {uid}")
+            logger.debug("B站API请求超时 {}", uid)
             return None
-        except Exception as e:
-            logger.error(f"B站API请求异常 {uid}: {e}")
+        except Exception:
+            logger.opt(exception=True).error("B站API请求异常 {}", uid)
             return None
 
     async def fetch_dynamic_detail(
@@ -189,7 +189,7 @@ class DynamicFetcher:
 
         dynamic_id = str(dynamic_id).strip()
         if not dynamic_id.isdigit():
-            logger.warning(f"动态 ID 无效: {dynamic_id!r}")
+            logger.warning("动态 ID 无效: {!r}", dynamic_id)
             return None
 
         api_url = "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail"
@@ -205,9 +205,11 @@ class DynamicFetcher:
             referer=f"https://t.bilibili.com/{dynamic_id}",
         )
         if self._effective_cookie(cookie):
-            logger.debug(f"使用 Cookie 进行 B 站动态详情请求: id={dynamic_id}")
+            logger.debug("使用 Cookie 进行 B 站动态详情请求: id={}", dynamic_id)
         else:
-            logger.warning(f"获取动态 {dynamic_id} 未配置 Cookie，部分动态可能无法访问")
+            logger.warning(
+                "获取动态 {} 未配置 Cookie，部分动态可能无法访问", dynamic_id
+            )
 
         try:
             async with self.session.get(
@@ -218,28 +220,30 @@ class DynamicFetcher:
             ) as response:
                 if response.status != 200:
                     logger.warning(
-                        f"获取动态 {dynamic_id} 失败: HTTP {response.status}"
+                        "获取动态 {} 失败: HTTP {}", dynamic_id, response.status
                     )
                     return None
 
                 data = await response.json()
                 if data.get("code") != 0:
                     logger.warning(
-                        f"获取动态 {dynamic_id} 失败: {data.get('message', '未知错误')}"
+                        "获取动态 {} 失败: {}",
+                        dynamic_id,
+                        data.get("message", "未知错误"),
                     )
                     return None
 
                 item = (data.get("data") or {}).get("item")
                 if not item:
-                    logger.warning(f"动态 {dynamic_id} 不存在或响应为空")
+                    logger.warning("动态 {} 不存在或响应为空", dynamic_id)
                     return None
 
                 return await self._parse_dynamic_item(item, uid="0", is_pinned=False)
         except asyncio.TimeoutError:
-            logger.warning(f"获取动态 {dynamic_id} 超时")
+            logger.warning("获取动态 {} 超时", dynamic_id)
             return None
-        except Exception as exc:
-            logger.error(f"获取动态 {dynamic_id} 异常: {exc}")
+        except Exception:
+            logger.opt(exception=True).error("获取动态 {} 异常", dynamic_id)
             return None
 
     async def _parse_dynamic_item(
@@ -250,7 +254,7 @@ class DynamicFetcher:
             # 提取基本信息
             dynamic_id = item.get("id_str")
             if not dynamic_id:
-                logger.warning(f"动态缺少ID: {item}")
+                logger.warning("动态缺少ID: {}", item)
                 return None
 
             dynamic_id = int(dynamic_id)
@@ -281,7 +285,10 @@ class DynamicFetcher:
             # 过滤直播动态，因为直播推送由其他插件负责
             if bili_dynamic_type in ("DYNAMIC_TYPE_LIVE_RCMD", "DYNAMIC_TYPE_LIVE"):
                 logger.debug(
-                    f"跳过直播动态: {dynamic_id}, 类型={bili_dynamic_type}, UID={author_uid}"
+                    "跳过直播动态: {}, 类型={}, UID={}",
+                    dynamic_id,
+                    bili_dynamic_type,
+                    author_uid,
                 )
                 return None
 
@@ -331,8 +338,12 @@ class DynamicFetcher:
                 )
 
             logger.debug(
-                f"动态 {dynamic_id}: B站类型={bili_dynamic_type}, 映射类型={dynamic_type}, "
-                f"UID={author_uid}, 图片数={len(images)}"
+                "动态 {}: B站类型={}, 映射类型={}, UID={}, 图片数={}",
+                dynamic_id,
+                bili_dynamic_type,
+                dynamic_type,
+                author_uid,
+                len(images),
             )
 
             # 创建DynamicItem对象
@@ -367,7 +378,9 @@ class DynamicFetcher:
                                     f"https://www.bilibili.com/video/{bvid}"
                                 )
                                 logger.debug(
-                                    f"视频动态 {dynamic_id} 使用BV号视频链接: {dynamic_item.url}"
+                                    "视频动态 {} 使用BV号视频链接: {}",
+                                    dynamic_id,
+                                    dynamic_item.url,
                                 )
                             else:
                                 aid = archive.get("aid")
@@ -376,16 +389,18 @@ class DynamicFetcher:
                                         f"https://www.bilibili.com/video/av{aid}"
                                     )
                                     logger.debug(
-                                        f"视频动态 {dynamic_id} 使用AV号视频链接: {dynamic_item.url}"
+                                        "视频动态 {} 使用AV号视频链接: {}",
+                                        dynamic_id,
+                                        dynamic_item.url,
                                     )
                 except Exception as e:
-                    logger.debug(f"提取视频链接失败，使用默认动态链接: {e}")
+                    logger.debug("提取视频链接失败，使用默认动态链接: {}", e)
                     # 失败时保持默认的动态链接
 
             return dynamic_item
 
         except Exception as e:
-            logger.warning(f"解析动态项异常: {e}")
+            logger.warning("解析动态项异常: {}", e)
             return None
 
     async def _get_user_name_from_api(self, uid: str) -> Optional[str]:
@@ -424,7 +439,7 @@ class DynamicFetcher:
             if self.cookie:
                 user_headers["Cookie"] = self.cookie
 
-            logger.debug(f"获取UP主 {uid} 信息，请求URL: {url[:80]}...")
+            logger.debug("获取UP主 {} 信息，请求URL: {}...", uid, url[:80])
 
             if signed_query:
                 async with self.session.get(
@@ -438,29 +453,31 @@ class DynamicFetcher:
                     return await self._parse_user_info_response(response, uid)
 
         except Exception as e:
-            logger.debug(f"获取UP主信息异常 {uid}: {e}")
+            logger.debug("获取UP主信息异常 {}: {}", uid, e)
             return None
 
     async def _parse_user_info_response(self, response, uid: str) -> Optional[str]:
         """解析用户信息响应"""
         if response.status != 200:
-            logger.debug(f"获取用户信息失败 {uid}: HTTP {response.status}")
+            logger.debug("获取用户信息失败 {}: HTTP {}", uid, response.status)
             return None
 
         data = await response.json()
-        logger.debug(f"用户信息API响应 {uid}: code={data.get('code')}")
+        logger.debug("用户信息API响应 {}: code={}", uid, data.get("code"))
 
         if data.get("code") != 0:
-            logger.debug(f"获取用户信息失败 {uid}: {data.get('message', '未知错误')}")
+            logger.debug(
+                "获取用户信息失败 {}: {}", uid, data.get("message", "未知错误")
+            )
             return None
 
         user_data = data.get("data", {})
         name = user_data.get("name")
         if name:
-            logger.debug(f"成功获取UP主 {uid} 信息: {name}")
+            logger.debug("成功获取UP主 {} 信息: {}", uid, name)
             return name
         else:
-            logger.debug(f"用户信息中没有找到名字 {uid}")
+            logger.debug("用户信息中没有找到名字 {}", uid)
             return None
 
     @staticmethod
@@ -608,7 +625,7 @@ class DynamicFetcher:
             }
 
         except Exception as e:
-            logger.debug(f"解析转发原始信息失败: {e}")
+            logger.debug("解析转发原始信息失败: {}", e)
             return None
 
     def _get_forward_type_description(
@@ -628,7 +645,9 @@ class DynamicFetcher:
         }
 
         logger.debug(
-            f"获取转发类型描述: bili_type={bili_type}, has_orig_data={orig_data is not None}"
+            "获取转发类型描述: bili_type={}, has_orig_data={}",
+            bili_type,
+            orig_data is not None,
         )
 
         # 如果有原始数据，尝试从major.type获取更精确的类型
@@ -642,24 +661,21 @@ class DynamicFetcher:
                     .get("type")
                 )
 
-                logger.debug(f"转发视频检查: major_type={major_type}")
+                logger.debug("转发视频检查: major_type={}", major_type)
 
                 # 检查是否是投稿视频
                 if major_type == "MAJOR_TYPE_ARCHIVE":
                     logger.debug("确认是投稿视频，返回'视频'")
                     return "视频"
                 elif major_type:
-                    logger.debug(f"其他major_type: {major_type}")
+                    logger.debug("其他major_type: {}", major_type)
                 else:
                     logger.debug("没有找到major.type")
-            except Exception as e:
-                logger.debug(f"解析转发视频类型失败: {e}")
-                import traceback
-
-                logger.debug(f"异常详情: {traceback.format_exc()}")
+            except Exception:
+                logger.opt(exception=True).debug("解析转发视频类型失败")
 
         result = type_descriptions.get(bili_type, "动态")
-        logger.debug(f"返回转发类型描述: {result}")
+        logger.debug("返回转发类型描述: {}", result)
         return result
 
     def _generate_dm_img_list(self) -> str:

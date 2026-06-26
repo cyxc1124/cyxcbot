@@ -72,7 +72,7 @@ class LiveNotificationSender:
             try:
                 return [MessageSegment.image(card_image)]
             except Exception as exc:
-                logger.warning(f"添加卡片图片到消息失败: {exc}")
+                logger.warning("添加卡片图片到消息失败: {}", exc)
                 return []
 
         def cover_parts() -> Iterable[SegmentPart]:
@@ -81,7 +81,7 @@ class LiveNotificationSender:
             try:
                 return [MessageSegment.image(room_info.cover)]
             except Exception as exc:
-                logger.warning(f"添加直播封面失败: {exc}")
+                logger.warning("添加直播封面失败: {}", exc)
                 return []
 
         body = build_message_from_template(
@@ -112,7 +112,7 @@ class LiveNotificationSender:
             try:
                 return [MessageSegment.image(card_image)]
             except Exception as exc:
-                logger.warning(f"添加下播卡片图片到消息失败: {exc}")
+                logger.warning("添加下播卡片图片到消息失败: {}", exc)
                 return []
 
         return build_message_from_template(
@@ -168,8 +168,8 @@ class LiveNotificationSender:
                 room_info=room_info,
                 prefetched_images=prefetched_images,
             )
-        except Exception as e:
-            logger.error(f"生成开播卡片失败，将降级为纯文本通知: {e}")
+        except Exception:
+            logger.opt(exception=True).error("生成开播卡片失败，将降级为纯文本通知")
             return None
 
     async def _try_generate_end_card(
@@ -191,8 +191,8 @@ class LiveNotificationSender:
                 duration_seconds=duration_seconds,
                 prefetched_images=prefetched_images,
             )
-        except Exception as e:
-            logger.error(f"生成下播卡片失败，将降级为纯文本通知: {e}")
+        except Exception:
+            logger.opt(exception=True).error("生成下播卡片失败，将降级为纯文本通知")
             return None
 
     async def _generate_card_if_needed(
@@ -251,13 +251,12 @@ class LiveNotificationSender:
                 group_id=int(group_id),
                 message=message,
             )
-            logger.success(f"直播{status}通知已发送到群组 {group_id}")
+            logger.success("直播{}通知已发送到群组 {}", status, group_id)
             return TargetDelivery("group", group_id, True)
         except Exception as exc:
-            logger.error(f"发送通知到群组 {group_id} 失败: {exc}")
-            import traceback
-
-            logger.debug(f"错误详情: {traceback.format_exc()}")
+            logger.opt(exception=True).error(
+                "发送通知到群组 {} 失败: {}", group_id, exc
+            )
             return TargetDelivery("group", group_id, False, str(exc))
 
     async def _send_private_message(
@@ -272,13 +271,10 @@ class LiveNotificationSender:
                 user_id=int(user_id),
                 message=message,
             )
-            logger.success(f"直播{status}通知已发送到好友 {user_id}")
+            logger.success("直播{}通知已发送到好友 {}", status, user_id)
             return TargetDelivery("user", user_id, True)
         except Exception as exc:
-            logger.error(f"发送通知到好友 {user_id} 失败: {exc}")
-            import traceback
-
-            logger.debug(f"错误详情: {traceback.format_exc()}")
+            logger.opt(exception=True).error("发送通知到好友 {} 失败: {}", user_id, exc)
             return TargetDelivery("user", user_id, False, str(exc))
 
     async def send_notification(
@@ -300,8 +296,11 @@ class LiveNotificationSender:
             return empty_delivery_result()
 
         logger.info(
-            f"开始发送直播{status}通知 - 主播: {streamer_name}, "
-            f"目标群组: {target_groups}, 目标好友: {target_users}"
+            "开始发送直播{}通知 - 主播: {}, 目标群组: {}, 目标好友: {}",
+            status,
+            streamer_name,
+            target_groups,
+            target_users,
         )
 
         bots = get_driver().bots
@@ -364,21 +363,21 @@ class LiveNotificationSender:
         card_image: Optional[bytes] = None
         card_result = parallel_results[0]
         if isinstance(card_result, Exception):
-            logger.error(f"生成直播{status}卡片失败: {card_result}")
+            logger.error("生成直播{}卡片失败: {}", status, card_result)
         else:
             card_image = card_result
 
         at_all_maps: List[Dict[str, bool]] = []
         for result in parallel_results[1:]:
             if isinstance(result, Exception):
-                logger.error(f"查询 @全体 权限失败: {result}")
+                logger.error("查询 @全体 权限失败: {}", result)
                 at_all_maps.append({group_id: False for group_id in target_groups})
             else:
                 at_all_maps.append(result)
 
         send_tasks: List = []
         for index, (bot_id, bot) in enumerate(valid_bots):
-            logger.debug(f"使用机器人 {bot_id} 发送通知")
+            logger.debug("使用机器人 {} 发送通知", bot_id)
             at_all_map = (
                 at_all_maps[index]
                 if index < len(at_all_maps)

@@ -218,7 +218,7 @@ async def _download_image(url: str, timeout: int = 10) -> Optional[Image.Image]:
                     data = await resp.read()
                     return Image.open(BytesIO(data)).convert("RGBA")
     except Exception as e:
-        logger.warning(f"下载图片失败 {url}: {e}")
+        logger.warning("下载图片失败 {}: {}", url, e)
     return None
 
 
@@ -461,17 +461,14 @@ async def generate_live_start_card(
             area_label,
         )
 
-        logger.info(f"开播卡片生成成功，大小: {len(card_bytes)} bytes")
+        logger.info("开播卡片生成成功，大小: {} bytes", len(card_bytes))
         return card_bytes
 
     except FileNotFoundError as e:
-        logger.error(f"卡片生成失败（字体缺失）: {e}")
+        logger.error("卡片生成失败（字体缺失）: {}", e)
         return None
-    except Exception as e:
-        logger.error(f"卡片生成失败: {e}")
-        import traceback
-
-        logger.debug(traceback.format_exc())
+    except Exception:
+        logger.opt(exception=True).error("卡片生成失败")
         return None
 
 
@@ -524,15 +521,12 @@ async def generate_live_end_card(
             duration_seconds,
         )
 
-        logger.info(f"下播卡片生成成功，大小: {len(card_bytes)} bytes")
+        logger.info("下播卡片生成成功，大小: {} bytes", len(card_bytes))
         return card_bytes
 
     except FileNotFoundError as e:
-        logger.error(f"下播卡片生成失败（字体缺失）: {e}")
+        logger.error("下播卡片生成失败（字体缺失）: {}", e)
         return None
-    except Exception as e:
-        logger.error(f"下播卡片生成失败: {e}")
-        import traceback
-
-        logger.debug(traceback.format_exc())
+    except Exception:
+        logger.opt(exception=True).error("下播卡片生成失败")
         return None

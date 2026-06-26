@@ -202,20 +202,21 @@ class DanmakuClient:
             return
 
         self._running = True
-        logger.info(f"正在启动房间 {self.room_id} 的弹幕客户端...")
+        logger.info("正在启动房间 {} 的弹幕客户端...", self.room_id)
         logger.debug(
-            f"房间 {self.room_id} Cookie配置: {bool(self.cookie)}, UID={self._uid}, BUVID={bool(self._buvid)}"
+            "房间 {} Cookie配置: {}, UID={}, BUVID={}",
+            self.room_id,
+            bool(self.cookie),
+            self._uid,
+            bool(self._buvid),
         )
 
         try:
             await self._update_danmu_info()
             await self._connect()
-            logger.info(f"房间 {self.room_id} 弹幕客户端已启动")
-        except Exception as e:
-            import traceback
-
-            logger.error(f"房间 {self.room_id} 弹幕客户端启动失败: {e}")
-            logger.debug(f"房间 {self.room_id} 启动失败详情:\n{traceback.format_exc()}")
+            logger.info("房间 {} 弹幕客户端已启动", self.room_id)
+        except Exception:
+            logger.opt(exception=True).error("房间 {} 弹幕客户端启动失败", self.room_id)
             self._running = False
             raise
 
@@ -224,7 +225,7 @@ class DanmakuClient:
         if not self._running:
             return
 
-        logger.info(f"正在停止房间 {self.room_id} 的弹幕客户端...")
+        logger.info("正在停止房间 {} 的弹幕客户端...", self.room_id)
         self._running = False
 
         # 取消任务
@@ -248,7 +249,7 @@ class DanmakuClient:
         if self._ws and not self._ws.closed:
             await self._ws.close()
 
-        logger.info(f"房间 {self.room_id} 弹幕客户端已停止")
+        logger.info("房间 {} 弹幕客户端已停止", self.room_id)
 
     async def _update_danmu_info(self) -> None:
         """获取弹幕服务器信息（带 WBI 签名）"""
@@ -262,20 +263,20 @@ class DanmakuClient:
             }
             headers = self._get_headers()
 
-            logger.debug(f"房间 {self.room_id} 正在获取弹幕服务器信息...")
+            logger.debug("房间 {} 正在获取弹幕服务器信息...", self.room_id)
 
             # 使用 WBI 签名
             signed_query = await wbi.sign_params(self.session, params, self.cookie)
 
             if signed_query:
                 url = f"{base_url}?{signed_query}"
-                logger.debug(f"房间 {self.room_id} 使用WBI签名请求")
+                logger.debug("房间 {} 使用WBI签名请求", self.room_id)
             else:
                 # 降级：不使用签名
                 url = base_url
-                logger.warning(f"房间 {self.room_id} 无法获取WBI签名，尝试无签名请求")
+                logger.warning("房间 {} 无法获取WBI签名，尝试无签名请求", self.room_id)
 
-            logger.debug(f"房间 {self.room_id} 请求URL: {url[:100]}...")
+            logger.debug("房间 {} 请求URL: {}...", self.room_id, url[:100])
 
             # 如果使用了签名，不再传 params（已经在 URL 中）
             if signed_query:
@@ -287,20 +288,22 @@ class DanmakuClient:
                 ) as resp:
                     await self._handle_danmu_info_response(resp)
 
-        except Exception as e:
-            import traceback
-
-            logger.warning(f"房间 {self.room_id} 获取弹幕服务器信息异常: {e}")
-            logger.debug(f"房间 {self.room_id} 异常详情:\n{traceback.format_exc()}")
+        except Exception:
+            logger.opt(exception=True).warning(
+                "房间 {} 获取弹幕服务器信息异常", self.room_id
+            )
 
     async def _handle_danmu_info_response(self, resp: aiohttp.ClientResponse) -> None:
         """处理弹幕服务器信息响应"""
-        logger.debug(f"房间 {self.room_id} HTTP状态码: {resp.status}")
+        logger.debug("房间 {} HTTP状态码: {}", self.room_id, resp.status)
 
         if resp.status == 200:
             data = await resp.json()
             logger.debug(
-                f"房间 {self.room_id} API响应code: {data.get('code')}, message: {data.get('message')}"
+                "房间 {} API响应code: {}, message: {}",
+                self.room_id,
+                data.get("code"),
+                data.get("message"),
             )
 
             if data.get("code") == 0:
@@ -312,27 +315,38 @@ class DanmakuClient:
                     else "None"
                 )
                 logger.debug(
-                    f"房间 {self.room_id} 获取弹幕服务器信息成功，服务器数量: {len(host_list)}, token: {token}"
+                    "房间 {} 获取弹幕服务器信息成功，服务器数量: {}, token: {}",
+                    self.room_id,
+                    len(host_list),
+                    token,
                 )
                 return
             else:
                 logger.warning(
-                    f"房间 {self.room_id} API返回错误: code={data.get('code')}, message={data.get('message')}"
+                    "房间 {} API返回错误: code={}, message={}",
+                    self.room_id,
+                    data.get("code"),
+                    data.get("message"),
                 )
         else:
             resp_text = await resp.text()
             logger.warning(
-                f"房间 {self.room_id} HTTP请求失败: status={resp.status}, body={resp_text[:200]}"
+                "房间 {} HTTP请求失败: status={}, body={}",
+                self.room_id,
+                resp.status,
+                resp_text[:200],
             )
 
-        logger.warning(f"房间 {self.room_id} 获取弹幕服务器信息失败，使用默认服务器")
+        logger.warning("房间 {} 获取弹幕服务器信息失败，使用默认服务器", self.room_id)
 
     async def _connect(self) -> None:
         """连接 WebSocket"""
         host_list = self._danmu_info.get("host_list", DEFAULT_DANMU_INFO["host_list"])
 
         logger.debug(
-            f"房间 {self.room_id} 开始连接弹幕服务器，可用服务器数量: {len(host_list)}"
+            "房间 {} 开始连接弹幕服务器，可用服务器数量: {}",
+            self.room_id,
+            len(host_list),
         )
 
         for retry in range(len(host_list)):
@@ -340,33 +354,39 @@ class DanmakuClient:
                 host_info = host_list[self._host_index % len(host_list)]
                 url = f"wss://{host_info['host']}:{host_info['wss_port']}/sub"
 
-                logger.debug(f"房间 {self.room_id} 尝试连接 #{retry + 1}: {url}")
+                logger.debug("房间 {} 尝试连接 #{}: {}", self.room_id, retry + 1, url)
 
                 # 连接 WebSocket
                 try:
                     self._ws = await self.session.ws_connect(
                         url, timeout=10, headers=self._get_headers(), heartbeat=30.0
                     )
-                    logger.debug(f"房间 {self.room_id} WebSocket 连接建立成功")
+                    logger.debug("房间 {} WebSocket 连接建立成功", self.room_id)
                 except Exception as ws_err:
                     logger.error(
-                        f"房间 {self.room_id} WebSocket 连接失败: {type(ws_err).__name__}: {ws_err}"
+                        "房间 {} WebSocket 连接失败: {}: {}",
+                        self.room_id,
+                        type(ws_err).__name__,
+                        ws_err,
                     )
                     self._host_index += 1
                     continue
 
                 # 发送认证
-                logger.debug(f"房间 {self.room_id} 正在发送认证...")
+                logger.debug("房间 {} 正在发送认证...", self.room_id)
                 await self._send_auth()
-                logger.debug(f"房间 {self.room_id} 认证已发送，等待响应...")
+                logger.debug("房间 {} 认证已发送，等待响应...", self.room_id)
 
                 # 等待认证结果
                 try:
                     msg = await self._ws.receive(timeout=10)
-                    logger.debug(f"房间 {self.room_id} 收到响应: type={msg.type}")
+                    logger.debug("房间 {} 收到响应: type={}", self.room_id, msg.type)
                 except Exception as recv_err:
                     logger.error(
-                        f"房间 {self.room_id} 接收认证响应失败: {type(recv_err).__name__}: {recv_err}"
+                        "房间 {} 接收认证响应失败: {}: {}",
+                        self.room_id,
+                        type(recv_err).__name__,
+                        recv_err,
                     )
                     self._host_index += 1
                     if self._ws:
@@ -376,18 +396,22 @@ class DanmakuClient:
                 if msg.type == aiohttp.WSMsgType.BINARY:
                     try:
                         op, result = Frame.decode(msg.data)
-                        logger.debug(f"房间 {self.room_id} 认证响应: op={op}")
+                        logger.debug("房间 {} 认证响应: op={}", self.room_id, op)
 
                         if op == WS.OP_CONNECT_SUCCESS:
                             result_data = json.loads(result)
                             code = result_data.get("code", -1)
                             logger.debug(
-                                f"房间 {self.room_id} 认证结果: code={code}, data={result_data}"
+                                "房间 {} 认证结果: code={}, data={}",
+                                self.room_id,
+                                code,
+                                result_data,
                             )
 
                             if code == WS.AUTH_OK:
                                 logger.debug(
-                                    f"房间 {self.room_id} 认证成功，启动心跳和消息循环"
+                                    "房间 {} 认证成功，启动心跳和消息循环",
+                                    self.room_id,
                                 )
                                 # 启动心跳和消息循环
                                 self._heartbeat_task = asyncio.create_task(
@@ -399,35 +423,37 @@ class DanmakuClient:
                                 return
                             else:
                                 logger.error(
-                                    f"房间 {self.room_id} 认证失败: code={code}"
+                                    "房间 {} 认证失败: code={}", self.room_id, code
                                 )
                         else:
                             logger.warning(
-                                f"房间 {self.room_id} 收到非预期的响应类型: op={op}"
+                                "房间 {} 收到非预期的响应类型: op={}",
+                                self.room_id,
+                                op,
                             )
                     except Exception as decode_err:
                         logger.error(
-                            f"房间 {self.room_id} 解码认证响应失败: {type(decode_err).__name__}: {decode_err}"
+                            "房间 {} 解码认证响应失败: {}: {}",
+                            self.room_id,
+                            type(decode_err).__name__,
+                            decode_err,
                         )
                 elif msg.type == aiohttp.WSMsgType.CLOSED:
-                    logger.error(f"房间 {self.room_id} WebSocket 被服务器关闭")
+                    logger.error("房间 {} WebSocket 被服务器关闭", self.room_id)
                 elif msg.type == aiohttp.WSMsgType.ERROR:
-                    logger.error(f"房间 {self.room_id} WebSocket 错误: {msg.data}")
+                    logger.error("房间 {} WebSocket 错误: {}", self.room_id, msg.data)
                 else:
-                    logger.warning(f"房间 {self.room_id} 收到未知响应类型: {msg.type}")
+                    logger.warning(
+                        "房间 {} 收到未知响应类型: {}", self.room_id, msg.type
+                    )
 
                 # 连接失败，尝试下一个服务器
                 self._host_index += 1
                 if self._ws:
                     await self._ws.close()
 
-            except Exception as e:
-                import traceback
-
-                logger.error(
-                    f"房间 {self.room_id} 连接过程异常: {type(e).__name__}: {e}"
-                )
-                logger.debug(f"房间 {self.room_id} 异常详情:\n{traceback.format_exc()}")
+            except Exception:
+                logger.opt(exception=True).error("房间 {} 连接过程异常", self.room_id)
                 self._host_index += 1
                 if self._ws:
                     with suppress(Exception):
@@ -452,13 +478,16 @@ class DanmakuClient:
 
         # 打印认证参数（隐藏敏感信息）
         logger.debug(
-            f"房间 {self.room_id} 认证参数: uid={self._uid}, roomid={self.room_id}, "
-            f"buvid={self._buvid[:10] + '...' if self._buvid else 'None'}, "
-            f"token={token[:20] + '...' if token else 'None'}"
+            "房间 {} 认证参数: uid={}, roomid={}, buvid={}, token={}",
+            self.room_id,
+            self._uid,
+            self.room_id,
+            self._buvid[:10] + "..." if self._buvid else "None",
+            token[:20] + "..." if token else "None",
         )
 
         data = Frame.encode(WS.OP_USER_AUTHENTICATION, json.dumps(auth_data))
-        logger.debug(f"房间 {self.room_id} 发送认证数据，大小: {len(data)} bytes")
+        logger.debug("房间 {} 发送认证数据，大小: {} bytes", self.room_id, len(data))
         await self._ws.send_bytes(data)
 
     async def _heartbeat_loop(self) -> None:
@@ -472,7 +501,7 @@ class DanmakuClient:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.warning(f"房间 {self.room_id} 心跳发送失败: {e}")
+                logger.warning("房间 {} 心跳发送失败: {}", self.room_id, e)
                 self.schedule_reconnect()
                 break
 
@@ -485,7 +514,7 @@ class DanmakuClient:
                 if msg.type == aiohttp.WSMsgType.BINARY:
                     await self._handle_message(msg.data)
                 elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
-                    logger.warning(f"房间 {self.room_id} WebSocket 连接断开")
+                    logger.warning("房间 {} WebSocket 连接断开", self.room_id)
                     self.schedule_reconnect()
                     break
 
@@ -494,7 +523,7 @@ class DanmakuClient:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.warning(f"房间 {self.room_id} 消息接收异常: {e}")
+                logger.warning("房间 {} 消息接收异常: {}", self.room_id, e)
                 self.schedule_reconnect()
                 break
 
@@ -515,7 +544,7 @@ class DanmakuClient:
                 pass
 
         except Exception as e:
-            logger.debug(f"房间 {self.room_id} 消息处理异常: {e}")
+            logger.debug("房间 {} 消息处理异常: {}", self.room_id, e)
 
     async def _dispatch_command(self, msg: dict) -> None:
         """分发命令"""
@@ -523,34 +552,42 @@ class DanmakuClient:
 
         # 处理开播命令
         if cmd == DanmakuCommand.LIVE.value:
-            logger.info(f"房间 {self.room_id} 收到开播信号 (LIVE)")
+            logger.info("房间 {} 收到开播信号 (LIVE)", self.room_id)
             if self.on_live:
                 try:
                     await self.on_live()
-                except Exception as e:
-                    logger.error(f"房间 {self.room_id} 开播回调执行失败: {e}")
+                except Exception:
+                    logger.opt(exception=True).error(
+                        "房间 {} 开播回调执行失败", self.room_id
+                    )
 
         # 处理关播命令
         elif cmd == DanmakuCommand.PREPARING.value:
             # round=1 表示轮播
             round_status = msg.get("round", 0)
             logger.info(
-                f"房间 {self.room_id} 收到关播信号 (PREPARING, round={round_status})"
+                "房间 {} 收到关播信号 (PREPARING, round={})",
+                self.room_id,
+                round_status,
             )
             if self.on_preparing:
                 try:
                     await self.on_preparing(round_status)
-                except Exception as e:
-                    logger.error(f"房间 {self.room_id} 关播回调执行失败: {e}")
+                except Exception:
+                    logger.opt(exception=True).error(
+                        "房间 {} 关播回调执行失败", self.room_id
+                    )
 
         # 处理房间信息变更
         elif cmd == DanmakuCommand.ROOM_CHANGE.value:
-            logger.debug(f"房间 {self.room_id} 收到房间信息变更信号")
+            logger.debug("房间 {} 收到房间信息变更信号", self.room_id)
             if self.on_room_change:
                 try:
                     await self.on_room_change(msg.get("data", {}))
-                except Exception as e:
-                    logger.error(f"房间 {self.room_id} 房间变更回调执行失败: {e}")
+                except Exception:
+                    logger.opt(exception=True).error(
+                        "房间 {} 房间变更回调执行失败", self.room_id
+                    )
 
     def schedule_reconnect(self) -> None:
         """调度重连；若已有未完成的重连任务则忽略。"""
@@ -581,7 +618,7 @@ class DanmakuClient:
 
         try:
             while self._running:
-                logger.debug(f"房间 {self.room_id} 正在重新连接...")
+                logger.debug("房间 {} 正在重新连接...", self.room_id)
 
                 await self._cancel_io_tasks()
 
@@ -595,10 +632,10 @@ class DanmakuClient:
 
                 try:
                     await self._connect()
-                    logger.debug(f"房间 {self.room_id} 重新连接成功")
+                    logger.debug("房间 {} 重新连接成功", self.room_id)
                     break
                 except Exception as e:
-                    logger.warning(f"房间 {self.room_id} 重新连接失败: {e}")
+                    logger.warning("房间 {} 重新连接失败: {}", self.room_id, e)
                     await asyncio.sleep(10)
         finally:
             if self._reconnect_task is asyncio.current_task():
