@@ -7,11 +7,10 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from admin.api.router import api_router
-from admin.spa_path import path_under_base
+from admin.spa_path import index_file_response, static_file_response
 
 
 def create_app() -> FastAPI:
@@ -51,12 +50,10 @@ def create_app() -> FastAPI:
         async def serve_spa(full_path: str):
             if full_path.startswith("api/"):
                 raise HTTPException(status_code=404, detail="Not found")
-            file_path = path_under_base(web_dist, full_path)
-            if file_path.is_file():
-                return FileResponse(file_path)
-            index = web_dist / "index.html"
-            if index.is_file():
-                return FileResponse(index)
+            if response := static_file_response(web_dist, full_path):
+                return response
+            if response := index_file_response(web_dist):
+                return response
             raise HTTPException(status_code=404, detail="Not found")
 
     return app
