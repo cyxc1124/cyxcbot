@@ -15,7 +15,7 @@ Web Admin 是机器草的浏览器管理界面，基于 React + TypeScript + Tai
 
 - 前端源码位于仓库 `web/` 目录
 - 生产构建产物 `web/dist/` 由后端 FastAPI 静态文件服务托管
-- 实时日志通过 WebSocket 推送
+- 实时日志通过 WebSocket 推送（内存缓冲，不持久化）；磁盘日志见 [日志配置](../configuration/logging)
 
 ## 认证
 

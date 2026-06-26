@@ -42,7 +42,7 @@ FastAPI 应用，提供 Web Admin REST API 与 WebSocket 日志推送。启动�
 - `shared/config/` — 配置服务与策略
 - `shared/bilibili/` — B 站扫码登录
 - `shared/monitor/` — 监控调度公共逻辑
-- `shared/logging/` — Web 日志广播
+- `shared/logging/` — Web 日志广播（`broadcast.py`）与磁盘会话日志（`file_sink.py`）
 - `utils/bilibili_api/` — B 站 HTTP API 封装
 
 ### `plugins/`

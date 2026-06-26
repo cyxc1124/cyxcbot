@@ -51,7 +51,7 @@ slug: /intro
 | `/groups`、`/private` | 群组 / 好友管理与策略 |
 | `/templates` | 消息模板 |
 | `/settings` | 监控参数、B 站账号、机器人设置 |
-| `/logs` | 实时运行日志 |
+| `/logs` | 实时运行日志（持久化见 [日志配置](./configuration/logging)） |
 | `/about` | 版本与构建信息 |
 
 ## 技术栈

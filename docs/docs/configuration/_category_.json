@@ -3,6 +3,6 @@
   "position": 3,
   "link": {
     "type": "generated-index",
-    "description": "启动级环境变量、Web Admin 初始化与版本迁移说明。"
+    "description": "启动级环境变量、日志、Web Admin 初始化与版本迁移说明。"
   }
 }
