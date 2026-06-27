@@ -116,25 +116,20 @@ async def get_bot_status() -> str:
 
         status_msg += f"操作系统: {system_info}\n"
 
+        # 进程 CPU
+        process_cpu = await get_process_cpu_info()
+        status_msg += f"CPU: {process_cpu}\n"
+
         if config.show_memory_usage:
-            # 获取更详细的内存信息
-            memory_detail = get_detailed_memory_info()
-            status_msg += f"内存使用: {memory_detail}\n"
+            try:
+                import psutil
 
-        # 获取CPU使用率
-        cpu_info = await get_cpu_info()
-        status_msg += f"CPU使用率: {cpu_info}\n"
-
-        # 获取进程内存信息
-        try:
-            import psutil
-
-            process = psutil.Process()
-            process_memory = process.memory_info().rss / (1024**2)
-            status_msg += f"进程内存: {process_memory:.1f}MB\n"
-        except Exception as e:
-            logger.debug("获取进程内存失败: {}", e)
-            status_msg += "进程内存: 无法获取\n"
+                process = psutil.Process()
+                process_memory = process.memory_info().rss / (1024**2)
+                status_msg += f"内存: {process_memory:.1f}MB\n"
+            except Exception as e:
+                logger.debug("获取进程内存失败: {}", e)
+                status_msg += "内存: 无法获取\n"
 
         if config.show_detailed_status:
             status_msg += "\n" + "详细技术信息" + "\n"
@@ -546,6 +541,27 @@ def get_cpu_info_impl() -> str:
 async def get_cpu_info() -> str:
     """异步包装 get_cpu_info_impl，避免阻塞事件循环"""
     return await asyncio.to_thread(get_cpu_info_impl)
+
+
+def get_process_cpu_info_impl() -> str:
+    """获取本进程 CPU 使用率
+
+    ponytail: psutil.Process().cpu_percent(interval=1) 是同步阻塞调用，
+    调用方应通过 asyncio.to_thread() 将其卸载到独立线程，
+    避免阻塞 NoneBot 异步事件循环。
+    """
+    try:
+        process = psutil.Process()
+        percent = process.cpu_percent(interval=1)
+        return f"{percent:.1f}%"
+    except Exception:
+        logger.opt(exception=True).error("获取进程CPU信息失败")
+        return "无法获取"
+
+
+async def get_process_cpu_info() -> str:
+    """异步包装 get_process_cpu_info_impl，避免阻塞事件循环"""
+    return await asyncio.to_thread(get_process_cpu_info_impl)
 
 
 def get_detailed_connection_status() -> str:

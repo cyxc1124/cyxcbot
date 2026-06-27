@@ -214,14 +214,63 @@ def build_live_monitor_status() -> Dict[str, Any]:
     }
 
 
+def _get_db_size_mb() -> float:
+    """Get SQLite database file size in MB."""
+    import os
+    from pathlib import Path
+
+    db_url = os.getenv("SQLALCHEMY_DATABASE_URL", "sqlite+aiosqlite:///data/cyxcbot.db")
+    if "sqlite" not in db_url:
+        return 0.0
+    path = db_url.split(":///")[-1]
+    db_path = Path(path) if Path(path).is_absolute() else Path.cwd() / path
+    if not db_path.exists():
+        return 0.0
+    try:
+        return db_path.stat().st_size / (1024**2)
+    except OSError:
+        return 0.0
+
+
+def _get_log_dir_size_mb() -> float:
+    """Get total size of log directory files in MB."""
+    import os
+    from pathlib import Path
+
+    log_pattern = os.getenv("LOG_FILE_PATH", "data/logs/cyxcbot.log")
+    log_dir = Path(log_pattern).parent
+    if not log_dir.is_absolute():
+        log_dir = Path.cwd() / log_dir
+    if not log_dir.is_dir():
+        return 0.0
+    try:
+        total = sum(f.stat().st_size for f in log_dir.iterdir() if f.is_file())
+        return total / (1024**2)
+    except OSError:
+        return 0.0
+
+
 def get_system_monitor_status() -> Dict[str, Any]:
+    import time
+
     import psutil
+
+    process = psutil.Process()
+
+    # Warm up both CPU counters so the second call returns actual usage
+    process.cpu_percent()
+    psutil.cpu_percent()
+    time.sleep(0.2)
 
     mem = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
 
     return {
-        "cpu_percent": psutil.cpu_percent(interval=0.1),
+        "process_cpu_percent": process.cpu_percent(),
+        "process_memory_mb": process.memory_info().rss / (1024**2),
+        "db_size_mb": _get_db_size_mb(),
+        "log_size_mb": _get_log_dir_size_mb(),
+        "cpu_percent": psutil.cpu_percent(),
         "memory_percent": float(mem.percent),
         "memory_used_mb": mem.used / (1024**2),
         "memory_total_mb": mem.total / (1024**2),

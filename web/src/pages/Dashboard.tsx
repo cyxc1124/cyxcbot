@@ -20,7 +20,7 @@ import { StatCard } from '../components/StatCard'
 import { useLiveUptime } from '../hooks/useLiveUptime'
 import { useMountAsync } from '../hooks/useMountAsync'
 import { formatApiError } from '../utils/apiError'
-import { formatMemoryUsage, formatUptime } from '../utils/format'
+import { formatMemoryMb, formatMemoryUsage, formatStorageSize, formatUptime } from '../utils/format'
 
 function bilibiliCardValue(b: BilibiliConnectionStatus | undefined): string {
   if (!b) return '—'
@@ -117,7 +117,7 @@ export function DashboardPage() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
-          title="机器人状态"
+          title="机器草状态"
           value={running ? '运行中' : '已停止'}
           subtitle={`已运行 ${formatUptime(liveUptime)}`}
         />
@@ -135,13 +135,50 @@ export function DashboardPage() {
 
       <section>
         <div className="mb-4">
-          <h3 className="font-semibold text-foreground">资源使用</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">每 30 秒自动刷新</p>
+          <h3 className="font-semibold text-foreground">进程资源</h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">本进程实际消耗 · 每 30 秒自动刷新</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <ResourceUsageCard
+            label="进程 CPU"
+            percent={system?.process_cpu_percent}
+            detail="本进程处理器占用"
+          />
+          <ResourceUsageCard
+            label="进程内存 (RSS)"
+            percent={
+              system && system.memory_total_mb > 0
+                ? (system.process_memory_mb / system.memory_total_mb) * 100
+                : null
+            }
+            detail={
+              system
+                ? `常驻集 ${formatMemoryMb(system.process_memory_mb)}`
+                : undefined
+            }
+          />
+          <ResourceUsageCard
+            label="数据库"
+            percent={null}
+            detail={system ? formatStorageSize(system.db_size_mb) : undefined}
+          />
+          <ResourceUsageCard
+            label="日志"
+            percent={null}
+            detail={system ? formatStorageSize(system.log_size_mb) : undefined}
+          />
+        </div>
+      </section>
+
+      <section>
+        <div className="mb-4">
+          <h3 className="font-semibold text-foreground">系统资源</h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">整机参考指标</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-3">
-          <ResourceUsageCard label="CPU" percent={system?.cpu_percent} detail="处理器占用" />
+          <ResourceUsageCard label="系统 CPU" percent={system?.cpu_percent} detail="整机处理器占用" />
           <ResourceUsageCard
-            label="内存"
+            label="系统内存"
             percent={system?.memory_percent}
             detail={
               system
