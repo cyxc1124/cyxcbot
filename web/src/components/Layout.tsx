@@ -104,7 +104,7 @@ export function Layout() {
 
   const versionLine = (() => {
     if (!about) return null
-    const id = about.git_tag ?? (about.git_branch === 'develop' ? 'develop' : about.build_version === 'dev' ? 'dev' : null)
+    const id = about.git_tag ?? (about.git_branch === 'develop' ? 'develop' : about.build_version === 'dev' ? 'dev' : (about.build_version || null))
     if (!id) return null
     const commit = about.git_commit
     const shortCommit = commit?.slice(0, 7)
