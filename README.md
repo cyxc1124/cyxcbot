@@ -62,8 +62,8 @@
 ## 技术栈
 
 - **机器人**：NoneBot2 + OneBot V11 适配器
-- **后端 API**：FastAPI + SQLAlchemy（SQLite / 可选 PostgreSQL（没测过））
-- **前端**：React + TypeScript + Tailwind CSS
+- **后端 API**：FastAPI + SQLAlchemy（SQLite，理论上支持 PostgreSQL 但需自行安装驱动）
+- **前端**：React + TypeScript + Tailwind CSS + Vite
 - **截图**：Playwright + Chromium
 - **打包**：Docker / PyInstaller（Windows）
 
