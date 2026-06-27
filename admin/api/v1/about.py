@@ -75,21 +75,30 @@ def _fastapi_version() -> str | None:
 
 
 def _frontend_versions() -> tuple[str | None, str | None]:
-    """ponytail: reads web/package.json at startup.
-    Returns (react_version, tailwindcss_version)."""
+    """Returns (react_version, tailwindcss_version).
+    In packaged builds (Docker/Windows exe), versions are set as env vars at
+    build time to avoid depending on the lockfile at runtime. Falls back to
+    reading web/package-lock.json for local dev."""
+    react = os.getenv("REACT_VERSION", "")
+    tailwind = os.getenv("TAILWIND_VERSION", "")
+    if react and tailwind:
+        return (react, tailwind)
     try:
-        pkg_path = (
+        lock_path = (
             Path(__file__).resolve().parent.parent.parent.parent
             / "web"
-            / "package.json"
+            / "package-lock.json"
         )
-        with open(pkg_path) as f:
-            pkg = json.load(f)
-        react = pkg.get("dependencies", {}).get("react", "").lstrip("^")
-        tailwind = pkg.get("devDependencies", {}).get("tailwindcss", "").lstrip("^")
+        with open(lock_path) as f:
+            lock = json.load(f)
+        packages = lock.get("packages", {})
+        react = react or packages.get("node_modules/react", {}).get("version", "")
+        tailwind = tailwind or packages.get("node_modules/tailwindcss", {}).get(
+            "version", ""
+        )
         return (react or None, tailwind or None)
     except Exception:
-        return (None, None)
+        return (react or None, tailwind or None)
 
 
 def _fetch_json(url: str) -> dict | None:
