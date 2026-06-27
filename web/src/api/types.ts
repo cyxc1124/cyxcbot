@@ -266,6 +266,7 @@ export interface SystemMonitorStatus {
   db_size_mb: number
   log_size_mb: number
   cpu_percent: number
+  cpu_count: number
   memory_percent: number
   memory_used_mb: number
   memory_total_mb: number

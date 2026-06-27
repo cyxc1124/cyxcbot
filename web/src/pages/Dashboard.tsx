@@ -141,8 +141,17 @@ export function DashboardPage() {
         <div className="grid gap-4 sm:grid-cols-2">
           <ResourceUsageCard
             label="进程 CPU"
-            percent={system?.process_cpu_percent}
-            detail="本进程处理器占用"
+            percent={
+              system && system.cpu_count > 0
+                ? (system.process_cpu_percent / system.cpu_count) * 100
+                : null
+            }
+            displayValue={
+              system ? `${system.process_cpu_percent.toFixed(1)}%` : undefined
+            }
+            detail={
+              system ? `${system.cpu_count} 核` : undefined
+            }
           />
           <ResourceUsageCard
             label="进程内存 (RSS)"

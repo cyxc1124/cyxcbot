@@ -271,6 +271,7 @@ def get_system_monitor_status() -> Dict[str, Any]:
         "db_size_mb": _get_db_size_mb(),
         "log_size_mb": _get_log_dir_size_mb(),
         "cpu_percent": psutil.cpu_percent(),
+        "cpu_count": psutil.cpu_count(),
         "memory_percent": float(mem.percent),
         "memory_used_mb": mem.used / (1024**2),
         "memory_total_mb": mem.total / (1024**2),

@@ -86,6 +86,7 @@ class SystemMonitorStatusResponse(BaseModel):
     db_size_mb: float
     log_size_mb: float
     cpu_percent: float
+    cpu_count: int
     memory_percent: float
     memory_used_mb: float
     memory_total_mb: float
