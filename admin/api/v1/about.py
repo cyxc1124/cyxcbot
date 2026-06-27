@@ -66,8 +66,14 @@ def _fastapi_version() -> str | None:
 
 
 def _frontend_versions() -> tuple[str | None, str | None]:
-    """Returns (react_version, tailwindcss_version) resolved from lockfile,
-    which reflects the version actually installed by npm ci."""
+    """Returns (react_version, tailwindcss_version).
+    In packaged builds (Docker/Windows exe), versions are set as env vars at
+    build time to avoid depending on the lockfile at runtime. Falls back to
+    reading web/package-lock.json for local dev."""
+    react = os.getenv("REACT_VERSION", "")
+    tailwind = os.getenv("TAILWIND_VERSION", "")
+    if react and tailwind:
+        return (react, tailwind)
     try:
         lock_path = (
             Path(__file__).resolve().parent.parent.parent.parent
@@ -77,11 +83,11 @@ def _frontend_versions() -> tuple[str | None, str | None]:
         with open(lock_path) as f:
             lock = json.load(f)
         packages = lock.get("packages", {})
-        react = packages.get("node_modules/react", {}).get("version", "")
-        tailwind = packages.get("node_modules/tailwindcss", {}).get("version", "")
+        react = react or packages.get("node_modules/react", {}).get("version", "")
+        tailwind = tailwind or packages.get("node_modules/tailwindcss", {}).get("version", "")
         return (react or None, tailwind or None)
     except Exception:
-        return (None, None)
+        return (react or None, tailwind or None)
 
 
 @router.get("/about", response_model=AboutResponse)
