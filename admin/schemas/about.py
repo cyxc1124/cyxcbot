@@ -19,3 +19,5 @@ class AboutResponse(BaseModel):
     fastapi_version: str | None = None
     react_version: str | None = None
     tailwindcss_version: str | None = None
+    update_available: bool | None = None
+    update_url: str | None = None

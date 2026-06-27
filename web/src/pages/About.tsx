@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
 import { useMountAsync } from '../hooks/useMountAsync'
 import { createRetryHandler } from '../utils/retryLoad'
@@ -83,6 +83,14 @@ export function AboutPage() {
 
   useMountAsync(load)
 
+  // ponytail: refetch once after 3s to pick up async update check result
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      getAbout().then(setAbout).catch(() => {})
+    }, 3000)
+    return () => clearTimeout(timer)
+  }, [])
+
   if (loading && !about && !error) return <PageLoading />
 
   const frontendLabel = (() => {
@@ -118,8 +126,18 @@ export function AboutPage() {
             C
           </span>
           <div>
-            <h3 className="text-lg font-semibold text-foreground">
-              {about?.app_name ?? '机器草'}
+            <h3 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+              <span>{about?.app_name ?? '机器草'}</span>
+              {about?.update_available && about?.update_url && (
+                <a
+                  href={about.update_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 hover:underline dark:text-amber-400"
+                >
+                  有新版本
+                </a>
+              )}
             </h3>
             <p className="text-sm text-muted-foreground">Bilibili 监控机器人管理界面</p>
           </div>

@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useSidebar } from '../contexts/SidebarContext'
+import { getAbout } from '../api/client'
+import type { AboutInfo } from '../api/types'
 import {
   applyTheme,
   getSavedColorTheme,
@@ -37,6 +39,21 @@ export function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [navHoverExpanded, setNavHoverExpanded] = useState(false)
   const [prevPathname, setPrevPathname] = useState(location.pathname)
+  const [about, setAbout] = useState<AboutInfo | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const fetchAbout = () => getAbout().then(data => { if (!cancelled) setAbout(data) })
+
+    fetchAbout().catch(() => {})
+    // ponytail: refetch once after 3s to pick up async update check result
+    const timer = setTimeout(() => { fetchAbout().catch(() => {}) }, 3000)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [])
 
   if (location.pathname !== prevPathname) {
     setPrevPathname(location.pathname)
@@ -83,6 +100,32 @@ export function Layout() {
       ? 'translate-x-0'
       : '-translate-x-full lg:translate-x-0'
 
+  const GITHUB_REPO = 'https://github.com/cyxc1124/cyxcbot'
+
+  const versionLine = (() => {
+    if (!about) return null
+    const id = about.git_tag ?? (about.git_branch === 'develop' ? 'develop' : about.build_version === 'dev' ? 'dev' : (about.build_version || null))
+    if (!id) return null
+    const commit = about.git_commit
+    const shortCommit = commit?.slice(0, 7)
+
+    return (
+      <>
+        {about.git_tag ? (
+          <a href={`${GITHUB_REPO}/releases/tag/${about.git_tag}`} target="_blank" rel="noopener noreferrer" className="hover:underline">{id}</a>
+        ) : (
+          id
+        )}
+        {shortCommit && commit && (
+          <>
+            {' · '}
+            <a href={`${GITHUB_REPO}/commit/${commit}`} target="_blank" rel="noopener noreferrer" className="hover:underline">{shortCommit}</a>
+          </>
+        )}
+      </>
+    )
+  })()
+
   return (
     <div className="min-h-screen bg-background">
       {sidebarOpen && !navCollapsed && (
@@ -115,8 +158,22 @@ export function Layout() {
           </span>
           {showFullNav && (
             <div className="min-w-0">
-              <h1 className="truncate text-sm font-bold text-sidebar-foreground">机器草</h1>
-              <p className="truncate text-xs text-muted-foreground">Web 管理面板</p>
+              <h1 className="flex items-center gap-1.5 truncate text-sm font-bold text-sidebar-foreground">
+                <span>机器草</span>
+                {about?.update_available && about?.update_url && (
+                  <a
+                    href={about.update_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded bg-amber-500/15 px-1.5 py-px text-[10px] font-medium text-amber-600 hover:underline dark:text-amber-400"
+                  >
+                    有新版本
+                  </a>
+                )}
+              </h1>
+              <p className="truncate text-xs text-muted-foreground">
+                {versionLine}
+              </p>
             </div>
           )}
         </div>
