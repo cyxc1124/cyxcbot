@@ -84,7 +84,9 @@ def _frontend_versions() -> tuple[str | None, str | None]:
             lock = json.load(f)
         packages = lock.get("packages", {})
         react = react or packages.get("node_modules/react", {}).get("version", "")
-        tailwind = tailwind or packages.get("node_modules/tailwindcss", {}).get("version", "")
+        tailwind = tailwind or packages.get("node_modules/tailwindcss", {}).get(
+            "version", ""
+        )
         return (react or None, tailwind or None)
     except Exception:
         return (react or None, tailwind or None)
