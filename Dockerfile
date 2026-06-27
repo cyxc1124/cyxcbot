@@ -25,6 +25,8 @@ ARG GIT_COMMIT=""
 ARG GIT_BRANCH=""
 ARG BUILD_TIME=""
 ARG BUILD_NUMBER=""
+ARG REACT_VERSION=""
+ARG TAILWIND_VERSION=""
 
 # 添加 OCI 标签以连接到 GitHub 仓库
 LABEL org.opencontainers.image.source=https://github.com/cyxc1124/cyxcbot
@@ -47,6 +49,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     GIT_BRANCH=${GIT_BRANCH} \
     BUILD_TIME=${BUILD_TIME} \
     BUILD_NUMBER=${BUILD_NUMBER} \
+    REACT_VERSION=${REACT_VERSION} \
+    TAILWIND_VERSION=${TAILWIND_VERSION} \
     TZ=Asia/Shanghai
 
 # 安装系统依赖

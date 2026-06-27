@@ -18,6 +18,17 @@ if (Test-Path package-lock.json) {
 } else {
     npm install
 }
+if ($LASTEXITCODE -ne 0) { throw "Web frontend build failed" }
+
+# Extract frontend versions for build-info.env (exact versions from lockfile)
+try {
+    $lockJson = Get-Content -Raw package-lock.json | ConvertFrom-Json
+    $env:REACT_VERSION = $lockJson.packages.'node_modules/react'.version
+    $env:TAILWIND_VERSION = $lockJson.packages.'node_modules/tailwindcss'.version
+    Write-Host "Frontend versions: React $env:REACT_VERSION, Tailwind $env:TAILWIND_VERSION"
+} catch {
+    Write-Warning "Failed to extract frontend versions from lockfile: $_"
+}
 npm run build
 if ($LASTEXITCODE -ne 0) { throw "Web frontend build failed" }
 Pop-Location
@@ -70,7 +81,9 @@ $buildInfo = @(
     "GIT_TAG=$($env:GIT_TAG)",
     "GIT_BRANCH=$($env:GIT_BRANCH)",
     "BUILD_TIME=$($env:BUILD_TIME)",
-    "BUILD_NUMBER=$($env:BUILD_NUMBER)"
+    "BUILD_NUMBER=$($env:BUILD_NUMBER)",
+    "REACT_VERSION=$($env:REACT_VERSION)",
+    "TAILWIND_VERSION=$($env:TAILWIND_VERSION)"
 ) -join "`n"
 $buildInfo | Out-File -FilePath (Join-Path $distDir "build-info.env") -Encoding utf8NoBOM
 

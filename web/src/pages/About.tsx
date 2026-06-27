@@ -8,15 +8,21 @@ import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
 import { formatApiError } from '../utils/apiError'
 
-const WEB_BUILD_VERSION = import.meta.env.VITE_BUILD_VERSION || 'dev'
-const WEB_GIT_BRANCH = import.meta.env.VITE_GIT_BRANCH
 const WEB_BUILD_TIME = import.meta.env.VITE_BUILD_TIME
+
+type BadgeColor = 'amber' | 'emerald' | 'slate'
+
+const BADGE_COLORS: Record<BadgeColor, string> = {
+  amber: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+  emerald: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+  slate: 'bg-slate-500/15 text-slate-600 dark:text-slate-400',
+}
 
 interface InfoRowProps {
   label: string
   value: string
   hint?: string
-  badge?: string
+  badge?: { label: string; color: BadgeColor }
 }
 
 function InfoRow({ label, value, hint, badge }: InfoRowProps) {
@@ -26,8 +32,8 @@ function InfoRow({ label, value, hint, badge }: InfoRowProps) {
       <dd className="mt-1 flex flex-wrap items-center gap-2">
         <span className="text-base font-medium text-foreground">{value}</span>
         {badge && (
-          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
-            {badge}
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${BADGE_COLORS[badge.color]}`}>
+            {badge.label}
           </span>
         )}
       </dd>
@@ -43,9 +49,12 @@ function formatBuildTime(iso: string | null | undefined): string | null {
   return date.toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' })
 }
 
-function branchLabel(branch: string | null | undefined): string {
-  if (!branch) return '—'
-  return branch
+function getVersionBadge(about: AboutInfo | null): { label: string; color: BadgeColor } | undefined {
+  if (!about) return undefined
+  if (about.git_branch === 'develop') return { label: '开发版', color: 'amber' }
+  if (about.git_tag) return { label: '正式版', color: 'emerald' }
+  if (about.build_version === 'dev') return { label: '本地开发', color: 'slate' }
+  return undefined
 }
 
 export function AboutPage() {
@@ -76,7 +85,23 @@ export function AboutPage() {
 
   if (loading && !about && !error) return <PageLoading />
 
-  const isDevelop = about?.git_branch === 'develop'
+  const frontendLabel = (() => {
+    const parts: string[] = []
+    if (about?.react_version) parts.push(`React ${about.react_version}`)
+    else parts.push('React')
+    if (about?.tailwindcss_version) parts.push(`Tailwind CSS ${about.tailwindcss_version}`)
+    else parts.push('Tailwind CSS')
+    return parts.join(' + ')
+  })()
+
+  const versionHint = (() => {
+    const parts: string[] = []
+    if (about?.git_commit) parts.push(`提交 ${about.git_commit}`)
+    if (about?.build_number) parts.push(`构建号 #${about.build_number}`)
+    const bt = backendBuildTime
+    if (bt) parts.push(`构建时间 ${bt}`)
+    return parts.join(' · ') || undefined
+  })()
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -102,44 +127,20 @@ export function AboutPage() {
 
         <dl>
           <InfoRow
-            label="Web UI"
-            value={`Powered by ${about?.web_frontend ?? 'React + Tailwind CSS'}`}
-            hint={[
-              `前端构建版本 ${WEB_BUILD_VERSION}`,
-              WEB_GIT_BRANCH ? `分支 ${WEB_GIT_BRANCH}` : null,
-              webBuildTime ? `构建时间 ${webBuildTime}` : null,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
+            label="前端"
+            value={frontendLabel}
+            hint={webBuildTime ? `构建时间 ${webBuildTime}` : undefined}
           />
           <InfoRow
-            label="后端框架"
+            label="后端"
             value={about?.backend_framework ?? '—'}
             hint={about ? `Python ${about.python_version}` : undefined}
           />
           <InfoRow
-            label="Git 分支"
-            value={branchLabel(about?.git_branch ?? about?.git_tag)}
-            badge={isDevelop ? '开发版' : undefined}
-            hint={
-              about?.git_tag
-                ? `标签 ${about.git_tag}${about.git_commit ? ` · 提交 ${about.git_commit}` : ''}`
-                : about?.git_commit
-                  ? `提交 ${about.git_commit}`
-                  : '由 GIT_BRANCH / GIT_TAG 环境变量注入'
-            }
-          />
-          <InfoRow
-            label="构建版本"
+            label="版本信息"
             value={about?.build_version ?? '—'}
-            hint={
-              [
-                about?.build_number ? `构建号 #${about.build_number}` : null,
-                backendBuildTime ? `构建时间 ${backendBuildTime}` : null,
-              ]
-                .filter(Boolean)
-                .join(' · ') || '由 GIT_TAG / GIT_COMMIT / BUILD_VERSION 环境变量注入'
-            }
+            badge={getVersionBadge(about)}
+            hint={versionHint}
           />
         </dl>
       </div>

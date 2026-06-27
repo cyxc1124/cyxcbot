@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 import platform
+from pathlib import Path
 
 from fastapi import APIRouter
 
@@ -54,12 +56,55 @@ def _nonebot_version() -> str | None:
         return None
 
 
+def _fastapi_version() -> str | None:
+    try:
+        import fastapi
+
+        return fastapi.__version__
+    except Exception:
+        return None
+
+
+def _frontend_versions() -> tuple[str | None, str | None]:
+    """Returns (react_version, tailwindcss_version).
+    In packaged builds (Docker/Windows exe), versions are set as env vars at
+    build time to avoid depending on the lockfile at runtime. Falls back to
+    reading web/package-lock.json for local dev."""
+    react = os.getenv("REACT_VERSION", "")
+    tailwind = os.getenv("TAILWIND_VERSION", "")
+    if react and tailwind:
+        return (react, tailwind)
+    try:
+        lock_path = (
+            Path(__file__).resolve().parent.parent.parent.parent
+            / "web"
+            / "package-lock.json"
+        )
+        with open(lock_path) as f:
+            lock = json.load(f)
+        packages = lock.get("packages", {})
+        react = react or packages.get("node_modules/react", {}).get("version", "")
+        tailwind = tailwind or packages.get("node_modules/tailwindcss", {}).get(
+            "version", ""
+        )
+        return (react or None, tailwind or None)
+    except Exception:
+        return (react or None, tailwind or None)
+
+
 @router.get("/about", response_model=AboutResponse)
 async def get_about(_: AdminUser):
     nonebot_version = _nonebot_version()
+    fastapi_version = _fastapi_version()
+    react_version, tailwindcss_version = _frontend_versions()
+
     framework = "FastAPI + NoneBot2"
-    if nonebot_version:
+    if fastapi_version and nonebot_version:
+        framework = f"FastAPI {fastapi_version} + NoneBot2 {nonebot_version}"
+    elif nonebot_version:
         framework = f"FastAPI + NoneBot2 {nonebot_version}"
+    elif fastapi_version:
+        framework = f"FastAPI {fastapi_version} + NoneBot2"
 
     return AboutResponse(
         app_name="机器草",
@@ -72,4 +117,7 @@ async def get_about(_: AdminUser):
         build_time=_env("BUILD_TIME"),
         build_number=_env("BUILD_NUMBER"),
         python_version=platform.python_version(),
+        fastapi_version=fastapi_version,
+        react_version=react_version,
+        tailwindcss_version=tailwindcss_version,
     )
