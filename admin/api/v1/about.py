@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 import platform
+from pathlib import Path
 
 from fastapi import APIRouter
 
@@ -54,12 +56,46 @@ def _nonebot_version() -> str | None:
         return None
 
 
+def _fastapi_version() -> str | None:
+    try:
+        import fastapi
+
+        return fastapi.__version__
+    except Exception:
+        return None
+
+
+def _frontend_versions() -> tuple[str | None, str | None]:
+    """ponytail: reads web/package.json at startup.
+    Returns (react_version, tailwindcss_version)."""
+    try:
+        pkg_path = (
+            Path(__file__).resolve().parent.parent.parent.parent
+            / "web"
+            / "package.json"
+        )
+        with open(pkg_path) as f:
+            pkg = json.load(f)
+        react = pkg.get("dependencies", {}).get("react", "").lstrip("^")
+        tailwind = pkg.get("devDependencies", {}).get("tailwindcss", "").lstrip("^")
+        return (react or None, tailwind or None)
+    except Exception:
+        return (None, None)
+
+
 @router.get("/about", response_model=AboutResponse)
 async def get_about(_: AdminUser):
     nonebot_version = _nonebot_version()
+    fastapi_version = _fastapi_version()
+    react_version, tailwindcss_version = _frontend_versions()
+
     framework = "FastAPI + NoneBot2"
-    if nonebot_version:
+    if fastapi_version and nonebot_version:
+        framework = f"FastAPI {fastapi_version} + NoneBot2 {nonebot_version}"
+    elif nonebot_version:
         framework = f"FastAPI + NoneBot2 {nonebot_version}"
+    elif fastapi_version:
+        framework = f"FastAPI {fastapi_version} + NoneBot2"
 
     return AboutResponse(
         app_name="机器草",
@@ -72,4 +108,7 @@ async def get_about(_: AdminUser):
         build_time=_env("BUILD_TIME"),
         build_number=_env("BUILD_NUMBER"),
         python_version=platform.python_version(),
+        fastapi_version=fastapi_version,
+        react_version=react_version,
+        tailwindcss_version=tailwindcss_version,
     )

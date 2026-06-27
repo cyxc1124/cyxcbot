@@ -16,3 +16,6 @@ class AboutResponse(BaseModel):
     build_time: str | None = None
     build_number: str | None = None
     python_version: str
+    fastapi_version: str | None = None
+    react_version: str | None = None
+    tailwindcss_version: str | None = None
