@@ -90,4 +90,5 @@ class SystemMonitorStatusResponse(BaseModel):
     memory_percent: float
     memory_used_mb: float
     memory_total_mb: float
+    memory_limit_mb: Optional[float] = None
     disk_percent: float

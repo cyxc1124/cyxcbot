@@ -250,6 +250,31 @@ def _get_log_dir_size_mb() -> float:
         return 0.0
 
 
+def _get_cgroup_memory_limit_mb() -> float | None:
+    """Return cgroup memory limit in MB, or None if not in a constrained container."""
+    from pathlib import Path
+
+    # cgroup v2
+    try:
+        raw = Path("/sys/fs/cgroup/memory.max").read_text().strip()
+        if raw != "max":
+            limit = int(raw) / (1024**2)
+            return limit
+    except (OSError, ValueError):
+        pass
+
+    # cgroup v1 fallback — ignore the "unlimited" sentinel (~2^63)
+    try:
+        raw = Path("/sys/fs/cgroup/memory/memory.limit_in_bytes").read_text().strip()
+        limit_bytes = int(raw)
+        if limit_bytes > 0 and limit_bytes < 2**60:  # unlikely a real host
+            return limit_bytes / (1024**2)
+    except (OSError, ValueError):
+        pass
+
+    return None
+
+
 def get_system_monitor_status() -> Dict[str, Any]:
     import time
 
@@ -275,6 +300,7 @@ def get_system_monitor_status() -> Dict[str, Any]:
         "memory_percent": float(mem.percent),
         "memory_used_mb": mem.used / (1024**2),
         "memory_total_mb": mem.total / (1024**2),
+        "memory_limit_mb": _get_cgroup_memory_limit_mb(),
         "disk_percent": float(disk.percent),
     }
 

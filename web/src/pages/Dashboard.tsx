@@ -156,8 +156,8 @@ export function DashboardPage() {
           <ResourceUsageCard
             label="进程内存 (RSS)"
             percent={
-              system && system.memory_total_mb > 0
-                ? (system.process_memory_mb / system.memory_total_mb) * 100
+              system && (system.memory_limit_mb || system.memory_total_mb) > 0
+                ? (system.process_memory_mb / (system.memory_limit_mb || system.memory_total_mb)) * 100
                 : null
             }
             detail={

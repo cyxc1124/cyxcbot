@@ -270,6 +270,7 @@ export interface SystemMonitorStatus {
   memory_percent: number
   memory_used_mb: number
   memory_total_mb: number
+  memory_limit_mb: number | null
   disk_percent: number
 }
 
