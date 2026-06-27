@@ -143,7 +143,7 @@ export function DashboardPage() {
             label="进程 CPU"
             percent={
               system && system.cpu_count > 0
-                ? (system.process_cpu_percent / system.cpu_count) * 100
+                ? system.process_cpu_percent / system.cpu_count
                 : null
             }
             displayValue={
