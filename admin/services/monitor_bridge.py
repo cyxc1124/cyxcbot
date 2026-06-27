@@ -222,7 +222,7 @@ def _get_db_size_mb() -> float:
     db_url = os.getenv("SQLALCHEMY_DATABASE_URL", "sqlite+aiosqlite:///data/cyxcbot.db")
     if "sqlite" not in db_url:
         return 0.0
-    path = db_url.split(":///")[-1]
+    path = db_url.split(":///")[-1].split("?")[0]
     db_path = Path(path) if Path(path).is_absolute() else Path.cwd() / path
     if not db_path.exists():
         return 0.0
