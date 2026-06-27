@@ -118,12 +118,12 @@ class VideoApi:
 
             headers = self._get_headers(uid)
 
-            logger.debug(f"请求UP主 {uid} 视频列表: {url[:100]}...")
+            logger.debug("请求UP主 {} 视频列表: {}...", uid, url[:100])
 
             async with self.session.get(url, headers=headers, timeout=15) as response:
                 if response.status != 200:
                     logger.warning(
-                        f"获取UP主 {uid} 视频列表失败: HTTP {response.status}"
+                        "获取UP主 {} 视频列表失败: HTTP {}", uid, response.status
                     )
                     return None
 
@@ -131,14 +131,16 @@ class VideoApi:
 
                 if data.get("code") != 0:
                     logger.warning(
-                        f"获取UP主 {uid} 视频列表失败: {data.get('message', '未知错误')}"
+                        "获取UP主 {} 视频列表失败: {}",
+                        uid,
+                        data.get("message", "未知错误"),
                     )
                     return None
 
                 vlist = data.get("data", {}).get("list", {}).get("vlist", [])
 
                 if not vlist:
-                    logger.debug(f"UP主 {uid} 没有投稿视频")
+                    logger.debug("UP主 {} 没有投稿视频", uid)
                     return []
 
                 videos = []
@@ -146,15 +148,15 @@ class VideoApi:
                     try:
                         video = VideoInfo.from_api_data(item)
                         videos.append(video)
-                    except Exception as e:
-                        logger.warning(f"解析视频信息失败: {e}")
+                    except Exception:
+                        logger.opt(exception=True).warning("解析视频信息失败")
                         continue
 
-                logger.info(f"成功获取UP主 {uid} 的 {len(videos)} 个视频")
+                logger.info("成功获取UP主 {} 的 {} 个视频", uid, len(videos))
                 return videos
 
-        except Exception as e:
-            logger.error(f"获取UP主 {uid} 视频列表异常: {e}")
+        except Exception:
+            logger.opt(exception=True).error("获取UP主 {} 视频列表异常", uid)
             return None
 
     async def get_latest_video(self, uid: int) -> Optional[VideoInfo]:
@@ -204,20 +206,20 @@ class VideoApi:
                 timeout=15,
             ) as response:
                 if response.status != 200:
-                    logger.warning(f"获取视频详情失败: HTTP {response.status}")
+                    logger.warning("获取视频详情失败: HTTP {}", response.status)
                     return None
 
                 payload = await response.json()
                 if payload.get("code") != 0:
                     logger.warning(
-                        f"获取视频详情失败: {payload.get('message', '未知错误')}"
+                        "获取视频详情失败: {}", payload.get("message", "未知错误")
                     )
                     return None
 
                 data = payload.get("data") or {}
                 return VideoInfo.from_api_data(data)
-        except Exception as exc:
-            logger.error(f"获取视频详情异常: {exc}")
+        except Exception:
+            logger.opt(exception=True).error("获取视频详情异常")
             return None
 
 

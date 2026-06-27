@@ -31,8 +31,8 @@ def _get_allowed_qq_numbers() -> set[int]:
             if qq_str.isdigit():
                 allowed.add(int(qq_str))
         return allowed
-    except Exception as exc:
-        logger.warning(f"读取状态查询权限配置失败: {exc}")
+    except Exception:
+        logger.opt(exception=True).warning("读取状态查询权限配置失败")
         return set()
 
 
@@ -43,24 +43,24 @@ async def check_status_permission(
     user_id = event.user_id
 
     if await SUPERUSER(bot, event):
-        logger.info(f"NoneBot 超级用户 {user_id} 查询机器人状态")
+        logger.info("NoneBot 超级用户 {} 查询机器人状态", user_id)
         return True
 
     if user_id in _get_allowed_qq_numbers():
-        logger.info(f"允许的用户 {user_id} 查询机器人状态")
+        logger.info("允许的用户 {} 查询机器人状态", user_id)
         return True
 
     snap = get_config_service().get_snapshot()
     if isinstance(event, GroupMessageEvent):
         if is_status_check_enabled_for_group_from_snapshot(str(event.group_id), snap):
-            logger.info(f"群组 {event.group_id} 内用户 {user_id} 查询机器人状态")
+            logger.info("群组 {} 内用户 {} 查询机器人状态", event.group_id, user_id)
             return True
     elif isinstance(event, PrivateMessageEvent):
         if is_status_check_enabled_for_user_from_snapshot(str(user_id), snap):
-            logger.info(f"好友 {user_id} 查询机器人状态")
+            logger.info("好友 {} 查询机器人状态", user_id)
             return True
 
-    logger.warning(f"用户 {user_id} 尝试查询机器人状态，但无权限")
+    logger.warning("用户 {} 尝试查询机器人状态，但无权限", user_id)
     return False
 
 
@@ -86,8 +86,8 @@ async def handle_status_command(
     except FinishedException:
         # FinishedException是NoneBot内部异常，用于结束处理器，不应该处理
         raise
-    except Exception as e:
-        logger.error(f"获取机器人状态失败: {e}")
+    except Exception:
+        logger.opt(exception=True).error("获取机器人状态失败")
         await status_cmd.finish("❌ 获取状态信息失败，请稍后重试")
 
 
@@ -147,8 +147,8 @@ async def get_bot_status() -> str:
 
         return status_msg
 
-    except Exception as e:
-        logger.error(f"构建状态信息失败: {e}")
+    except Exception:
+        logger.opt(exception=True).error("构建状态信息失败")
         return "❌ 获取状态信息时发生错误"
 
 
@@ -190,8 +190,8 @@ def get_system_info() -> str:
                 return f"{base_info} [Container]"
 
         return base_info
-    except Exception as e:
-        logger.error(f"获取系统信息失败: {e}")
+    except Exception:
+        logger.opt(exception=True).error("获取系统信息失败")
         return "未知"
 
 
@@ -203,8 +203,8 @@ def get_memory_info() -> str:
         total_mb = memory.total // (1024 * 1024)
         percent = memory.percent
         return f"{used_mb}MB / {total_mb}MB ({percent:.1f}%)"
-    except Exception as e:
-        logger.error(f"获取内存信息失败: {e}")
+    except Exception:
+        logger.opt(exception=True).error("获取内存信息失败")
         return "未知"
 
 
@@ -221,8 +221,8 @@ def get_bot_connection_status() -> str:
             return f"已连接 {bot_count} 个机器人"
         else:
             return "未连接任何机器人"
-    except Exception as e:
-        logger.error(f"获取机器人连接状态失败: {e}")
+    except Exception:
+        logger.opt(exception=True).error("获取机器人连接状态失败")
         return "未知"
 
 
@@ -384,7 +384,10 @@ def get_container_memory_info():
             usage_percent = (usage_gb / limit_gb) * 100
 
             logger.info(
-                f"成功读取容器内存: 限制={limit_gb:.1f}GB, 使用={usage_gb:.1f}GB (来源: {found_limit_file})"
+                "成功读取容器内存: 限制={:.1f}GB, 使用={:.1f}GB (来源: {})",
+                limit_gb,
+                usage_gb,
+                found_limit_file,
             )
 
             return {
@@ -398,7 +401,9 @@ def get_container_memory_info():
             }
         else:
             logger.debug(
-                f"未找到有效的容器内存信息: limit_bytes={limit_bytes}, usage_bytes={usage_bytes}"
+                "未找到有效的容器内存信息: limit_bytes={}, usage_bytes={}",
+                limit_bytes,
+                usage_bytes,
             )
 
     except Exception as e:
@@ -436,8 +441,8 @@ def get_detailed_memory_info() -> str:
             suffix = ""
 
         return f"{used_gb:.1f}GB/{total_gb:.1f}GB (使用率{percent:.1f}%, 可用{available_gb:.1f}GB){suffix}"
-    except Exception as e:
-        logger.error(f"获取详细内存信息失败: {e}")
+    except Exception:
+        logger.opt(exception=True).error("获取详细内存信息失败")
         return get_memory_info()  # 降级到基础信息
 
 
@@ -527,8 +532,8 @@ def get_cpu_info() -> str:
                 return f"{cpu_percent:.1f}% ({cpu_count}核, {cpu_freq.current:.0f}MHz)"
             else:
                 return f"{cpu_percent:.1f}% ({cpu_count}核)"
-    except Exception as e:
-        logger.error(f"获取CPU信息失败: {e}")
+    except Exception:
+        logger.opt(exception=True).error("获取CPU信息失败")
         return "无法获取"
 
 
@@ -549,8 +554,8 @@ def get_detailed_connection_status() -> str:
             status_details.append(f"{bot_id}({bot_type})")
 
         return f"{len(bots)}个连接: {', '.join(status_details)}"
-    except Exception as e:
-        logger.error(f"获取详细连接状态失败: {e}")
+    except Exception:
+        logger.opt(exception=True).error("获取详细连接状态失败")
         return get_bot_connection_status()
 
 
@@ -568,8 +573,8 @@ def get_plugin_status() -> str:
             plugin_names.append(name)
 
         return f"{len(plugins)}个插件已加载: {', '.join(plugin_names[:3])}{'...' if len(plugin_names) > 3 else ''}"
-    except Exception as e:
-        logger.error(f"获取插件状态失败: {e}")
+    except Exception:
+        logger.opt(exception=True).error("获取插件状态失败")
         return "无法获取插件状态"
 
 
@@ -602,8 +607,8 @@ def get_technical_info() -> str:
             pass
 
         return tech_info
-    except Exception as e:
-        logger.error(f"获取技术信息失败: {e}")
+    except Exception:
+        logger.opt(exception=True).error("获取技术信息失败")
         return ""
 
 
@@ -613,6 +618,6 @@ def get_nonebot_version() -> str:
         import nonebot
 
         return nonebot.__version__
-    except Exception as e:
-        logger.error(f"获取NoneBot版本失败: {e}")
+    except Exception:
+        logger.opt(exception=True).error("获取NoneBot版本失败")
         return "未知"

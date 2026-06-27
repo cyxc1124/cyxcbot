@@ -127,8 +127,8 @@ async def resolve_short_url(
             timeout=aiohttp.ClientTimeout(total=10),
         ) as response:
             return str(response.url)
-    except Exception as exc:
-        logger.warning(f"解析短链失败: {url}, {exc}")
+    except Exception:
+        logger.opt(exception=True).warning("解析短链失败: {}", url)
         return None
 
 

@@ -227,7 +227,7 @@ async def init_browser(proxy=None, **kwargs) -> BrowserContext:
     if cookie_str:
         cookies = _parse_cookie_string(cookie_str)
         await context.add_cookies(cookies)
-        logger.info(f"已注入 {len(cookies)} 个B站Cookie")
+        logger.info("已注入 {} 个B站Cookie", len(cookies))
     else:
         logger.warning("未登录 B 站，截图可能触发验证码")
 
@@ -251,8 +251,8 @@ class DynamicScreenshot:
             self.browser_context = await init_browser()
             logger.info("浏览器初始化成功")
             return True
-        except Exception as e:
-            logger.error(f"浏览器初始化失败: {e}")
+        except Exception:
+            logger.opt(exception=True).error("浏览器初始化失败")
             return False
 
     async def close_browser(self):
@@ -262,8 +262,8 @@ class DynamicScreenshot:
                 await self.browser_context.close()
                 self.browser_context = None
             logger.info("浏览器已关闭")
-        except Exception as e:
-            logger.warning(f"关闭浏览器时出错: {e}")
+        except Exception:
+            logger.opt(exception=True).warning("关闭浏览器时出错")
 
     async def _find_dynamic_card(self, page: Page) -> Optional[ElementHandle]:
         """按 DYNAMIC_CARD_SELECTORS 定位截图根节点。"""
@@ -316,7 +316,7 @@ class DynamicScreenshot:
         ready = _opus_view_first_child_is_ready(first_class)
         if not ready:
             logger.warning(
-                "opus 页 .bili-opus-view 首子非 .opus-module-author（%s），"
+                "opus 页 .bili-opus-view 首子非 .opus-module-author（{}），"
                 "fallback 到 t.bilibili.com",
                 first_class or "未渲染",
             )
@@ -352,11 +352,11 @@ class DynamicScreenshot:
                     continue
                 card = await self._find_dynamic_card(page)
                 if card and not await self._is_login_interstitial(page):
-                    logger.info(f"动态 {dynamic_id} 页面已加载: {current_url}")
+                    logger.info("动态 {} 页面已加载: {}", dynamic_id, current_url)
                     try:
                         await page.wait_for_load_state("networkidle", timeout=8000)
                     except Exception as e:
-                        logger.warning(f"等待网络空闲超时: {e}")
+                        logger.warning("等待网络空闲超时: {}", e)
                     await page.wait_for_timeout(500)
                     return card, page.url
 
@@ -405,8 +405,10 @@ class DynamicScreenshot:
 
         if box["height"] > MAX_DYNAMIC_SCREENSHOT_HEIGHT:
             logger.warning(
-                f"动态 {dynamic_id} 内容过高 ({box['height']}px)，"
-                f"截图高度限制为 {MAX_DYNAMIC_SCREENSHOT_HEIGHT}px"
+                "动态 {} 内容过高 ({}px)，截图高度限制为 {}px",
+                dynamic_id,
+                box["height"],
+                MAX_DYNAMIC_SCREENSHOT_HEIGHT,
             )
 
         screenshot = await card.screenshot(type="png")
@@ -416,7 +418,7 @@ class DynamicScreenshot:
 
     async def get_dynamic_screenshot_pc(self, dynamic_id: int, page: Page):
         """加载动态/opus 页面并定位截图区域。"""
-        logger.info(f"开始截图动态 {dynamic_id}")
+        logger.info("开始截图动态 {}", dynamic_id)
 
         try:
             await page.set_viewport_size({"width": 1920, "height": 1080})
@@ -427,8 +429,8 @@ class DynamicScreenshot:
 
         except Notfound:
             raise
-        except Exception as e:
-            logger.error(f"动态{dynamic_id}截图处理失败: {str(e)}")
+        except Exception:
+            logger.opt(exception=True).error("动态{}截图处理失败", dynamic_id)
             raise
 
     async def get_dynamic_screenshot(
@@ -461,29 +463,29 @@ class DynamicScreenshot:
                 screenshot = await self._capture_dynamic_card(page, card, dynamic_id)
                 screenshot_size = len(screenshot)
                 logger.info(
-                    f"动态 {dynamic_id} 截图成功，大小: {screenshot_size} bytes"
+                    "动态 {} 截图成功，大小: {} bytes", dynamic_id, screenshot_size
                 )
 
                 return screenshot, None, page_url
 
             except Exception as full_screenshot_error:
-                logger.error(f"PC端截图失败: {full_screenshot_error}")
+                logger.opt(exception=True).error("PC端截图失败")
                 return None, f"截图失败: {str(full_screenshot_error)}", None
 
         except Notfound:
-            logger.warning(f"动态 {dynamic_id} 不存在")
+            logger.warning("动态 {} 不存在", dynamic_id)
             return None, "动态不存在", None
         except Exception as e:
             error_msg = f"截图失败: {str(e)}"
-            logger.warning(f"动态{dynamic_id}截图失败: {error_msg}")
+            logger.opt(exception=True).warning("动态{}截图失败", dynamic_id)
             return None, error_msg, None
 
         finally:
             if page:
                 try:
                     await page.close()
-                except Exception as close_error:
-                    logger.warning(f"关闭页面时出错: {close_error}")
+                except Exception:
+                    logger.opt(exception=True).warning("关闭页面时出错")
 
 
 # 全局截图器实例
@@ -507,7 +509,7 @@ async def get_dynamic_screenshot(
 
     # 如果浏览器未初始化，尝试初始化
     if not dynamic_screenshot.browser_context:
-        logger.info(f"为动态 {dynamic_id} 初始化浏览器")
+        logger.info("为动态 {} 初始化浏览器", dynamic_id)
         success = await dynamic_screenshot.init_browser()
         if not success:
             logger.error("浏览器初始化失败")
@@ -517,7 +519,7 @@ async def get_dynamic_screenshot(
         dynamic_id
     )
     if error:
-        logger.warning(f"动态 {dynamic_id} 截图失败: {error}")
+        logger.warning("动态 {} 截图失败: {}", dynamic_id, error)
     else:
         logger.debug("动态 {} 截图请求完成", dynamic_id)
     return screenshot, error, page_url

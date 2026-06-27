@@ -207,7 +207,7 @@ async def get_wbi_key(
 
     # 检查缓存（非强制刷新时）
     if not force_refresh and _wbi_key_cache and time.time() < _wbi_key_expire:
-        logger.debug(f"使用缓存的WBI Key: {_wbi_key_cache[:8]}...")
+        logger.debug("使用缓存的WBI Key: {}...", _wbi_key_cache[:8])
         return _wbi_key_cache
 
     try:
@@ -224,13 +224,13 @@ async def get_wbi_key(
 
         async with session.get(url, headers=headers, timeout=10) as resp:
             if resp.status != 200:
-                logger.warning(f"获取WBI Key失败: HTTP {resp.status}")
+                logger.warning("获取WBI Key失败: HTTP {}", resp.status)
                 return None
 
             data = await resp.json()
 
             if data.get("code") != 0:
-                logger.warning(f"获取WBI Key失败: {data.get('message')}")
+                logger.warning("获取WBI Key失败: {}", data.get("message"))
                 return None
 
             wbi_img = data.get("data", {}).get("wbi_img", {})
@@ -250,11 +250,11 @@ async def get_wbi_key(
             _wbi_key_cache = wbi_key
             _wbi_key_expire = time.time() + 600
 
-            logger.debug(f"获取WBI Key成功: {wbi_key[:8]}...")
+            logger.debug("获取WBI Key成功: {}...", wbi_key[:8])
             return wbi_key
 
-    except Exception as e:
-        logger.warning(f"获取WBI Key异常: {e}")
+    except Exception:
+        logger.opt(exception=True).warning("获取WBI Key异常")
         return None
 
 
