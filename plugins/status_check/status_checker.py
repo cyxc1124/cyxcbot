@@ -1,3 +1,4 @@
+import asyncio
 import platform
 import time
 from datetime import datetime
@@ -121,7 +122,7 @@ async def get_bot_status() -> str:
             status_msg += f"内存使用: {memory_detail}\n"
 
         # 获取CPU使用率
-        cpu_info = get_cpu_info()
+        cpu_info = await get_cpu_info()
         status_msg += f"CPU使用率: {cpu_info}\n"
 
         # 获取进程内存信息
@@ -506,8 +507,13 @@ def get_container_cpu_limit():
     return None
 
 
-def get_cpu_info() -> str:
-    """获取CPU使用率和核心数（容器感知）"""
+def get_cpu_info_impl() -> str:
+    """获取CPU使用率和核心数（容器感知）
+
+    ponytail: psutil.cpu_percent(interval=1) 是同步阻塞调用，
+    调用方应通过 asyncio.to_thread() 将其卸载到独立线程，
+    避免阻塞 NoneBot 异步事件循环。
+    """
     try:
         env = detect_container_environment()
         cpu_percent = psutil.cpu_percent(interval=1)
@@ -535,6 +541,11 @@ def get_cpu_info() -> str:
     except Exception:
         logger.opt(exception=True).error("获取CPU信息失败")
         return "无法获取"
+
+
+async def get_cpu_info() -> str:
+    """异步包装 get_cpu_info_impl，避免阻塞事件循环"""
+    return await asyncio.to_thread(get_cpu_info_impl)
 
 
 def get_detailed_connection_status() -> str:
