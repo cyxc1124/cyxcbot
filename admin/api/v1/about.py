@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 from fastapi import APIRouter
+from nonebot.log import logger
 
 from admin.deps import AdminUser, RequireSetup
 from admin.schemas.about import AboutResponse
@@ -101,6 +102,7 @@ def _fetch_json(url: str) -> dict | None:
         with urlopen(req, timeout=5) as resp:
             return json.loads(resp.read())
     except Exception:
+        logger.debug("GitHub API request failed: {}", url)
         return None
 
 
@@ -109,13 +111,17 @@ def _check_github_update(
 ) -> tuple[bool | None, str | None]:
     """Returns (update_available, update_url)."""
     if git_tag:
-        data = _fetch_json(f"https://api.github.com/repos/{_GITHUB_REPO}/releases/latest")
+        data = _fetch_json(
+            f"https://api.github.com/repos/{_GITHUB_REPO}/releases/latest"
+        )
         if data and data.get("tag_name") != git_tag:
             return (True, data.get("html_url"))
         if data:
             return (False, None)
     elif git_branch and git_commit:
-        data = _fetch_json(f"https://api.github.com/repos/{_GITHUB_REPO}/commits/{git_branch}")
+        data = _fetch_json(
+            f"https://api.github.com/repos/{_GITHUB_REPO}/commits/{git_branch}"
+        )
         if data:
             latest = data.get("sha", "")
             if latest[:8] != git_commit[:8]:
@@ -125,18 +131,23 @@ def _check_github_update(
 
 
 async def _refresh_update_cache(
-    git_tag: str | None, git_commit: str | None, git_branch: str | None,
+    git_tag: str | None,
+    git_commit: str | None,
+    git_branch: str | None,
 ) -> None:
     """Offloads sync GitHub HTTP to thread pool."""
     try:
         available, url = await asyncio.to_thread(
-            _check_github_update, git_tag, git_commit, git_branch,
+            _check_github_update,
+            git_tag,
+            git_commit,
+            git_branch,
         )
         _update_cache["available"] = available
         _update_cache["url"] = url
         _update_cache["ts"] = time.time()
     except Exception:
-        pass
+        logger.debug("GitHub update check failed")
 
 
 @router.get("/about", response_model=AboutResponse)
@@ -160,6 +171,7 @@ async def get_about(_: AdminUser):
     # Fire-and-forget async refresh if stale
     cached = _update_cache["available"]
     if cached is None or time.time() - _update_cache["ts"] > _CACHE_TTL:
+        _update_cache["ts"] = time.time()  # ponytail: block concurrent duplicate fires
         asyncio.create_task(_refresh_update_cache(git_tag, git_commit, git_branch))
 
     return AboutResponse(
