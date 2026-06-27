@@ -261,10 +261,16 @@ export interface LiveMonitorStatus {
 }
 
 export interface SystemMonitorStatus {
+  process_cpu_percent: number
+  process_memory_mb: number
+  db_size_mb: number
+  log_size_mb: number
   cpu_percent: number
+  cpu_count: number
   memory_percent: number
   memory_used_mb: number
   memory_total_mb: number
+  memory_limit_mb: number | null
   disk_percent: number
 }
 

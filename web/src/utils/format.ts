@@ -70,6 +70,17 @@ export function formatMemoryMb(mb: number): string {
   return `${Math.round(mb)} MB`
 }
 
+/** 存储容量（MB 输入）：≥ 1 GB → GB，≥ 1 MB → MB，< 1 MB → KB */
+export function formatStorageSize(mb: number): string {
+  if (mb >= MEMORY_GB_THRESHOLD_MB) {
+    return `${(mb / MEMORY_GB_THRESHOLD_MB).toFixed(1)} GB`
+  }
+  if (mb >= 1) {
+    return `${mb.toFixed(1)} MB`
+  }
+  return `${Math.round(mb * 1024)} KB`
+}
+
 /** 内存已用/总量，总量 ≥ 1 GB 时两项均以 GB 显示 */
 export function formatMemoryUsage(usedMb: number, totalMb: number): string {
   if (totalMb >= MEMORY_GB_THRESHOLD_MB) {

@@ -1,7 +1,10 @@
 interface ResourceUsageCardProps {
   label: string
+  /** Normalized 0-100 value for progress bar width and color */
   percent: number | null | undefined
   detail?: string
+  /** Override the displayed number (e.g. "180.0%") when percent is a normalized ratio */
+  displayValue?: string
 }
 
 function barColor(percent: number): string {
@@ -16,9 +19,9 @@ function textColor(percent: number): string {
   return 'text-emerald-600 dark:text-emerald-400'
 }
 
-export function ResourceUsageCard({ label, percent, detail }: ResourceUsageCardProps) {
-  const value = percent ?? null
-  const clamped = value !== null ? Math.min(100, Math.max(0, value)) : null
+export function ResourceUsageCard({ label, percent, detail, displayValue }: ResourceUsageCardProps) {
+  const pct = percent ?? null
+  const clamped = pct !== null ? Math.min(100, Math.max(0, pct)) : null
 
   return (
     <div className="card flex flex-col gap-3">
@@ -29,7 +32,7 @@ export function ResourceUsageCard({ label, percent, detail }: ResourceUsageCardP
             clamped !== null ? textColor(clamped) : 'text-muted-foreground'
           }`}
         >
-          {clamped !== null ? `${clamped.toFixed(1)}%` : '—'}
+          {displayValue ?? (clamped !== null ? `${clamped.toFixed(1)}%` : '—')}
         </p>
       </div>
 

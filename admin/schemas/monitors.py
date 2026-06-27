@@ -81,8 +81,14 @@ class ManualCheckResponse(BaseModel):
 
 
 class SystemMonitorStatusResponse(BaseModel):
+    process_cpu_percent: float
+    process_memory_mb: float
+    db_size_mb: float
+    log_size_mb: float
     cpu_percent: float
+    cpu_count: int
     memory_percent: float
     memory_used_mb: float
     memory_total_mb: float
+    memory_limit_mb: Optional[float] = None
     disk_percent: float
