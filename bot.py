@@ -65,11 +65,11 @@ def _collect_obsolete_env_vars() -> list[str]:
 def log_startup_config() -> None:
     """Log environment variables that still affect runtime; plugin config lives in Web Admin."""
     runtime = _detect_runtime()
-    logger.info(f"运行环境: {runtime}")
+    logger.info("运行环境: {}", runtime)
 
     env_file = Path(".env")
     if runtime == "本地" and env_file.exists():
-        logger.info(f"本地配置文件: {env_file.resolve()}")
+        logger.info("本地配置文件: {}", env_file.resolve())
 
     startup_vars = {
         "NoneBot": ["HOST", "PORT", "COMMAND_START", "COMMAND_SEP", "LOG_LEVEL"],
@@ -93,7 +93,7 @@ def log_startup_config() -> None:
 
     for category, keys in startup_vars.items():
         items = [f"{key}={_format_env_value(key, os.getenv(key))}" for key in keys]
-        logger.info(f"{category}: {' | '.join(items)}")
+        logger.info("{}: {}", category, " | ".join(items))
 
     obsolete = _collect_obsolete_env_vars()
     if obsolete:
@@ -209,8 +209,8 @@ try:
     else:
         nonebot.load_plugins("plugins")
     logger.info("插件加载完成")
-except Exception as e:
-    logger.error(f"插件加载失败: {e}")
+except Exception:
+    logger.opt(exception=True).error("插件加载失败")
     raise
 
 if __name__ == "__main__":

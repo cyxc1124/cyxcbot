@@ -19,6 +19,6 @@ class BilibiliConfig:
             if cookie:
                 logger.debug("已加载 B 站 Cookie")
             return cookie or ""
-        except Exception as e:
-            logger.error(f"读取 B 站 Cookie 配置失败: {e}")
+        except Exception:
+            logger.opt(exception=True).error("读取 B 站 Cookie 配置失败")
             return ""

@@ -123,7 +123,9 @@ class LiveMonitor:
         """新一轮开播时放弃已过期的待投递下播通知，避免 pending 标志永久滞留。"""
         if not state.pending_end:
             return
-        logger.warning(f"房间 {room_id} 在新一轮开播前仍有未投递的下播通知，已放弃重试")
+        logger.warning(
+            "房间 {} 在新一轮开播前仍有未投递的下播通知，已放弃重试", room_id
+        )
         state.clear_pending_end()
 
     async def _deliver_pending_start_before_end(
@@ -141,12 +143,12 @@ class LiveMonitor:
         effective_room_info = state.room_info
         if effective_room_info is None:
             logger.warning(
-                f"房间 {room_id} 关播时仍有待投递开播通知，但缺少房间快照，已放弃"
+                "房间 {} 关播时仍有待投递开播通知，但缺少房间快照，已放弃", room_id
             )
             state.clear_pending_start()
             return
 
-        logger.info(f"房间 {room_id} 关播前补发待投递的开播通知")
+        logger.info("房间 {} 关播前补发待投递的开播通知", room_id)
         await self._deliver_start_notification(
             room_id,
             state,
@@ -156,7 +158,7 @@ class LiveMonitor:
         )
         if state.pending_start:
             logger.warning(
-                f"房间 {room_id} 关播前补发开播通知仍未成功，已放弃待投递标志"
+                "房间 {} 关播前补发开播通知仍未成功，已放弃待投递标志", room_id
             )
             state.clear_pending_start()
 
@@ -177,7 +179,7 @@ class LiveMonitor:
             if (user_info or state.user_info)
             else f"房间{room_id}"
         )
-        logger.info(f"确认关播: {streamer_name} (房间 {room_id})")
+        logger.info("确认关播: {} (房间 {})", streamer_name, room_id)
         await self._deliver_pending_start_before_end(
             room_id,
             state,
@@ -224,8 +226,10 @@ class LiveMonitor:
             try:
                 await client.stop()
                 logger.debug("房间 {} WebSocket 监控已停止（配置已移除）", room_id)
-            except Exception as e:
-                logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
+            except Exception:
+                logger.opt(exception=True).warning(
+                    "停止房间 {} 弹幕客户端时出错", room_id
+                )
         self._danmaku_client_epoch.pop(room_id, None)
         self.room_states.pop(room_id, None)
         self.initialized_rooms.pop(room_id, None)
@@ -250,7 +254,7 @@ class LiveMonitor:
         if not self.config.bilibili_cookie:
             logger.warning("直播监控: 未登录 B 站 直播间信息可能无法获取")
 
-        logger.info(f"直播监控已初始化，监控房间数: {len(self.room_states)}")
+        logger.info("直播监控已初始化，监控房间数: {}", len(self.room_states))
 
     async def _load_persisted_states(self):
         session = get_session()
@@ -303,12 +307,13 @@ class LiveMonitor:
             try:
                 await self._remove_room(room_id)
                 await self._delete_persisted_state(room_id)
-            except Exception as e:
-                logger.error(f"移除房间 {room_id} 监控失败: {e}")
+            except Exception:
+                logger.opt(exception=True).error("移除房间 {} 监控失败", room_id)
         if removed_room_ids:
             logger.info(
-                f"直播监控已移除 {len(removed_room_ids)} 个不再配置的房间: "
-                f"{', '.join(sorted(removed_room_ids))}"
+                "直播监控已移除 {} 个不再配置的房间: {}",
+                len(removed_room_ids),
+                ", ".join(sorted(removed_room_ids)),
             )
 
         readded_room_ids = new_room_ids_set - old_configured_room_ids
@@ -320,15 +325,18 @@ class LiveMonitor:
                 if stale_client:
                     try:
                         await stale_client.stop()
-                    except Exception as e:
-                        logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
+                    except Exception:
+                        logger.opt(exception=True).warning(
+                            "停止房间 {} 弹幕客户端时出错", room_id
+                        )
                 await self._delete_persisted_state(room_id)
-            except Exception as e:
-                logger.error(f"重置房间 {room_id} 持久化状态失败: {e}")
+            except Exception:
+                logger.opt(exception=True).error("重置房间 {} 持久化状态失败", room_id)
         if readded_room_ids:
             logger.info(
-                f"直播监控已重新启用 {len(readded_room_ids)} 个房间，已重置监控状态: "
-                f"{', '.join(sorted(readded_room_ids))}"
+                "直播监控已重新启用 {} 个房间，已重置监控状态: {}",
+                len(readded_room_ids),
+                ", ".join(sorted(readded_room_ids)),
             )
 
         new_room_ids: list[str] = list(readded_room_ids)
@@ -363,7 +371,7 @@ class LiveMonitor:
                     max_instances=1,
                     misfire_grace_time=60,
                 )
-                logger.info(f"直播监控轮询间隔已更新为 {poll_interval}秒")
+                logger.info("直播监控轮询间隔已更新为 {}秒", poll_interval)
 
             if old_ws != self.config.use_websocket:
                 if self.config.use_websocket:
@@ -380,23 +388,25 @@ class LiveMonitor:
                     for room_id in existing_room_ids:
                         try:
                             await self._restart_single_danmaku_client(room_id)
-                        except Exception as e:
-                            logger.error(
-                                f"房间 {room_id} Cookie 热更新 WebSocket 客户端失败: {e}"
+                        except Exception:
+                            logger.opt(exception=True).error(
+                                "房间 {} Cookie 热更新 WebSocket 客户端失败", room_id
                             )
                         # 避免同时连接过多
                         await asyncio.sleep(1)
                     if existing_room_ids:
                         logger.info(
-                            f"直播监控 Cookie 已变更，已更新 "
-                            f"{len(existing_room_ids)} 个 WebSocket 客户端"
+                            "直播监控 Cookie 已变更，已更新 {} 个 WebSocket 客户端",
+                            len(existing_room_ids),
                         )
 
                 for room_id in new_room_ids:
                     try:
                         await self._start_single_danmaku_client(room_id)
-                    except Exception as e:
-                        logger.error(f"房间 {room_id} 弹幕客户端启动失败: {e}")
+                    except Exception:
+                        logger.opt(exception=True).error(
+                            "房间 {} 弹幕客户端启动失败", room_id
+                        )
 
         self._sender.include_room_info = self.config.include_room_info
         self._sender.templates = self.config.message_templates
@@ -407,9 +417,10 @@ class LiveMonitor:
             else self.config.monitor_interval
         )
         logger.info(
-            f"直播监控配置已热重载: {len(self.config.live_monitor_mapping)} 个房间, "
-            f"轮询间隔 {poll_interval}秒, "
-            f"WebSocket={'开启' if self.config.use_websocket else '关闭'}"
+            "直播监控配置已热重载: {} 个房间, 轮询间隔 {}秒, WebSocket={}",
+            len(self.config.live_monitor_mapping),
+            poll_interval,
+            "开启" if self.config.use_websocket else "关闭",
         )
 
     async def start_monitoring(self):
@@ -436,12 +447,13 @@ class LiveMonitor:
             # API 轮询作为备用，间隔较长
             poll_interval = max(300, self.config.monitor_interval * 5)
             logger.info(
-                f"直播监控已启动：WebSocket 实时监控 + API 轮询备用（间隔 {poll_interval}秒）"
+                "直播监控已启动：WebSocket 实时监控 + API 轮询备用（间隔 {}秒）",
+                poll_interval,
             )
         else:
             # 仅使用 API 轮询
             poll_interval = self.config.monitor_interval
-            logger.info(f"直播监控已启动：仅 API 轮询模式（间隔 {poll_interval}秒）")
+            logger.info("直播监控已启动：仅 API 轮询模式（间隔 {}秒）", poll_interval)
 
         # 使用APScheduler添加定时任务
         scheduler.add_job(
@@ -471,8 +483,8 @@ class LiveMonitor:
         try:
             scheduler.remove_job("live_monitor_check")
             logger.info("直播监控定时任务已移除")
-        except Exception as e:
-            logger.warning(f"移除定时任务时出错: {e}")
+        except Exception:
+            logger.opt(exception=True).warning("移除定时任务时出错")
 
         # 关闭API管理器
         await api_manager.close()
@@ -484,8 +496,8 @@ class LiveMonitor:
         for room_id in self._configured_room_ids():
             try:
                 await self._start_single_danmaku_client(room_id)
-            except Exception as e:
-                logger.error(f"房间 {room_id} 弹幕客户端启动失败: {e}")
+            except Exception:
+                logger.opt(exception=True).error("房间 {} 弹幕客户端启动失败", room_id)
             # 避免同时连接过多
             await asyncio.sleep(1)
 
@@ -503,8 +515,10 @@ class LiveMonitor:
             try:
                 await old_client.stop()
                 logger.debug("房间 {} WebSocket 监控已停止（凭据变更）", room_id)
-            except Exception as e:
-                logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
+            except Exception:
+                logger.opt(exception=True).warning(
+                    "停止房间 {} 弹幕客户端时出错", room_id
+                )
 
     async def _start_single_danmaku_client(self, room_id: str):
         """启动单个房间的弹幕客户端"""
@@ -556,8 +570,10 @@ class LiveMonitor:
             try:
                 await client.stop()
                 logger.debug("房间 {} 弹幕客户端已停止", room_id)
-            except Exception as e:
-                logger.warning(f"停止房间 {room_id} 弹幕客户端时出错: {e}")
+            except Exception:
+                logger.opt(exception=True).warning(
+                    "停止房间 {} 弹幕客户端时出错", room_id
+                )
         self._danmaku_clients.clear()
         self._danmaku_client_epoch.clear()
         logger.info("所有 WebSocket 客户端已停止")
@@ -578,8 +594,10 @@ class LiveMonitor:
         if prefetch_task:
             try:
                 prefetched = await prefetch_task
-            except Exception as e:
-                logger.warning(f"房间 {room_id} 卡片素材预下载失败: {e}")
+            except Exception:
+                logger.opt(exception=True).warning(
+                    "房间 {} 卡片素材预下载失败", room_id
+                )
 
         return room_info, user_info, prefetched
 
@@ -619,7 +637,7 @@ class LiveMonitor:
 
         if is_live_began:
             streamer_name = user_info.name if user_info else f"房间{room_id}"
-            logger.info(f"确认开播: {streamer_name} (房间 {room_id})")
+            logger.info("确认开播: {} (房间 {})", streamer_name, room_id)
             self._supersede_pending_end(room_id, state)
             await self._deliver_start_notification(
                 room_id,
@@ -748,21 +766,23 @@ class LiveMonitor:
                     )
                     streamer_name = user_info.name if user_info else f"房间{room_id}"
                     logger.info(
-                        f"房间 {room_id} ({streamer_name}) 首次基准：当前正在直播，不推送"
+                        "房间 {} ({}) 首次基准：当前正在直播，不推送",
+                        room_id,
+                        streamer_name,
                     )
                 else:
                     streamer_name = user_info.name if user_info else f"房间{room_id}"
                     logger.info(
-                        f"房间 {room_id} ({streamer_name}) 首次基准：当前未开播"
+                        "房间 {} ({}) 首次基准：当前未开播", room_id, streamer_name
                     )
 
                 self.initialized_rooms[room_id] = True
                 await self._persist_state(room_id)
                 return True
 
-            logger.warning(f"无法获取房间 {room_id} 的初始状态")
-        except Exception as e:
-            logger.error(f"初始化房间 {room_id} 状态失败: {e}")
+            logger.warning("无法获取房间 {} 的初始状态", room_id)
+        except Exception:
+            logger.opt(exception=True).error("初始化房间 {} 状态失败", room_id)
 
         return False
 
@@ -821,8 +841,10 @@ class LiveMonitor:
         if prefetch_task:
             try:
                 prefetched = await prefetch_task
-            except Exception as e:
-                logger.warning(f"房间 {room_id} 卡片素材预下载失败: {e}")
+            except Exception:
+                logger.opt(exception=True).warning(
+                    "房间 {} 卡片素材预下载失败", room_id
+                )
 
         if not room_info:
             logger.debug("无法获取房间 {} 的最新状态", room_id)
@@ -841,7 +863,7 @@ class LiveMonitor:
         # 处理开播事件
         if is_live_began:
             streamer_name = user_info.name if user_info else f"房间{room_id}"
-            logger.info(f"检测到开播: {streamer_name} (房间 {room_id})")
+            logger.info("检测到开播: {} (房间 {})", streamer_name, room_id)
             self._supersede_pending_end(room_id, state)
             await self._deliver_start_notification(
                 room_id,
@@ -870,7 +892,7 @@ class LiveMonitor:
         # 处理关播事件
         elif is_live_ended:
             streamer_name = user_info.name if user_info else f"房间{room_id}"
-            logger.info(f"检测到关播: {streamer_name} (房间 {room_id})")
+            logger.info("检测到关播: {} (房间 {})", streamer_name, room_id)
             await self._deliver_pending_start_before_end(
                 room_id,
                 state,
@@ -1028,7 +1050,7 @@ class LiveMonitor:
             and state.pending_start
             and state.previous_status == LiveStatus.LIVE
         ):
-            logger.info(f"重试房间 {room_id} 待投递的开播通知")
+            logger.info("重试房间 {} 待投递的开播通知", room_id)
             await self._deliver_start_notification(
                 room_id,
                 state,
@@ -1044,7 +1066,7 @@ class LiveMonitor:
             and state.previous_status != LiveStatus.LIVE
             and effective_room_info is not None
         ):
-            logger.info(f"重试房间 {room_id} 待投递的下播通知")
+            logger.info("重试房间 {} 待投递的下播通知", room_id)
             await self._deliver_end_notification(
                 room_id,
                 state,
@@ -1077,7 +1099,7 @@ class LiveMonitor:
             else self.config.live_monitor_user_mapping.get(room_id, [])
         )
         if not groups and not users:
-            logger.warning(f"房间 {room_id} 没有配置推送目标")
+            logger.warning("房间 {} 没有配置推送目标", room_id)
             return empty_delivery_result()
 
         effective_room_info = room_info if room_info is not None else state.room_info
@@ -1111,7 +1133,10 @@ class LiveMonitor:
             if not target.success
         ]
         logger.warning(
-            f"直播{status}通知投递未全部成功: room_id={room_id} failed={failed_targets}"
+            "直播{}通知投递未全部成功: room_id={} failed={}",
+            status,
+            room_id,
+            failed_targets,
         )
         return delivery
 
@@ -1154,9 +1179,13 @@ async def start_live_monitor():
     user_count = sum(len(users) for users in config.live_monitor_user_mapping.values())
     mode = "WebSocket+轮询备用" if config.use_websocket else "仅轮询"
     logger.info(
-        f"准备启动直播监控: {len(config.live_monitor_mapping)} 个房间, "
-        f"{group_count} 个群推送目标, {user_count} 个好友推送目标, "
-        f"模式 {mode}, 间隔 {config.monitor_interval}秒"
+        "准备启动直播监控: {} 个房间, {} 个群推送目标, {} 个好友推送目标, "
+        "模式 {}, 间隔 {}秒",
+        len(config.live_monitor_mapping),
+        group_count,
+        user_count,
+        mode,
+        config.monitor_interval,
     )
 
     try:
@@ -1168,8 +1197,8 @@ async def start_live_monitor():
 
         logger.info("B站直播监控已启动")
 
-    except Exception as e:
-        logger.error(f"启动直播监控失败: {e}")
+    except Exception:
+        logger.opt(exception=True).error("启动直播监控失败")
         live_monitor_instance = None
 
 
@@ -1187,6 +1216,6 @@ async def stop_live_monitor():
         live_monitor_instance = None
         logger.info("直播监控已完全停止")
 
-    except Exception as e:
-        logger.error(f"停止直播监控时出错: {e}")
+    except Exception:
+        logger.opt(exception=True).error("停止直播监控时出错")
         live_monitor_instance = None
