@@ -66,18 +66,19 @@ def _fastapi_version() -> str | None:
 
 
 def _frontend_versions() -> tuple[str | None, str | None]:
-    """ponytail: reads web/package.json at startup.
-    Returns (react_version, tailwindcss_version)."""
+    """Returns (react_version, tailwindcss_version) resolved from lockfile,
+    which reflects the version actually installed by npm ci."""
     try:
-        pkg_path = (
+        lock_path = (
             Path(__file__).resolve().parent.parent.parent.parent
             / "web"
-            / "package.json"
+            / "package-lock.json"
         )
-        with open(pkg_path) as f:
-            pkg = json.load(f)
-        react = pkg.get("dependencies", {}).get("react", "").lstrip("^")
-        tailwind = pkg.get("devDependencies", {}).get("tailwindcss", "").lstrip("^")
+        with open(lock_path) as f:
+            lock = json.load(f)
+        packages = lock.get("packages", {})
+        react = packages.get("node_modules/react", {}).get("version", "")
+        tailwind = packages.get("node_modules/tailwindcss", {}).get("version", "")
         return (react or None, tailwind or None)
     except Exception:
         return (None, None)
