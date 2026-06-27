@@ -50,14 +50,12 @@ class DynamicFetcher:
     async def fetch_user_dynamics(
         self,
         uid: str,
-        current_pinned_id: Optional[int] = None,
         cookie: Optional[str] = None,
     ) -> Optional[tuple[List[DynamicItem], Optional[int]]]:
         """直接调用B站API获取用户动态
 
         Args:
             uid: 用户ID
-            current_pinned_id: 当前记录的置顶动态ID
             cookie: B站用户Cookie（可选，用于绕过限制）
 
         Returns:
@@ -147,20 +145,13 @@ class DynamicFetcher:
                             if pinned_id:
                                 pinned_id_int = int(pinned_id)
                                 current_pinned_id = pinned_id_int
-                            # 置顶动态总是包含在结果中，由调用方决定是否推送
-                            should_include = True
-                            if should_include:
-                                logger.debug("解析到置顶动态: {}", pinned_id)
-                        else:
-                            # 非置顶动态直接包含
-                            should_include = True
+                            logger.debug("解析到置顶动态: {}", pinned_id)
 
-                        if should_include:
-                            dynamic_item = await self._parse_dynamic_item(
-                                item, uid, is_pinned
-                            )
-                            if dynamic_item:
-                                dynamics.append(dynamic_item)
+                        dynamic_item = await self._parse_dynamic_item(
+                            item, uid, is_pinned
+                        )
+                        if dynamic_item:
+                            dynamics.append(dynamic_item)
 
                     except Exception as e:
                         logger.warning("解析动态项失败 {}: {}", uid, e)
@@ -740,13 +731,3 @@ class DynamicFetcher:
         }
 
         return type_mapping.get(bili_type, 0)  # 默认其他动态
-
-    def _get_author_type_description(self, author_type: str) -> str:
-        """获取作者类型描述"""
-        type_descriptions = {
-            "AUTHOR_TYPE_NORMAL": "普通用户",
-            "AUTHOR_TYPE_OFFICIAL": "官方账号",
-            "AUTHOR_TYPE_BIZ": "商业账号",
-            "AUTHOR_TYPE_BIG_VIP": "大会员",
-        }
-        return type_descriptions.get(author_type, "未知类型")

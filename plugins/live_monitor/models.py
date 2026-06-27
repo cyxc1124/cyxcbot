@@ -76,22 +76,6 @@ class LiveRoomState:
         if start_time is not None:
             self.start_time = start_time
 
-    def apply_status(
-        self,
-        new_room_info: RoomInfo,
-        new_status: LiveStatus,
-        *,
-        new_user_info: Optional[UserInfo] = None,
-        start_time: Optional[int] = None,
-    ) -> None:
-        """兼容旧调用方，语义同 sync_observed_status。"""
-        self.sync_observed_status(
-            new_room_info,
-            new_status,
-            new_user_info=new_user_info,
-            start_time=start_time,
-        )
-
     def update_status(
         self, new_room_info: RoomInfo, new_user_info: Optional[UserInfo] = None
     ) -> tuple[bool, bool]:

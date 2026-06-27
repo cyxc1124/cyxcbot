@@ -463,11 +463,11 @@ class DynamicMonitor:
 
         logger.debug("检查UP主 {} 的动态", uid)
 
-        # 获取用户的动态列表，传递当前置顶动态ID用于比较
+        # 获取用户的动态列表
         current_pinned_id = self.pinned_dynamic_ids.get(uid)
         # 获取Cookie（如果配置了）
         cookie = self.config.bilibili_cookie if self.config.bilibili_cookie else None
-        result = await self.fetcher.fetch_user_dynamics(uid, current_pinned_id, cookie)
+        result = await self.fetcher.fetch_user_dynamics(uid, cookie=cookie)
 
         if not result:
             logger.debug("获取UP主 {} 动态失败", uid)
@@ -751,7 +751,7 @@ class DynamicMonitor:
         # 获取用户的动态列表
         cookie = self.config.bilibili_cookie if self.config.bilibili_cookie else None
         logger.debug("开始获取UP主 {} 的动态数据", uid)
-        result = await self.fetcher.fetch_user_dynamics(uid, None, cookie)
+        result = await self.fetcher.fetch_user_dynamics(uid, cookie=cookie)
         logger.debug("获取UP主 {} 的动态数据完成: {}", uid, result is not None)
 
         if not result:
@@ -819,7 +819,7 @@ class DynamicMonitor:
         # 获取用户的动态列表
         cookie = self.config.bilibili_cookie if self.config.bilibili_cookie else None
         logger.debug("开始获取UP主 {} 的动态数据", uid)
-        result = await self.fetcher.fetch_user_dynamics(uid, None, cookie)
+        result = await self.fetcher.fetch_user_dynamics(uid, cookie=cookie)
         logger.debug("获取UP主 {} 的动态数据完成: {}", uid, result is not None)
 
         if not result:
