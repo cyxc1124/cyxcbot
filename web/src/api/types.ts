@@ -316,6 +316,11 @@ export interface AboutInfo {
   build_time: string | null
   build_number: string | null
   python_version: string
+  fastapi_version: string | null
+  react_version: string | null
+  tailwindcss_version: string | null
+  update_available: boolean | null
+  update_url: string | null
 }
 
 export interface MonitorActionResult {
