@@ -220,7 +220,10 @@ def _bilibili_hostname(value: str) -> str | None:
     text = value.strip()
     if not text or _BVID.fullmatch(text):
         return None
-    parsed = urlparse(text if "://" in text else f"https://{text.lstrip('/')}")
+    try:
+        parsed = urlparse(text if "://" in text else f"https://{text.lstrip('/')}")
+    except ValueError:
+        return None
     return parsed.hostname
 
 
