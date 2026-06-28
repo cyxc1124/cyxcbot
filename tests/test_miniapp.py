@@ -73,3 +73,10 @@ def test_looks_bilibili_related_rejects_substring_bypass() -> None:
     assert looks_bilibili_related("https://www.bilibili.com/video/BV1GJ411x7h7")
     assert looks_bilibili_related("b23.tv/abc123")
     assert looks_bilibili_related("BV1GJ411x7h7")
+
+
+def test_looks_bilibili_related_rejects_malformed_ipv6() -> None:
+    # QQ mini-app JSON may contain bracketed strings that urlparse rejects.
+    assert not looks_bilibili_related("[::1")
+    assert not looks_bilibili_related("foo[bar]baz")
+    assert not looks_bilibili_related("http://[invalid")
