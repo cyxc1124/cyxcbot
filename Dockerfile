@@ -17,7 +17,7 @@ ENV GIT_TAG=${GIT_TAG} \
 RUN npm run build
 
 # Python 运行时镜像
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # 构建参数（由GitHub Action传入）
 ARG GIT_TAG=""

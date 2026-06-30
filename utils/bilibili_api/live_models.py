@@ -46,7 +46,7 @@ class RoomInfo:
                 try:
                     dt = datetime.fromisoformat(live_time)
                     live_start_time = int(dt.timestamp())
-                except (ValueError, TypeError, OverflowError):
+                except ValueError, TypeError, OverflowError:
                     live_start_time = 0
 
         # 处理封面URL

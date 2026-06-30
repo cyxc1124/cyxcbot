@@ -260,7 +260,7 @@ def _get_cgroup_memory_limit_mb() -> float | None:
         if raw != "max":
             limit = int(raw) / (1024**2)
             return limit
-    except (OSError, ValueError):
+    except OSError, ValueError:
         pass
 
     # cgroup v1 fallback — ignore the "unlimited" sentinel (~2^63)
@@ -269,7 +269,7 @@ def _get_cgroup_memory_limit_mb() -> float | None:
         limit_bytes = int(raw)
         if limit_bytes > 0 and limit_bytes < 2**60:  # unlikely a real host
             return limit_bytes / (1024**2)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         pass
 
     return None

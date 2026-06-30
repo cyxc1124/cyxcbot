@@ -475,7 +475,7 @@ def get_container_cpu_limit():
                         else:  # cgroup v1
                             if content != "-1" and content.isdigit():
                                 quota = int(content)
-                except (OSError, ValueError):
+                except OSError, ValueError:
                     continue
 
         # 查找CPU周期（仅cgroup v1需要）
@@ -488,7 +488,7 @@ def get_container_cpu_limit():
                             if content.isdigit():
                                 period = int(content)
                                 break
-                    except (OSError, ValueError):
+                    except OSError, ValueError:
                         continue
 
         if quota and period and quota > 0:
@@ -618,7 +618,7 @@ def get_technical_info() -> str:
             if not env["is_container"] or connections > 10:
                 suffix = " [容器内可见]" if env["is_container"] else ""
                 tech_info += f"网络连接数: {connections}{suffix}\n"
-        except (psutil.Error, OSError):
+        except psutil.Error, OSError:
             pass
 
         # 系统启动时间
@@ -630,7 +630,7 @@ def get_technical_info() -> str:
                 )
             else:
                 tech_info += f"系统启动: {boot_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-        except (psutil.Error, OSError, OverflowError, ValueError):
+        except psutil.Error, OSError, OverflowError, ValueError:
             pass
 
         return tech_info

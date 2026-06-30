@@ -51,7 +51,7 @@ deploy/             # Docker Compose / Helm
 
 ## 开发与测试
 
-- 使用仓库根目录 `.venv/`，勿用系统全局 Python。不存在时：`python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt`
+- 使用 **Python 3.14** 与仓库根目录 `.venv/`，勿用系统全局 Python。不存在时：`python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt`（pyenv 用户可在项目根执行 `pyenv local 3.14`）
 - 格式化/检查：`./.venv/bin/ruff check .`、`./.venv/bin/ruff format .`
 - 测试：`./.venv/bin/pytest`
 - 本地启动：`./.venv/bin/python bot.py`；前端另开终端 `cd web && npm run dev`
