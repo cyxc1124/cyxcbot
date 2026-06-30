@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import importlib
-import importlib.util
 import os
 import sys
-import types
 import uuid
-from collections.abc import Callable, Iterator
-from pathlib import Path
+from collections.abc import Callable
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import nonebot
 import pytest
@@ -20,37 +16,20 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from utils.bilibili_api import LiveStatus
 
-ROOT = Path(__file__).resolve().parents[1]
-PLUGINS_ROOT = ROOT / "plugins"
-DYNAMIC_MONITOR_ROOT = PLUGINS_ROOT / "dynamic_monitor"
-LIVE_MONITOR_ROOT = PLUGINS_ROOT / "live_monitor"
-
-_DYNAMIC_MODULE_KEYS = (
-    "plugins",
-    "plugins.dynamic_monitor",
-    "plugins.dynamic_monitor.config",
+_MONITOR_PLUGIN_MODULES = (
     "plugins.dynamic_monitor.dynamic_monitor",
-    "plugins.dynamic_monitor.sender",
-    "nonebot_plugin_apscheduler",
-    "utils.screenshot",
-)
-
-_LIVE_MODULE_KEYS = (
-    "plugins",
-    "plugins.live_monitor",
-    "plugins.live_monitor.models",
-    "plugins.live_monitor.config",
     "plugins.live_monitor.live_monitor",
-    "plugins.live_monitor.danmaku_client",
-    "plugins.live_monitor.card_generator",
-    "plugins.live_monitor.sender",
-    "nonebot_plugin_apscheduler",
 )
 
 
 def _shared_sqlite_url() -> str:
     db_id = uuid.uuid4().hex
     return f"sqlite+aiosqlite:///file:{db_id}?mode=memory&cache=shared&uri=true"
+
+
+def _model_column_is_real(model_cls: type, attr: str) -> bool:
+    column = getattr(model_cls, attr, None)
+    return column is not None and not isinstance(column, MagicMock)
 
 
 def _ensure_real_db_modules():
@@ -61,12 +40,19 @@ def _ensure_real_db_modules():
             from shared.db.base import Model
             from shared.db.models import DynamicMonitorState, LiveMonitorState
 
-            return Model, DynamicMonitorState, LiveMonitorState
+            if _model_column_is_real(
+                DynamicMonitorState, "uid"
+            ) and _model_column_is_real(LiveMonitorState, "room_id"):
+                return Model, DynamicMonitorState, LiveMonitorState
 
-    for name in ("shared.db.models", "shared.db.base", "nonebot_plugin_orm"):
-        module = sys.modules.get(name)
-        if module is not None and isinstance(module, MagicMock):
-            del sys.modules[name]
+    for name in (
+        "shared.config.service",
+        "shared.db.models",
+        "shared.db.base",
+        "nonebot_plugin_orm",
+        *_MONITOR_PLUGIN_MODULES,
+    ):
+        sys.modules.pop(name, None)
 
     os.environ["SQLALCHEMY_DATABASE_URL"] = _shared_sqlite_url()
     try:
@@ -76,6 +62,7 @@ def _ensure_real_db_modules():
             sqlalchemy_database_url=os.environ["SQLALCHEMY_DATABASE_URL"],
             alembic_startup_check=False,
         )
+    if "nonebot_plugin_orm" not in sys.modules:
         nonebot.load_plugin("nonebot_plugin_orm")
 
     import shared.db.base  # noqa: F401 — register ORM metadata
@@ -83,93 +70,6 @@ def _ensure_real_db_modules():
     from shared.db.models import DynamicMonitorState, LiveMonitorState
 
     return Model, DynamicMonitorState, LiveMonitorState
-
-
-def _ensure_package(name: str, path: Path) -> types.ModuleType:
-    if name in sys.modules:
-        module = sys.modules[name]
-        if not getattr(module, "__path__", None):
-            module.__path__ = [str(path)]
-        return module
-    module = types.ModuleType(name)
-    module.__path__ = [str(path)]
-    sys.modules[name] = module
-    return module
-
-
-def _load_module(root: Path, qualified_name: str, filename: str):
-    path = root / filename
-    spec = importlib.util.spec_from_file_location(
-        qualified_name,
-        path,
-        submodule_search_locations=[str(root)],
-    )
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    sys.modules[qualified_name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def _import_dynamic_monitor(
-    session_factory: async_sessionmaker[AsyncSession],
-) -> tuple[Any, Any]:
-    _ensure_package("plugins", PLUGINS_ROOT)
-    _ensure_package("plugins.dynamic_monitor", DYNAMIC_MONITOR_ROOT)
-
-    sys.modules["nonebot_plugin_apscheduler"] = MagicMock(scheduler=MagicMock())
-    sys.modules["plugins.dynamic_monitor.sender"] = MagicMock(
-        DynamicSender=MagicMock(),
-    )
-    sys.modules["utils.screenshot"] = MagicMock(
-        init_screenshot_service=AsyncMock(),
-        close_screenshot_service=AsyncMock(),
-        get_dynamic_screenshot=AsyncMock(),
-    )
-
-    config_mod = _load_module(
-        DYNAMIC_MONITOR_ROOT, "plugins.dynamic_monitor.config", "config.py"
-    )
-    monitor_mod = _load_module(
-        DYNAMIC_MONITOR_ROOT,
-        "plugins.dynamic_monitor.dynamic_monitor",
-        "dynamic_monitor.py",
-    )
-    monitor_mod.get_session = lambda: session_factory()
-    return config_mod.Config, monitor_mod.DynamicMonitor
-
-
-def _import_live_monitor(
-    session_factory: async_sessionmaker[AsyncSession],
-) -> tuple[Any, Any, Any]:
-    _ensure_package("plugins", PLUGINS_ROOT)
-    _ensure_package("plugins.live_monitor", LIVE_MONITOR_ROOT)
-
-    sys.modules["nonebot_plugin_apscheduler"] = MagicMock(scheduler=MagicMock())
-    sys.modules["plugins.live_monitor.danmaku_client"] = MagicMock(
-        DanmakuClient=MagicMock(),
-    )
-    sys.modules["plugins.live_monitor.card_generator"] = MagicMock(
-        PrefetchImages=MagicMock(),
-        prefetch_card_images=AsyncMock(),
-    )
-    sys.modules["plugins.live_monitor.sender"] = MagicMock(
-        LiveNotificationSender=MagicMock(),
-    )
-
-    models_mod = _load_module(
-        LIVE_MONITOR_ROOT, "plugins.live_monitor.models", "models.py"
-    )
-    config_mod = _load_module(
-        LIVE_MONITOR_ROOT, "plugins.live_monitor.config", "config.py"
-    )
-    monitor_mod = _load_module(
-        LIVE_MONITOR_ROOT,
-        "plugins.live_monitor.live_monitor",
-        "live_monitor.py",
-    )
-    monitor_mod.get_session = lambda: session_factory()
-    return config_mod.Config, monitor_mod.LiveMonitor, models_mod.LiveRoomState
 
 
 def _attach_select_counter(engine) -> tuple[dict[str, int], Callable[[], None]]:
@@ -206,47 +106,19 @@ async def db_context():
         await engine.dispose()
 
 
-@pytest.fixture
-def dynamic_monitor_modules(
-    db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
-) -> Iterator[tuple[Any, Any]]:
-    _, factory, _, _ = db_context
-    snapshot = {key: sys.modules.get(key) for key in _DYNAMIC_MODULE_KEYS}
-    try:
-        yield _import_dynamic_monitor(factory)
-    finally:
-        for key in _DYNAMIC_MODULE_KEYS:
-            original = snapshot[key]
-            if original is None:
-                sys.modules.pop(key, None)
-            else:
-                sys.modules[key] = original
-
-
-@pytest.fixture
-def live_monitor_modules(
-    db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
-) -> Iterator[tuple[Any, Any, Any]]:
-    _, factory, _, _ = db_context
-    snapshot = {key: sys.modules.get(key) for key in _LIVE_MODULE_KEYS}
-    try:
-        yield _import_live_monitor(factory)
-    finally:
-        for key in _LIVE_MODULE_KEYS:
-            original = snapshot[key]
-            if original is None:
-                sys.modules.pop(key, None)
-            else:
-                sys.modules[key] = original
-
-
 @pytest.mark.asyncio
 async def test_dynamic_load_persisted_states_all_exist(
     db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
-    dynamic_monitor_modules: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, factory, DynamicMonitorState, _ = db_context
-    Config, DynamicMonitor = dynamic_monitor_modules
+    from plugins.dynamic_monitor.config import Config
+    from plugins.dynamic_monitor.dynamic_monitor import DynamicMonitor
+
+    monkeypatch.setattr(
+        "plugins.dynamic_monitor.dynamic_monitor.get_session",
+        lambda: factory(),
+    )
 
     async with factory() as session:
         async with session.begin():
@@ -279,9 +151,17 @@ async def test_dynamic_load_persisted_states_all_exist(
 
 @pytest.mark.asyncio
 async def test_dynamic_load_persisted_states_none_exist(
-    dynamic_monitor_modules: tuple[Any, Any],
+    db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    Config, DynamicMonitor = dynamic_monitor_modules
+    _, factory, _, _ = db_context
+    from plugins.dynamic_monitor.config import Config
+    from plugins.dynamic_monitor.dynamic_monitor import DynamicMonitor
+
+    monkeypatch.setattr(
+        "plugins.dynamic_monitor.dynamic_monitor.get_session",
+        lambda: factory(),
+    )
 
     monitor = DynamicMonitor(
         Config(dynamic_monitor_mapping={"111": ["g1"], "222": ["g1"]})
@@ -296,10 +176,16 @@ async def test_dynamic_load_persisted_states_none_exist(
 @pytest.mark.asyncio
 async def test_dynamic_load_persisted_states_partial(
     db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
-    dynamic_monitor_modules: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, factory, DynamicMonitorState, _ = db_context
-    Config, DynamicMonitor = dynamic_monitor_modules
+    from plugins.dynamic_monitor.config import Config
+    from plugins.dynamic_monitor.dynamic_monitor import DynamicMonitor
+
+    monkeypatch.setattr(
+        "plugins.dynamic_monitor.dynamic_monitor.get_session",
+        lambda: factory(),
+    )
 
     async with factory() as session:
         async with session.begin():
@@ -336,10 +222,16 @@ async def test_dynamic_load_persisted_states_partial(
 @pytest.mark.asyncio
 async def test_dynamic_load_persisted_states_single_query(
     db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
-    dynamic_monitor_modules: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     engine, factory, DynamicMonitorState, _ = db_context
-    Config, DynamicMonitor = dynamic_monitor_modules
+    from plugins.dynamic_monitor.config import Config
+    from plugins.dynamic_monitor.dynamic_monitor import DynamicMonitor
+
+    monkeypatch.setattr(
+        "plugins.dynamic_monitor.dynamic_monitor.get_session",
+        lambda: factory(),
+    )
 
     uids = [f"{i:03d}" for i in range(120)]
     async with factory() as session:
@@ -370,10 +262,17 @@ async def test_dynamic_load_persisted_states_single_query(
 @pytest.mark.asyncio
 async def test_live_load_persisted_states_all_exist(
     db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
-    live_monitor_modules: tuple[Any, Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, factory, _, LiveMonitorState = db_context
-    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    from plugins.live_monitor.config import Config
+    from plugins.live_monitor.live_monitor import LiveMonitor
+    from plugins.live_monitor.models import LiveRoomState
+
+    monkeypatch.setattr(
+        "plugins.live_monitor.live_monitor.get_session",
+        lambda: factory(),
+    )
 
     async with factory() as session:
         async with session.begin():
@@ -405,9 +304,18 @@ async def test_live_load_persisted_states_all_exist(
 
 @pytest.mark.asyncio
 async def test_live_load_persisted_states_none_exist(
-    live_monitor_modules: tuple[Any, Any, Any],
+    db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    _, factory, _, _ = db_context
+    from plugins.live_monitor.config import Config
+    from plugins.live_monitor.live_monitor import LiveMonitor
+    from plugins.live_monitor.models import LiveRoomState
+
+    monkeypatch.setattr(
+        "plugins.live_monitor.live_monitor.get_session",
+        lambda: factory(),
+    )
 
     monitor = LiveMonitor(Config(live_monitor_mapping={"111": ["g1"], "222": ["g1"]}))
     monitor.room_states["111"] = LiveRoomState(room_id=111)
@@ -422,10 +330,17 @@ async def test_live_load_persisted_states_none_exist(
 @pytest.mark.asyncio
 async def test_live_load_persisted_states_partial(
     db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
-    live_monitor_modules: tuple[Any, Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, factory, _, LiveMonitorState = db_context
-    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    from plugins.live_monitor.config import Config
+    from plugins.live_monitor.live_monitor import LiveMonitor
+    from plugins.live_monitor.models import LiveRoomState
+
+    monkeypatch.setattr(
+        "plugins.live_monitor.live_monitor.get_session",
+        lambda: factory(),
+    )
 
     async with factory() as session:
         async with session.begin():
@@ -460,10 +375,17 @@ async def test_live_load_persisted_states_partial(
 @pytest.mark.asyncio
 async def test_live_load_persisted_states_single_query(
     db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
-    live_monitor_modules: tuple[Any, Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     engine, factory, _, LiveMonitorState = db_context
-    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    from plugins.live_monitor.config import Config
+    from plugins.live_monitor.live_monitor import LiveMonitor
+    from plugins.live_monitor.models import LiveRoomState
+
+    monkeypatch.setattr(
+        "plugins.live_monitor.live_monitor.get_session",
+        lambda: factory(),
+    )
 
     room_ids = [f"{i:03d}" for i in range(120)]
     async with factory() as session:

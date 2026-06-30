@@ -37,28 +37,44 @@ def _shared_sqlite_url() -> str:
     return f"sqlite+aiosqlite:///file:{db_id}?mode=memory&cache=shared&uri=true"
 
 
+def _model_column_is_real(model_cls: type, attr: str) -> bool:
+    column = getattr(model_cls, attr, None)
+    return column is not None and not isinstance(column, MagicMock)
+
+
 def _ensure_real_db_modules():
     existing = sys.modules.get("shared.db.models")
     if existing is not None and not isinstance(existing, MagicMock):
         user = getattr(existing, "User", None)
         if user is not None and not isinstance(user, MagicMock):
-            from shared.config.service import ConfigService
             from shared.db.base import Model
             from shared.db.models import (
                 DynamicMonitorState,
                 DynamicTarget,
                 LiveMonitorState,
                 LiveTarget,
+                SystemSetting,
             )
 
-            return (
-                ConfigService,
-                Model,
-                DynamicMonitorState,
-                DynamicTarget,
-                LiveMonitorState,
-                LiveTarget,
-            )
+            if _model_column_is_real(
+                DynamicMonitorState, "uid"
+            ) and _model_column_is_real(LiveMonitorState, "room_id"):
+                if _model_column_is_real(SystemSetting, "key"):
+                    service_mod = sys.modules.get("shared.config.service")
+                    if service_mod is not None and isinstance(
+                        getattr(service_mod, "SystemSetting", None), MagicMock
+                    ):
+                        sys.modules.pop("shared.config.service", None)
+                    from shared.config.service import ConfigService
+
+                    return (
+                        ConfigService,
+                        Model,
+                        DynamicMonitorState,
+                        DynamicTarget,
+                        LiveMonitorState,
+                        LiveTarget,
+                    )
 
     for name in (
         "shared.config.service",
@@ -66,9 +82,7 @@ def _ensure_real_db_modules():
         "shared.db.base",
         "nonebot_plugin_orm",
     ):
-        module = sys.modules.get(name)
-        if module is not None and isinstance(module, MagicMock):
-            del sys.modules[name]
+        sys.modules.pop(name, None)
 
     os.environ["SQLALCHEMY_DATABASE_URL"] = _shared_sqlite_url()
     try:
@@ -78,17 +92,10 @@ def _ensure_real_db_modules():
             sqlalchemy_database_url=os.environ["SQLALCHEMY_DATABASE_URL"],
             alembic_startup_check=False,
         )
+    if "nonebot_plugin_orm" not in sys.modules:
         nonebot.load_plugin("nonebot_plugin_orm")
 
-    import shared.db.base
-    import shared.db.models
-
-    importlib.reload(shared.db.base)
-    importlib.reload(shared.db.models)
-
-    if "shared.config.service" in sys.modules:
-        importlib.reload(sys.modules["shared.config.service"])
-
+    import shared.db.base  # noqa: F401 — register ORM metadata
     from shared.config.service import ConfigService
     from shared.db.base import Model
     from shared.db.models import (
@@ -137,6 +144,9 @@ def _load_dynamic_monitor_module(qualified_name: str, filename: str):
 def _import_dynamic_monitor_modules(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> tuple[Any, Any]:
+    sys.modules.pop("plugins.dynamic_monitor.dynamic_monitor", None)
+    sys.modules.pop("plugins.dynamic_monitor.config", None)
+
     _ensure_package("plugins", PLUGINS_ROOT)
     _ensure_package("plugins.dynamic_monitor", DYNAMIC_MONITOR_ROOT)
 
@@ -156,6 +166,8 @@ def _import_dynamic_monitor_modules(
     monitor_mod = _load_dynamic_monitor_module(
         "plugins.dynamic_monitor.dynamic_monitor", "dynamic_monitor.py"
     )
+    if isinstance(monitor_mod.DynamicMonitorState, MagicMock):
+        raise RuntimeError("DynamicMonitorState was not loaded from real DB models")
     monitor_mod.get_session = lambda: session_factory()
     return config_mod.Config, monitor_mod.DynamicMonitor
 
