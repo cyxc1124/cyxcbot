@@ -4,7 +4,7 @@ sidebar_position: 6
 
 # 本地开发
 
-本地开发请使用仓库根目录下的 `.venv/`，不要使用系统全局 Python。
+本地开发请使用 **Python 3.14** 与仓库根目录下的 `.venv/`，不要使用系统全局 Python。
 
 ## 环境准备
 
@@ -23,7 +23,7 @@ cp env.example .env
 # 编辑 .env：WEB_SECRET_KEY、SQLALCHEMY_DATABASE_URL 等
 ```
 
-Windows（PowerShell）创建 venv：`py -3.11 -m venv .venv`，激活：`.\.venv\Scripts\Activate.ps1`。
+Windows（PowerShell）创建 venv：`py -3.14 -m venv .venv`，激活：`.\.venv\Scripts\Activate.ps1`。
 
 ## 启动服务
 

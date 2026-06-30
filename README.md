@@ -109,7 +109,7 @@ CI 流程见 [`.github/workflows/build-windows.yml`](.github/workflows/build-win
 
 ### 方式三：本地开发
 
-本地开发请使用仓库根目录下的 `.venv/`，不要使用系统全局 Python。
+本地开发请使用 **Python 3.14** 与仓库根目录下的 `.venv/`，不要使用系统全局 Python。
 
 ```bash
 # 1. 创建虚拟环境
@@ -132,7 +132,7 @@ cp env.example .env
 cd web && npm install && npm run dev
 ```
 
-Windows（PowerShell）创建 venv：`py -3.11 -m venv .venv`，激活：`.\.venv\Scripts\Activate.ps1`。
+Windows（PowerShell）创建 venv：`py -3.14 -m venv .venv`，激活：`.\.venv\Scripts\Activate.ps1`。
 
 ---
 
