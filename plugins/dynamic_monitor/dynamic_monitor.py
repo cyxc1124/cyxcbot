@@ -17,6 +17,7 @@ from sqlalchemy import select
 
 from shared.config.service import get_config_service
 from shared.db.models import DynamicMonitorState
+from shared.monitor.background_task import spawn_background_task
 from shared.monitor.check_cycle import CheckCycleLogger
 from shared.monitor.poll_schedule import compute_dynamic_poll_schedule
 from utils.bilibili_api import DynamicFetcher
@@ -110,10 +111,8 @@ class DynamicMonitor:
         self.pinned_dynamic_ids.pop(uid, None)
         self._delivery_locks.pop(uid, None)
 
-    def _spawn_delivery_task(self, coro) -> None:
-        task = asyncio.create_task(coro)
-        self._delivery_tasks.add(task)
-        task.add_done_callback(self._delivery_tasks.discard)
+    def _spawn_delivery_task(self, coro, *, name: str = "动态投递") -> None:
+        spawn_background_task(name, coro, tasks=self._delivery_tasks)
 
     async def _drain_pending_deliveries(self) -> None:
         """等待所有后台投递任务完成。"""

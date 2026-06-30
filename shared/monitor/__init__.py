@@ -1,5 +1,6 @@
 """Monitor polling schedule helpers."""
 
+from .background_task import spawn_background_task
 from .check_cycle import SUCCESS_HEARTBEAT_CYCLES, CheckCycleLogger
 from .poll_schedule import (
     DYNAMIC_MIN_TICK_INTERVAL_SECONDS,
@@ -15,4 +16,5 @@ __all__ = [
     "CheckCycleLogger",
     "compute_dynamic_poll_schedule",
     "compute_live_poll_schedule",
+    "spawn_background_task",
 ]
