@@ -13,6 +13,7 @@ from nonebot.adapters.onebot.v11.message import Message
 from nonebot.log import logger
 from nonebot_plugin_apscheduler import scheduler
 from nonebot_plugin_orm import get_session
+from sqlalchemy import select
 
 from shared.config.service import get_config_service
 from shared.db.models import DynamicMonitorState
@@ -199,10 +200,21 @@ class DynamicMonitor:
             if uid not in self.pinned_dynamic_ids:
                 self.pinned_dynamic_ids[uid] = None
 
+        uids = list(self.config.dynamic_monitor_mapping.keys())
+        if not uids:
+            return
+
         session = get_session()
         async with session.begin():
-            for uid in self.config.dynamic_monitor_mapping.keys():
-                row = await session.get(DynamicMonitorState, uid)
+            rows = (
+                await session.scalars(
+                    select(DynamicMonitorState).where(DynamicMonitorState.uid.in_(uids))
+                )
+            ).all()
+            by_uid = {row.uid: row for row in rows}
+
+            for uid in uids:
+                row = by_uid.get(uid)
                 if row:
                     self.last_dynamic_ids[uid] = row.last_dynamic_id
                     self.initialized_uids[uid] = row.initialized
