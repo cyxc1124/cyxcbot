@@ -16,6 +16,7 @@ import aiohttp
 from nonebot.log import logger
 from nonebot_plugin_apscheduler import scheduler
 from nonebot_plugin_orm import get_session
+from sqlalchemy import select
 
 from shared.config.service import get_config_service
 from shared.db.models import LiveMonitorState
@@ -257,15 +258,26 @@ class LiveMonitor:
         logger.info("直播监控已初始化，监控房间数: {}", len(self.room_states))
 
     async def _load_persisted_states(self):
+        room_ids = list(self.config.live_monitor_mapping.keys())
+        if not room_ids:
+            return
+
         session = get_session()
         async with session.begin():
-            for room_id in self.config.live_monitor_mapping.keys():
-                row = await session.get(LiveMonitorState, room_id)
+            rows = (
+                await session.scalars(
+                    select(LiveMonitorState).where(
+                        LiveMonitorState.room_id.in_(room_ids)
+                    )
+                )
+            ).all()
+            by_room_id = {row.room_id: row for row in rows}
+
+            for room_id in room_ids:
+                row = by_room_id.get(room_id)
                 if row and room_id in self.room_states:
                     state = self.room_states[room_id]
                     if row.previous_status:
-                        from utils.bilibili_api import LiveStatus
-
                         try:
                             state.previous_status = LiveStatus[row.previous_status]
                         except KeyError:
