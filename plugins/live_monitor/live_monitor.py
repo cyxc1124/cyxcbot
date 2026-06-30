@@ -20,6 +20,7 @@ from sqlalchemy import select
 
 from shared.config.service import get_config_service
 from shared.db.models import LiveMonitorState
+from shared.monitor.background_task import spawn_background_task
 from shared.monitor.check_cycle import CheckCycleLogger
 from shared.notify.delivery import DeliveryResult, empty_delivery_result
 from utils.bilibili_api import LiveStatus, RoomInfo, UserInfo, api_manager
@@ -969,7 +970,11 @@ class LiveMonitor:
             new_user_info=user_info,
             start_time=start_time,
         )
-        asyncio.create_task(self._persist_state(room_id))
+        spawn_background_task(
+            "直播状态持久化 {}",
+            self._persist_state(room_id),
+            name_args=(room_id,),
+        )
 
     async def _deliver_start_notification(
         self,
