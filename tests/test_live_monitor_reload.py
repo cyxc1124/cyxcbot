@@ -268,6 +268,24 @@ async def test_check_all_rooms_only_polls_configured_targets(
 
 
 @pytest.mark.asyncio
+async def test_run_manual_check_reports_checked_and_failed(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111", "222"])
+
+    async def fake_check(room_id: str) -> bool:
+        return room_id == "111"
+
+    monitor._check_room_status = fake_check  # type: ignore[method-assign]
+    monitor._touch_last_check_at = lambda: None  # type: ignore[method-assign]
+
+    result = await monitor.run_manual_check(["111", "222"])
+
+    assert result == {"checked": ["111"], "failed": ["222"]}
+
+
+@pytest.mark.asyncio
 async def test_reload_config_restarts_websocket_clients_when_cookie_changes(
     live_monitor_modules: tuple[Any, Any, Any],
 ) -> None:
