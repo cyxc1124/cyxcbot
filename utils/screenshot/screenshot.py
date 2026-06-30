@@ -351,8 +351,7 @@ class DynamicScreenshot:
             f"https://t.bilibili.com/{dynamic_id}",
         ]
         last_error: Optional[Exception] = None
-        # 确定性「动态不存在」信号：真 404，或 opus 302→t.bilibili.com/0（再 JS 跳 www.bilibili.com/404）
-        saw_not_found = False
+        not_found_urls: List[str] = []  # 收到确定性「不存在」信号的候选 URL
         transient_failures: List[str] = []  # 页面已打开但内容未就绪等可重试原因
 
         for url in urls:
@@ -362,13 +361,13 @@ class DynamicScreenshot:
                     url, wait_until="domcontentloaded", timeout=20000
                 )
                 if not response or response.status == 404:
-                    saw_not_found = True
+                    not_found_urls.append(url)
                     logger.debug("页面返回 404: {}", url)
                     continue
 
                 current_url = page.url
                 if _is_dynamic_not_found_url(current_url):
-                    saw_not_found = True
+                    not_found_urls.append(url)
                     logger.debug("动态不存在（页面跳转到 {}）", current_url)
                     continue
 
@@ -403,17 +402,16 @@ class DynamicScreenshot:
                 last_error = e
                 logger.debug("加载页面失败 {}: {}", url, e)
 
-        # 收到确定性「不存在」信号（真 404 或 opus 302→t.bilibili.com/0）才判定动态不存在，
-        # 且该信号优先于瞬时失败：存在的动态 opus 不会跳 /0，故不会误杀；
-        # 加载超时 / 内容未渲染 / 登录墙 / 风控验证码等属瞬时问题，不能误报「动态不存在」(issue #119)。
-        if saw_not_found:
-            raise Notfound("动态不存在")
+        # 仅当每个候选 URL 都给出确定性「不存在」信号（404 或跳 /0、/404）才判定动态不存在；
+        # fallback 超时 / 渲染失败 / 登录墙等 inconclusive 结果优先，不能因首个 URL 404 就误报。
         if transient_failures:
             raise ScreenshotLoadError(
                 "动态页面加载失败: " + "; ".join(transient_failures)
             )
         if last_error is not None:
             raise last_error
+        if len(not_found_urls) == len(urls):
+            raise Notfound("动态不存在")
         raise ScreenshotLoadError("动态页面加载失败: 未知原因")
 
     async def _prepare_dynamic_card(self, page: Page, card) -> None:

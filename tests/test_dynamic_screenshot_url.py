@@ -315,3 +315,34 @@ async def test_navigate_dynamic_page_login_wall_not_reported_as_notfound() -> No
     with pytest.raises(ScreenshotLoadError) as exc_info:
         await shot._navigate_dynamic_page(page, 1234567890)
     assert not isinstance(exc_info.value, Notfound)
+
+
+@pytest.mark.asyncio
+async def test_navigate_dynamic_page_opus_404_fallback_transient_not_notfound() -> None:
+    """opus 404 但 fallback 仅瞬时失败时，不能因首个 URL 404 就误报「动态不存在」。"""
+    from utils.screenshot.screenshot import (
+        DynamicScreenshot,
+        Notfound,
+        ScreenshotLoadError,
+    )
+
+    page = AsyncMock()
+    page.url = "https://t.bilibili.com/1234567890"
+    page.goto = AsyncMock(
+        side_effect=[
+            MagicMock(status=404),
+            MagicMock(status=200),
+        ]
+    )
+    page.wait_for_load_state = AsyncMock()
+    page.wait_for_timeout = AsyncMock()
+
+    shot = DynamicScreenshot()
+    shot._wait_for_dynamic_content = AsyncMock(return_value=False)
+    shot._is_opus_page_ready = AsyncMock(return_value=True)
+    shot._find_dynamic_card = AsyncMock(return_value=None)
+    shot._is_login_interstitial = AsyncMock(return_value=False)
+
+    with pytest.raises(ScreenshotLoadError) as exc_info:
+        await shot._navigate_dynamic_page(page, 1234567890)
+    assert not isinstance(exc_info.value, Notfound)
