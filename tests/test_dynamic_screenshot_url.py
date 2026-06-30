@@ -174,6 +174,30 @@ async def test_fetch_dynamic_screenshot_skipped_when_disabled(
     assert dynamic.url == "https://t.bilibili.com/1234567890"
 
 
+def test_opus_first_child_title_is_ready() -> None:
+    """带标题图文动态首子为 opus-module-title，应判定就绪、不 fallback（issue #119）。"""
+    from utils.screenshot.screenshot import _opus_view_first_child_is_ready
+
+    assert _opus_view_first_child_is_ready("opus-module-author")
+    assert _opus_view_first_child_is_ready("opus-module-title")
+    assert not _opus_view_first_child_is_ready("opus-module-top")
+    assert not _opus_view_first_child_is_ready("")
+
+
+def test_is_dynamic_not_found_url() -> None:
+    """不存在动态跳转链：opus 302→t.bilibili.com/0→www.bilibili.com/404（issue #119）。"""
+    from utils.screenshot.screenshot import _is_dynamic_not_found_url
+
+    assert _is_dynamic_not_found_url("https://t.bilibili.com/0")
+    assert _is_dynamic_not_found_url("https://t.bilibili.com/0?from=feed")
+    assert _is_dynamic_not_found_url("https://www.bilibili.com/404")
+    # 占位 id（非真实动态）：含 404 或普通长 id 都不应被误判为不存在
+    assert not _is_dynamic_not_found_url("https://t.bilibili.com/4040404040404040404")
+    assert not _is_dynamic_not_found_url(
+        "https://www.bilibili.com/opus/1234567890123456789"
+    )
+
+
 @pytest.mark.asyncio
 async def test_navigate_dynamic_page_returns_post_navigation_url() -> None:
     from utils.screenshot.screenshot import DynamicScreenshot
@@ -197,3 +221,97 @@ async def test_navigate_dynamic_page_returns_post_navigation_url() -> None:
     assert result_card is card
     assert page_url == canonical_url
     assert page_url != "https://www.bilibili.com/opus/1234567890"
+
+
+@pytest.mark.asyncio
+async def test_navigate_dynamic_page_genuine_404_raises_notfound() -> None:
+    """两个候选 URL 都明确 404 时，判定动态不存在。"""
+    from utils.screenshot.screenshot import DynamicScreenshot, Notfound
+
+    page = AsyncMock()
+    page.url = "https://www.bilibili.com/404"
+    page.goto = AsyncMock(return_value=MagicMock(status=404))
+    page.wait_for_load_state = AsyncMock()
+    page.wait_for_timeout = AsyncMock()
+
+    shot = DynamicScreenshot()
+    shot._wait_for_dynamic_content = AsyncMock(return_value=True)
+    shot._is_opus_page_ready = AsyncMock(return_value=True)
+    shot._find_dynamic_card = AsyncMock(return_value=MagicMock())
+    shot._is_login_interstitial = AsyncMock(return_value=False)
+
+    with pytest.raises(Notfound):
+        await shot._navigate_dynamic_page(page, 1234567890)
+
+
+@pytest.mark.asyncio
+async def test_navigate_dynamic_page_opus_redirect_to_zero_is_notfound() -> None:
+    """opus 不存在时 302 到 t.bilibili.com/0（HTTP 200），应判定动态不存在（issue #119）。"""
+    from utils.screenshot.screenshot import DynamicScreenshot, Notfound
+
+    page = AsyncMock()
+    page.url = "https://t.bilibili.com/0"
+    page.goto = AsyncMock(return_value=MagicMock(status=200))
+    page.wait_for_load_state = AsyncMock()
+    page.wait_for_timeout = AsyncMock()
+
+    shot = DynamicScreenshot()
+    shot._wait_for_dynamic_content = AsyncMock(return_value=True)
+    shot._is_opus_page_ready = AsyncMock(return_value=True)
+    shot._find_dynamic_card = AsyncMock(return_value=MagicMock())
+    shot._is_login_interstitial = AsyncMock(return_value=False)
+
+    with pytest.raises(Notfound):
+        await shot._navigate_dynamic_page(page, 1234567890123456789)
+
+
+@pytest.mark.asyncio
+async def test_navigate_dynamic_page_unrendered_not_reported_as_notfound() -> None:
+    """页面打开但内容未渲染（瞬时失败）时不能误报「动态不存在」（issue #119）。"""
+    from utils.screenshot.screenshot import (
+        DynamicScreenshot,
+        Notfound,
+        ScreenshotLoadError,
+    )
+
+    page = AsyncMock()
+    page.url = "https://www.bilibili.com/opus/1234567890"
+    page.goto = AsyncMock(return_value=MagicMock(status=200))
+    page.wait_for_load_state = AsyncMock()
+    page.wait_for_timeout = AsyncMock()
+
+    shot = DynamicScreenshot()
+    shot._wait_for_dynamic_content = AsyncMock(return_value=False)
+    shot._is_opus_page_ready = AsyncMock(return_value=True)
+    shot._find_dynamic_card = AsyncMock(return_value=None)
+    shot._is_login_interstitial = AsyncMock(return_value=False)
+
+    with pytest.raises(ScreenshotLoadError) as exc_info:
+        await shot._navigate_dynamic_page(page, 1234567890)
+    assert not isinstance(exc_info.value, Notfound)
+
+
+@pytest.mark.asyncio
+async def test_navigate_dynamic_page_login_wall_not_reported_as_notfound() -> None:
+    """命中登录墙属瞬时/可降级问题，动态仍可能存在，不能误报「动态不存在」。"""
+    from utils.screenshot.screenshot import (
+        DynamicScreenshot,
+        Notfound,
+        ScreenshotLoadError,
+    )
+
+    page = AsyncMock()
+    page.url = "https://www.bilibili.com/opus/1234567890"
+    page.goto = AsyncMock(return_value=MagicMock(status=200))
+    page.wait_for_load_state = AsyncMock()
+    page.wait_for_timeout = AsyncMock()
+
+    shot = DynamicScreenshot()
+    shot._wait_for_dynamic_content = AsyncMock(return_value=True)
+    shot._is_opus_page_ready = AsyncMock(return_value=True)
+    shot._find_dynamic_card = AsyncMock(return_value=MagicMock())
+    shot._is_login_interstitial = AsyncMock(return_value=True)
+
+    with pytest.raises(ScreenshotLoadError) as exc_info:
+        await shot._navigate_dynamic_page(page, 1234567890)
+    assert not isinstance(exc_info.value, Notfound)
