@@ -4,6 +4,7 @@
 """
 
 from typing import List, Optional, Tuple
+from urllib.parse import urlparse
 
 from nonebot.log import logger
 
@@ -36,11 +37,16 @@ DYNAMIC_CARD_SELECTORS: List[str] = [
 # 与 DYNAMIC_CARD_SELECTORS 共用同一列表，等的和截的是同一批 DOM。
 DYNAMIC_CONTENT_WAIT_SELECTORS: List[str] = DYNAMIC_CARD_SELECTORS
 
-# opus 页 .bili-opus-view 的首个子节点应为 .opus-module-author，否则 fallback t.bilibili.com。
+# opus 页就绪：.bili-opus-view 首子为 .opus-module-author 或 .opus-module-title（带标题图文）即可截图，
+# 其余（如 opus-module-top 头图类，author 不在首位）才 fallback t.bilibili.com。
 # 校准样例（SSR firstElementChild）：
 #   opus/1216804195345104902 → opus-module-author → 不 fallback
+#   opus/1219265340446343192 → opus-module-title  → 不 fallback（带标题图文动态，issue #119）
 #   opus/1217399988918681625 → opus-module-top     → fallback（头图类动态，author 不在首位）
-OPUS_AUTHOR_FIRST_CHILD_SELECTOR = ".bili-opus-view > .opus-module-author:first-child"
+OPUS_READY_FIRST_CHILD_SELECTOR = (
+    ".bili-opus-view > .opus-module-author:first-child, "
+    ".bili-opus-view > .opus-module-title:first-child"
+)
 
 # 只取 .bili-opus-view 首子节点的 class，判定统一交给 _opus_view_first_child_is_ready。
 # 返回 None = 无 .bili-opus-view；'' = view 已出现但子节点尚未渲染（半加载）。
@@ -53,13 +59,21 @@ _OPUS_VIEW_FIRST_CHILD_CLASS_JS = """() => {
 
 
 def _opus_view_first_child_is_ready(first_child_class: str) -> bool:
-    """首子为 opus-module-author 则就绪；其它 opus-module-* 或空（未渲染）应 fallback。"""
+    """首子为 author/title 则就绪；opus-module-top（头图）或空（未渲染）应 fallback。"""
     if not first_child_class:
         return False
     classes = first_child_class.split()
-    if "opus-module-author" in classes:
+    if "opus-module-author" in classes or "opus-module-title" in classes:
         return True
     return not any(c.startswith("opus-module-") for c in classes)
+
+
+def _is_dynamic_not_found_url(url: str) -> bool:
+    """不存在/已删除动态的重定向落点：t.bilibili.com/0（空动态 id）或 www.bilibili.com/404。
+
+    用最终路径精确匹配，避免 id 含 "404" 的正常动态被子串误判。
+    """
+    return urlparse(url).path.strip("/") in ("0", "404")
 
 
 # 展开卡片时解除内部子节点高度/overflow 限制；含 __main 等子区域，不作为截图根节点。
@@ -71,7 +85,13 @@ DYNAMIC_UNCLIP_SELECTORS = (
 
 
 class Notfound(Exception):
-    """动态不存在异常"""
+    """动态确实不存在（所有候选 URL 均返回/跳转到 404）。"""
+
+    pass
+
+
+class ScreenshotLoadError(Exception):
+    """动态页面加载/渲染失败：动态可能存在，多为网络超时、内容未渲染或登录墙等瞬时问题。"""
 
     pass
 
@@ -307,7 +327,7 @@ class DynamicScreenshot:
         if not first_class:  # view 已出现但子节点未渲染，等待后重试一次
             try:
                 await page.wait_for_selector(
-                    OPUS_AUTHOR_FIRST_CHILD_SELECTOR, state="visible", timeout=3000
+                    OPUS_READY_FIRST_CHILD_SELECTOR, state="visible", timeout=3000
                 )
             except Exception:
                 pass
@@ -331,6 +351,8 @@ class DynamicScreenshot:
             f"https://t.bilibili.com/{dynamic_id}",
         ]
         last_error: Optional[Exception] = None
+        not_found_urls: List[str] = []  # 收到确定性「不存在」信号的候选 URL
+        transient_failures: List[str] = []  # 页面已打开但内容未就绪等可重试原因
 
         for url in urls:
             try:
@@ -339,16 +361,24 @@ class DynamicScreenshot:
                     url, wait_until="domcontentloaded", timeout=20000
                 )
                 if not response or response.status == 404:
+                    not_found_urls.append(url)
+                    logger.debug("页面返回 404: {}", url)
                     continue
 
                 current_url = page.url
-                if "404" in current_url:
+                if _is_dynamic_not_found_url(current_url):
+                    not_found_urls.append(url)
+                    logger.debug("动态不存在（页面跳转到 {}）", current_url)
                     continue
 
                 await page.wait_for_load_state(state="domcontentloaded", timeout=10000)
-                await self._wait_for_dynamic_content(page)
+                if not await self._wait_for_dynamic_content(page):
+                    transient_failures.append(f"{url} 动态内容未渲染")
+                    logger.debug("动态内容未在超时内渲染: {}", url)
+                    continue
                 # 按页面 DOM 校验，不按请求 URL；t.bilibili.com 无 .bili-opus-view 时 _is_opus_page_ready 直接通过
                 if not await self._is_opus_page_ready(page):
+                    transient_failures.append(f"{url} opus 页面未就绪")
                     continue
                 card = await self._find_dynamic_card(page)
                 if card and not await self._is_login_interstitial(page):
@@ -361,16 +391,28 @@ class DynamicScreenshot:
                     return card, page.url
 
                 if await self._is_login_interstitial(page):
+                    transient_failures.append(f"{url} 命中登录墙")
                     logger.debug("页面需要登录，尝试下一个 URL: {}", current_url)
+                else:
+                    transient_failures.append(f"{url} 未找到动态卡片")
+                    logger.debug("页面已加载但未找到动态卡片: {}", current_url)
             except Notfound:
                 raise
             except Exception as e:
                 last_error = e
                 logger.debug("加载页面失败 {}: {}", url, e)
 
-        if last_error:
+        # 仅当每个候选 URL 都给出确定性「不存在」信号（404 或跳 /0、/404）才判定动态不存在；
+        # fallback 超时 / 渲染失败 / 登录墙等 inconclusive 结果优先，不能因首个 URL 404 就误报。
+        if transient_failures:
+            raise ScreenshotLoadError(
+                "动态页面加载失败: " + "; ".join(transient_failures)
+            )
+        if last_error is not None:
             raise last_error
-        raise Notfound("动态不存在")
+        if len(not_found_urls) == len(urls):
+            raise Notfound("动态不存在")
+        raise ScreenshotLoadError("动态页面加载失败: 未知原因")
 
     async def _prepare_dynamic_card(self, page: Page, card) -> None:
         """展开长文本并解除高度限制，尽量让卡片完整渲染。"""
@@ -468,6 +510,9 @@ class DynamicScreenshot:
 
                 return screenshot, None, page_url
 
+            except Notfound:
+                # 动态确实不存在，交给外层做干净的 WARNING 处理，不当作截图异常
+                raise
             except Exception as full_screenshot_error:
                 logger.opt(exception=True).error("PC端截图失败")
                 return None, f"截图失败: {str(full_screenshot_error)}", None
@@ -540,5 +585,18 @@ async def close_screenshot_service():
 # ponytail: 校准 opus 首子节点判定（_is_opus_page_ready 的唯一决策点）
 assert _opus_view_first_child_is_ready("opus-module-author")
 assert _opus_view_first_child_is_ready("opus-module-author other")
+assert _opus_view_first_child_is_ready(
+    "opus-module-title"
+)  # 带标题图文动态 (issue #119)
 assert not _opus_view_first_child_is_ready("opus-module-top")
 assert not _opus_view_first_child_is_ready("")  # view 已出现但子节点未渲染
+
+# ponytail: 校准「动态不存在」重定向判定（opus 302→t.bilibili.com/0→www.bilibili.com/404）
+assert _is_dynamic_not_found_url("https://t.bilibili.com/0")
+assert _is_dynamic_not_found_url("https://t.bilibili.com/0?from=feed")
+assert _is_dynamic_not_found_url("https://www.bilibili.com/404")
+# 占位 id（非真实动态）：含 404 或普通长 id 都不应被误判为不存在
+assert not _is_dynamic_not_found_url("https://t.bilibili.com/4040404040404040404")
+assert not _is_dynamic_not_found_url(
+    "https://www.bilibili.com/opus/1234567890123456789"
+)
