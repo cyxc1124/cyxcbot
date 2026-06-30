@@ -10,7 +10,7 @@ B站直播监控核心模块
 
 import asyncio
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import aiohttp
 from nonebot.log import logger
@@ -1156,6 +1156,42 @@ class LiveMonitor:
             failed_targets,
         )
         return delivery
+
+    async def run_manual_check(
+        self, room_ids: Optional[List[str]] = None
+    ) -> Dict[str, List[str]]:
+        """检查指定或全部直播间的状态（手动触发时使用）。"""
+        if not self.is_running:
+            logger.debug("监控已停止，跳过本次检查")
+            return {"checked": [], "failed": []}
+
+        rid_list = room_ids if room_ids is not None else self._configured_room_ids()
+        cycle = CheckCycleLogger("直播监控（手动）")
+        checked: List[str] = []
+        failed: List[str] = []
+
+        try:
+            for room_id in rid_list:
+                try:
+                    ok = await self._check_room_status(room_id)
+                    if ok is False:
+                        cycle.record_failure(room_id)
+                        failed.append(room_id)
+                    else:
+                        cycle.record_success()
+                        checked.append(room_id)
+                except Exception as e:
+                    cycle.record_error(room_id, e)
+                    failed.append(room_id)
+
+                await asyncio.sleep(0.3)
+
+            cycle.emit_summary(log_success_at_info=True)
+            self._touch_last_check_at()
+        except Exception:
+            logger.opt(exception=True).error("直播监控检查出错")
+
+        return {"checked": checked, "failed": failed}
 
     async def check_room_now(self, room_id: str) -> Optional[Dict]:
         """立即检查指定房间的状态（用于手动触发）"""

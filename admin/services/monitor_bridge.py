@@ -26,54 +26,50 @@ def get_live_monitor_instance():
 
 
 async def reload_dynamic_monitor() -> bool:
-    from plugins.dynamic_monitor.dynamic_monitor import (
-        dynamic_monitor_instance,
-        sync_from_config_reload,
-    )
+    from plugins.dynamic_monitor import dynamic_monitor as dynamic_monitor_mod
 
     snap = get_config_service().get_snapshot()
     has_targets = bool(snap.dynamic_monitor_mapping)
-    instance_before = dynamic_monitor_instance
+    instance_before = dynamic_monitor_mod.dynamic_monitor_instance
 
     if instance_before is None and not has_targets:
         return False
 
     try:
-        await sync_from_config_reload(snap)
+        await dynamic_monitor_mod.sync_from_config_reload(snap)
     except Exception as exc:
         logger.error(f"Failed to reload dynamic monitor: {exc}")
         return False
 
-    if instance_before is None and dynamic_monitor_instance is not None:
+    instance_after = dynamic_monitor_mod.dynamic_monitor_instance
+    if instance_before is None and instance_after is not None:
         logger.info("动态监控已从空配置状态启动")
-    elif instance_before is not None and dynamic_monitor_instance is None:
+    elif instance_before is not None and instance_after is None:
         logger.info("动态监控目标已清空，监控已停止")
 
     return True
 
 
 async def reload_live_monitor() -> bool:
-    from plugins.live_monitor.live_monitor import (
-        live_monitor_instance,
-        sync_from_config_reload,
-    )
+    from plugins.live_monitor import live_monitor as live_monitor_mod
 
     snap = get_config_service().get_snapshot()
     has_targets = bool(snap.live_monitor_mapping)
-    instance_before = live_monitor_instance
+    instance_before = live_monitor_mod.live_monitor_instance
 
     if instance_before is None and not has_targets:
         return False
 
     try:
-        await sync_from_config_reload(snap)
+        await live_monitor_mod.sync_from_config_reload(snap)
     except Exception as exc:
         logger.error(f"Failed to reload live monitor: {exc}")
         return False
 
-    if instance_before is None and live_monitor_instance is not None:
+    instance_after = live_monitor_mod.live_monitor_instance
+    if instance_before is None and instance_after is not None:
         logger.info("直播监控已从空配置状态启动")
-    elif instance_before is not None and live_monitor_instance is None:
+    elif instance_before is not None and instance_after is None:
         logger.info("直播监控目标已清空，监控已停止")
 
     return True
@@ -126,23 +122,41 @@ async def trigger_live_check(room_id: Optional[str] = None) -> Dict[str, Any]:
     if not room_ids:
         return {"success": False, "message": "No live targets configured"}
 
-    results = []
-    for rid in room_ids:
+    if room_id:
+        results = []
         try:
-            if room_id:
-                detail = await instance.check_room_now(rid)
-                if detail:
-                    results.append(detail)
-            else:
-                await instance._check_room_status(rid)
-                results.append({"room_id": rid, "checked": True})
+            detail = await instance.check_room_now(room_id)
+            if detail:
+                results.append(detail)
         except Exception as exc:
-            logger.error(f"Manual live check failed for {rid}: {exc}")
+            logger.error(f"Manual live check failed for {room_id}: {exc}")
+            return {"success": False, "message": f"Check failed for room {room_id}"}
+        return {
+            "success": True,
+            "message": f"Checked {len(results)} room(s)",
+            "result": {"rooms": results},
+        }
+
+    outcome = await instance.run_manual_check(room_ids)
+    checked = outcome["checked"]
+    failed = outcome["failed"]
+    results = [{"room_id": rid, "checked": True} for rid in checked]
+
+    if not checked and failed:
+        return {
+            "success": False,
+            "message": f"All {len(failed)} check(s) failed",
+            "result": {"rooms": results, "failed_room_ids": failed},
+        }
+
+    message = f"Checked {len(checked)} room(s)"
+    if failed:
+        message += f", {len(failed)} failed"
 
     return {
         "success": True,
-        "message": f"Checked {len(results)} room(s)",
-        "result": {"rooms": results},
+        "message": message,
+        "result": {"rooms": results, "failed_room_ids": failed},
     }
 
 
