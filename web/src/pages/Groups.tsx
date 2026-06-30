@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
 import { useMountAsync } from '../hooks/useMountAsync'
 import { createRetryHandler } from '../utils/retryLoad'
 import { getMessagePolicy, updateMessagePolicy } from '../api/client'
@@ -57,15 +58,9 @@ export function GroupsPage() {
   const [groups, setGroups] = useState<Group[]>([])
   const [restrict, setRestrict] = useState(true)
   const [enabledIds, setEnabledIds] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useLoadingOnKeyChange(tab)
   const [error, setError] = useState('')
   const [togglingId, setTogglingId] = useState<string | null>(null)
-  const [trackedTab, setTrackedTab] = useState(tab)
-
-  if (tab !== trackedTab) {
-    setTrackedTab(tab)
-    if (tab === 'message') setLoading(true)
-  }
 
   const load = useCallback(async () => {
     if (tab !== 'message') return
