@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class LogEntryResponse(BaseModel):
+    session_id: str
     entry_id: int
     ts: str
     level: str
@@ -16,3 +17,4 @@ class LogEntryResponse(BaseModel):
 class RecentLogsResponse(BaseModel):
     items: list[LogEntryResponse]
     total_buffered: int = Field(description="Current in-memory buffer size")
+    log_session_id: str = Field(description="Server log buffer session id")

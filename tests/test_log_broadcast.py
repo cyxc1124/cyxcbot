@@ -17,12 +17,24 @@ from shared.logging.broadcast import (
 
 def _entry(message: str, *, level: str = "INFO") -> LogEntry:
     return LogEntry(
+        session_id="",
         entry_id=0,
         ts="2026-01-01 00:00:00.000",
         level=level,
         logger="test",
         message=message,
     )
+
+
+def test_hub_assigns_stable_session_id() -> None:
+    hub = LogBroadcastHub(max_history=10)
+    hub.publish(_entry("a"))
+    recent = hub.recent(limit=10, min_level="DEBUG")
+    assert recent[0].session_id == hub.session_id
+
+
+def test_distinct_hub_instances_have_distinct_session_ids() -> None:
+    assert LogBroadcastHub().session_id != LogBroadcastHub().session_id
 
 
 def test_buffer_catch_up_loops_until_ring_buffer_is_stable() -> None:
@@ -81,6 +93,7 @@ def test_handoff_gap_entry_is_in_ring_buffer_before_subscribe() -> None:
 def test_duplicate_fields_get_unique_entry_ids_for_dedupe() -> None:
     hub = LogBroadcastHub(max_history=10)
     shared = dict(
+        session_id="",
         ts="2026-01-01 00:00:00.000",
         level="DEBUG",
         logger="test",

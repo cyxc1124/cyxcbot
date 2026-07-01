@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { RuntimeLogEntry } from '../api/types'
 import { DISPLAY_MAX, LOG_FLUSH_MS, mergeLogs, trimLogs } from './logsDisplay'
 
-function entry(n: number): RuntimeLogEntry {
+function entry(n: number, sessionId = 'sess-a'): RuntimeLogEntry {
   return {
+    session_id: sessionId,
     entry_id: n,
     ts: `2026-01-01T00:00:0${n % 10}.000Z`,
     level: 'INFO',
@@ -30,7 +31,7 @@ describe('logsDisplay', () => {
     expect(merged[2]?.message).toBe('message-3')
   })
 
-  it('mergeLogs skips entries already present by entry_id', () => {
+  it('mergeLogs skips entries already present by session and entry_id', () => {
     const prev = [entry(1), entry(2)]
     const merged = mergeLogs(prev, [entry(1), entry(3)])
     expect(merged).toHaveLength(3)
@@ -44,6 +45,20 @@ describe('logsDisplay', () => {
     expect(merged).toBe(prev)
     expect(merged[0]?.entry_id).toBe(1)
     expect(merged.at(-1)?.entry_id).toBe(DISPLAY_MAX)
+  })
+
+  it('mergeLogs replaces list when log session changes after restart', () => {
+    const prev = [entry(1, 'old-session'), entry(2, 'old-session')]
+    const merged = mergeLogs(prev, [entry(1, 'new-session'), entry(2, 'new-session')])
+    expect(merged).toHaveLength(2)
+    expect(merged.every((item) => item.session_id === 'new-session')).toBe(true)
+  })
+
+  it('mergeLogs appends entries with reused ids from a new session', () => {
+    const prev = [entry(1, 'old-session'), entry(2, 'old-session')]
+    const merged = mergeLogs(prev, [entry(1, 'new-session')])
+    expect(merged).toHaveLength(1)
+    expect(merged[0]?.session_id).toBe('new-session')
   })
 
   it('mergeLogs trims to DISPLAY_MAX', () => {

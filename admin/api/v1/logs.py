@@ -14,6 +14,8 @@ from admin.schemas.logs import LogEntryResponse, RecentLogsResponse
 from shared.db.models import User
 from shared.logging.broadcast import (
     LEVEL_RANK,
+    MAX_BUFFER_CATCH_UP_PASSES,
+    MAX_HANDOFF_PASSES,
     MAX_HISTORY,
     LogBroadcastHub,
     LogEntry,
@@ -78,15 +80,17 @@ async def _send_buffer_catch_up(
     sent: set[int],
     limit: int,
     min_level: str,
+    max_passes: int = MAX_BUFFER_CATCH_UP_PASSES,
 ) -> None:
     """Replay ring-buffer deltas before subscribing so the live queue stays empty."""
-    while True:
+    for _ in range(max_passes):
         catch_up = _catch_up_entries(hub, sent=sent, limit=limit, min_level=min_level)
         if not catch_up:
             return
         for entry in catch_up:
             await websocket.send_json(entry.to_dict())
             sent.add(entry.entry_id)
+    # ponytail: under sustained DEBUG, defer tail to post-subscribe handoff/live queue
 
 
 async def _drain_subscriber_backlog(
@@ -122,9 +126,10 @@ async def _handoff_to_live(
     limit: int,
     min_level: str,
     threshold: str,
+    max_passes: int = MAX_HANDOFF_PASSES,
 ) -> None:
     """Subscribe handoff: merge ring-buffer delta and queued backlog before live loop."""
-    while True:
+    for _ in range(max_passes):
         catch_up = _catch_up_entries(hub, sent=sent, limit=limit, min_level=min_level)
         progressed = False
 
@@ -152,7 +157,11 @@ async def recent_logs(
 ):
     hub = get_log_hub()
     items = _serialize(hub.recent(limit=limit, min_level=min_level))
-    return RecentLogsResponse(items=items, total_buffered=hub.history_size)
+    return RecentLogsResponse(
+        items=items,
+        total_buffered=hub.history_size,
+        log_session_id=hub.session_id,
+    )
 
 
 @router.websocket("/ws/logs")

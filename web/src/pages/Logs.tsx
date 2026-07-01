@@ -105,7 +105,7 @@ export function LogsPage() {
     overscan: 15,
     getItemKey: (index) => {
       const entry = logs[index]
-      return `${entry.entry_id}-${index}`
+      return `${entry.session_id}:${entry.entry_id}-${index}`
     },
   })
 
