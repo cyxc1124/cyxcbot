@@ -820,3 +820,25 @@ async def test_slow_delivery_still_schedules_retry_on_next_poll(
     assert notify.await_count == 2
     persist.assert_awaited_once()
     assert monitor.last_dynamic_ids["111"] == 200
+    assert monitor.new_dynamics_total == 1
+
+
+@pytest.mark.asyncio
+async def test_new_dynamics_total_increments_only_after_successful_delivery(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.last_dynamic_ids["111"] = 100
+
+    with patch.object(monitor, "_persist_state", AsyncMock()):
+        monitor._send_dynamic_notification = AsyncMock(return_value=False)
+        await monitor._deliver_new_dynamics("111", [_dynamic(200)], 0)
+        assert monitor.new_dynamics_total == 0
+
+        monitor._send_dynamic_notification = AsyncMock(return_value=True)
+        await monitor._deliver_new_dynamics("111", [_dynamic(200)], 0)
+        assert monitor.new_dynamics_total == 1
+
+        await monitor._deliver_new_dynamics("111", [_dynamic(200)], 0)
+        assert monitor.new_dynamics_total == 1

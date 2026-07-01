@@ -107,6 +107,7 @@ class LiveMonitor:
         )
         self._cycle_logger = CheckCycleLogger("直播监控")
         self.last_check_at: Optional[str] = None
+        self.checks_total = 0
 
     def _touch_last_check_at(self) -> None:
         self.last_check_at = datetime.now().isoformat(timespec="seconds")
@@ -831,6 +832,8 @@ class LiveMonitor:
         """检查单个房间的直播状态，拉取失败返回 False。"""
         if not self._is_active_room(room_id):
             return True
+
+        self.checks_total += 1
 
         if not self.initialized_rooms.get(room_id, False):
             await self._initialize_room(room_id)

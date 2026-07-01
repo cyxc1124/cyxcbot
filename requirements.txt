@@ -30,6 +30,7 @@ Pillow==12.2.0
 
 # 系统状态
 psutil==7.2.2
+prometheus_client==0.24.1
 
 # 开发与测试
 pytest==8.4.2

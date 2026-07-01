@@ -4,12 +4,16 @@ import { createRetryHandler } from '../utils/retryLoad'
 import { Link } from 'react-router-dom'
 import {
   getConnectionsStatus,
+  getDynamicMonitorStatus,
+  getLiveMonitorStatus,
   getMonitorStatus,
   getSystemMonitorStatus,
 } from '../api/client'
 import type {
   BilibiliConnectionStatus,
   ConnectionsStatus,
+  DynamicMonitorStatus,
+  LiveMonitorStatus,
   QqConnectionStatus,
   SystemMonitorStatus,
 } from '../api/types'
@@ -20,7 +24,17 @@ import { StatCard } from '../components/StatCard'
 import { useLiveUptime } from '../hooks/useLiveUptime'
 import { useMountAsync } from '../hooks/useMountAsync'
 import { formatApiError } from '../utils/apiError'
-import { formatMemoryMb, formatMemoryUsage, formatStorageSize, formatUptime } from '../utils/format'
+import { formatDateTime, formatMemoryMb, formatMemoryUsage, formatStorageSize, formatUptime } from '../utils/format'
+
+function formatCount(value: number | undefined | null): string {
+  if (value == null) return '—'
+  return value.toLocaleString('zh-CN')
+}
+
+function monitorRunningLabel(enabled: boolean | undefined): string {
+  if (enabled == null) return '—'
+  return enabled ? '运行中' : '已停止'
+}
 
 function bilibiliCardValue(b: BilibiliConnectionStatus | undefined): string {
   if (!b) return '—'
@@ -73,18 +87,24 @@ export function DashboardPage() {
   const [uptime, setUptime] = useState(0)
   const [system, setSystem] = useState<SystemMonitorStatus | null>(null)
   const [connections, setConnections] = useState<ConnectionsStatus | null>(null)
+  const [dynamicMonitor, setDynamicMonitor] = useState<DynamicMonitorStatus | null>(null)
+  const [liveMonitor, setLiveMonitor] = useState<LiveMonitorStatus | null>(null)
 
   const load = useCallback(async () => {
     try {
-      const [status, sys, conn] = await Promise.all([
+      const [status, sys, conn, dynamic, live] = await Promise.all([
         getMonitorStatus(),
         getSystemMonitorStatus(),
         getConnectionsStatus(),
+        getDynamicMonitorStatus(),
+        getLiveMonitorStatus(),
       ])
       setRunning(status.running)
       setUptime(status.uptime_seconds)
       setSystem(sys)
       setConnections(conn)
+      setDynamicMonitor(dynamic)
+      setLiveMonitor(live)
       setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
@@ -132,6 +152,69 @@ export function DashboardPage() {
           subtitle={connections?.qq.message}
         />
       </div>
+
+      <section>
+        <div className="mb-4">
+          <h3 className="font-semibold text-foreground">监控统计</h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            自本次启动累计 · 每 30 秒自动刷新
+          </p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <StatCard
+            title="动态监控"
+            value={monitorRunningLabel(dynamicMonitor?.enabled)}
+            subtitle={[
+              dynamicMonitor ? `${dynamicMonitor.target_count} 个 UP 主` : undefined,
+              dynamicMonitor?.last_check_at
+                ? `最近检查 ${formatDateTime(dynamicMonitor.last_check_at)}`
+                : undefined,
+              <>
+                管理订阅见
+                <Link to="/dynamic" className="font-medium text-primary hover:opacity-80 hover:underline">
+                  动态监控
+                </Link>
+              </>,
+            ].filter(Boolean)}
+          />
+          <StatCard
+            title="动态检查次数"
+            value={formatCount(dynamicMonitor?.checks_total)}
+            subtitle="每个 UP 主每次轮询计 1 次"
+          />
+          <StatCard
+            title="新动态发现"
+            value={formatCount(dynamicMonitor?.new_dynamics_total)}
+            subtitle="不含首次基准初始化"
+          />
+          <StatCard
+            title="直播监控"
+            value={monitorRunningLabel(liveMonitor?.enabled)}
+            subtitle={[
+              liveMonitor ? `${liveMonitor.target_count} 个直播间` : undefined,
+              liveMonitor?.last_check_at
+                ? `最近检查 ${formatDateTime(liveMonitor.last_check_at)}`
+                : undefined,
+              <>
+                管理订阅见
+                <Link to="/live" className="font-medium text-primary hover:opacity-80 hover:underline">
+                  直播监控
+                </Link>
+              </>,
+            ].filter(Boolean)}
+          />
+          <StatCard
+            title="直播检查次数"
+            value={formatCount(liveMonitor?.checks_total)}
+            subtitle="每个直播间每次轮询计 1 次"
+          />
+          <StatCard
+            title="当前开播"
+            value={formatCount(liveMonitor?.live_rooms)}
+            subtitle="正在直播的房间数"
+          />
+        </div>
+      </section>
 
       <section>
         <div className="mb-4">

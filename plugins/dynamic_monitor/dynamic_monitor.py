@@ -81,6 +81,8 @@ class DynamicMonitor:
         self._stagger_index = 0
         self._cycle_logger = CheckCycleLogger("动态监控")
         self.last_check_at: Optional[str] = None
+        self.checks_total = 0
+        self.new_dynamics_total = 0
         # 后台投递：避免截图等慢操作阻塞 APScheduler 轮询任务
         self._delivery_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._delivery_tasks: Set[asyncio.Task] = set()
@@ -470,6 +472,8 @@ class DynamicMonitor:
         if not self._is_active_uid(uid):
             return True
 
+        self.checks_total += 1
+
         check_generation = self._check_generation.get(uid, 0)
 
         logger.debug("检查UP主 {} 的动态", uid)
@@ -610,6 +614,9 @@ class DynamicMonitor:
                     )
                     break
                 delivered_dynamic_ids.append(dynamic.id)
+
+            if delivered_dynamic_ids:
+                self.new_dynamics_total += len(delivered_dynamic_ids)
 
             if (delivered_dynamic_ids or persist_pinned) and self._check_still_valid(
                 uid, check_generation
