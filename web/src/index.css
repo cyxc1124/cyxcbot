@@ -144,6 +144,11 @@
   @apply min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-log p-4 font-mono;
 }
 
+@utility log-line {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 20px;
+}
+
 @utility log-line-ts {
   @apply text-muted-foreground;
 }

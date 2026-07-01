@@ -12,7 +12,7 @@ from admin.auth.jwt import decode_access_token
 from admin.deps import AdminUser, RequireSetup
 from admin.schemas.logs import LogEntryResponse, RecentLogsResponse
 from shared.db.models import User
-from shared.logging.broadcast import LEVEL_RANK, LogEntry, get_log_hub
+from shared.logging.broadcast import LEVEL_RANK, MAX_HISTORY, LogEntry, get_log_hub
 
 router = APIRouter(
     tags=["logs"],
@@ -79,7 +79,7 @@ async def stream_logs(
     hub = get_log_hub()
 
     try:
-        for entry in hub.recent(limit=500, min_level=min_level):
+        for entry in hub.recent(limit=MAX_HISTORY, min_level=min_level):
             await websocket.send_json(entry.to_dict())
 
         queue = hub.subscribe()
