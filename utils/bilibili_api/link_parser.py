@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import re
 from dataclasses import dataclass
 from typing import Iterable, Literal
@@ -10,6 +9,8 @@ from urllib.parse import parse_qs, urlparse
 
 import aiohttp
 from nonebot.log import logger
+
+from shared.monitor.concurrency import run_with_concurrency
 
 BV_PATTERN = re.compile(r"BV1[a-zA-Z0-9]{9}")
 AV_PATTERN = re.compile(r"(?:^|[^\w])av(\d+)", re.IGNORECASE)
@@ -176,16 +177,16 @@ async def extract_bilibili_refs(
     for match in LIVE_URL_PATTERN.finditer(text):
         refs.append(BilibiliRef(kind="live", room_id=int(match.group(1))))
 
-    b23_matches = list(B23_URL_PATTERN.finditer(text))
-    if b23_matches:
-        resolved_urls = await asyncio.gather(
-            *(
-                resolve_short_url(session, match.group(0), cookie=cookie)
-                for match in b23_matches
-            )
-        )
+    b23_budget = max(0, max_count - len(_dedupe_preserve_order(refs)))
+    b23_urls = [match.group(0) for match in B23_URL_PATTERN.finditer(text)][:b23_budget]
+    if b23_urls:
+
+        async def resolve_b23(url: str) -> str | None:
+            return await resolve_short_url(session, url, cookie=cookie)
+
+        resolved_urls = await run_with_concurrency(b23_urls, resolve_b23)
         for final_url in resolved_urls:
-            if not final_url:
+            if isinstance(final_url, BaseException) or not final_url:
                 continue
             parsed = _ref_from_url(final_url)
             if parsed:
