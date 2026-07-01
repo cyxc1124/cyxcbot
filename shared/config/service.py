@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Awaitable, Callable, List, Optional, TypeAlias
 
@@ -75,6 +76,9 @@ class ConfigService:
     def __init__(self) -> None:
         self._snapshot = AppConfigSnapshot()
         self._reload_callbacks: List[ReloadCallback] = []
+        self._reload_lock = asyncio.Lock()
+        self._reload_task: asyncio.Task[AppConfigSnapshot] | None = None
+        self._reload_pending = False
 
     @classmethod
     def get_instance(cls) -> "ConfigService":
@@ -109,16 +113,18 @@ class ConfigService:
         session = get_session()
         async with session.begin():
             settings = await self._load_settings(session)
-            dynamic_mapping = await self._load_dynamic_mapping(session)
-            dynamic_user_mapping = await self._load_dynamic_user_mapping(session)
             (
+                dynamic_mapping,
+                dynamic_user_mapping,
                 dynamic_subscription_mapping,
                 dynamic_subscription_user_mapping,
-            ) = await self._load_dynamic_subscription_mappings(session)
-            live_mapping = await self._load_live_mapping(session)
-            live_user_mapping = await self._load_live_user_mapping(session)
-            dynamic_at_all = await self._load_dynamic_at_all(session)
-            live_at_all = await self._load_live_at_all(session)
+                dynamic_at_all,
+            ) = await self._load_dynamic_target_data(session)
+            (
+                live_mapping,
+                live_user_mapping,
+                live_at_all,
+            ) = await self._load_live_target_data(session)
             link_parser_group_policies = await self._load_link_parser_group_policies(
                 session
             )
@@ -190,7 +196,24 @@ class ConfigService:
         return self._snapshot
 
     async def reload(self) -> AppConfigSnapshot:
-        """Reload config and notify registered monitors."""
+        """Reload config and notify registered monitors (single-flight)."""
+        async with self._reload_lock:
+            if self._reload_task is None or self._reload_task.done():
+                self._reload_task = asyncio.create_task(self._run_reload_loop())
+            else:
+                self._reload_pending = True
+            task = self._reload_task
+        return await asyncio.shield(task)
+
+    async def _run_reload_loop(self) -> AppConfigSnapshot:
+        while True:
+            snapshot = await self._do_reload()
+            async with self._reload_lock:
+                if not self._reload_pending:
+                    return snapshot
+                self._reload_pending = False
+
+    async def _do_reload(self) -> AppConfigSnapshot:
         logger.info("正在从数据库热重载配置…")
         snapshot = await self.load()
         for callback in list(self._reload_callbacks):
@@ -284,81 +307,67 @@ class ConfigService:
                 f"（当前启用目标: {len(active_room_ids)} 个）"
             )
 
-    async def _load_dynamic_mapping(self, session) -> dict[str, list[str]]:
-        stmt = (
-            select(DynamicTarget)
-            .where(DynamicTarget.enabled.is_(True))
-            .options(selectinload(DynamicTarget.groups))
-        )
-        targets = (await session.scalars(stmt)).all()
-        mapping: dict[str, list[str]] = {}
-        for target in targets:
-            mapping[target.uid] = [g.group_id for g in target.groups]
-        return mapping
-
-    async def _load_dynamic_user_mapping(self, session) -> dict[str, list[str]]:
-        stmt = (
-            select(DynamicTarget)
-            .where(DynamicTarget.enabled.is_(True))
-            .options(selectinload(DynamicTarget.users))
-        )
-        targets = (await session.scalars(stmt)).all()
-        mapping: dict[str, list[str]] = {}
-        for target in targets:
-            mapping[target.uid] = [u.user_id for u in target.users]
-        return mapping
-
-    async def _load_dynamic_subscription_mappings(
+    async def _load_dynamic_target_data(
         self, session
-    ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
-        """Load uid->group/user mappings for all targets, regardless of enabled."""
+    ) -> tuple[
+        dict[str, list[str]],
+        dict[str, list[str]],
+        dict[str, list[str]],
+        dict[str, list[str]],
+        dict[str, bool],
+    ]:
+        """One query for all dynamic targets; derive monitor/subscription mappings."""
         stmt = select(DynamicTarget).options(
             selectinload(DynamicTarget.groups),
             selectinload(DynamicTarget.users),
         )
         targets = (await session.scalars(stmt)).all()
-        group_mapping: dict[str, list[str]] = {}
+        mapping: dict[str, list[str]] = {}
         user_mapping: dict[str, list[str]] = {}
+        subscription_mapping: dict[str, list[str]] = {}
+        subscription_user_mapping: dict[str, list[str]] = {}
+        at_all: dict[str, bool] = {}
         for target in targets:
             if target.groups:
-                group_mapping[target.uid] = [g.group_id for g in target.groups]
+                subscription_mapping[target.uid] = [g.group_id for g in target.groups]
             if target.users:
-                user_mapping[target.uid] = [u.user_id for u in target.users]
-        return group_mapping, user_mapping
+                subscription_user_mapping[target.uid] = [
+                    u.user_id for u in target.users
+                ]
+            if not target.enabled:
+                continue
+            mapping[target.uid] = [g.group_id for g in target.groups]
+            user_mapping[target.uid] = [u.user_id for u in target.users]
+            at_all[target.uid] = target.at_all
+        return (
+            mapping,
+            user_mapping,
+            subscription_mapping,
+            subscription_user_mapping,
+            at_all,
+        )
 
-    async def _load_dynamic_at_all(self, session) -> dict[str, bool]:
-        stmt = select(DynamicTarget).where(DynamicTarget.enabled.is_(True))
-        targets = (await session.scalars(stmt)).all()
-        return {target.uid: target.at_all for target in targets}
-
-    async def _load_live_mapping(self, session) -> dict[str, list[str]]:
+    async def _load_live_target_data(
+        self, session
+    ) -> tuple[dict[str, list[str]], dict[str, list[str]], dict[str, bool]]:
+        """One query for enabled live targets; derive monitor mappings."""
         stmt = (
             select(LiveTarget)
             .where(LiveTarget.enabled.is_(True))
-            .options(selectinload(LiveTarget.groups))
+            .options(
+                selectinload(LiveTarget.groups),
+                selectinload(LiveTarget.users),
+            )
         )
         targets = (await session.scalars(stmt)).all()
         mapping: dict[str, list[str]] = {}
+        user_mapping: dict[str, list[str]] = {}
+        at_all: dict[str, bool] = {}
         for target in targets:
             mapping[target.room_id] = [g.group_id for g in target.groups]
-        return mapping
-
-    async def _load_live_user_mapping(self, session) -> dict[str, list[str]]:
-        stmt = (
-            select(LiveTarget)
-            .where(LiveTarget.enabled.is_(True))
-            .options(selectinload(LiveTarget.users))
-        )
-        targets = (await session.scalars(stmt)).all()
-        mapping: dict[str, list[str]] = {}
-        for target in targets:
-            mapping[target.room_id] = [u.user_id for u in target.users]
-        return mapping
-
-    async def _load_live_at_all(self, session) -> dict[str, bool]:
-        stmt = select(LiveTarget).where(LiveTarget.enabled.is_(True))
-        targets = (await session.scalars(stmt)).all()
-        return {target.room_id: target.at_all for target in targets}
+            user_mapping[target.room_id] = [u.user_id for u in target.users]
+            at_all[target.room_id] = target.at_all
+        return mapping, user_mapping, at_all
 
     async def _load_link_parser_group_policies(
         self, session
