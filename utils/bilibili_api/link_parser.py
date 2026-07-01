@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import dataclass
 from typing import Iterable, Literal
@@ -175,13 +176,20 @@ async def extract_bilibili_refs(
     for match in LIVE_URL_PATTERN.finditer(text):
         refs.append(BilibiliRef(kind="live", room_id=int(match.group(1))))
 
-    for match in B23_URL_PATTERN.finditer(text):
-        final_url = await resolve_short_url(session, match.group(0), cookie=cookie)
-        if not final_url:
-            continue
-        parsed = _ref_from_url(final_url)
-        if parsed:
-            refs.append(parsed)
+    b23_matches = list(B23_URL_PATTERN.finditer(text))
+    if b23_matches:
+        resolved_urls = await asyncio.gather(
+            *(
+                resolve_short_url(session, match.group(0), cookie=cookie)
+                for match in b23_matches
+            )
+        )
+        for final_url in resolved_urls:
+            if not final_url:
+                continue
+            parsed = _ref_from_url(final_url)
+            if parsed:
+                refs.append(parsed)
 
     return _dedupe_preserve_order(refs)[:max_count]
 

@@ -19,6 +19,7 @@ from shared.config.service import get_config_service
 from shared.db.models import DynamicMonitorState
 from shared.monitor.background_task import spawn_background_task
 from shared.monitor.check_cycle import CheckCycleLogger
+from shared.monitor.concurrency import run_with_concurrency
 from shared.monitor.poll_schedule import compute_dynamic_poll_schedule
 from utils.bilibili_api import DynamicFetcher
 from utils.screenshot import (
@@ -418,15 +419,14 @@ class DynamicMonitor:
             return
 
         try:
-            for uid in uid_list:
-                try:
-                    ok = await self._check_user_dynamic(uid)
-                    if ok is False:
-                        self._cycle_logger.record_failure(uid)
-                    else:
-                        self._cycle_logger.record_success()
-                except Exception as e:
-                    self._cycle_logger.record_error(uid, e)
+            results = await run_with_concurrency(uid_list, self._check_user_dynamic)
+            for uid, ok in zip(uid_list, results):
+                if isinstance(ok, BaseException):
+                    self._cycle_logger.record_error(uid, ok)
+                elif ok is False:
+                    self._cycle_logger.record_failure(uid)
+                else:
+                    self._cycle_logger.record_success()
 
             self._cycle_logger.emit_summary()
             self._touch_last_check_at()
@@ -447,18 +447,17 @@ class DynamicMonitor:
         failed: List[str] = []
 
         try:
-            for uid in uid_list:
-                try:
-                    ok = await self._check_user_dynamic(uid)
-                    if ok is False:
-                        cycle.record_failure(uid)
-                        failed.append(uid)
-                    else:
-                        cycle.record_success()
-                        checked.append(uid)
-                except Exception as e:
-                    cycle.record_error(uid, e)
+            results = await run_with_concurrency(uid_list, self._check_user_dynamic)
+            for uid, ok in zip(uid_list, results):
+                if isinstance(ok, BaseException):
+                    cycle.record_error(uid, ok)
                     failed.append(uid)
+                elif ok is False:
+                    cycle.record_failure(uid)
+                    failed.append(uid)
+                else:
+                    cycle.record_success()
+                    checked.append(uid)
 
             cycle.emit_summary(log_success_at_info=True)
             self._touch_last_check_at()
