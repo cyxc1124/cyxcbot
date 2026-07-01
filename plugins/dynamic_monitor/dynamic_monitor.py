@@ -31,6 +31,10 @@ from utils.screenshot import (
 from .config import Config
 from .sender import DynamicSender
 
+# 全局截图并发与排队上限；超出并发时排队等待，不降级跳过
+_SCREENSHOT_CONCURRENCY = 2
+_SCREENSHOT_QUEUE_MAX = 8
+
 # 全局监控实例
 dynamic_monitor_instance: Optional["DynamicMonitor"] = None
 _config_reload_registered = False
@@ -87,6 +91,8 @@ class DynamicMonitor:
         # 后台投递：避免截图等慢操作阻塞 APScheduler 轮询任务
         self._delivery_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._delivery_tasks: Set[asyncio.Task] = set()
+        self._screenshot_semaphore = asyncio.Semaphore(_SCREENSHOT_CONCURRENCY)
+        self._screenshot_queue_semaphore = asyncio.Semaphore(_SCREENSHOT_QUEUE_MAX)
 
     def _touch_last_check_at(self) -> None:
         self.last_check_at = datetime.now().isoformat(timespec="seconds")
@@ -654,22 +660,66 @@ class DynamicMonitor:
             self.pinned_dynamic_ids[uid] = new_pinned_id
             await self._persist_state(uid, check_generation=check_generation)
 
-    async def _fetch_dynamic_screenshot(self, dynamic) -> Optional[bytes]:
+    async def _fetch_dynamic_screenshot(
+        self,
+        dynamic,
+        *,
+        uid: Optional[str] = None,
+        check_generation: Optional[int] = None,
+    ) -> Optional[bytes]:
         """获取动态截图，未启用时直接返回 None；同步截图来源 URL。"""
         if not self.config.enable_screenshot:
             return None
-        try:
-            screenshot_image, screenshot_error, page_url = await get_dynamic_screenshot(
-                dynamic.id
-            )
-            if screenshot_error:
-                logger.warning("获取动态{}截图失败: {}", dynamic.id, screenshot_error)
-            elif page_url and dynamic.url.startswith("https://t.bilibili.com/"):
-                dynamic.url = page_url
-            return screenshot_image
-        except Exception:
-            logger.opt(exception=True).warning("截图服务异常")
+        if (
+            check_generation is not None
+            and uid is not None
+            and not self._check_still_valid(uid, check_generation)
+        ):
             return None
+
+        async with self._screenshot_queue_semaphore:
+            async with self._screenshot_semaphore:
+                if not self.config.enable_screenshot:
+                    logger.debug(
+                        "动态 {} 截图已关闭（排队期间配置变更），跳过截图",
+                        dynamic.id,
+                    )
+                    return None
+                if (
+                    check_generation is not None
+                    and uid is not None
+                    and not self._check_still_valid(uid, check_generation)
+                ):
+                    logger.debug(
+                        "动态 {} 投递已过期（排队期间配置变更），跳过截图",
+                        dynamic.id,
+                    )
+                    return None
+                try:
+                    (
+                        screenshot_image,
+                        screenshot_error,
+                        page_url,
+                    ) = await get_dynamic_screenshot(dynamic.id)
+                    if screenshot_error:
+                        logger.warning(
+                            "获取动态{}截图失败: {}", dynamic.id, screenshot_error
+                        )
+                    elif page_url and dynamic.url.startswith("https://t.bilibili.com/"):
+                        dynamic.url = page_url
+                    return screenshot_image
+                except Exception:
+                    logger.opt(exception=True).warning("截图服务异常")
+                    return None
+
+    async def _resolve_author_name(self, dynamic) -> str:
+        """解析动态作者名：feed 信息 → TTL 缓存 → 用户信息 API。"""
+        real_name = await self.fetcher.resolve_user_name(
+            str(dynamic.uid), feed_name=getattr(dynamic, "name", None)
+        )
+        if real_name:
+            return real_name
+        return f"UP主_{dynamic.uid}"
 
     async def _send_dynamic_notification(
         self,
@@ -685,26 +735,17 @@ class DynamicMonitor:
         ):
             return False
 
-        # 获取真实的用户名（只在需要推送时才获取）
-        real_name = await self.fetcher._get_user_name_from_api(str(dynamic.uid))
+        # 获取真实的用户名（feed / 缓存 / API）
+        dynamic.name = await self._resolve_author_name(dynamic)
         if check_generation is not None and not self._check_still_valid(
             uid, check_generation
         ):
             return False
-        if real_name:
-            dynamic.name = real_name
-            logger.info(
-                "发现新动态: {} - {}", dynamic.name, dynamic.get_type_description()
-            )
-        else:
-            dynamic.name = f"UP主_{dynamic.uid}"
-            logger.info(
-                "发现新动态: UP主_{} - {}",
-                dynamic.uid,
-                dynamic.get_type_description(),
-            )
+        logger.info("发现新动态: {} - {}", dynamic.name, dynamic.get_type_description())
 
-        screenshot_image = await self._fetch_dynamic_screenshot(dynamic)
+        screenshot_image = await self._fetch_dynamic_screenshot(
+            dynamic, uid=uid, check_generation=check_generation
+        )
         if check_generation is not None and not self._check_still_valid(
             uid, check_generation
         ):
@@ -715,7 +756,9 @@ class DynamicMonitor:
             dynamic,
             screenshot_image,
             is_pinned,
-            include_dynamic_media=not self.config.enable_screenshot,
+            include_dynamic_media=(
+                not self.config.enable_screenshot or screenshot_image is None
+            ),
         )
 
         # 获取需要推送的群组与好友
@@ -807,11 +850,7 @@ class DynamicMonitor:
         logger.debug("开始构建UP主 {} 的主动查询消息", uid)
 
         # 获取用户名
-        real_name = await self.fetcher._get_user_name_from_api(str(latest_dynamic.uid))
-        if real_name:
-            latest_dynamic.name = real_name
-        else:
-            latest_dynamic.name = f"UP主_{latest_dynamic.uid}"
+        latest_dynamic.name = await self._resolve_author_name(latest_dynamic)
 
         # 使用统一的消息构建方法
         message = self.sender.build_dynamic_message(
@@ -820,7 +859,9 @@ class DynamicMonitor:
             is_pinned=False,
             is_query=True,
             query_type="latest",
-            include_dynamic_media=not self.config.enable_screenshot,
+            include_dynamic_media=(
+                not self.config.enable_screenshot or screenshot_image is None
+            ),
         )
 
         logger.debug("主动查询消息构建完成，开始发送到群组 {}", group_id)
@@ -859,11 +900,7 @@ class DynamicMonitor:
         screenshot_image = await self._fetch_dynamic_screenshot(pinned_dynamic)
 
         # 获取用户名
-        real_name = await self.fetcher._get_user_name_from_api(str(pinned_dynamic.uid))
-        if real_name:
-            pinned_dynamic.name = real_name
-        else:
-            pinned_dynamic.name = f"UP主_{pinned_dynamic.uid}"
+        pinned_dynamic.name = await self._resolve_author_name(pinned_dynamic)
 
         # 构建主动查询的消息（包含截图）
         logger.debug("开始构建UP主 {} 的置顶动态主动查询消息", uid)
@@ -875,7 +912,9 @@ class DynamicMonitor:
             is_pinned=False,
             is_query=True,
             query_type="pinned",
-            include_dynamic_media=not self.config.enable_screenshot,
+            include_dynamic_media=(
+                not self.config.enable_screenshot or screenshot_image is None
+            ),
         )
 
         logger.debug("置顶动态主动查询消息构建完成，开始发送到群组 {}", group_id)

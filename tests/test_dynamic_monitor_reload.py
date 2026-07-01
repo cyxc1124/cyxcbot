@@ -244,7 +244,7 @@ async def test_stale_check_skips_notification_when_disable_reenable_during_send(
         return "name"
 
     monitor.fetcher.fetch_user_dynamics = fetch_dynamics
-    monitor.fetcher._get_user_name_from_api = slow_user_name
+    monitor.fetcher.resolve_user_name = slow_user_name
     monitor.sender = MagicMock()
     monitor.sender.build_dynamic_message = MagicMock(return_value="msg")
     monitor.sender.send_to_groups = AsyncMock()

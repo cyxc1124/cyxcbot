@@ -451,7 +451,7 @@ async def test_dynamic_monitor_does_not_advance_cursor_when_send_fails(
         timestamp=1,
         get_type_description=MagicMock(return_value="图文"),
     )
-    monitor.fetcher._get_user_name_from_api = AsyncMock(return_value="tester")
+    monitor.fetcher.resolve_user_name = AsyncMock(return_value="tester")
     monitor.fetcher.fetch_user_dynamics = AsyncMock(return_value=([dynamic], None))
     monitor._persist_state = AsyncMock()
 
@@ -495,7 +495,7 @@ async def test_dynamic_monitor_advances_cursor_when_send_succeeds(
         timestamp=1,
         get_type_description=MagicMock(return_value="图文"),
     )
-    monitor.fetcher._get_user_name_from_api = AsyncMock(return_value="tester")
+    monitor.fetcher.resolve_user_name = AsyncMock(return_value="tester")
     monitor.fetcher.fetch_user_dynamics = AsyncMock(return_value=([dynamic], None))
     monitor._persist_state = AsyncMock()
 
