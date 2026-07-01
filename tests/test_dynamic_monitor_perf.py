@@ -291,6 +291,74 @@ async def test_screenshot_skipped_if_disabled_while_queued(
 
 
 @pytest.mark.asyncio
+async def test_screenshot_skipped_if_stale_before_queue(
+    dynamic_monitor_module,
+) -> None:
+    """投递已过期时不进入截图队列。"""
+    DynamicMonitor = dynamic_monitor_module.DynamicMonitor
+    monitor = _make_monitor(DynamicMonitor, enable_screenshot=True)
+
+    with patch.object(
+        dynamic_monitor_module,
+        "get_dynamic_screenshot",
+        new_callable=AsyncMock,
+    ) as screenshot_mock:
+        monitor._bump_check_generation("123")
+        result = await monitor._fetch_dynamic_screenshot(
+            _dynamic(1), uid="123", check_generation=0
+        )
+
+    assert result is None
+    screenshot_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_screenshot_skipped_if_stale_while_queued(
+    dynamic_monitor_module,
+) -> None:
+    """排队等待期间 UID generation 变更时，不再调用 get_dynamic_screenshot。"""
+    DynamicMonitor = dynamic_monitor_module.DynamicMonitor
+    monitor = _make_monitor(DynamicMonitor, enable_screenshot=True)
+    monitor._screenshot_semaphore = asyncio.Semaphore(1)
+
+    capture_started = asyncio.Event()
+    release_first = asyncio.Event()
+    capture_calls = 0
+
+    async def slow_screenshot(dynamic_id: int):
+        nonlocal capture_calls
+        capture_calls += 1
+        capture_started.set()
+        await release_first.wait()
+        return (b"png", None, f"https://t.bilibili.com/{dynamic_id}")
+
+    with patch.object(
+        dynamic_monitor_module,
+        "get_dynamic_screenshot",
+        side_effect=slow_screenshot,
+    ):
+        first = asyncio.create_task(
+            monitor._fetch_dynamic_screenshot(
+                _dynamic(1), uid="123", check_generation=0
+            )
+        )
+        await capture_started.wait()
+        second = asyncio.create_task(
+            monitor._fetch_dynamic_screenshot(
+                _dynamic(2), uid="123", check_generation=0
+            )
+        )
+        await asyncio.sleep(0.02)
+        monitor._bump_check_generation("123")
+        release_first.set()
+        first_result, second_result = await asyncio.gather(first, second)
+
+    assert first_result == b"png"
+    assert second_result is None
+    assert capture_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_build_message_uses_screenshot_when_available(
     dynamic_monitor_module,
 ) -> None:

@@ -660,9 +660,21 @@ class DynamicMonitor:
             self.pinned_dynamic_ids[uid] = new_pinned_id
             await self._persist_state(uid, check_generation=check_generation)
 
-    async def _fetch_dynamic_screenshot(self, dynamic) -> Optional[bytes]:
+    async def _fetch_dynamic_screenshot(
+        self,
+        dynamic,
+        *,
+        uid: Optional[str] = None,
+        check_generation: Optional[int] = None,
+    ) -> Optional[bytes]:
         """获取动态截图，未启用时直接返回 None；同步截图来源 URL。"""
         if not self.config.enable_screenshot:
+            return None
+        if (
+            check_generation is not None
+            and uid is not None
+            and not self._check_still_valid(uid, check_generation)
+        ):
             return None
 
         async with self._screenshot_queue_semaphore:
@@ -670,6 +682,16 @@ class DynamicMonitor:
                 if not self.config.enable_screenshot:
                     logger.debug(
                         "动态 {} 截图已关闭（排队期间配置变更），跳过截图",
+                        dynamic.id,
+                    )
+                    return None
+                if (
+                    check_generation is not None
+                    and uid is not None
+                    and not self._check_still_valid(uid, check_generation)
+                ):
+                    logger.debug(
+                        "动态 {} 投递已过期（排队期间配置变更），跳过截图",
                         dynamic.id,
                     )
                     return None
@@ -721,7 +743,9 @@ class DynamicMonitor:
             return False
         logger.info("发现新动态: {} - {}", dynamic.name, dynamic.get_type_description())
 
-        screenshot_image = await self._fetch_dynamic_screenshot(dynamic)
+        screenshot_image = await self._fetch_dynamic_screenshot(
+            dynamic, uid=uid, check_generation=check_generation
+        )
         if check_generation is not None and not self._check_still_valid(
             uid, check_generation
         ):
