@@ -54,16 +54,18 @@ def test_dedupe_preserve_order() -> None:
 
 
 @pytest.mark.asyncio
-async def test_extract_bilibili_refs_caps_b23_resolve_count(
+async def test_extract_bilibili_refs_stops_b23_after_budget_filled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     resolve_calls: list[str] = []
+    bv_ids = ["BV1aa411c7mA", "BV1bb411c7mB", "BV1cc411c7mC"]
 
     async def fake_resolve(
         _session: object, url: str, *, cookie: str | None = None
     ) -> str:
         resolve_calls.append(url)
-        return "https://www.bilibili.com/video/BV1xx411c7mD"
+        index = int(url.rsplit("abc", 1)[-1])
+        return f"https://www.bilibili.com/video/{bv_ids[index]}"
 
     monkeypatch.setattr(
         "utils.bilibili_api.link_parser.resolve_short_url", fake_resolve
@@ -73,7 +75,51 @@ async def test_extract_bilibili_refs_caps_b23_resolve_count(
     refs = await extract_bilibili_refs(text, MagicMock(), max_count=3)
 
     assert len(resolve_calls) == 3
-    assert len(refs) == 1
+    assert refs == [
+        BilibiliRef(kind="video", bvid="BV1aa411c7mA"),
+        BilibiliRef(kind="video", bvid="BV1bb411c7mB"),
+        BilibiliRef(kind="video", bvid="BV1cc411c7mC"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_extract_bilibili_refs_b23_skips_duplicates_and_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resolve_calls: list[str] = []
+
+    async def fake_resolve(
+        _session: object, url: str, *, cookie: str | None = None
+    ) -> str | None:
+        resolve_calls.append(url)
+        if url.endswith("abc0"):
+            return "https://www.bilibili.com/video/BV1xx411c7mD"
+        if url.endswith("abc1"):
+            return None
+        if url.endswith("abc2"):
+            return "https://www.bilibili.com/video/BV1yy411c7mE"
+        raise AssertionError(f"unexpected resolve: {url}")
+
+    monkeypatch.setattr(
+        "utils.bilibili_api.link_parser.resolve_short_url", fake_resolve
+    )
+
+    text = (
+        "BV1xx411c7mD BV1zz411c7mF "
+        "https://b23.tv/abc0 https://b23.tv/abc1 https://b23.tv/abc2"
+    )
+    refs = await extract_bilibili_refs(text, MagicMock(), max_count=3)
+
+    assert resolve_calls == [
+        "https://b23.tv/abc0",
+        "https://b23.tv/abc1",
+        "https://b23.tv/abc2",
+    ]
+    assert refs == [
+        BilibiliRef(kind="video", bvid="BV1xx411c7mD"),
+        BilibiliRef(kind="video", bvid="BV1zz411c7mF"),
+        BilibiliRef(kind="video", bvid="BV1yy411c7mE"),
+    ]
 
 
 @pytest.mark.asyncio

@@ -177,15 +177,21 @@ async def extract_bilibili_refs(
     for match in LIVE_URL_PATTERN.finditer(text):
         refs.append(BilibiliRef(kind="live", room_id=int(match.group(1))))
 
-    b23_budget = max(0, max_count - len(_dedupe_preserve_order(refs)))
-    b23_urls = [match.group(0) for match in B23_URL_PATTERN.finditer(text)][:b23_budget]
-    if b23_urls:
+    b23_urls = [match.group(0) for match in B23_URL_PATTERN.finditer(text)]
+    cursor = 0
+    while cursor < len(b23_urls):
+        unique_refs = _dedupe_preserve_order(refs)
+        if len(unique_refs) >= max_count:
+            break
+
+        remaining = max_count - len(unique_refs)
+        batch = b23_urls[cursor : cursor + remaining]
+        cursor += len(batch)
 
         async def resolve_b23(url: str) -> str | None:
             return await resolve_short_url(session, url, cookie=cookie)
 
-        resolved_urls = await run_with_concurrency(b23_urls, resolve_b23)
-        for final_url in resolved_urls:
+        for final_url in await run_with_concurrency(batch, resolve_b23):
             if isinstance(final_url, BaseException) or not final_url:
                 continue
             parsed = _ref_from_url(final_url)
