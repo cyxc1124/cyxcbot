@@ -12,45 +12,13 @@ import { StatusCheckPolicyTab } from '../components/StatusCheckPolicyTab'
 import { ToggleSwitch } from '../components/ToggleSwitch'
 import { useToast } from '../contexts/ToastContext'
 import { formatApiError } from '../utils/apiError'
+import {
+  computePolicyAfterToggle,
+  computeToggleAllPolicy,
+  isItemEnabled,
+} from '../utils/restrictPolicy'
 
 type PrivateTab = 'message' | 'link-users' | 'status'
-
-function isUserEnabled(userId: string, restrict: boolean, enabledIds: string[]): boolean {
-  if (!restrict) return true
-  return enabledIds.includes(userId)
-}
-
-function computePolicyAfterToggle(
-  userId: string,
-  enabled: boolean,
-  users: Friend[],
-  restrict: boolean,
-  enabledIds: string[],
-): { restrict: boolean; enabled_user_ids: string[] } {
-  const allIds = users.map((u) => u.user_id)
-
-  if (enabled) {
-    if (!restrict) {
-      return { restrict: false, enabled_user_ids: [] }
-    }
-    const nextEnabled = [...new Set([...enabledIds, userId])]
-    if (nextEnabled.length >= allIds.length) {
-      return { restrict: false, enabled_user_ids: [] }
-    }
-    return { restrict: true, enabled_user_ids: nextEnabled }
-  }
-
-  if (!restrict) {
-    return {
-      restrict: true,
-      enabled_user_ids: allIds.filter((id) => id !== userId),
-    }
-  }
-  return {
-    restrict: true,
-    enabled_user_ids: enabledIds.filter((id) => id !== userId),
-  }
-}
 
 export function PrivatePage() {
   const { showToast } = useToast()
@@ -87,8 +55,20 @@ export function PrivatePage() {
     status: '状态查询',
   }
 
+  const allUserIds = useMemo(() => users.map((u) => u.user_id), [users])
+
   const handleToggle = async (userId: string, enabled: boolean) => {
-    const next = computePolicyAfterToggle(userId, enabled, users, restrict, enabledIds)
+    const nextPolicy = computePolicyAfterToggle(
+      userId,
+      enabled,
+      allUserIds,
+      restrict,
+      enabledIds,
+    )
+    const next = {
+      restrict: nextPolicy.restrict,
+      enabled_user_ids: nextPolicy.enabled_ids,
+    }
 
     const prevRestrict = restrict
     const prevEnabledIds = enabledIds
@@ -111,9 +91,11 @@ export function PrivatePage() {
   }
 
   const handleToggleAll = async (enabled: boolean) => {
-    const next = enabled
-      ? { restrict: false, enabled_user_ids: [] as string[] }
-      : { restrict: true, enabled_user_ids: [] as string[] }
+    const nextPolicy = computeToggleAllPolicy(enabled)
+    const next = {
+      restrict: nextPolicy.restrict,
+      enabled_user_ids: nextPolicy.enabled_ids,
+    }
 
     const prevRestrict = restrict
     const prevEnabledIds = enabledIds
@@ -198,7 +180,7 @@ export function PrivatePage() {
                   </thead>
                   <tbody>
                     {users.map((user) => {
-                      const enabled = isUserEnabled(user.user_id, restrict, enabledIds)
+                      const enabled = isItemEnabled(user.user_id, restrict, enabledIds)
                       const rowBusy = busy && (togglingId === user.user_id || togglingId === '__all__')
                       return (
                         <tr

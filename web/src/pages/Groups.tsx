@@ -12,45 +12,13 @@ import { StatusCheckPolicyTab } from '../components/StatusCheckPolicyTab'
 import { ToggleSwitch } from '../components/ToggleSwitch'
 import { useToast } from '../contexts/ToastContext'
 import { formatApiError } from '../utils/apiError'
+import {
+  computePolicyAfterToggle,
+  computeToggleAllPolicy,
+  isItemEnabled,
+} from '../utils/restrictPolicy'
 
 type GroupsTab = 'message' | 'link-groups' | 'status'
-
-function isGroupEnabled(groupId: string, restrict: boolean, enabledIds: string[]): boolean {
-  if (!restrict) return true
-  return enabledIds.includes(groupId)
-}
-
-function computePolicyAfterToggle(
-  groupId: string,
-  enabled: boolean,
-  groups: Group[],
-  restrict: boolean,
-  enabledIds: string[],
-): { restrict: boolean; enabled_group_ids: string[] } {
-  const allIds = groups.map((g) => g.group_id)
-
-  if (enabled) {
-    if (!restrict) {
-      return { restrict: false, enabled_group_ids: [] }
-    }
-    const nextEnabled = [...new Set([...enabledIds, groupId])]
-    if (nextEnabled.length >= allIds.length) {
-      return { restrict: false, enabled_group_ids: [] }
-    }
-    return { restrict: true, enabled_group_ids: nextEnabled }
-  }
-
-  if (!restrict) {
-    return {
-      restrict: true,
-      enabled_group_ids: allIds.filter((id) => id !== groupId),
-    }
-  }
-  return {
-    restrict: true,
-    enabled_group_ids: enabledIds.filter((id) => id !== groupId),
-  }
-}
 
 export function GroupsPage() {
   const { showToast } = useToast()
@@ -87,8 +55,20 @@ export function GroupsPage() {
     status: '状态查询',
   }
 
+  const allGroupIds = useMemo(() => groups.map((g) => g.group_id), [groups])
+
   const handleToggle = async (groupId: string, enabled: boolean) => {
-    const next = computePolicyAfterToggle(groupId, enabled, groups, restrict, enabledIds)
+    const nextPolicy = computePolicyAfterToggle(
+      groupId,
+      enabled,
+      allGroupIds,
+      restrict,
+      enabledIds,
+    )
+    const next = {
+      restrict: nextPolicy.restrict,
+      enabled_group_ids: nextPolicy.enabled_ids,
+    }
 
     const prevRestrict = restrict
     const prevEnabledIds = enabledIds
@@ -111,9 +91,11 @@ export function GroupsPage() {
   }
 
   const handleToggleAll = async (enabled: boolean) => {
-    const next = enabled
-      ? { restrict: false, enabled_group_ids: [] as string[] }
-      : { restrict: true, enabled_group_ids: [] as string[] }
+    const nextPolicy = computeToggleAllPolicy(enabled)
+    const next = {
+      restrict: nextPolicy.restrict,
+      enabled_group_ids: nextPolicy.enabled_ids,
+    }
 
     const prevRestrict = restrict
     const prevEnabledIds = enabledIds
@@ -199,7 +181,7 @@ export function GroupsPage() {
               </thead>
               <tbody>
                 {groups.map((group) => {
-                  const enabled = isGroupEnabled(group.group_id, restrict, enabledIds)
+                  const enabled = isItemEnabled(group.group_id, restrict, enabledIds)
                   const rowBusy = busy && (togglingId === group.group_id || togglingId === '__all__')
                   return (
                     <tr
