@@ -401,3 +401,94 @@ async def test_reload_single_flight_runs_again_after_previous_completes() -> Non
     await svc.reload()
 
     assert load_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_reload_survives_caller_cancellation() -> None:
+    """One cancelled waiter must not abort the shared reload for others."""
+    from shared.config.service import ConfigService
+
+    svc = ConfigService.get_instance()
+    svc._reload_callbacks.clear()
+    load_calls = 0
+    snapshot = AppConfigSnapshot(dynamic_monitor_mapping={"ok": ["g1"]})
+    callback_started = asyncio.Event()
+    callback_release = asyncio.Event()
+
+    async def counting_load() -> AppConfigSnapshot:
+        nonlocal load_calls
+        load_calls += 1
+        svc._snapshot = snapshot
+        return snapshot
+
+    async def slow_callback(_snapshot: AppConfigSnapshot) -> None:
+        callback_started.set()
+        await callback_release.wait()
+
+    svc.load = counting_load  # type: ignore[method-assign]
+    svc.register_reload_callback(slow_callback)
+
+    leader = asyncio.create_task(svc.reload())
+    await callback_started.wait()
+
+    cancelled_waiter = asyncio.create_task(svc.reload())
+    await asyncio.sleep(0.01)
+    cancelled_waiter.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await cancelled_waiter
+
+    assert not leader.done()
+    callback_release.set()
+    result = await leader
+
+    assert result.dynamic_monitor_mapping == {"ok": ["g1"]}
+    assert svc.snapshot.dynamic_monitor_mapping == {"ok": ["g1"]}
+    # coalesced caller may set _reload_pending before cancel → at most one extra load
+    assert 1 <= load_calls <= 2
+
+
+@pytest.mark.asyncio
+async def test_shielded_shared_task_not_cancelled_by_waiter() -> None:
+    """Direct shield await on the shared task survives waiter cancellation."""
+    from shared.config.service import ConfigService
+
+    svc = ConfigService.get_instance()
+    svc._reload_callbacks.clear()
+    load_calls = 0
+    snapshot = AppConfigSnapshot()
+    callback_started = asyncio.Event()
+    callback_release = asyncio.Event()
+
+    async def counting_load() -> AppConfigSnapshot:
+        nonlocal load_calls
+        load_calls += 1
+        svc._snapshot = snapshot
+        return snapshot
+
+    async def slow_callback(_snapshot: AppConfigSnapshot) -> None:
+        callback_started.set()
+        await callback_release.wait()
+
+    svc.load = counting_load  # type: ignore[method-assign]
+    svc.register_reload_callback(slow_callback)
+
+    leader = asyncio.create_task(svc.reload())
+    await callback_started.wait()
+    async with svc._reload_lock:
+        shared = svc._reload_task
+    assert shared is not None
+
+    async def wait_shielded() -> None:
+        await asyncio.shield(shared)
+
+    cancelled_waiter = asyncio.create_task(wait_shielded())
+    await asyncio.sleep(0.01)
+    cancelled_waiter.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await cancelled_waiter
+
+    assert not shared.cancelled()
+    assert not shared.done()
+    callback_release.set()
+    await leader
+    assert load_calls == 1

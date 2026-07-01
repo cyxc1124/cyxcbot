@@ -203,7 +203,7 @@ class ConfigService:
             else:
                 self._reload_pending = True
             task = self._reload_task
-        return await task
+        return await asyncio.shield(task)
 
     async def _run_reload_loop(self) -> AppConfigSnapshot:
         while True:
