@@ -213,8 +213,11 @@ async def _resolve_card_images(
     return avatar_img, cover_img
 
 
-def _bytes_to_rgba_image(data: bytes) -> Image.Image:
-    return Image.open(BytesIO(data)).convert("RGBA")
+def _bytes_to_rgba_image(data: bytes) -> Optional[Image.Image]:
+    try:
+        return Image.open(BytesIO(data)).convert("RGBA")
+    except Exception:
+        return None
 
 
 class CardImageDownloader:
@@ -293,6 +296,9 @@ class CardImageDownloader:
             logger.warning("下载图片失败 {}: {}", url, e)
             return None
 
+    def _pop_cached_bytes(self, url: str) -> None:
+        self._cache.pop(url, None)
+
     async def download(self, url: str) -> Optional[Image.Image]:
         """下载图片并转为 RGBA；失败返回 None。"""
         if not url:
@@ -300,12 +306,18 @@ class CardImageDownloader:
 
         cached = self._get_cached_bytes(url)
         if cached is not None:
-            return _bytes_to_rgba_image(cached)
+            img = _bytes_to_rgba_image(cached)
+            if img is not None:
+                return img
+            self._pop_cached_bytes(url)
 
         async with self._lock:
             cached = self._get_cached_bytes(url)
             if cached is not None:
-                return _bytes_to_rgba_image(cached)
+                img = _bytes_to_rgba_image(cached)
+                if img is not None:
+                    return img
+                self._pop_cached_bytes(url)
             task = self._inflight.get(url)
             if task is None:
                 task = asyncio.create_task(self._fetch_bytes(url))
@@ -320,8 +332,12 @@ class CardImageDownloader:
 
         if data is None:
             return None
+        img = _bytes_to_rgba_image(data)
+        if img is None:
+            logger.warning("图片解码失败，已跳过 {}", url)
+            return None
         self._set_cached_bytes(url, data)
-        return _bytes_to_rgba_image(data)
+        return img
 
 
 _card_image_downloader: Optional[CardImageDownloader] = None

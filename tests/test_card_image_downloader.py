@@ -128,6 +128,38 @@ async def test_concurrent_same_url_only_fetches_once(downloader: CardImageDownlo
 
 
 @pytest.mark.asyncio
+async def test_invalid_body_is_not_cached(downloader: CardImageDownloader):
+    url = "https://example.com/bad.png"
+    fetch = AsyncMock(
+        side_effect=[b"<html>not an image</html>", _png_bytes()],
+    )
+    downloader._fetch_bytes = fetch  # type: ignore[method-assign]
+
+    first = await downloader.download(url)
+    assert first is None
+    assert url not in downloader._cache
+
+    second = await downloader.download(url)
+
+    assert second is not None
+    assert url in downloader._cache
+    assert fetch.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_poisoned_cache_entry_is_evicted(downloader: CardImageDownloader):
+    url = "https://example.com/stale.png"
+    downloader._set_cached_bytes(url, b"not-a-image")
+    fetch = AsyncMock(return_value=_png_bytes())
+    downloader._fetch_bytes = fetch  # type: ignore[method-assign]
+
+    result = await downloader.download(url)
+
+    assert result is not None
+    fetch.assert_awaited_once_with(url)
+
+
+@pytest.mark.asyncio
 async def test_module_close_resets_singleton():
     mock_downloader = CardImageDownloader()
     mock_downloader.close = AsyncMock()
