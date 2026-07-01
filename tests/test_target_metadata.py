@@ -234,3 +234,130 @@ async def test_create_live_target_rejects_duplicate_before_bilibili(monkeypatch)
 
     assert exc_info.value.status_code == 409
     resolve_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_list_dynamic_targets_builds_missing_before_commit(monkeypatch):
+    """Missing-name queue must use scalar reads inside the transaction."""
+    import admin.api.v1.targets as targets_api
+
+    class ExpiringNameTarget:
+        id = 1
+        uid = "789"
+        groups: list = []
+        users: list = []
+        enabled = True
+        at_all = False
+        created_at = updated_at = MagicMock()
+
+        def __init__(self) -> None:
+            self._reads = 0
+
+        @property
+        def name(self) -> None:
+            self._reads += 1
+            if self._reads > 2:
+                raise RuntimeError("lazy refresh after commit")
+            return None
+
+    target = ExpiringNameTarget()
+    mock_session = MagicMock()
+    mock_session.begin = MagicMock(return_value=AsyncMock())
+    mock_session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
+    mock_session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+    mock_session.scalars = AsyncMock(
+        return_value=MagicMock(all=MagicMock(return_value=[target]))
+    )
+
+    captured: list[tuple[int, str]] = []
+
+    async def capture_resolve(items: list[tuple[int, str]]) -> None:
+        captured.extend(items)
+
+    tasks: list[asyncio.Task] = []
+    monkeypatch.setattr(targets_api, "get_session", lambda: mock_session)
+    monkeypatch.setattr(
+        targets_api, "resolve_missing_dynamic_target_names", capture_resolve
+    )
+    monkeypatch.setattr(
+        targets_api,
+        "spawn_background_task",
+        lambda _name, coro: tasks.append(asyncio.create_task(coro)),
+    )
+
+    result = await targets_api.list_dynamic_targets(MagicMock())
+    if tasks:
+        await asyncio.gather(*tasks)
+
+    assert len(result) == 1
+    assert captured == [(1, "789")]
+
+
+@pytest.mark.asyncio
+async def test_update_dynamic_target_rejects_duplicate_uid_before_bilibili(
+    monkeypatch,
+):
+    from fastapi import HTTPException
+
+    import admin.api.v1.targets as targets_api
+    from admin.schemas.targets import DynamicTargetUpdate
+
+    body = DynamicTargetUpdate(uid="999", name="")
+
+    target = MagicMock()
+    target.uid = "111"
+    target.name = None
+    target.groups = [MagicMock(group_id="1")]
+    target.users = []
+
+    conflict = MagicMock()
+
+    mock_session = MagicMock()
+    mock_session.begin = MagicMock(return_value=AsyncMock())
+    mock_session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
+    mock_session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+    mock_session.scalar = AsyncMock(side_effect=[target, conflict])
+
+    resolve_mock = AsyncMock(return_value="昵称")
+    monkeypatch.setattr(targets_api, "get_session", lambda: mock_session)
+    monkeypatch.setattr(targets_api, "resolve_up_name", resolve_mock)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await targets_api.update_dynamic_target(1, body, MagicMock())
+
+    assert exc_info.value.status_code == 409
+    resolve_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_live_target_rejects_duplicate_room_before_bilibili(monkeypatch):
+    from fastapi import HTTPException
+
+    import admin.api.v1.targets as targets_api
+    from admin.schemas.targets import LiveTargetUpdate
+
+    body = LiveTargetUpdate(room_id="999", name="")
+
+    target = MagicMock()
+    target.room_id = "111"
+    target.name = None
+    target.groups = [MagicMock(group_id="1")]
+    target.users = []
+
+    conflict = MagicMock()
+
+    mock_session = MagicMock()
+    mock_session.begin = MagicMock(return_value=AsyncMock())
+    mock_session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
+    mock_session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+    mock_session.scalar = AsyncMock(side_effect=[target, conflict])
+
+    resolve_mock = AsyncMock(return_value="主播")
+    monkeypatch.setattr(targets_api, "get_session", lambda: mock_session)
+    monkeypatch.setattr(targets_api, "resolve_live_streamer_name", resolve_mock)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await targets_api.update_live_target(1, body, MagicMock())
+
+    assert exc_info.value.status_code == 409
+    resolve_mock.assert_not_called()

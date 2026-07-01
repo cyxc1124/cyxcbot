@@ -145,8 +145,8 @@ async def list_dynamic_targets(_: AdminUser):
         )
         targets = (await session.scalars(stmt)).all()
         response = [_dynamic_to_response(t) for t in targets]
+        missing = [(t.id, t.uid) for t in targets if not t.name]
 
-    missing = [(t.id, t.uid) for t in targets if not t.name]
     if missing:
         spawn_background_task(
             "补全动态 target 名称",
@@ -242,17 +242,29 @@ async def update_dynamic_target(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
             )
-        uid_for_name = body.uid.strip() if body.uid is not None else target.uid
+        current_uid = target.uid
+        if body.uid is not None:
+            uid_for_name = body.uid.strip()
+            if not uid_for_name:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="UID 不能为空",
+                )
+            if uid_for_name != current_uid:
+                existing = await session.scalar(
+                    select(DynamicTarget).where(DynamicTarget.uid == uid_for_name)
+                )
+                if existing:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="UID already exists",
+                    )
+        else:
+            uid_for_name = current_uid
         if body.name is not None:
             pending_name = body.name.strip() or None
         else:
             pending_name = target.name
-
-    if body.uid is not None and not uid_for_name:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="UID 不能为空",
-        )
 
     resolved_name: str | None = None
     if not pending_name:
@@ -344,8 +356,8 @@ async def list_live_targets(_: AdminUser):
         )
         targets = (await session.scalars(stmt)).all()
         response = [_live_to_response(t) for t in targets]
+        missing = [(t.id, t.room_id) for t in targets if not t.name]
 
-    missing = [(t.id, t.room_id) for t in targets if not t.name]
     if missing:
         spawn_background_task(
             "补全直播 target 名称",
@@ -442,19 +454,29 @@ async def update_live_target(target_id: int, body: LiveTargetUpdate, _: AdminUse
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
             )
-        room_id_for_name = (
-            body.room_id.strip() if body.room_id is not None else target.room_id
-        )
+        current_room_id = target.room_id
+        if body.room_id is not None:
+            room_id_for_name = body.room_id.strip()
+            if not room_id_for_name:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="房间号不能为空",
+                )
+            if room_id_for_name != current_room_id:
+                existing = await session.scalar(
+                    select(LiveTarget).where(LiveTarget.room_id == room_id_for_name)
+                )
+                if existing:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Room already exists",
+                    )
+        else:
+            room_id_for_name = current_room_id
         if body.name is not None:
             pending_name = body.name.strip() or None
         else:
             pending_name = target.name
-
-    if body.room_id is not None and not room_id_for_name:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="房间号不能为空",
-        )
 
     resolved_name: str | None = None
     if not pending_name:
