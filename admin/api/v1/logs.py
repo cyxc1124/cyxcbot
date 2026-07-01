@@ -12,7 +12,15 @@ from admin.auth.jwt import decode_access_token
 from admin.deps import AdminUser, RequireSetup
 from admin.schemas.logs import LogEntryResponse, RecentLogsResponse
 from shared.db.models import User
-from shared.logging.broadcast import LEVEL_RANK, LogEntry, get_log_hub
+from shared.logging.broadcast import (
+    LEVEL_RANK,
+    MAX_BUFFER_CATCH_UP_PASSES,
+    MAX_HANDOFF_PASSES,
+    MAX_HISTORY,
+    LogBroadcastHub,
+    LogEntry,
+    get_log_hub,
+)
 
 router = APIRouter(
     tags=["logs"],
@@ -51,6 +59,96 @@ def _serialize(entries: list[LogEntry]) -> list[LogEntryResponse]:
     return [LogEntryResponse.model_validate(entry.to_dict()) for entry in entries]
 
 
+def _catch_up_entries(
+    hub: LogBroadcastHub,
+    *,
+    sent: set[int],
+    limit: int,
+    min_level: str,
+) -> list[LogEntry]:
+    return [
+        entry
+        for entry in hub.recent(limit=limit, min_level=min_level)
+        if entry.entry_id not in sent
+    ]
+
+
+async def _send_buffer_catch_up(
+    websocket: WebSocket,
+    hub: LogBroadcastHub,
+    *,
+    sent: set[int],
+    limit: int,
+    min_level: str,
+    max_passes: int = MAX_BUFFER_CATCH_UP_PASSES,
+) -> None:
+    """Replay ring-buffer deltas before subscribing so the live queue stays empty."""
+    for _ in range(max_passes):
+        catch_up = _catch_up_entries(hub, sent=sent, limit=limit, min_level=min_level)
+        if not catch_up:
+            return
+        for entry in catch_up:
+            await websocket.send_json(entry.to_dict())
+            sent.add(entry.entry_id)
+    # ponytail: under sustained DEBUG, defer tail to post-subscribe handoff/live queue
+
+
+async def _drain_subscriber_backlog(
+    websocket: WebSocket,
+    queue: asyncio.Queue[LogEntry | None],
+    *,
+    sent: set[int],
+    threshold: str,
+) -> bool:
+    delivered = False
+    while True:
+        try:
+            entry = queue.get_nowait()
+        except asyncio.QueueEmpty:
+            return delivered
+        if entry is None:
+            continue
+        if not _level_gte(entry.level, threshold):
+            continue
+        if entry.entry_id in sent:
+            continue
+        await websocket.send_json(entry.to_dict())
+        sent.add(entry.entry_id)
+        delivered = True
+
+
+async def _handoff_to_live(
+    websocket: WebSocket,
+    hub: LogBroadcastHub,
+    queue: asyncio.Queue[LogEntry | None],
+    *,
+    sent: set[int],
+    limit: int,
+    min_level: str,
+    threshold: str,
+    max_passes: int = MAX_HANDOFF_PASSES,
+) -> None:
+    """Subscribe handoff: merge ring-buffer delta and queued backlog before live loop."""
+    for _ in range(max_passes):
+        catch_up = _catch_up_entries(hub, sent=sent, limit=limit, min_level=min_level)
+        progressed = False
+
+        for entry in catch_up:
+            if entry.entry_id in sent:
+                continue
+            await websocket.send_json(entry.to_dict())
+            sent.add(entry.entry_id)
+            progressed = True
+
+        if await _drain_subscriber_backlog(
+            websocket, queue, sent=sent, threshold=threshold
+        ):
+            progressed = True
+
+        if not progressed:
+            return
+
+
 @router.get("/logs/recent", response_model=RecentLogsResponse)
 async def recent_logs(
     _: AdminUser,
@@ -59,7 +157,11 @@ async def recent_logs(
 ):
     hub = get_log_hub()
     items = _serialize(hub.recent(limit=limit, min_level=min_level))
-    return RecentLogsResponse(items=items, total_buffered=hub.history_size)
+    return RecentLogsResponse(
+        items=items,
+        total_buffered=hub.history_size,
+        log_session_id=hub.session_id,
+    )
 
 
 @router.websocket("/ws/logs")
@@ -79,18 +181,43 @@ async def stream_logs(
     hub = get_log_hub()
 
     try:
-        for entry in hub.recent(limit=500, min_level=min_level):
+        threshold = min_level.upper()
+        history = hub.recent(limit=MAX_HISTORY, min_level=min_level)
+        sent = {entry.entry_id for entry in history}
+
+        for entry in history:
             await websocket.send_json(entry.to_dict())
 
+        await _send_buffer_catch_up(
+            websocket,
+            hub,
+            sent=sent,
+            limit=MAX_HISTORY,
+            min_level=min_level,
+        )
+
         queue = hub.subscribe()
-        threshold = min_level.upper()
         try:
+            await _handoff_to_live(
+                websocket,
+                hub,
+                queue,
+                sent=sent,
+                limit=MAX_HISTORY,
+                min_level=min_level,
+                threshold=threshold,
+            )
+
+            # Live queue delivers each entry once; dedupe set only bridges replay/catch-up.
+            sent.clear()
+
             while True:
                 entry = await queue.get()
                 if entry is None:
                     continue
-                if _level_gte(entry.level, threshold):
-                    await websocket.send_json(entry.to_dict())
+                if not _level_gte(entry.level, threshold):
+                    continue
+                await websocket.send_json(entry.to_dict())
         finally:
             hub.unsubscribe(queue)
     except WebSocketDisconnect:

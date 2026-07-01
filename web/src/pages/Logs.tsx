@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { useCallback, useEffect, useRef, useState, startTransition } from 'react'
 import { createLogsWebSocket, getRecentLogs } from '../api/client'
 import type { RuntimeLogEntry } from '../api/types'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { formatApiError } from '../utils/apiError'
+import { DISPLAY_MAX, LOG_FLUSH_MS, mergeLogs, trimLogs } from './logsDisplay'
 
-const DISPLAY_MAX = 1500
 const LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR'] as const
 type LogLevel = (typeof LEVELS)[number]
 
@@ -20,15 +21,12 @@ const LEVEL_CLASS: Record<string, string> = {
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected'
 
-function trimLogs(items: RuntimeLogEntry[]): RuntimeLogEntry[] {
-  if (items.length <= DISPLAY_MAX) return items
-  return items.slice(items.length - DISPLAY_MAX)
-}
+const LOG_LINE_ESTIMATE_PX = 22
 
 function LogLine({ entry }: { entry: RuntimeLogEntry }) {
   const levelClass = LEVEL_CLASS[entry.level.toUpperCase()] ?? LEVEL_CLASS.INFO
   return (
-    <div className="whitespace-pre-wrap break-all font-mono text-xs leading-5">
+    <div className="log-line pb-0.5 whitespace-pre-wrap break-all font-mono text-xs leading-5">
       <span className="log-line-ts">{entry.ts}</span>
       {' '}
       <span className={levelClass}>{entry.level.padEnd(7)}</span>
@@ -49,28 +47,73 @@ export function LogsPage() {
 
   const containerRef = useRef<HTMLDivElement>(null)
   const pausedBufferRef = useRef<RuntimeLogEntry[]>([])
+  const pendingLogsRef = useRef<RuntimeLogEntry[]>([])
+  const flushTimerRef = useRef<number | undefined>(undefined)
+  const flushGenerationRef = useRef(0)
+  const pausedRef = useRef(paused)
   const wsRef = useRef<WebSocket | null>(null)
 
-  const appendLogs = useCallback((incoming: RuntimeLogEntry[]) => {
-    if (!incoming.length) return
-    if (paused) {
-      pausedBufferRef.current.push(...incoming)
-      return
-    }
-    setLogs((prev) => trimLogs([...prev, ...incoming]))
-  }, [paused])
+  pausedRef.current = paused
 
-  const scrollToBottom = useCallback(() => {
-    const el = containerRef.current
-    if (!el) return
-    el.scrollTop = el.scrollHeight
+  const clearFlushTimer = useCallback(() => {
+    if (flushTimerRef.current !== undefined) {
+      window.clearTimeout(flushTimerRef.current)
+      flushTimerRef.current = undefined
+    }
   }, [])
 
+  const invalidatePendingFlush = useCallback(() => {
+    flushGenerationRef.current += 1
+    pendingLogsRef.current = []
+    clearFlushTimer()
+  }, [clearFlushTimer])
+
+  const flushPendingLogs = useCallback(() => {
+    flushTimerRef.current = undefined
+    const pending = pendingLogsRef.current
+    if (!pending.length) return
+    pendingLogsRef.current = []
+    const generation = flushGenerationRef.current
+    startTransition(() => {
+      if (generation !== flushGenerationRef.current) return
+      setLogs((prev) => mergeLogs(prev, pending))
+    })
+  }, [])
+
+  const scheduleFlush = useCallback(() => {
+    if (flushTimerRef.current !== undefined) return
+    flushTimerRef.current = window.setTimeout(flushPendingLogs, LOG_FLUSH_MS)
+  }, [flushPendingLogs])
+
+  const appendLogs = useCallback(
+    (incoming: RuntimeLogEntry[]) => {
+      if (!incoming.length) return
+      if (pausedRef.current) {
+        pausedBufferRef.current.push(...incoming)
+        return
+      }
+      pendingLogsRef.current.push(...incoming)
+      scheduleFlush()
+    },
+    [scheduleFlush],
+  )
+
+  const rowVirtualizer = useVirtualizer({
+    count: logs.length,
+    getScrollElement: () => containerRef.current,
+    estimateSize: () => LOG_LINE_ESTIMATE_PX,
+    overscan: 15,
+    getItemKey: (index) => {
+      const entry = logs[index]
+      return `${entry.session_id}:${entry.entry_id}-${index}`
+    },
+  })
+
   useEffect(() => {
-    if (autoScroll && !paused) {
-      scrollToBottom()
-    }
-  }, [logs, autoScroll, paused, scrollToBottom])
+    if (!autoScroll || paused || logs.length === 0) return
+    rowVirtualizer.scrollToIndex(logs.length - 1, { align: 'end' })
+    // scrollToIndex is stable; rowVirtualizer object is not (TanStack Virtual)
+  }, [logs, autoScroll, paused, rowVirtualizer.scrollToIndex])
 
   useEffect(() => {
     let cancelled = false
@@ -116,7 +159,7 @@ export function LogsPage() {
       }
     }
 
-    void getRecentLogs({ limit: 500, min_level: minLevel })
+    void getRecentLogs({ limit: DISPLAY_MAX, min_level: minLevel })
       .then((data) => {
         if (cancelled) return
         setLogs(trimLogs(data.items))
@@ -135,8 +178,11 @@ export function LogsPage() {
       if (reconnectTimer) window.clearTimeout(reconnectTimer)
       wsRef.current?.close()
       wsRef.current = null
+      invalidatePendingFlush()
     }
-  }, [minLevel, appendLogs])
+  }, [minLevel, invalidatePendingFlush, appendLogs])
+
+  useEffect(() => () => clearFlushTimer(), [clearFlushTimer])
 
   const handleTogglePause = () => {
     setPaused((prev) => {
@@ -144,7 +190,17 @@ export function LogsPage() {
         const pending = pausedBufferRef.current
         pausedBufferRef.current = []
         if (pending.length) {
-          setLogs((current) => trimLogs([...current, ...pending]))
+          clearFlushTimer()
+          flushGenerationRef.current += 1
+          setLogs((current) => mergeLogs(current, pending))
+        }
+      } else {
+        clearFlushTimer()
+        const pending = pendingLogsRef.current
+        pendingLogsRef.current = []
+        flushGenerationRef.current += 1
+        if (pending.length) {
+          pausedBufferRef.current.push(...pending)
         }
       }
       return !prev
@@ -153,6 +209,7 @@ export function LogsPage() {
 
   const handleClear = () => {
     pausedBufferRef.current = []
+    invalidatePendingFlush()
     setLogs([])
   }
 
@@ -225,9 +282,20 @@ export function LogsPage() {
         {logs.length === 0 ? (
           <p className="font-mono text-sm text-muted-foreground">暂无日志，等待输出…</p>
         ) : (
-          <div className="space-y-0.5">
-            {logs.map((entry, index) => (
-              <LogLine key={`${entry.ts}-${index}-${entry.message.slice(0, 24)}`} entry={entry} />
+          <div
+            className="relative w-full"
+            style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+          >
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => (
+              <div
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                ref={rowVirtualizer.measureElement}
+                className="absolute top-0 left-0 w-full"
+                style={{ transform: `translateY(${virtualRow.start}px)` }}
+              >
+                <LogLine entry={logs[virtualRow.index]!} />
+              </div>
             ))}
           </div>
         )}

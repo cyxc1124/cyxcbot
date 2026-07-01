@@ -329,6 +329,8 @@ export interface MonitorActionResult {
 }
 
 export interface RuntimeLogEntry {
+  session_id: string
+  entry_id: number
   ts: string
   level: string
   logger: string
@@ -338,6 +340,7 @@ export interface RuntimeLogEntry {
 export interface RecentLogsResponse {
   items: RuntimeLogEntry[]
   total_buffered: number
+  log_session_id: string
 }
 
 export interface ApiError {
