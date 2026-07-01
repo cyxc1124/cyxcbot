@@ -161,15 +161,25 @@ async def list_dynamic_targets(_: AdminUser):
     status_code=status.HTTP_201_CREATED,
 )
 async def create_dynamic_target(body: DynamicTargetCreate, _: AdminUser):
+    _ensure_recipients(body.group_ids, body.user_ids)
+
+    session = get_session()
+    async with session.begin():
+        existing = await session.scalar(
+            select(DynamicTarget).where(DynamicTarget.uid == body.uid)
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="UID already exists"
+            )
+
     resolved_name = await resolve_dynamic_target_name(body.uid, body.name)
     if not resolved_name:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="无法获取 UP 主信息，请检查 UID 是否正确，或手动填写显示名称",
         )
-    _ensure_recipients(body.group_ids, body.user_ids)
 
-    session = get_session()
     async with session.begin():
         existing = await session.scalar(
             select(DynamicTarget).where(DynamicTarget.uid == body.uid)
@@ -350,15 +360,25 @@ async def list_live_targets(_: AdminUser):
     status_code=status.HTTP_201_CREATED,
 )
 async def create_live_target(body: LiveTargetCreate, _: AdminUser):
+    _ensure_recipients(body.group_ids, body.user_ids)
+
+    session = get_session()
+    async with session.begin():
+        existing = await session.scalar(
+            select(LiveTarget).where(LiveTarget.room_id == body.room_id)
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Room already exists"
+            )
+
     resolved_name = await resolve_live_target_name(body.room_id, body.name)
     if not resolved_name:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="无法获取直播间信息，请检查房间号是否正确，或手动填写显示名称",
         )
-    _ensure_recipients(body.group_ids, body.user_ids)
 
-    session = get_session()
     async with session.begin():
         existing = await session.scalar(
             select(LiveTarget).where(LiveTarget.room_id == body.room_id)

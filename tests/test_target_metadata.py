@@ -160,3 +160,77 @@ async def test_list_endpoint_does_not_block_on_slow_bilibili(monkeypatch):
     slow_release.set()
     if spawned:
         await asyncio.gather(*spawned, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_create_dynamic_target_rejects_duplicate_before_bilibili(monkeypatch):
+    from fastapi import HTTPException
+
+    import admin.api.v1.targets as targets_api
+    from admin.schemas.targets import DynamicTargetCreate
+
+    body = DynamicTargetCreate(uid="123", group_ids=["1"], user_ids=[])
+
+    mock_session = MagicMock()
+    mock_session.begin = MagicMock(return_value=AsyncMock())
+    mock_session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
+    mock_session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+    mock_session.scalar = AsyncMock(return_value=MagicMock())
+
+    resolve_mock = AsyncMock(return_value="昵称")
+    monkeypatch.setattr(targets_api, "get_session", lambda: mock_session)
+    monkeypatch.setattr(targets_api, "resolve_dynamic_target_name", resolve_mock)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await targets_api.create_dynamic_target(body, MagicMock())
+
+    assert exc_info.value.status_code == 409
+    resolve_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_dynamic_target_rejects_missing_recipients_before_bilibili(
+    monkeypatch,
+):
+    from fastapi import HTTPException
+
+    import admin.api.v1.targets as targets_api
+    from admin.schemas.targets import DynamicTargetCreate
+
+    body = DynamicTargetCreate(uid="123", group_ids=[], user_ids=[])
+
+    resolve_mock = AsyncMock(return_value="昵称")
+    monkeypatch.setattr(targets_api, "resolve_dynamic_target_name", resolve_mock)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await targets_api.create_dynamic_target(body, MagicMock())
+
+    assert exc_info.value.status_code == 400
+    assert "群组或好友" in str(exc_info.value.detail)
+    resolve_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_live_target_rejects_duplicate_before_bilibili(monkeypatch):
+    from fastapi import HTTPException
+
+    import admin.api.v1.targets as targets_api
+    from admin.schemas.targets import LiveTargetCreate
+
+    body = LiveTargetCreate(room_id="123", group_ids=["1"], user_ids=[])
+
+    mock_session = MagicMock()
+    mock_session.begin = MagicMock(return_value=AsyncMock())
+    mock_session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
+    mock_session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+    mock_session.scalar = AsyncMock(return_value=MagicMock())
+
+    resolve_mock = AsyncMock(return_value="主播")
+    monkeypatch.setattr(targets_api, "get_session", lambda: mock_session)
+    monkeypatch.setattr(targets_api, "resolve_live_target_name", resolve_mock)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await targets_api.create_live_target(body, MagicMock())
+
+    assert exc_info.value.status_code == 409
+    resolve_mock.assert_not_called()
