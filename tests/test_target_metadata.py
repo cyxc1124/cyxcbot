@@ -78,8 +78,10 @@ async def test_batch_resolve_missing_dynamic_names_uses_single_session():
 
     target_a = MagicMock()
     target_a.name = None
+    target_a.uid = "111"
     target_b = MagicMock()
     target_b.name = None
+    target_b.uid = "222"
 
     async def fake_get(_model, target_id: int):
         return {1: target_a, 2: target_b}.get(target_id)
@@ -106,6 +108,82 @@ async def test_batch_resolve_missing_dynamic_names_uses_single_session():
     assert calls == ["111", "222"]
     assert target_a.name == "name-111"
     assert target_b.name == "name-222"
+
+
+@pytest.mark.asyncio
+async def test_batch_resolve_skips_stale_dynamic_uid():
+    shared_session = MagicMock()
+    mock_db_session = MagicMock()
+    mock_db_session.begin = MagicMock(return_value=AsyncMock())
+    mock_db_session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
+    mock_db_session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    target = MagicMock()
+    target.name = None
+    target.uid = "999"
+    mock_db_session.get = AsyncMock(return_value=target)
+
+    with (
+        patch.object(
+            tm.aiohttp,
+            "ClientSession",
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=shared_session),
+                __aexit__=AsyncMock(return_value=None),
+            ),
+        ),
+        patch.object(
+            tm,
+            "_resolve_up_name_with_session",
+            new_callable=AsyncMock,
+            return_value="old-name",
+        ),
+        patch(
+            "nonebot_plugin_orm.get_session",
+            return_value=mock_db_session,
+        ),
+    ):
+        await tm.resolve_missing_dynamic_target_names([(1, "111")])
+
+    assert target.name is None
+
+
+@pytest.mark.asyncio
+async def test_batch_resolve_skips_stale_live_room_id():
+    shared_session = MagicMock()
+    mock_db_session = MagicMock()
+    mock_db_session.begin = MagicMock(return_value=AsyncMock())
+    mock_db_session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
+    mock_db_session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    target = MagicMock()
+    target.name = None
+    target.room_id = "888"
+    mock_db_session.get = AsyncMock(return_value=target)
+
+    with (
+        patch.object(
+            tm.aiohttp,
+            "ClientSession",
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=shared_session),
+                __aexit__=AsyncMock(return_value=None),
+            ),
+        ),
+        patch.object(
+            tm,
+            "_resolve_live_streamer_name_with_session",
+            new_callable=AsyncMock,
+            return_value="old-name",
+        ),
+        patch(
+            "nonebot_plugin_orm.get_session",
+            return_value=mock_db_session,
+        ),
+    ):
+        await tm.resolve_missing_live_target_names([(1, "111")])
+
+    assert target.name is None
 
 
 @pytest.mark.asyncio

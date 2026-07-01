@@ -95,13 +95,13 @@ async def resolve_missing_dynamic_target_names(
     """Background: resolve and persist missing dynamic target display names."""
     if not items:
         return
-    resolved: list[tuple[int, str]] = []
+    resolved: list[tuple[int, str, str]] = []
     try:
         async with aiohttp.ClientSession() as http_session:
             for target_id, uid in items:
                 name = await _resolve_up_name_with_session(http_session, uid)
                 if name:
-                    resolved.append((target_id, name))
+                    resolved.append((target_id, uid, name))
     except Exception as exc:
         logger.warning("批量解析动态 target 名称失败: {}", exc)
         return
@@ -111,9 +111,9 @@ async def resolve_missing_dynamic_target_names(
 
     db = get_session()
     async with db.begin():
-        for target_id, name in resolved:
+        for target_id, uid, name in resolved:
             target = await db.get(DynamicTarget, target_id)
-            if target is not None and not target.name:
+            if target is not None and not target.name and target.uid == uid:
                 target.name = name
 
 
@@ -123,7 +123,7 @@ async def resolve_missing_live_target_names(
     """Background: resolve and persist missing live target display names."""
     if not items:
         return
-    resolved: list[tuple[int, str]] = []
+    resolved: list[tuple[int, str, str]] = []
     try:
         async with aiohttp.ClientSession() as http_session:
             for target_id, room_id in items:
@@ -131,7 +131,7 @@ async def resolve_missing_live_target_names(
                     http_session, room_id
                 )
                 if name:
-                    resolved.append((target_id, name))
+                    resolved.append((target_id, room_id, name))
     except Exception as exc:
         logger.warning("批量解析直播 target 名称失败: {}", exc)
         return
@@ -141,7 +141,7 @@ async def resolve_missing_live_target_names(
 
     db = get_session()
     async with db.begin():
-        for target_id, name in resolved:
+        for target_id, room_id, name in resolved:
             target = await db.get(LiveTarget, target_id)
-            if target is not None and not target.name:
+            if target is not None and not target.name and target.room_id == room_id:
                 target.name = name
