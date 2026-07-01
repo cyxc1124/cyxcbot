@@ -72,6 +72,49 @@ def _catch_up_entries(
     ]
 
 
+async def _send_buffer_catch_up(
+    websocket: WebSocket,
+    hub: LogBroadcastHub,
+    *,
+    sent: set[tuple[str, str, str, str]],
+    limit: int,
+    min_level: str,
+) -> None:
+    """Replay ring-buffer deltas before subscribing so the live queue stays empty."""
+    while True:
+        catch_up = _catch_up_entries(
+            hub, sent=sent, limit=limit, min_level=min_level
+        )
+        if not catch_up:
+            return
+        for entry in catch_up:
+            await websocket.send_json(entry.to_dict())
+            sent.add(entry_fingerprint(entry))
+
+
+async def _drain_subscriber_backlog(
+    websocket: WebSocket,
+    queue: asyncio.Queue[LogEntry | None],
+    *,
+    sent: set[tuple[str, str, str, str]],
+    threshold: str,
+) -> None:
+    while True:
+        try:
+            entry = queue.get_nowait()
+        except asyncio.QueueEmpty:
+            return
+        if entry is None:
+            continue
+        if not _level_gte(entry.level, threshold):
+            continue
+        fp = entry_fingerprint(entry)
+        if fp in sent:
+            continue
+        await websocket.send_json(entry.to_dict())
+        sent.add(fp)
+
+
 @router.get("/logs/recent", response_model=RecentLogsResponse)
 async def recent_logs(
     _: AdminUser,
@@ -107,28 +150,19 @@ async def stream_logs(
         for entry in history:
             await websocket.send_json(entry.to_dict())
 
+        await _send_buffer_catch_up(
+            websocket,
+            hub,
+            sent=sent,
+            limit=MAX_HISTORY,
+            min_level=min_level,
+        )
+
         queue = hub.subscribe()
         try:
-            for entry in _catch_up_entries(
-                hub, sent=sent, limit=MAX_HISTORY, min_level=min_level
-            ):
-                await websocket.send_json(entry.to_dict())
-                sent.add(entry_fingerprint(entry))
-
-            while True:
-                try:
-                    entry = queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
-                if entry is None:
-                    continue
-                if not _level_gte(entry.level, threshold):
-                    continue
-                fp = entry_fingerprint(entry)
-                if fp in sent:
-                    continue
-                await websocket.send_json(entry.to_dict())
-                sent.add(fp)
+            await _drain_subscriber_backlog(
+                websocket, queue, sent=sent, threshold=threshold
+            )
 
             # Live queue delivers each entry once; dedupe set only bridges replay/catch-up.
             sent.clear()

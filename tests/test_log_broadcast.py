@@ -28,19 +28,49 @@ def test_replay_window_entries_caught_up_without_subscriber() -> None:
 
     hub.publish(_entry("during-replay"))
 
+    catch_up = [
+        entry
+        for entry in hub.recent(limit=10, min_level="DEBUG")
+        if entry_fingerprint(entry) not in sent
+    ]
+    assert [entry.message for entry in catch_up] == ["during-replay"]
+
     queue = hub.subscribe()
     try:
-        catch_up = [
-            entry
-            for entry in hub.recent(limit=10, min_level="DEBUG")
-            if entry_fingerprint(entry) not in sent
-        ]
-        assert [entry.message for entry in catch_up] == ["during-replay"]
         assert queue.qsize() == 0
-
         hub.publish(_entry("live"))
         assert queue.qsize() == 1
         assert queue.get_nowait().message == "live"
+    finally:
+        hub.unsubscribe(queue)
+
+
+def test_buffer_catch_up_loops_until_ring_buffer_is_stable() -> None:
+    hub = LogBroadcastHub(max_history=10)
+    first = _entry("first")
+    hub.publish(first)
+    sent = {entry_fingerprint(first)}
+
+    hub.publish(_entry("second"))
+    batch = [
+        entry
+        for entry in hub.recent(limit=10, min_level="DEBUG")
+        if entry_fingerprint(entry) not in sent
+    ]
+    assert [entry.message for entry in batch] == ["second"]
+    for entry in batch:
+        sent.add(entry_fingerprint(entry))
+
+    hub.publish(_entry("third"))
+    tail = [
+        entry
+        for entry in hub.recent(limit=10, min_level="DEBUG")
+        if entry_fingerprint(entry) not in sent
+    ]
+    assert [entry.message for entry in tail] == ["third"]
+    queue = hub.subscribe()
+    try:
+        assert queue.qsize() == 0
     finally:
         hub.unsubscribe(queue)
 
