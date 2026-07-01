@@ -32,6 +32,9 @@ def _sample_snapshot() -> system_metrics.SystemMetricsSnapshot:
         memory_used_mb=8192.0,
         memory_total_mb=16384.0,
         disk_percent=55.0,
+        db_size_mb=1.5,
+        log_size_mb=2.5,
+        memory_limit_mb=512.0,
         sampled_at=time.monotonic(),
     )
 
@@ -40,11 +43,7 @@ def test_build_payload_reads_cache_without_blocking():
     system_metrics._cache = _sample_snapshot()
 
     start = time.monotonic()
-    payload = system_metrics.build_system_metrics_payload(
-        db_size_mb=1.5,
-        log_size_mb=2.5,
-        memory_limit_mb=None,
-    )
+    payload = system_metrics.build_system_metrics_payload()
     elapsed = time.monotonic() - start
 
     assert elapsed < 0.05
@@ -52,6 +51,7 @@ def test_build_payload_reads_cache_without_blocking():
     assert payload["cpu_percent"] == 45.6
     assert payload["db_size_mb"] == 1.5
     assert payload["log_size_mb"] == 2.5
+    assert payload["memory_limit_mb"] == 512.0
 
 
 def test_build_payload_falls_back_to_instant_read_when_cache_empty(monkeypatch):
@@ -68,15 +68,39 @@ def test_build_payload_falls_back_to_instant_read_when_cache_empty(monkeypatch):
     monkeypatch.setattr(system_metrics.psutil, "virtual_memory", lambda: fake_mem)
     monkeypatch.setattr(system_metrics.psutil, "disk_usage", lambda _: fake_disk)
 
-    payload = system_metrics.build_system_metrics_payload(
-        db_size_mb=0.0,
-        log_size_mb=0.0,
-        memory_limit_mb=None,
-    )
+    payload = system_metrics.build_system_metrics_payload()
 
     assert payload["process_cpu_percent"] == 3.0
     assert payload["cpu_percent"] == 7.0
     assert payload["cpu_count"] == 4
+    assert payload["db_size_mb"] == 0.0
+    assert payload["log_size_mb"] == 0.0
+    assert payload["memory_limit_mb"] is None
+
+
+def test_collect_metrics_blocking_includes_storage_probes(monkeypatch):
+    monkeypatch.setattr(system_metrics, "CPU_SAMPLE_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(system_metrics, "_get_db_size_mb", lambda: 3.0)
+    monkeypatch.setattr(system_metrics, "_get_log_dir_size_mb", lambda: 4.0)
+    monkeypatch.setattr(system_metrics, "_get_cgroup_memory_limit_mb", lambda: 128.0)
+
+    fake_process = MagicMock()
+    fake_process.cpu_percent.return_value = 10.0
+    fake_process.memory_info.return_value = MagicMock(rss=200 * 1024 * 1024)
+    fake_mem = MagicMock(percent=50.0, used=512 * 1024 * 1024, total=1024 * 1024 * 1024)
+    fake_disk = MagicMock(percent=60.0)
+
+    monkeypatch.setattr(system_metrics.psutil, "Process", lambda: fake_process)
+    monkeypatch.setattr(system_metrics.psutil, "cpu_percent", lambda: 20.0)
+    monkeypatch.setattr(system_metrics.psutil, "cpu_count", lambda: 2)
+    monkeypatch.setattr(system_metrics.psutil, "virtual_memory", lambda: fake_mem)
+    monkeypatch.setattr(system_metrics.psutil, "disk_usage", lambda _: fake_disk)
+
+    snap = system_metrics._collect_metrics_blocking()
+
+    assert snap.db_size_mb == 3.0
+    assert snap.log_size_mb == 4.0
+    assert snap.memory_limit_mb == 128.0
 
 
 @pytest.mark.asyncio
@@ -136,11 +160,7 @@ async def test_status_query_does_not_block_event_loop():
 
     async def query_status() -> None:
         for _ in range(20):
-            system_metrics.build_system_metrics_payload(
-                db_size_mb=0.0,
-                log_size_mb=0.0,
-                memory_limit_mb=None,
-            )
+            system_metrics.build_system_metrics_payload()
             await asyncio.sleep(0)
 
     await asyncio.gather(probe(), query_status())
