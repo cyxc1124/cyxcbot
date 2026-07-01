@@ -58,6 +58,10 @@ def _level_rank(level: str) -> int:
     return LEVEL_RANK.get(level.upper(), 20)
 
 
+def entry_fingerprint(entry: LogEntry) -> tuple[str, str, str, str]:
+    return (entry.ts, entry.level, entry.logger, entry.message)
+
+
 class LogBroadcastHub:
     """Thread-safe hub storing recent logs and broadcasting to asyncio subscribers."""
 
@@ -87,24 +91,6 @@ class LogBroadcastHub:
         if limit <= 0:
             return filtered
         return filtered[-limit:]
-
-    def subscribe_with_recent(
-        self, *, limit: int = 500, min_level: str = "DEBUG"
-    ) -> tuple[asyncio.Queue[LogEntry | None], list[LogEntry]]:
-        """Subscribe and snapshot history under one lock to avoid replay gaps."""
-        threshold = _level_rank(min_level)
-        queue: asyncio.Queue[LogEntry | None] = asyncio.Queue(
-            maxsize=SUBSCRIBER_QUEUE_SIZE
-        )
-        with self._lock:
-            self._subscribers.add(queue)
-            items = list(self._history)
-        filtered = [item for item in items if _level_rank(item.level) >= threshold]
-        if limit <= 0:
-            recent = filtered
-        else:
-            recent = filtered[-limit:]
-        return queue, recent
 
     def subscribe(self) -> asyncio.Queue[LogEntry | None]:
         queue: asyncio.Queue[LogEntry | None] = asyncio.Queue(

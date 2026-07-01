@@ -11,6 +11,7 @@ from shared.logging.broadcast import (
     LogBroadcastHub,
     LogEntry,
     bridge_uvicorn_loggers,
+    entry_fingerprint,
     install_log_broadcast,
 )
 
@@ -19,29 +20,44 @@ def _entry(message: str, *, level: str = "INFO") -> LogEntry:
     return LogEntry(ts="2026-01-01 00:00:00.000", level=level, logger="test", message=message)
 
 
-def test_subscribe_with_recent_snapshots_before_replay_gap() -> None:
+def test_replay_window_entries_caught_up_without_subscriber() -> None:
     hub = LogBroadcastHub(max_history=10)
-    before = _entry("before")
-    hub.publish(before)
+    hub.publish(_entry("initial"))
+    history = hub.recent(limit=10, min_level="DEBUG")
+    sent = {entry_fingerprint(entry) for entry in history}
 
-    queue, history = hub.subscribe_with_recent(limit=10, min_level="DEBUG")
+    hub.publish(_entry("during-replay"))
 
-    after = _entry("after")
-    hub.publish(after)
+    queue = hub.subscribe()
+    try:
+        catch_up = [
+            entry
+            for entry in hub.recent(limit=10, min_level="DEBUG")
+            if entry_fingerprint(entry) not in sent
+        ]
+        assert [entry.message for entry in catch_up] == ["during-replay"]
+        assert queue.qsize() == 0
 
-    assert history == [before]
-    assert queue.qsize() == 1
-    assert queue.get_nowait() == after
+        hub.publish(_entry("live"))
+        assert queue.qsize() == 1
+        assert queue.get_nowait().message == "live"
+    finally:
+        hub.unsubscribe(queue)
 
 
-def test_subscribe_with_recent_respects_min_level() -> None:
-    hub = LogBroadcastHub(max_history=10)
-    hub.publish(_entry("debug", level="DEBUG"))
-    hub.publish(_entry("info", level="INFO"))
+def test_burst_during_replay_does_not_register_subscriber() -> None:
+    hub = LogBroadcastHub(max_history=300)
+    history = hub.recent(limit=300, min_level="DEBUG")
+    assert history == []
 
-    _queue, history = hub.subscribe_with_recent(limit=10, min_level="INFO")
+    for index in range(300):
+        hub.publish(_entry(f"log-{index}"))
 
-    assert [item.message for item in history] == ["info"]
+    queue = hub.subscribe()
+    try:
+        assert queue.qsize() == 0
+    finally:
+        hub.unsubscribe(queue)
 
 
 def test_install_log_broadcast_does_not_attach_uvicorn_handlers() -> None:

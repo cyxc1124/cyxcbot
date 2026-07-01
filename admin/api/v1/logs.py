@@ -12,7 +12,14 @@ from admin.auth.jwt import decode_access_token
 from admin.deps import AdminUser, RequireSetup
 from admin.schemas.logs import LogEntryResponse, RecentLogsResponse
 from shared.db.models import User
-from shared.logging.broadcast import LEVEL_RANK, MAX_HISTORY, LogEntry, get_log_hub
+from shared.logging.broadcast import (
+    LEVEL_RANK,
+    MAX_HISTORY,
+    LogBroadcastHub,
+    LogEntry,
+    entry_fingerprint,
+    get_log_hub,
+)
 
 router = APIRouter(
     tags=["logs"],
@@ -51,6 +58,20 @@ def _serialize(entries: list[LogEntry]) -> list[LogEntryResponse]:
     return [LogEntryResponse.model_validate(entry.to_dict()) for entry in entries]
 
 
+def _catch_up_entries(
+    hub: LogBroadcastHub,
+    *,
+    sent: set[tuple[str, str, str, str]],
+    limit: int,
+    min_level: str,
+) -> list[LogEntry]:
+    return [
+        entry
+        for entry in hub.recent(limit=limit, min_level=min_level)
+        if entry_fingerprint(entry) not in sent
+    ]
+
+
 @router.get("/logs/recent", response_model=RecentLogsResponse)
 async def recent_logs(
     _: AdminUser,
@@ -79,19 +100,32 @@ async def stream_logs(
     hub = get_log_hub()
 
     try:
-        queue, history = hub.subscribe_with_recent(
-            limit=MAX_HISTORY, min_level=min_level
-        )
         threshold = min_level.upper()
+        history = hub.recent(limit=MAX_HISTORY, min_level=min_level)
+        sent = {entry_fingerprint(entry) for entry in history}
+
+        for entry in history:
+            await websocket.send_json(entry.to_dict())
+
+        queue = hub.subscribe()
         try:
-            for entry in history:
+            for entry in _catch_up_entries(
+                hub, sent=sent, limit=MAX_HISTORY, min_level=min_level
+            ):
                 await websocket.send_json(entry.to_dict())
+                sent.add(entry_fingerprint(entry))
+
             while True:
                 entry = await queue.get()
                 if entry is None:
                     continue
-                if _level_gte(entry.level, threshold):
-                    await websocket.send_json(entry.to_dict())
+                if not _level_gte(entry.level, threshold):
+                    continue
+                fp = entry_fingerprint(entry)
+                if fp in sent:
+                    continue
+                await websocket.send_json(entry.to_dict())
+                sent.add(fp)
         finally:
             hub.unsubscribe(queue)
     except WebSocketDisconnect:
