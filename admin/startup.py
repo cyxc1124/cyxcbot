@@ -24,6 +24,21 @@ async def init_shared_services():
 
 
 @driver.on_startup
+async def start_system_metrics_sampler():
+    from shared.monitor.system_metrics import start_system_metrics_sampler
+
+    start_system_metrics_sampler()
+    logger.debug("系统指标后台采样已启动")
+
+
+@driver.on_shutdown
+async def stop_system_metrics_sampler():
+    from shared.monitor.system_metrics import stop_system_metrics_sampler
+
+    await stop_system_metrics_sampler()
+
+
+@driver.on_startup
 async def start_web_admin_server():
     """Launch FastAPI on WEB_PORT alongside NoneBot."""
     if os.getenv("WEB_ADMIN_ENABLED", "true").lower() in ("0", "false", "no"):

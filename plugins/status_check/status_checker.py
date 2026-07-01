@@ -1,4 +1,3 @@
-import asyncio
 import platform
 import time
 from datetime import datetime
@@ -116,9 +115,8 @@ async def get_bot_status() -> str:
 
         status_msg += f"操作系统: {system_info}\n"
 
-        # 进程 CPU
-        process_cpu = await get_process_cpu_info()
-        status_msg += f"CPU: {process_cpu}\n"
+        # 进程 CPU（读后台采样缓存，不阻塞事件循环）
+        status_msg += f"CPU: {get_process_cpu_info()}\n"
 
         if config.show_memory_usage:
             try:
@@ -502,33 +500,28 @@ def get_container_cpu_limit():
     return None
 
 
-def get_cpu_info_impl() -> str:
-    """获取CPU使用率和核心数（容器感知）
-
-    ponytail: psutil.cpu_percent(interval=1) 是同步阻塞调用，
-    调用方应通过 asyncio.to_thread() 将其卸载到独立线程，
-    避免阻塞 NoneBot 异步事件循环。
-    """
+def get_cpu_info() -> str:
+    """获取CPU使用率和核心数（容器感知，读后台采样缓存）"""
     try:
+        from shared.monitor.system_metrics import get_cached_snapshot
+
+        snap = get_cached_snapshot()
+        cpu_percent = snap.cpu_percent if snap is not None else psutil.cpu_percent()
+        cpu_count = snap.cpu_count if snap is not None else (psutil.cpu_count() or 1)
+
         env = detect_container_environment()
-        cpu_percent = psutil.cpu_percent(interval=1)
-        cpu_count = psutil.cpu_count()
         cpu_freq = psutil.cpu_freq()
 
         if env["is_container"]:
-            # 尝试获取容器CPU限制
             cpu_limit = get_container_cpu_limit()
 
             if cpu_limit:
-                # 显示容器CPU限制
                 freq_info = f", {cpu_freq.current:.0f}MHz" if cpu_freq else ""
                 return f"{cpu_percent:.1f}% (限制{cpu_limit:.1f}核{freq_info}, 宿主机{cpu_count}核) [容器]"
             else:
-                # 未设置CPU限制，显示宿主机信息
                 freq_info = f", {cpu_freq.current:.0f}MHz" if cpu_freq else ""
                 return f"{cpu_percent:.1f}% ({cpu_count}核{freq_info}) [宿主机，Pod未设置CPU限制]"
         else:
-            # 物理机环境
             if cpu_freq:
                 return f"{cpu_percent:.1f}% ({cpu_count}核, {cpu_freq.current:.0f}MHz)"
             else:
@@ -538,30 +531,18 @@ def get_cpu_info_impl() -> str:
         return "无法获取"
 
 
-async def get_cpu_info() -> str:
-    """异步包装 get_cpu_info_impl，避免阻塞事件循环"""
-    return await asyncio.to_thread(get_cpu_info_impl)
-
-
-def get_process_cpu_info_impl() -> str:
-    """获取本进程 CPU 使用率
-
-    ponytail: psutil.Process().cpu_percent(interval=1) 是同步阻塞调用，
-    调用方应通过 asyncio.to_thread() 将其卸载到独立线程，
-    避免阻塞 NoneBot 异步事件循环。
-    """
+def get_process_cpu_info() -> str:
+    """获取本进程 CPU 使用率（读后台采样缓存）"""
     try:
-        process = psutil.Process()
-        percent = process.cpu_percent(interval=1)
-        return f"{percent:.1f}%"
+        from shared.monitor.system_metrics import get_cached_snapshot
+
+        snap = get_cached_snapshot()
+        if snap is not None:
+            return f"{snap.process_cpu_percent:.1f}%"
+        return f"{psutil.Process().cpu_percent():.1f}%"
     except Exception:
         logger.opt(exception=True).error("获取进程CPU信息失败")
         return "无法获取"
-
-
-async def get_process_cpu_info() -> str:
-    """异步包装 get_process_cpu_info_impl，避免阻塞事件循环"""
-    return await asyncio.to_thread(get_process_cpu_info_impl)
 
 
 def get_detailed_connection_status() -> str:

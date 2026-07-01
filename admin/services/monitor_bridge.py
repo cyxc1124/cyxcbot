@@ -290,33 +290,13 @@ def _get_cgroup_memory_limit_mb() -> float | None:
 
 
 def get_system_monitor_status() -> Dict[str, Any]:
-    import time
+    from shared.monitor.system_metrics import build_system_metrics_payload
 
-    import psutil
-
-    process = psutil.Process()
-
-    # Warm up both CPU counters so the second call returns actual usage
-    process.cpu_percent()
-    psutil.cpu_percent()
-    time.sleep(0.2)
-
-    mem = psutil.virtual_memory()
-    disk = psutil.disk_usage("/")
-
-    return {
-        "process_cpu_percent": process.cpu_percent(),
-        "process_memory_mb": process.memory_info().rss / (1024**2),
-        "db_size_mb": _get_db_size_mb(),
-        "log_size_mb": _get_log_dir_size_mb(),
-        "cpu_percent": psutil.cpu_percent(),
-        "cpu_count": psutil.cpu_count(),
-        "memory_percent": float(mem.percent),
-        "memory_used_mb": mem.used / (1024**2),
-        "memory_total_mb": mem.total / (1024**2),
-        "memory_limit_mb": _get_cgroup_memory_limit_mb(),
-        "disk_percent": float(disk.percent),
-    }
+    return build_system_metrics_payload(
+        db_size_mb=_get_db_size_mb(),
+        log_size_mb=_get_log_dir_size_mb(),
+        memory_limit_mb=_get_cgroup_memory_limit_mb(),
+    )
 
 
 def get_dynamic_monitor_details() -> List[Dict[str, Any]]:

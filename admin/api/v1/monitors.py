@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Optional
 
 from fastapi import APIRouter
@@ -48,8 +47,7 @@ async def live_monitor_status(_: AdminUser):
 
 @router.get("/system", response_model=SystemMonitorStatusResponse)
 async def system_monitor_status(_: AdminUser):
-    data = await asyncio.to_thread(get_system_monitor_status)
-    return SystemMonitorStatusResponse(**data)
+    return SystemMonitorStatusResponse(**get_system_monitor_status())
 
 
 @router.post("/dynamic/check", response_model=ManualCheckResponse)
