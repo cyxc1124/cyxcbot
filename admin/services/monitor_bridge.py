@@ -175,6 +175,9 @@ def get_monitor_status() -> Dict[str, Any]:
         "live_running": live_running,
         "dynamic_target_count": len(snap.dynamic_monitor_mapping),
         "live_target_count": len(snap.live_monitor_mapping),
+        "dynamic_checks_total": dynamic.checks_total if dynamic else 0,
+        "live_checks_total": live.checks_total if live else 0,
+        "dynamic_new_dynamics_total": dynamic.new_dynamics_total if dynamic else 0,
     }
 
 
@@ -196,8 +199,8 @@ def build_dynamic_monitor_status() -> Dict[str, Any]:
         "last_check_at": instance.last_check_at if instance else None,
         "last_fetch_at": None,
         "last_error": None,
-        "checks_total": 0,
-        "new_dynamics_total": 0,
+        "checks_total": instance.checks_total if instance else 0,
+        "new_dynamics_total": instance.new_dynamics_total if instance else 0,
         "targets": get_dynamic_monitor_details(),
     }
 
@@ -223,7 +226,7 @@ def build_live_monitor_status() -> Dict[str, Any]:
         "last_check_at": instance.last_check_at if instance else None,
         "last_error": None,
         "live_rooms": live_rooms,
-        "checks_total": 0,
+        "checks_total": instance.checks_total if instance else 0,
         "targets": targets,
     }
 
