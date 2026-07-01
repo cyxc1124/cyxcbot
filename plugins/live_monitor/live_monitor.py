@@ -25,7 +25,12 @@ from shared.monitor.check_cycle import CheckCycleLogger
 from shared.notify.delivery import DeliveryResult, empty_delivery_result
 from utils.bilibili_api import LiveStatus, RoomInfo, UserInfo, api_manager
 
-from .card_generator import PrefetchImages, prefetch_card_images
+from .card_generator import (
+    PrefetchImages,
+    close_card_image_downloader,
+    init_card_image_downloader,
+    prefetch_card_images,
+)
 from .config import Config
 from .danmaku_client import DanmakuClient
 from .models import LiveRoomState
@@ -244,6 +249,8 @@ class LiveMonitor:
 
         # 初始化 WebSocket session
         self._ws_session = aiohttp.ClientSession()
+
+        await init_card_image_downloader()
 
         # 初始化房间状态
         for room_id in self.config.live_monitor_mapping.keys():
@@ -502,6 +509,8 @@ class LiveMonitor:
 
         # 关闭API管理器
         await api_manager.close()
+
+        await close_card_image_downloader()
 
         logger.info("直播监控已完全停止")
 

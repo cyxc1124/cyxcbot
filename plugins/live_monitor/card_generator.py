@@ -5,6 +5,8 @@
 
 import asyncio
 import os
+import time
+from collections import OrderedDict
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
@@ -17,6 +19,12 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from utils.bilibili_api import RoomInfo, UserInfo
 
 PrefetchImages = Tuple[Optional[Image.Image], Optional[Image.Image]]
+
+# 头像/封面下载：共享 session + 短 TTL LRU 缓存（存 bytes，用时再转 PIL）
+_IMAGE_CACHE_TTL_SECONDS = 300
+_IMAGE_CACHE_MAX_ENTRIES = 64
+_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+_IMAGE_DOWNLOAD_TIMEOUT = 10
 
 # 渲染倍率（2x 高清）
 SCALE = 2
@@ -205,21 +213,163 @@ async def _resolve_card_images(
     return avatar_img, cover_img
 
 
-async def _download_image(url: str, timeout: int = 10) -> Optional[Image.Image]:
-    """异步下载图片，失败返回 None"""
-    if not url:
-        return None
+def _bytes_to_rgba_image(data: bytes) -> Optional[Image.Image]:
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url, timeout=aiohttp.ClientTimeout(total=timeout)
+        return Image.open(BytesIO(data)).convert("RGBA")
+    except Exception:
+        return None
+
+
+class CardImageDownloader:
+    """直播卡片图片下载器：复用 aiohttp session，URL 级 TTL/LRU 缓存。"""
+
+    def __init__(
+        self,
+        *,
+        ttl_seconds: float = _IMAGE_CACHE_TTL_SECONDS,
+        max_entries: int = _IMAGE_CACHE_MAX_ENTRIES,
+        max_bytes: int = _IMAGE_MAX_BYTES,
+        timeout: int = _IMAGE_DOWNLOAD_TIMEOUT,
+    ) -> None:
+        self._ttl_seconds = ttl_seconds
+        self._max_entries = max_entries
+        self._max_bytes = max_bytes
+        self._timeout = timeout
+        self._session: Optional[aiohttp.ClientSession] = None
+        self._cache: OrderedDict[str, tuple[bytes, float]] = OrderedDict()
+        self._inflight: dict[str, asyncio.Task[Optional[bytes]]] = {}
+        self._lock = asyncio.Lock()
+
+    async def ensure_session(self) -> None:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+
+    async def close(self) -> None:
+        for task in list(self._inflight.values()):
+            task.cancel()
+        self._inflight.clear()
+        if self._session and not self._session.closed:
+            await self._session.close()
+        self._session = None
+        self._cache.clear()
+
+    def _get_cached_bytes(self, url: str) -> Optional[bytes]:
+        entry = self._cache.get(url)
+        if entry is None:
+            return None
+        data, expire_at = entry
+        if time.monotonic() > expire_at:
+            del self._cache[url]
+            return None
+        self._cache.move_to_end(url)
+        return data
+
+    def _set_cached_bytes(self, url: str, data: bytes) -> None:
+        expire_at = time.monotonic() + self._ttl_seconds
+        self._cache[url] = (data, expire_at)
+        self._cache.move_to_end(url)
+        while len(self._cache) > self._max_entries:
+            self._cache.popitem(last=False)
+
+    async def _read_response_bytes(
+        self, resp: aiohttp.ClientResponse
+    ) -> Optional[bytes]:
+        data = bytearray()
+        async for chunk in resp.content.iter_chunked(8192):
+            data.extend(chunk)
+            if len(data) > self._max_bytes:
+                logger.warning("图片过大，已跳过 {} (>{})", resp.url, self._max_bytes)
+                return None
+        return bytes(data)
+
+    async def _fetch_bytes(self, url: str) -> Optional[bytes]:
+        await self.ensure_session()
+        assert self._session is not None
+        try:
+            async with self._session.get(
+                url, timeout=aiohttp.ClientTimeout(total=self._timeout)
             ) as resp:
-                if resp.status == 200:
-                    data = await resp.read()
-                    return Image.open(BytesIO(data)).convert("RGBA")
-    except Exception as e:
-        logger.warning("下载图片失败 {}: {}", url, e)
-    return None
+                if resp.status != 200:
+                    return None
+                return await self._read_response_bytes(resp)
+        except Exception as e:
+            logger.warning("下载图片失败 {}: {}", url, e)
+            return None
+
+    def _pop_cached_bytes(self, url: str) -> None:
+        self._cache.pop(url, None)
+
+    async def download(self, url: str) -> Optional[Image.Image]:
+        """下载图片并转为 RGBA；失败返回 None。"""
+        if not url:
+            return None
+
+        cached = self._get_cached_bytes(url)
+        if cached is not None:
+            img = _bytes_to_rgba_image(cached)
+            if img is not None:
+                return img
+            self._pop_cached_bytes(url)
+
+        async with self._lock:
+            cached = self._get_cached_bytes(url)
+            if cached is not None:
+                img = _bytes_to_rgba_image(cached)
+                if img is not None:
+                    return img
+                self._pop_cached_bytes(url)
+            task = self._inflight.get(url)
+            if task is None:
+                task = asyncio.create_task(self._fetch_bytes(url))
+                self._inflight[url] = task
+
+        try:
+            data = await task
+        finally:
+            async with self._lock:
+                if self._inflight.get(url) is task:
+                    self._inflight.pop(url, None)
+
+        if data is None:
+            return None
+        img = _bytes_to_rgba_image(data)
+        if img is None:
+            logger.warning("图片解码失败，已跳过 {}", url)
+            return None
+        self._set_cached_bytes(url, data)
+        return img
+
+
+_card_image_downloader: Optional[CardImageDownloader] = None
+
+
+def _get_card_image_downloader() -> CardImageDownloader:
+    global _card_image_downloader
+    if _card_image_downloader is None:
+        _card_image_downloader = CardImageDownloader()
+    return _card_image_downloader
+
+
+async def init_card_image_downloader() -> None:
+    """直播监控启动时初始化共享图片下载 session。"""
+    await _get_card_image_downloader().ensure_session()
+
+
+async def close_card_image_downloader() -> None:
+    """直播监控停止时关闭共享 session 并清空缓存。"""
+    global _card_image_downloader
+    if _card_image_downloader is None:
+        return
+    await _card_image_downloader.close()
+    _card_image_downloader = None
+
+
+async def _download_image(
+    url: str, timeout: int = _IMAGE_DOWNLOAD_TIMEOUT
+) -> Optional[Image.Image]:
+    """异步下载图片，失败返回 None"""
+    del timeout  # ponytail: 对外保留签名，实际超时由 CardImageDownloader 统一配置
+    return await _get_card_image_downloader().download(url)
 
 
 def _draw_card(
