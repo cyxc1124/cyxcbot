@@ -14,6 +14,8 @@ from nonebot.log import logger
 
 from .dynamic_models import DynamicItem
 
+_USER_NAME_CACHE_TTL_SECONDS = 15 * 60
+
 
 class DynamicFetcher:
     """B站动态数据获取器"""
@@ -21,6 +23,7 @@ class DynamicFetcher:
     def __init__(self, session: aiohttp.ClientSession, cookie: Optional[str] = None):
         self.session = session
         self.cookie = cookie  # 保存cookie供后续使用
+        self._user_name_cache: dict[str, tuple[str, float]] = {}
         # B站API请求头
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
@@ -262,8 +265,11 @@ class DynamicFetcher:
             if not author_uid:
                 author_uid = author_module.get("mid", uid)
 
-            # 暂时不获取用户名，只保存UID，在需要推送时再获取
-            name = f"UP主_{author_uid}"  # 临时占位符，推送时会被替换
+            author_name = author_info.get("name") or author_module.get("name")
+            if author_name:
+                name = author_name
+            else:
+                name = f"UP主_{author_uid}"  # feed 无名称时占位，推送时再补 API
 
             author_type = author_info.get("type", "AUTHOR_TYPE_NORMAL")
 
@@ -394,8 +400,39 @@ class DynamicFetcher:
             logger.warning("解析动态项异常: {}", e)
             return None
 
+    @staticmethod
+    def _is_placeholder_user_name(uid: str | int, name: str) -> bool:
+        return name == f"UP主_{uid}"
+
+    def _get_cached_user_name(self, uid: str) -> Optional[str]:
+        entry = self._user_name_cache.get(uid)
+        if entry and time.time() - entry[1] < _USER_NAME_CACHE_TTL_SECONDS:
+            return entry[0]
+        return None
+
+    def _cache_user_name(self, uid: str, name: str) -> None:
+        self._user_name_cache[uid] = (name, time.time())
+
+    async def resolve_user_name(
+        self, uid: str, feed_name: Optional[str] = None
+    ) -> Optional[str]:
+        """优先 feed 作者名，其次 TTL 缓存，最后用户信息 API。"""
+        uid = str(uid)
+        if feed_name and not self._is_placeholder_user_name(uid, feed_name):
+            self._cache_user_name(uid, feed_name)
+            return feed_name
+        cached = self._get_cached_user_name(uid)
+        if cached:
+            return cached
+        return await self._get_user_name_from_api(uid)
+
     async def _get_user_name_from_api(self, uid: str) -> Optional[str]:
         """从B站API获取用户信息"""
+        uid = str(uid)
+        cached = self._get_cached_user_name(uid)
+        if cached:
+            return cached
+
         from . import wbi
 
         try:
@@ -465,6 +502,7 @@ class DynamicFetcher:
         user_data = data.get("data", {})
         name = user_data.get("name")
         if name:
+            self._cache_user_name(str(uid), name)
             logger.debug("成功获取UP主 {} 信息: {}", uid, name)
             return name
         else:
