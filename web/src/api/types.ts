@@ -329,6 +329,7 @@ export interface MonitorActionResult {
 }
 
 export interface RuntimeLogEntry {
+  entry_id: number
   ts: string
   level: string
   logger: string

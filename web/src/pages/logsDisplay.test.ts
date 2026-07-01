@@ -4,6 +4,7 @@ import { DISPLAY_MAX, LOG_FLUSH_MS, mergeLogs, trimLogs } from './logsDisplay'
 
 function entry(n: number): RuntimeLogEntry {
   return {
+    entry_id: n,
     ts: `2026-01-01T00:00:0${n % 10}.000Z`,
     level: 'INFO',
     logger: 'test',

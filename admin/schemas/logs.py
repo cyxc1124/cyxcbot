@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class LogEntryResponse(BaseModel):
+    entry_id: int
     ts: str
     level: str
     logger: str

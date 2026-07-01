@@ -6,7 +6,7 @@ import asyncio
 import logging
 import threading
 from collections import deque
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from typing import Any
 
@@ -31,12 +31,13 @@ LEVEL_RANK = {
 
 @dataclass(frozen=True)
 class LogEntry:
+    entry_id: int
     ts: str
     level: str
     logger: str
     message: str
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, str | int]:
         return asdict(self)
 
     @classmethod
@@ -47,6 +48,7 @@ class LogEntry:
         else:
             ts = str(time_value)
         return cls(
+            entry_id=0,
             ts=ts,
             level=str(record["level"].name),
             logger=str(record["name"]),
@@ -58,10 +60,6 @@ def _level_rank(level: str) -> int:
     return LEVEL_RANK.get(level.upper(), 20)
 
 
-def entry_fingerprint(entry: LogEntry) -> tuple[str, str, str, str]:
-    return (entry.ts, entry.level, entry.logger, entry.message)
-
-
 class LogBroadcastHub:
     """Thread-safe hub storing recent logs and broadcasting to asyncio subscribers."""
 
@@ -70,9 +68,12 @@ class LogBroadcastHub:
         self._history: deque[LogEntry] = deque(maxlen=max_history)
         self._subscribers: set[asyncio.Queue[LogEntry | None]] = set()
         self._lock = threading.Lock()
+        self._seq = 0
 
     def publish(self, entry: LogEntry) -> None:
         with self._lock:
+            self._seq += 1
+            entry = replace(entry, entry_id=self._seq)
             self._history.append(entry)
             dead: list[asyncio.Queue[LogEntry | None]] = []
             for queue in self._subscribers:

@@ -17,7 +17,6 @@ from shared.logging.broadcast import (
     MAX_HISTORY,
     LogBroadcastHub,
     LogEntry,
-    entry_fingerprint,
     get_log_hub,
 )
 
@@ -61,14 +60,14 @@ def _serialize(entries: list[LogEntry]) -> list[LogEntryResponse]:
 def _catch_up_entries(
     hub: LogBroadcastHub,
     *,
-    sent: set[tuple[str, str, str, str]],
+    sent: set[int],
     limit: int,
     min_level: str,
 ) -> list[LogEntry]:
     return [
         entry
         for entry in hub.recent(limit=limit, min_level=min_level)
-        if entry_fingerprint(entry) not in sent
+        if entry.entry_id not in sent
     ]
 
 
@@ -76,7 +75,7 @@ async def _send_buffer_catch_up(
     websocket: WebSocket,
     hub: LogBroadcastHub,
     *,
-    sent: set[tuple[str, str, str, str]],
+    sent: set[int],
     limit: int,
     min_level: str,
 ) -> None:
@@ -87,14 +86,14 @@ async def _send_buffer_catch_up(
             return
         for entry in catch_up:
             await websocket.send_json(entry.to_dict())
-            sent.add(entry_fingerprint(entry))
+            sent.add(entry.entry_id)
 
 
 async def _drain_subscriber_backlog(
     websocket: WebSocket,
     queue: asyncio.Queue[LogEntry | None],
     *,
-    sent: set[tuple[str, str, str, str]],
+    sent: set[int],
     threshold: str,
 ) -> bool:
     delivered = False
@@ -107,11 +106,10 @@ async def _drain_subscriber_backlog(
             continue
         if not _level_gte(entry.level, threshold):
             continue
-        fp = entry_fingerprint(entry)
-        if fp in sent:
+        if entry.entry_id in sent:
             continue
         await websocket.send_json(entry.to_dict())
-        sent.add(fp)
+        sent.add(entry.entry_id)
         delivered = True
 
 
@@ -120,7 +118,7 @@ async def _handoff_to_live(
     hub: LogBroadcastHub,
     queue: asyncio.Queue[LogEntry | None],
     *,
-    sent: set[tuple[str, str, str, str]],
+    sent: set[int],
     limit: int,
     min_level: str,
     threshold: str,
@@ -131,11 +129,10 @@ async def _handoff_to_live(
         progressed = False
 
         for entry in catch_up:
-            fp = entry_fingerprint(entry)
-            if fp in sent:
+            if entry.entry_id in sent:
                 continue
             await websocket.send_json(entry.to_dict())
-            sent.add(fp)
+            sent.add(entry.entry_id)
             progressed = True
 
         if await _drain_subscriber_backlog(
@@ -177,7 +174,7 @@ async def stream_logs(
     try:
         threshold = min_level.upper()
         history = hub.recent(limit=MAX_HISTORY, min_level=min_level)
-        sent = {entry_fingerprint(entry) for entry in history}
+        sent = {entry.entry_id for entry in history}
 
         for entry in history:
             await websocket.send_json(entry.to_dict())

@@ -11,38 +11,41 @@ from shared.logging.broadcast import (
     LogBroadcastHub,
     LogEntry,
     bridge_uvicorn_loggers,
-    entry_fingerprint,
     install_log_broadcast,
 )
 
 
 def _entry(message: str, *, level: str = "INFO") -> LogEntry:
     return LogEntry(
-        ts="2026-01-01 00:00:00.000", level=level, logger="test", message=message
+        entry_id=0,
+        ts="2026-01-01 00:00:00.000",
+        level=level,
+        logger="test",
+        message=message,
     )
 
 
 def test_buffer_catch_up_loops_until_ring_buffer_is_stable() -> None:
     hub = LogBroadcastHub(max_history=10)
-    first = _entry("first")
-    hub.publish(first)
-    sent = {entry_fingerprint(first)}
+    hub.publish(_entry("first"))
+    recent = hub.recent(limit=10, min_level="DEBUG")
+    sent = {recent[0].entry_id}
 
     hub.publish(_entry("second"))
     batch = [
         entry
         for entry in hub.recent(limit=10, min_level="DEBUG")
-        if entry_fingerprint(entry) not in sent
+        if entry.entry_id not in sent
     ]
     assert [entry.message for entry in batch] == ["second"]
     for entry in batch:
-        sent.add(entry_fingerprint(entry))
+        sent.add(entry.entry_id)
 
     hub.publish(_entry("third"))
     tail = [
         entry
         for entry in hub.recent(limit=10, min_level="DEBUG")
-        if entry_fingerprint(entry) not in sent
+        if entry.entry_id not in sent
     ]
     assert [entry.message for entry in tail] == ["third"]
     queue = hub.subscribe()
@@ -55,16 +58,14 @@ def test_buffer_catch_up_loops_until_ring_buffer_is_stable() -> None:
 def test_handoff_gap_entry_is_in_ring_buffer_before_subscribe() -> None:
     hub = LogBroadcastHub(max_history=10)
     hub.publish(_entry("initial"))
-    sent = {
-        entry_fingerprint(entry) for entry in hub.recent(limit=10, min_level="DEBUG")
-    }
+    sent = {entry.entry_id for entry in hub.recent(limit=10, min_level="DEBUG")}
 
     hub.publish(_entry("handoff-gap"))
 
     catch_up = [
         entry
         for entry in hub.recent(limit=10, min_level="DEBUG")
-        if entry_fingerprint(entry) not in sent
+        if entry.entry_id not in sent
     ]
     assert [entry.message for entry in catch_up] == ["handoff-gap"]
 
@@ -75,6 +76,27 @@ def test_handoff_gap_entry_is_in_ring_buffer_before_subscribe() -> None:
         assert queue.qsize() == 1
     finally:
         hub.unsubscribe(queue)
+
+
+def test_duplicate_fields_get_unique_entry_ids_for_dedupe() -> None:
+    hub = LogBroadcastHub(max_history=10)
+    shared = dict(
+        ts="2026-01-01 00:00:00.000",
+        level="DEBUG",
+        logger="test",
+        message="poll complete",
+    )
+    hub.publish(LogEntry(entry_id=0, **shared))
+    hub.publish(LogEntry(entry_id=0, **shared))
+
+    recent = hub.recent(limit=10, min_level="DEBUG")
+    assert len(recent) == 2
+    assert recent[0].entry_id != recent[1].entry_id
+
+    sent = {recent[0].entry_id}
+    catch_up = [entry for entry in recent if entry.entry_id not in sent]
+    assert len(catch_up) == 1
+    assert catch_up[0].entry_id == recent[1].entry_id
 
 
 def test_burst_during_replay_does_not_register_subscriber() -> None:
