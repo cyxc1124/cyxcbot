@@ -14,46 +14,16 @@ import { PageLoading } from './LoadingSpinner'
 import { ToggleSwitch } from './ToggleSwitch'
 import { useToast } from '../contexts/ToastContext'
 import { formatApiError } from '../utils/apiError'
+import {
+  computePolicyAfterToggle,
+  computeToggleAllPolicy,
+  isItemEnabled,
+} from '../utils/restrictPolicy'
 
 type StatusScope = 'group' | 'friend'
 
 interface StatusCheckPolicyTabProps {
   scope: StatusScope
-}
-
-function isItemEnabled(itemId: string, restrict: boolean, enabledIds: string[]): boolean {
-  if (!restrict) return true
-  return enabledIds.includes(itemId)
-}
-
-function computePolicyAfterToggle(
-  itemId: string,
-  enabled: boolean,
-  allIds: string[],
-  restrict: boolean,
-  enabledIds: string[],
-): { restrict: boolean; enabled_ids: string[] } {
-  if (enabled) {
-    if (!restrict) {
-      return { restrict: false, enabled_ids: [] }
-    }
-    const nextEnabled = [...new Set([...enabledIds, itemId])]
-    if (nextEnabled.length >= allIds.length) {
-      return { restrict: false, enabled_ids: [] }
-    }
-    return { restrict: true, enabled_ids: nextEnabled }
-  }
-
-  if (!restrict) {
-    return {
-      restrict: true,
-      enabled_ids: allIds.filter((id) => id !== itemId),
-    }
-  }
-  return {
-    restrict: true,
-    enabled_ids: enabledIds.filter((id) => id !== itemId),
-  }
 }
 
 function DisplayOptionsCard({
@@ -202,9 +172,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
   }
 
   const handleToggleAll = async (enabled: boolean) => {
-    const next = enabled
-      ? { restrict: false, enabled_ids: [] as string[] }
-      : { restrict: true, enabled_ids: [] as string[] }
+    const next = computeToggleAllPolicy(enabled)
 
     const prevRestrict = restrict
     const prevEnabledIds = enabledIds
