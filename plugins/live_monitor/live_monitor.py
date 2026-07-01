@@ -22,6 +22,12 @@ from shared.config.service import get_config_service
 from shared.db.models import LiveMonitorState
 from shared.monitor.background_task import spawn_background_task
 from shared.monitor.check_cycle import CheckCycleLogger
+from shared.monitor.poll_schedule import (
+    LIVE_BATCH_REQUEST_GAP_SECONDS,
+    LIVE_DANMAKU_CLIENT_START_GAP_SECONDS,
+    LIVE_POLL_MISFIRE_GRACE_TIME_SECONDS,
+    resolve_live_poll_interval_seconds,
+)
 from shared.notify.delivery import DeliveryResult, empty_delivery_result
 from utils.bilibili_api import LiveStatus, RoomInfo, UserInfo, api_manager
 
@@ -122,6 +128,12 @@ class LiveMonitor:
 
     def _is_active_room(self, room_id: str) -> bool:
         return room_id in self.config.live_monitor_mapping
+
+    def _scheduled_poll_interval_seconds(self) -> int:
+        return resolve_live_poll_interval_seconds(
+            self.config.monitor_interval,
+            use_websocket=self.config.use_websocket,
+        )
 
     def _is_current_room_state(self, room_id: str, state: LiveRoomState) -> bool:
         """_is_active_room 校验配置映射；本方法校验 state 是否仍为 room_states 当前条目。"""
@@ -374,11 +386,7 @@ class LiveMonitor:
             for room_id in new_room_ids:
                 await self._initialize_room(room_id)
 
-            poll_interval = (
-                max(300, self.config.monitor_interval * 5)
-                if self.config.use_websocket
-                else self.config.monitor_interval
-            )
+            poll_interval = self._scheduled_poll_interval_seconds()
             if (
                 old_interval != self.config.monitor_interval
                 or old_ws != self.config.use_websocket
@@ -390,7 +398,7 @@ class LiveMonitor:
                     id="live_monitor_check",
                     replace_existing=True,
                     max_instances=1,
-                    misfire_grace_time=60,
+                    misfire_grace_time=LIVE_POLL_MISFIRE_GRACE_TIME_SECONDS,
                 )
                 logger.info("直播监控轮询间隔已更新为 {}秒", poll_interval)
 
@@ -414,7 +422,7 @@ class LiveMonitor:
                                 "房间 {} Cookie 热更新 WebSocket 客户端失败", room_id
                             )
                         # 避免同时连接过多
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(LIVE_DANMAKU_CLIENT_START_GAP_SECONDS)
                     if existing_room_ids:
                         logger.info(
                             "直播监控 Cookie 已变更，已更新 {} 个 WebSocket 客户端",
@@ -432,11 +440,7 @@ class LiveMonitor:
         self._sender.include_room_info = self.config.include_room_info
         self._sender.templates = self.config.message_templates
 
-        poll_interval = (
-            max(300, self.config.monitor_interval * 5)
-            if self.config.use_websocket
-            else self.config.monitor_interval
-        )
+        poll_interval = self._scheduled_poll_interval_seconds()
         logger.info(
             "直播监控配置已热重载: {} 个房间, 轮询间隔 {}秒, WebSocket={}",
             len(self.config.live_monitor_mapping),
@@ -466,14 +470,14 @@ class LiveMonitor:
             await self._start_danmaku_clients()
 
             # API 轮询作为备用，间隔较长
-            poll_interval = max(300, self.config.monitor_interval * 5)
+            poll_interval = self._scheduled_poll_interval_seconds()
             logger.info(
                 "直播监控已启动：WebSocket 实时监控 + API 轮询备用（间隔 {}秒）",
                 poll_interval,
             )
         else:
             # 仅使用 API 轮询
-            poll_interval = self.config.monitor_interval
+            poll_interval = self._scheduled_poll_interval_seconds()
             logger.info("直播监控已启动：仅 API 轮询模式（间隔 {}秒）", poll_interval)
 
         # 使用APScheduler添加定时任务
@@ -484,7 +488,7 @@ class LiveMonitor:
             id="live_monitor_check",
             replace_existing=True,
             max_instances=1,
-            misfire_grace_time=60,
+            misfire_grace_time=LIVE_POLL_MISFIRE_GRACE_TIME_SECONDS,
         )
 
     async def stop_monitoring(self):
@@ -522,7 +526,7 @@ class LiveMonitor:
             except Exception:
                 logger.opt(exception=True).error("房间 {} 弹幕客户端启动失败", room_id)
             # 避免同时连接过多
-            await asyncio.sleep(1)
+            await asyncio.sleep(LIVE_DANMAKU_CLIENT_START_GAP_SECONDS)
 
     async def _restart_single_danmaku_client(self, room_id: str) -> None:
         """停止并重建单个房间的弹幕客户端（凭据变更等场景）。"""
@@ -832,7 +836,7 @@ class LiveMonitor:
                 self._cycle_logger.record_error(room_id, e)
 
             # 避免请求过快
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(LIVE_BATCH_REQUEST_GAP_SECONDS)
 
         self._cycle_logger.emit_summary()
         self._touch_last_check_at()
@@ -1196,7 +1200,7 @@ class LiveMonitor:
                     cycle.record_error(room_id, e)
                     failed.append(room_id)
 
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(LIVE_BATCH_REQUEST_GAP_SECONDS)
 
             cycle.emit_summary(log_success_at_info=True)
             self._touch_last_check_at()

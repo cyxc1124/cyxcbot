@@ -7,6 +7,8 @@ from typing import Any, Optional
 DYNAMIC_MIN_TICK_INTERVAL_SECONDS = 3.0
 LIVE_BATCH_REQUEST_GAP_SECONDS = 0.3
 LIVE_WEBSOCKET_BACKUP_MIN_INTERVAL_SECONDS = 300
+LIVE_DANMAKU_CLIENT_START_GAP_SECONDS = 1.0
+LIVE_POLL_MISFIRE_GRACE_TIME_SECONDS = 60
 
 
 def _round(value: float, digits: int = 2) -> float:
@@ -126,6 +128,20 @@ def _compute_dynamic_batch_poll_schedule(
         "meets_configured_interval": True,
         "warning": warning,
     }
+
+
+def resolve_live_poll_interval_seconds(
+    configured_interval_seconds: int,
+    *,
+    use_websocket: bool,
+) -> int:
+    """APScheduler poll interval; target count does not affect this value."""
+    schedule = compute_live_poll_schedule(
+        0,
+        configured_interval_seconds,
+        use_websocket=use_websocket,
+    )
+    return int(schedule["poll_interval_seconds"])
 
 
 def compute_live_poll_schedule(
