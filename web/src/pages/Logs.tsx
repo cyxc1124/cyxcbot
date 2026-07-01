@@ -50,7 +50,10 @@ export function LogsPage() {
   const pendingLogsRef = useRef<RuntimeLogEntry[]>([])
   const flushTimerRef = useRef<number | undefined>(undefined)
   const flushGenerationRef = useRef(0)
+  const pausedRef = useRef(paused)
   const wsRef = useRef<WebSocket | null>(null)
+
+  pausedRef.current = paused
 
   const clearFlushTimer = useCallback(() => {
     if (flushTimerRef.current !== undefined) {
@@ -85,14 +88,14 @@ export function LogsPage() {
   const appendLogs = useCallback(
     (incoming: RuntimeLogEntry[]) => {
       if (!incoming.length) return
-      if (paused) {
+      if (pausedRef.current) {
         pausedBufferRef.current.push(...incoming)
         return
       }
       pendingLogsRef.current.push(...incoming)
       scheduleFlush()
     },
-    [paused, scheduleFlush],
+    [scheduleFlush],
   )
 
   const rowVirtualizer = useVirtualizer({
@@ -177,7 +180,7 @@ export function LogsPage() {
       wsRef.current = null
       invalidatePendingFlush()
     }
-  }, [minLevel, appendLogs, invalidatePendingFlush])
+  }, [minLevel, invalidatePendingFlush, appendLogs])
 
   useEffect(() => () => clearFlushTimer(), [clearFlushTimer])
 
@@ -187,8 +190,9 @@ export function LogsPage() {
         const pending = pausedBufferRef.current
         pausedBufferRef.current = []
         if (pending.length) {
-          pendingLogsRef.current.push(...pending)
-          scheduleFlush()
+          clearFlushTimer()
+          flushGenerationRef.current += 1
+          setLogs((current) => mergeLogs(current, pending))
         }
       } else {
         clearFlushTimer()

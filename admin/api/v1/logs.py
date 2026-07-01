@@ -116,7 +116,10 @@ async def stream_logs(
                 sent.add(entry_fingerprint(entry))
 
             while True:
-                entry = await queue.get()
+                try:
+                    entry = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
                 if entry is None:
                     continue
                 if not _level_gte(entry.level, threshold):
@@ -126,6 +129,17 @@ async def stream_logs(
                     continue
                 await websocket.send_json(entry.to_dict())
                 sent.add(fp)
+
+            # Live queue delivers each entry once; dedupe set only bridges replay/catch-up.
+            sent.clear()
+
+            while True:
+                entry = await queue.get()
+                if entry is None:
+                    continue
+                if not _level_gte(entry.level, threshold):
+                    continue
+                await websocket.send_json(entry.to_dict())
         finally:
             hub.unsubscribe(queue)
     except WebSocketDisconnect:
