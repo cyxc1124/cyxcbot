@@ -575,7 +575,6 @@ class DynamicMonitor:
                 to_deliver.append(dynamic)
 
         if to_deliver:
-            self.new_dynamics_total += len(to_deliver)
             self._spawn_delivery_task(
                 self._deliver_new_dynamics(
                     uid, to_deliver, check_generation, persist_pinned=pinned_updated
@@ -615,6 +614,9 @@ class DynamicMonitor:
                     )
                     break
                 delivered_dynamic_ids.append(dynamic.id)
+
+            if delivered_dynamic_ids:
+                self.new_dynamics_total += len(delivered_dynamic_ids)
 
             if (delivered_dynamic_ids or persist_pinned) and self._check_still_valid(
                 uid, check_generation
