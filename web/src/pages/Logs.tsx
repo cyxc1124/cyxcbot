@@ -49,6 +49,7 @@ export function LogsPage() {
   const pausedBufferRef = useRef<RuntimeLogEntry[]>([])
   const pendingLogsRef = useRef<RuntimeLogEntry[]>([])
   const flushTimerRef = useRef<number | undefined>(undefined)
+  const flushGenerationRef = useRef(0)
   const wsRef = useRef<WebSocket | null>(null)
 
   const clearFlushTimer = useCallback(() => {
@@ -58,12 +59,20 @@ export function LogsPage() {
     }
   }, [])
 
+  const invalidatePendingFlush = useCallback(() => {
+    flushGenerationRef.current += 1
+    pendingLogsRef.current = []
+    clearFlushTimer()
+  }, [clearFlushTimer])
+
   const flushPendingLogs = useCallback(() => {
     flushTimerRef.current = undefined
     const pending = pendingLogsRef.current
     if (!pending.length) return
     pendingLogsRef.current = []
+    const generation = flushGenerationRef.current
     startTransition(() => {
+      if (generation !== flushGenerationRef.current) return
       setLogs((prev) => mergeLogs(prev, pending))
     })
   }, [])
@@ -166,10 +175,9 @@ export function LogsPage() {
       if (reconnectTimer) window.clearTimeout(reconnectTimer)
       wsRef.current?.close()
       wsRef.current = null
-      pendingLogsRef.current = []
-      clearFlushTimer()
+      invalidatePendingFlush()
     }
-  }, [minLevel, appendLogs, clearFlushTimer])
+  }, [minLevel, appendLogs, invalidatePendingFlush])
 
   useEffect(() => () => clearFlushTimer(), [clearFlushTimer])
 
@@ -186,6 +194,7 @@ export function LogsPage() {
         clearFlushTimer()
         const pending = pendingLogsRef.current
         pendingLogsRef.current = []
+        flushGenerationRef.current += 1
         if (pending.length) {
           pausedBufferRef.current.push(...pending)
         }
@@ -196,8 +205,7 @@ export function LogsPage() {
 
   const handleClear = () => {
     pausedBufferRef.current = []
-    pendingLogsRef.current = []
-    clearFlushTimer()
+    invalidatePendingFlush()
     setLogs([])
   }
 

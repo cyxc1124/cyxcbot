@@ -88,6 +88,24 @@ class LogBroadcastHub:
             return filtered
         return filtered[-limit:]
 
+    def subscribe_with_recent(
+        self, *, limit: int = 500, min_level: str = "DEBUG"
+    ) -> tuple[asyncio.Queue[LogEntry | None], list[LogEntry]]:
+        """Subscribe and snapshot history under one lock to avoid replay gaps."""
+        threshold = _level_rank(min_level)
+        queue: asyncio.Queue[LogEntry | None] = asyncio.Queue(
+            maxsize=SUBSCRIBER_QUEUE_SIZE
+        )
+        with self._lock:
+            self._subscribers.add(queue)
+            items = list(self._history)
+        filtered = [item for item in items if _level_rank(item.level) >= threshold]
+        if limit <= 0:
+            recent = filtered
+        else:
+            recent = filtered[-limit:]
+        return queue, recent
+
     def subscribe(self) -> asyncio.Queue[LogEntry | None]:
         queue: asyncio.Queue[LogEntry | None] = asyncio.Queue(
             maxsize=SUBSCRIBER_QUEUE_SIZE

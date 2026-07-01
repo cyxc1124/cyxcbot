@@ -79,12 +79,13 @@ async def stream_logs(
     hub = get_log_hub()
 
     try:
-        for entry in hub.recent(limit=MAX_HISTORY, min_level=min_level):
-            await websocket.send_json(entry.to_dict())
-
-        queue = hub.subscribe()
+        queue, history = hub.subscribe_with_recent(
+            limit=MAX_HISTORY, min_level=min_level
+        )
         threshold = min_level.upper()
         try:
+            for entry in history:
+                await websocket.send_json(entry.to_dict())
             while True:
                 entry = await queue.get()
                 if entry is None:
