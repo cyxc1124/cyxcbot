@@ -10,6 +10,8 @@ from urllib.parse import parse_qs, urlparse
 import aiohttp
 from nonebot.log import logger
 
+from shared.monitor.concurrency import run_with_concurrency
+
 BV_PATTERN = re.compile(r"BV1[a-zA-Z0-9]{9}")
 AV_PATTERN = re.compile(r"(?:^|[^\w])av(\d+)", re.IGNORECASE)
 B23_URL_PATTERN = re.compile(r"https?://(?:www\.)?b23\.tv/[A-Za-z0-9]+", re.IGNORECASE)
@@ -175,13 +177,26 @@ async def extract_bilibili_refs(
     for match in LIVE_URL_PATTERN.finditer(text):
         refs.append(BilibiliRef(kind="live", room_id=int(match.group(1))))
 
-    for match in B23_URL_PATTERN.finditer(text):
-        final_url = await resolve_short_url(session, match.group(0), cookie=cookie)
-        if not final_url:
-            continue
-        parsed = _ref_from_url(final_url)
-        if parsed:
-            refs.append(parsed)
+    b23_urls = [match.group(0) for match in B23_URL_PATTERN.finditer(text)]
+    cursor = 0
+    while cursor < len(b23_urls):
+        unique_refs = _dedupe_preserve_order(refs)
+        if len(unique_refs) >= max_count:
+            break
+
+        remaining = max_count - len(unique_refs)
+        batch = b23_urls[cursor : cursor + remaining]
+        cursor += len(batch)
+
+        async def resolve_b23(url: str) -> str | None:
+            return await resolve_short_url(session, url, cookie=cookie)
+
+        for final_url in await run_with_concurrency(batch, resolve_b23):
+            if isinstance(final_url, BaseException) or not final_url:
+                continue
+            parsed = _ref_from_url(final_url)
+            if parsed:
+                refs.append(parsed)
 
     return _dedupe_preserve_order(refs)[:max_count]
 

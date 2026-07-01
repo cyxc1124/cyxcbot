@@ -22,8 +22,8 @@ from shared.config.service import get_config_service
 from shared.db.models import LiveMonitorState
 from shared.monitor.background_task import spawn_background_task
 from shared.monitor.check_cycle import CheckCycleLogger
+from shared.monitor.concurrency import run_with_concurrency
 from shared.monitor.poll_schedule import (
-    LIVE_BATCH_REQUEST_GAP_SECONDS,
     LIVE_DANMAKU_CLIENT_START_GAP_SECONDS,
     LIVE_POLL_MISFIRE_GRACE_TIME_SECONDS,
     resolve_live_poll_interval_seconds,
@@ -825,18 +825,15 @@ class LiveMonitor:
             logger.debug("监控已停止，跳过本次检查")
             return
 
-        for room_id in self._configured_room_ids():
-            try:
-                ok = await self._check_room_status(room_id)
-                if ok is False:
-                    self._cycle_logger.record_failure(room_id)
-                else:
-                    self._cycle_logger.record_success()
-            except Exception as e:
-                self._cycle_logger.record_error(room_id, e)
-
-            # 避免请求过快
-            await asyncio.sleep(LIVE_BATCH_REQUEST_GAP_SECONDS)
+        room_ids = self._configured_room_ids()
+        results = await run_with_concurrency(room_ids, self._check_room_status)
+        for room_id, ok in zip(room_ids, results):
+            if isinstance(ok, BaseException):
+                self._cycle_logger.record_error(room_id, ok)
+            elif ok is False:
+                self._cycle_logger.record_failure(room_id)
+            else:
+                self._cycle_logger.record_success()
 
         self._cycle_logger.emit_summary()
         self._touch_last_check_at()
@@ -1187,20 +1184,17 @@ class LiveMonitor:
         failed: List[str] = []
 
         try:
-            for room_id in rid_list:
-                try:
-                    ok = await self._check_room_status(room_id)
-                    if ok is False:
-                        cycle.record_failure(room_id)
-                        failed.append(room_id)
-                    else:
-                        cycle.record_success()
-                        checked.append(room_id)
-                except Exception as e:
-                    cycle.record_error(room_id, e)
+            results = await run_with_concurrency(rid_list, self._check_room_status)
+            for room_id, ok in zip(rid_list, results):
+                if isinstance(ok, BaseException):
+                    cycle.record_error(room_id, ok)
                     failed.append(room_id)
-
-                await asyncio.sleep(LIVE_BATCH_REQUEST_GAP_SECONDS)
+                elif ok is False:
+                    cycle.record_failure(room_id)
+                    failed.append(room_id)
+                else:
+                    cycle.record_success()
+                    checked.append(room_id)
 
             cycle.emit_summary(log_success_at_info=True)
             self._touch_last_check_at()

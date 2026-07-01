@@ -111,6 +111,7 @@ async def handle_video_commands(event: GroupMessageEvent):
     try:
         logger.info("处理视频查询命令: {} in group {}", message_text, group_id)
 
+        from shared.monitor.concurrency import run_with_concurrency
         from utils.bilibili_api import video_api_manager
 
         # 初始化API（如果未初始化）
@@ -119,14 +120,19 @@ async def handle_video_commands(event: GroupMessageEvent):
         except Exception:
             pass
 
-        # 为每个UP主获取最新视频
-        for uid in uids:
-            try:
-                logger.info("为UP主 {} 获取最新视频", uid)
+        async def fetch_videos(uid: str):
+            return await video_api_manager.get_user_videos(
+                int(uid), page=1, page_size=5
+            )
 
-                videos = await video_api_manager.get_user_videos(
-                    int(uid), page=1, page_size=5
-                )
+        fetch_results = await run_with_concurrency(uids, fetch_videos)
+
+        for uid, videos in zip(uids, fetch_results):
+            try:
+                if isinstance(videos, BaseException):
+                    raise videos
+
+                logger.info("为UP主 {} 获取最新视频", uid)
 
                 if videos:
                     message = video_sender.build_video_message(videos)
