@@ -30,6 +30,22 @@ describe('logsDisplay', () => {
     expect(merged[2]?.message).toBe('message-3')
   })
 
+  it('mergeLogs skips entries already present by entry_id', () => {
+    const prev = [entry(1), entry(2)]
+    const merged = mergeLogs(prev, [entry(1), entry(3)])
+    expect(merged).toHaveLength(3)
+    expect(merged.map((item) => item.entry_id)).toEqual([1, 2, 3])
+  })
+
+  it('mergeLogs keeps order when websocket replays REST history', () => {
+    const prev = Array.from({ length: DISPLAY_MAX }, (_, i) => entry(i + 1))
+    const replay = Array.from({ length: DISPLAY_MAX }, (_, i) => entry(i + 1))
+    const merged = mergeLogs(prev, replay)
+    expect(merged).toBe(prev)
+    expect(merged[0]?.entry_id).toBe(1)
+    expect(merged.at(-1)?.entry_id).toBe(DISPLAY_MAX)
+  })
+
   it('mergeLogs trims to DISPLAY_MAX', () => {
     const prev = Array.from({ length: DISPLAY_MAX }, (_, i) => entry(i))
     const merged = mergeLogs(prev, [entry(9999)])

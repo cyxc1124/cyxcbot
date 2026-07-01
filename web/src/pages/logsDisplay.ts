@@ -13,5 +13,8 @@ export function mergeLogs(
   incoming: RuntimeLogEntry[],
 ): RuntimeLogEntry[] {
   if (!incoming.length) return prev
-  return trimLogs([...prev, ...incoming])
+  const seen = new Set(prev.map((item) => item.entry_id))
+  const novel = incoming.filter((item) => !seen.has(item.entry_id))
+  if (!novel.length) return prev
+  return trimLogs([...prev, ...novel])
 }
