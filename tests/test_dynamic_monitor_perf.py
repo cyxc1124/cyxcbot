@@ -253,6 +253,44 @@ async def test_screenshot_queue_waits_when_full(
 
 
 @pytest.mark.asyncio
+async def test_screenshot_skipped_if_disabled_while_queued(
+    dynamic_monitor_module,
+) -> None:
+    """排队等待期间热关闭截图时，不再调用 get_dynamic_screenshot。"""
+    DynamicMonitor = dynamic_monitor_module.DynamicMonitor
+    monitor = _make_monitor(DynamicMonitor, enable_screenshot=True)
+    monitor._screenshot_semaphore = asyncio.Semaphore(1)
+
+    capture_started = asyncio.Event()
+    release_first = asyncio.Event()
+    capture_calls = 0
+
+    async def slow_screenshot(dynamic_id: int):
+        nonlocal capture_calls
+        capture_calls += 1
+        capture_started.set()
+        await release_first.wait()
+        return (b"png", None, f"https://t.bilibili.com/{dynamic_id}")
+
+    with patch.object(
+        dynamic_monitor_module,
+        "get_dynamic_screenshot",
+        side_effect=slow_screenshot,
+    ):
+        first = asyncio.create_task(monitor._fetch_dynamic_screenshot(_dynamic(1)))
+        await capture_started.wait()
+        second = asyncio.create_task(monitor._fetch_dynamic_screenshot(_dynamic(2)))
+        await asyncio.sleep(0.02)
+        monitor.config.enable_screenshot = False
+        release_first.set()
+        first_result, second_result = await asyncio.gather(first, second)
+
+    assert first_result == b"png"
+    assert second_result is None
+    assert capture_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_build_message_uses_screenshot_when_available(
     dynamic_monitor_module,
 ) -> None:

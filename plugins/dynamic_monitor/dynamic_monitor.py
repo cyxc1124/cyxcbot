@@ -667,6 +667,12 @@ class DynamicMonitor:
 
         async with self._screenshot_queue_semaphore:
             async with self._screenshot_semaphore:
+                if not self.config.enable_screenshot:
+                    logger.debug(
+                        "动态 {} 截图已关闭（排队期间配置变更），跳过截图",
+                        dynamic.id,
+                    )
+                    return None
                 try:
                     (
                         screenshot_image,
