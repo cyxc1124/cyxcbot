@@ -96,12 +96,13 @@ async def _drain_subscriber_backlog(
     *,
     sent: set[tuple[str, str, str, str]],
     threshold: str,
-) -> None:
+) -> bool:
+    delivered = False
     while True:
         try:
             entry = queue.get_nowait()
         except asyncio.QueueEmpty:
-            return
+            return delivered
         if entry is None:
             continue
         if not _level_gte(entry.level, threshold):
@@ -111,6 +112,39 @@ async def _drain_subscriber_backlog(
             continue
         await websocket.send_json(entry.to_dict())
         sent.add(fp)
+        delivered = True
+
+
+async def _handoff_to_live(
+    websocket: WebSocket,
+    hub: LogBroadcastHub,
+    queue: asyncio.Queue[LogEntry | None],
+    *,
+    sent: set[tuple[str, str, str, str]],
+    limit: int,
+    min_level: str,
+    threshold: str,
+) -> None:
+    """Subscribe handoff: merge ring-buffer delta and queued backlog before live loop."""
+    while True:
+        catch_up = _catch_up_entries(hub, sent=sent, limit=limit, min_level=min_level)
+        progressed = False
+
+        for entry in catch_up:
+            fp = entry_fingerprint(entry)
+            if fp in sent:
+                continue
+            await websocket.send_json(entry.to_dict())
+            sent.add(fp)
+            progressed = True
+
+        if await _drain_subscriber_backlog(
+            websocket, queue, sent=sent, threshold=threshold
+        ):
+            progressed = True
+
+        if not progressed:
+            return
 
 
 @router.get("/logs/recent", response_model=RecentLogsResponse)
@@ -158,8 +192,14 @@ async def stream_logs(
 
         queue = hub.subscribe()
         try:
-            await _drain_subscriber_backlog(
-                websocket, queue, sent=sent, threshold=threshold
+            await _handoff_to_live(
+                websocket,
+                hub,
+                queue,
+                sent=sent,
+                limit=MAX_HISTORY,
+                min_level=min_level,
+                threshold=threshold,
             )
 
             # Live queue delivers each entry once; dedupe set only bridges replay/catch-up.

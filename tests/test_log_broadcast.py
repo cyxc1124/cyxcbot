@@ -22,31 +22,6 @@ def _entry(message: str, *, level: str = "INFO") -> LogEntry:
     )
 
 
-def test_replay_window_entries_caught_up_without_subscriber() -> None:
-    hub = LogBroadcastHub(max_history=10)
-    hub.publish(_entry("initial"))
-    history = hub.recent(limit=10, min_level="DEBUG")
-    sent = {entry_fingerprint(entry) for entry in history}
-
-    hub.publish(_entry("during-replay"))
-
-    catch_up = [
-        entry
-        for entry in hub.recent(limit=10, min_level="DEBUG")
-        if entry_fingerprint(entry) not in sent
-    ]
-    assert [entry.message for entry in catch_up] == ["during-replay"]
-
-    queue = hub.subscribe()
-    try:
-        assert queue.qsize() == 0
-        hub.publish(_entry("live"))
-        assert queue.qsize() == 1
-        assert queue.get_nowait().message == "live"
-    finally:
-        hub.unsubscribe(queue)
-
-
 def test_buffer_catch_up_loops_until_ring_buffer_is_stable() -> None:
     hub = LogBroadcastHub(max_history=10)
     first = _entry("first")
@@ -73,6 +48,31 @@ def test_buffer_catch_up_loops_until_ring_buffer_is_stable() -> None:
     queue = hub.subscribe()
     try:
         assert queue.qsize() == 0
+    finally:
+        hub.unsubscribe(queue)
+
+
+def test_handoff_gap_entry_is_in_ring_buffer_before_subscribe() -> None:
+    hub = LogBroadcastHub(max_history=10)
+    hub.publish(_entry("initial"))
+    sent = {
+        entry_fingerprint(entry) for entry in hub.recent(limit=10, min_level="DEBUG")
+    }
+
+    hub.publish(_entry("handoff-gap"))
+
+    catch_up = [
+        entry
+        for entry in hub.recent(limit=10, min_level="DEBUG")
+        if entry_fingerprint(entry) not in sent
+    ]
+    assert [entry.message for entry in catch_up] == ["handoff-gap"]
+
+    queue = hub.subscribe()
+    try:
+        assert queue.qsize() == 0
+        hub.publish(_entry("live"))
+        assert queue.qsize() == 1
     finally:
         hub.unsubscribe(queue)
 
