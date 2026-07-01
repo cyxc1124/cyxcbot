@@ -82,9 +82,7 @@ async def _send_buffer_catch_up(
 ) -> None:
     """Replay ring-buffer deltas before subscribing so the live queue stays empty."""
     while True:
-        catch_up = _catch_up_entries(
-            hub, sent=sent, limit=limit, min_level=min_level
-        )
+        catch_up = _catch_up_entries(hub, sent=sent, limit=limit, min_level=min_level)
         if not catch_up:
             return
         for entry in catch_up:

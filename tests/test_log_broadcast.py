@@ -17,7 +17,9 @@ from shared.logging.broadcast import (
 
 
 def _entry(message: str, *, level: str = "INFO") -> LogEntry:
-    return LogEntry(ts="2026-01-01 00:00:00.000", level=level, logger="test", message=message)
+    return LogEntry(
+        ts="2026-01-01 00:00:00.000", level=level, logger="test", message=message
+    )
 
 
 def test_replay_window_entries_caught_up_without_subscriber() -> None:
