@@ -338,10 +338,47 @@ async def test_reload_single_flight_coalesces_concurrent_calls() -> None:
         svc.reload(),
     )
 
-    assert load_calls == 1
+    assert 1 <= load_calls <= 2
     assert first is snapshot
     assert second is snapshot
     assert third is snapshot
+
+
+@pytest.mark.asyncio
+async def test_reload_during_callbacks_schedules_trailing_load() -> None:
+    """Reload requested after load() but before callbacks finish must re-read DB."""
+    from shared.config.service import ConfigService
+
+    svc = ConfigService.get_instance()
+    svc._reload_callbacks.clear()
+    load_calls = 0
+    stale = AppConfigSnapshot(dynamic_monitor_mapping={"a": ["g1"]})
+    fresh = AppConfigSnapshot(dynamic_monitor_mapping={"b": ["g2"]})
+    callback_started = asyncio.Event()
+    callback_release = asyncio.Event()
+
+    async def load_once_then_fresh() -> AppConfigSnapshot:
+        nonlocal load_calls
+        load_calls += 1
+        return stale if load_calls == 1 else fresh
+
+    async def slow_callback(_snapshot: AppConfigSnapshot) -> None:
+        callback_started.set()
+        await callback_release.wait()
+
+    svc.load = load_once_then_fresh  # type: ignore[method-assign]
+    svc.register_reload_callback(slow_callback)
+
+    first_task = asyncio.create_task(svc.reload())
+    await callback_started.wait()
+    second_task = asyncio.create_task(svc.reload())
+    await asyncio.sleep(0.01)
+    callback_release.set()
+    first_result, second_result = await asyncio.gather(first_task, second_task)
+
+    assert load_calls == 2
+    assert first_result.dynamic_monitor_mapping == {"b": ["g2"]}
+    assert second_result.dynamic_monitor_mapping == {"b": ["g2"]}
 
 
 @pytest.mark.asyncio

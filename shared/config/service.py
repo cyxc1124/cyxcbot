@@ -78,6 +78,7 @@ class ConfigService:
         self._reload_callbacks: List[ReloadCallback] = []
         self._reload_lock = asyncio.Lock()
         self._reload_task: asyncio.Task[AppConfigSnapshot] | None = None
+        self._reload_pending = False
 
     @classmethod
     def get_instance(cls) -> "ConfigService":
@@ -198,9 +199,19 @@ class ConfigService:
         """Reload config and notify registered monitors (single-flight)."""
         async with self._reload_lock:
             if self._reload_task is None or self._reload_task.done():
-                self._reload_task = asyncio.create_task(self._do_reload())
+                self._reload_task = asyncio.create_task(self._run_reload_loop())
+            else:
+                self._reload_pending = True
             task = self._reload_task
         return await task
+
+    async def _run_reload_loop(self) -> AppConfigSnapshot:
+        while True:
+            snapshot = await self._do_reload()
+            async with self._reload_lock:
+                if not self._reload_pending:
+                    return snapshot
+                self._reload_pending = False
 
     async def _do_reload(self) -> AppConfigSnapshot:
         logger.info("正在从数据库热重载配置…")
