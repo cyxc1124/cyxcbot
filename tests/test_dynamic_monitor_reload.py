@@ -398,7 +398,7 @@ async def test_persist_state_skips_inactive_uid(
     monitor.last_dynamic_ids["111"] = 999
     monitor.initialized_uids["111"] = True
 
-    with patch("plugins.dynamic_monitor.dynamic_monitor.get_session") as get_session:
+    with patch("plugins.dynamic_monitor.state_store.get_session") as get_session:
         await monitor._persist_state("111")
 
     get_session.assert_not_called()
@@ -413,7 +413,7 @@ async def test_persist_state_skips_stale_check_generation(
     monitor = _make_monitor(Config, DynamicMonitor, ["111"])
     monitor.last_dynamic_ids["111"] = 999
 
-    with patch("plugins.dynamic_monitor.dynamic_monitor.get_session") as get_session:
+    with patch("plugins.dynamic_monitor.state_store.get_session") as get_session:
         monitor._bump_check_generation("111")
         await monitor._persist_state("111", check_generation=0)
 

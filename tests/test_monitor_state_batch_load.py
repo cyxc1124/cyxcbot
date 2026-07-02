@@ -17,7 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from utils.bilibili_api import LiveStatus
 
 _MONITOR_PLUGIN_MODULES = (
+    "plugins.dynamic_monitor.state_store",
     "plugins.dynamic_monitor.dynamic_monitor",
+    "plugins.live_monitor.state_store",
     "plugins.live_monitor.live_monitor",
 )
 
@@ -43,6 +45,11 @@ def _ensure_real_db_modules():
             if _model_column_is_real(
                 DynamicMonitorState, "uid"
             ) and _model_column_is_real(LiveMonitorState, "room_id"):
+                for name in (
+                    "plugins.dynamic_monitor.state_store",
+                    "plugins.live_monitor.state_store",
+                ):
+                    sys.modules.pop(name, None)
                 return Model, DynamicMonitorState, LiveMonitorState
 
     for name in (
@@ -111,13 +118,20 @@ async def test_dynamic_load_persisted_states_all_exist(
     db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _, factory, DynamicMonitorState, _ = db_context
+    engine, factory, _, _ = db_context
     from plugins.dynamic_monitor.config import Config
     from plugins.dynamic_monitor.dynamic_monitor import DynamicMonitor
+    from plugins.dynamic_monitor import state_store as dynamic_state_store
+    from shared.db.models import DynamicMonitorState
 
     monkeypatch.setattr(
-        "plugins.dynamic_monitor.dynamic_monitor.get_session",
+        dynamic_state_store,
+        "get_session",
         lambda: factory(),
+    )
+
+    monitor = DynamicMonitor(
+        Config(dynamic_monitor_mapping={"111": ["g1"], "222": ["g1"]})
     )
 
     async with factory() as session:
@@ -139,9 +153,6 @@ async def test_dynamic_load_persisted_states_all_exist(
                 )
             )
 
-    monitor = DynamicMonitor(
-        Config(dynamic_monitor_mapping={"111": ["g1"], "222": ["g1"]})
-    )
     await monitor._load_persisted_states()
 
     assert monitor.last_dynamic_ids == {"111": 100, "222": 200}
@@ -155,11 +166,13 @@ async def test_dynamic_load_persisted_states_none_exist(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, factory, _, _ = db_context
+    from plugins.dynamic_monitor import state_store as dynamic_state_store
     from plugins.dynamic_monitor.config import Config
     from plugins.dynamic_monitor.dynamic_monitor import DynamicMonitor
 
     monkeypatch.setattr(
-        "plugins.dynamic_monitor.dynamic_monitor.get_session",
+        dynamic_state_store,
+        "get_session",
         lambda: factory(),
     )
 
@@ -178,12 +191,15 @@ async def test_dynamic_load_persisted_states_partial(
     db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _, factory, DynamicMonitorState, _ = db_context
+    _, factory, _, _ = db_context
+    from plugins.dynamic_monitor import state_store as dynamic_state_store
     from plugins.dynamic_monitor.config import Config
     from plugins.dynamic_monitor.dynamic_monitor import DynamicMonitor
+    from shared.db.models import DynamicMonitorState
 
     monkeypatch.setattr(
-        "plugins.dynamic_monitor.dynamic_monitor.get_session",
+        dynamic_state_store,
+        "get_session",
         lambda: factory(),
     )
 
@@ -224,12 +240,15 @@ async def test_dynamic_load_persisted_states_single_query(
     db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    engine, factory, DynamicMonitorState, _ = db_context
+    engine, factory, _, _ = db_context
     from plugins.dynamic_monitor.config import Config
     from plugins.dynamic_monitor.dynamic_monitor import DynamicMonitor
+    from plugins.dynamic_monitor import state_store as dynamic_state_store
+    from shared.db.models import DynamicMonitorState
 
     monkeypatch.setattr(
-        "plugins.dynamic_monitor.dynamic_monitor.get_session",
+        dynamic_state_store,
+        "get_session",
         lambda: factory(),
     )
 
@@ -264,15 +283,22 @@ async def test_live_load_persisted_states_all_exist(
     db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _, factory, _, LiveMonitorState = db_context
+    engine, factory, _, _ = db_context
     from plugins.live_monitor.config import Config
     from plugins.live_monitor.live_monitor import LiveMonitor
     from plugins.live_monitor.models import LiveRoomState
+    from plugins.live_monitor import state_store as live_state_store
+    from shared.db.models import LiveMonitorState
 
     monkeypatch.setattr(
-        "plugins.live_monitor.live_monitor.get_session",
+        live_state_store,
+        "get_session",
         lambda: factory(),
     )
+
+    monitor = LiveMonitor(Config(live_monitor_mapping={"111": ["g1"], "222": ["g1"]}))
+    monitor.room_states["111"] = LiveRoomState(room_id=111)
+    monitor.room_states["222"] = LiveRoomState(room_id=222)
 
     async with factory() as session:
         async with session.begin():
@@ -291,9 +317,6 @@ async def test_live_load_persisted_states_all_exist(
                 )
             )
 
-    monitor = LiveMonitor(Config(live_monitor_mapping={"111": ["g1"], "222": ["g1"]}))
-    monitor.room_states["111"] = LiveRoomState(room_id=111)
-    monitor.room_states["222"] = LiveRoomState(room_id=222)
     await monitor._load_persisted_states()
 
     assert monitor.room_states["111"].previous_status == LiveStatus.LIVE
@@ -308,12 +331,14 @@ async def test_live_load_persisted_states_none_exist(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, factory, _, _ = db_context
+    from plugins.live_monitor import state_store as live_state_store
     from plugins.live_monitor.config import Config
     from plugins.live_monitor.live_monitor import LiveMonitor
     from plugins.live_monitor.models import LiveRoomState
 
     monkeypatch.setattr(
-        "plugins.live_monitor.live_monitor.get_session",
+        live_state_store,
+        "get_session",
         lambda: factory(),
     )
 
@@ -332,13 +357,16 @@ async def test_live_load_persisted_states_partial(
     db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _, factory, _, LiveMonitorState = db_context
+    _, factory, _, _ = db_context
+    from plugins.live_monitor import state_store as live_state_store
     from plugins.live_monitor.config import Config
     from plugins.live_monitor.live_monitor import LiveMonitor
     from plugins.live_monitor.models import LiveRoomState
+    from shared.db.models import LiveMonitorState
 
     monkeypatch.setattr(
-        "plugins.live_monitor.live_monitor.get_session",
+        live_state_store,
+        "get_session",
         lambda: factory(),
     )
 
@@ -377,13 +405,16 @@ async def test_live_load_persisted_states_single_query(
     db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    engine, factory, _, LiveMonitorState = db_context
+    engine, factory, _, _ = db_context
     from plugins.live_monitor.config import Config
     from plugins.live_monitor.live_monitor import LiveMonitor
     from plugins.live_monitor.models import LiveRoomState
+    from plugins.live_monitor import state_store as live_state_store
+    from shared.db.models import LiveMonitorState
 
     monkeypatch.setattr(
-        "plugins.live_monitor.live_monitor.get_session",
+        live_state_store,
+        "get_session",
         lambda: factory(),
     )
 

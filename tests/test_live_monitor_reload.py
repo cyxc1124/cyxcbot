@@ -702,7 +702,7 @@ async def test_persist_state_skips_inactive_room(
     monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
     monitor.config = Config(live_monitor_mapping={})
 
-    with patch("plugins.live_monitor.live_monitor.get_session") as get_session:
+    with patch("plugins.live_monitor.state_store.get_session") as get_session:
         await monitor._persist_state("111")
 
     get_session.assert_not_called()
@@ -729,7 +729,7 @@ async def test_check_room_status_does_not_mutate_after_target_removed_during_fet
             "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
             side_effect=fetch_after_disable,
         ),
-        patch.object(monitor, "_send_live_notification", AsyncMock()) as notify,
+        patch.object(monitor._delivery, "_send_notification", AsyncMock()) as notify,
         patch.object(monitor, "_persist_state", AsyncMock()) as persist,
     ):
         result = await monitor._check_room_status("111")
@@ -907,7 +907,7 @@ async def _run_stale_handler_during_disable_reenable(
             "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
             side_effect=slow_fetch,
         ),
-        patch.object(monitor, "_send_live_notification", AsyncMock()) as notify,
+        patch.object(monitor._delivery, "_send_notification", AsyncMock()) as notify,
     ):
         stale_task = asyncio.create_task(handler())
         await fetch_started.wait()
@@ -964,7 +964,7 @@ async def test_stale_check_skips_notification_when_all_targets_cleared_via_sync(
                 side_effect=slow_fetch,
             ),
             patch.object(monitor, "_delete_persisted_state", new_callable=AsyncMock),
-            patch.object(monitor, "_send_live_notification", AsyncMock()) as notify,
+            patch.object(monitor._delivery, "_send_notification", AsyncMock()) as notify,
             patch.object(monitor_mod, "stop_live_monitor", new_callable=AsyncMock),
         ):
             stale_task = asyncio.create_task(monitor._check_room_status("111"))
