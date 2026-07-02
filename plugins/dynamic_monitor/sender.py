@@ -51,15 +51,17 @@ class DynamicSender:
                 for image_url in dynamic.images:
                     try:
                         parts.append(MessageSegment.image(image_url))
-                    except Exception as exc:
-                        logger.warning(f"添加动态图片失败: {image_url}, {exc}")
+                    except Exception:
+                        logger.opt(exception=True).warning(
+                            "添加动态图片失败: {}", image_url
+                        )
                 return parts
 
             if screenshot_image:
                 try:
                     return [MessageSegment.image(screenshot_image)]
-                except Exception as exc:
-                    logger.warning(f"添加动态截图失败: {exc}")
+                except Exception:
+                    logger.opt(exception=True).warning("添加动态截图失败")
             return []
 
         return build_message_from_template(
@@ -98,12 +100,12 @@ class DynamicSender:
                 await self._send_to_group(
                     group_id, message, at_all_enabled=at_all_enabled
                 )
-                logger.info(f"动态消息已发送到群组 {group_id}")
+                logger.info("动态消息已发送到群组 {}", group_id)
                 deliveries.append(
                     TargetDelivery("group", group_id, True),
                 )
             except Exception as exc:
-                logger.error(f"发送消息到群组 {group_id} 失败: {exc}")
+                logger.opt(exception=True).error("发送消息到群组 {} 失败", group_id)
                 deliveries.append(
                     TargetDelivery("group", group_id, False, str(exc)),
                 )
@@ -144,12 +146,12 @@ class DynamicSender:
         for user_id in user_ids:
             try:
                 await self._send_to_user(user_id, message)
-                logger.info(f"动态消息已发送到好友 {user_id}")
+                logger.info("动态消息已发送到好友 {}", user_id)
                 deliveries.append(
                     TargetDelivery("user", user_id, True),
                 )
             except Exception as exc:
-                logger.error(f"发送消息到好友 {user_id} 失败: {exc}")
+                logger.opt(exception=True).error("发送消息到好友 {} 失败", user_id)
                 deliveries.append(
                     TargetDelivery("user", user_id, False, str(exc)),
                 )

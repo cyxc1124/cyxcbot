@@ -37,8 +37,8 @@ async def reload_dynamic_monitor() -> bool:
 
     try:
         await dynamic_monitor_mod.sync_from_config_reload(snap)
-    except Exception as exc:
-        logger.error(f"Failed to reload dynamic monitor: {exc}")
+    except Exception:
+        logger.opt(exception=True).error("动态监控热重载失败")
         return False
 
     instance_after = dynamic_monitor_mod.dynamic_monitor_instance
@@ -62,8 +62,8 @@ async def reload_live_monitor() -> bool:
 
     try:
         await live_monitor_mod.sync_from_config_reload(snap)
-    except Exception as exc:
-        logger.error(f"Failed to reload live monitor: {exc}")
+    except Exception:
+        logger.opt(exception=True).error("直播监控热重载失败")
         return False
 
     instance_after = live_monitor_mod.live_monitor_instance
@@ -128,8 +128,8 @@ async def trigger_live_check(room_id: Optional[str] = None) -> Dict[str, Any]:
             detail = await instance.check_room_now(room_id)
             if detail:
                 results.append(detail)
-        except Exception as exc:
-            logger.error(f"Manual live check failed for {room_id}: {exc}")
+        except Exception:
+            logger.opt(exception=True).error("直播间 {} 手动检查失败", room_id)
             return {"success": False, "message": f"Check failed for room {room_id}"}
         return {
             "success": True,
