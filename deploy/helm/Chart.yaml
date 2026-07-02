@@ -2,7 +2,7 @@ apiVersion: v2
 name: cyxcbot
 description: cyxcbot NoneBot 机器人 Helm Chart，含 Web Admin 与 B 站监控
 version: 0.2.0
-appVersion: "2.2.0"
+appVersion: "2.3.0"
 type: application
 
 maintainers:
