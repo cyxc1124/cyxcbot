@@ -78,7 +78,7 @@ jobs:
         run: ./scripts/build-windows.ps1 -Version "${{ steps.version.outputs.version }}"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cyxcbot-windows-${{ steps.version.outputs.version }}
           path: cyxcbot-windows-${{ steps.version.outputs.version }}.zip
