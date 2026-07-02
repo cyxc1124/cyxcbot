@@ -119,9 +119,9 @@ async def test_dynamic_load_persisted_states_all_exist(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     engine, factory, _, _ = db_context
+    from plugins.dynamic_monitor import state_store as dynamic_state_store
     from plugins.dynamic_monitor.config import Config
     from plugins.dynamic_monitor.dynamic_monitor import DynamicMonitor
-    from plugins.dynamic_monitor import state_store as dynamic_state_store
     from shared.db.models import DynamicMonitorState
 
     monkeypatch.setattr(
@@ -241,9 +241,9 @@ async def test_dynamic_load_persisted_states_single_query(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     engine, factory, _, _ = db_context
+    from plugins.dynamic_monitor import state_store as dynamic_state_store
     from plugins.dynamic_monitor.config import Config
     from plugins.dynamic_monitor.dynamic_monitor import DynamicMonitor
-    from plugins.dynamic_monitor import state_store as dynamic_state_store
     from shared.db.models import DynamicMonitorState
 
     monkeypatch.setattr(
@@ -284,10 +284,10 @@ async def test_live_load_persisted_states_all_exist(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     engine, factory, _, _ = db_context
+    from plugins.live_monitor import state_store as live_state_store
     from plugins.live_monitor.config import Config
     from plugins.live_monitor.live_monitor import LiveMonitor
     from plugins.live_monitor.models import LiveRoomState
-    from plugins.live_monitor import state_store as live_state_store
     from shared.db.models import LiveMonitorState
 
     monkeypatch.setattr(
@@ -406,10 +406,10 @@ async def test_live_load_persisted_states_single_query(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     engine, factory, _, _ = db_context
+    from plugins.live_monitor import state_store as live_state_store
     from plugins.live_monitor.config import Config
     from plugins.live_monitor.live_monitor import LiveMonitor
     from plugins.live_monitor.models import LiveRoomState
-    from plugins.live_monitor import state_store as live_state_store
     from shared.db.models import LiveMonitorState
 
     monkeypatch.setattr(
