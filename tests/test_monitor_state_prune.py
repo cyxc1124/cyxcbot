@@ -2,29 +2,22 @@
 
 from __future__ import annotations
 
-import importlib
-import importlib.util
 import os
 import sys
-import types
 import uuid
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import nonebot
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-ROOT = Path(__file__).resolve().parents[1]
-PLUGINS_ROOT = ROOT / "plugins"
-DYNAMIC_MONITOR_ROOT = PLUGINS_ROOT / "dynamic_monitor"
-
 _DYNAMIC_MONITOR_MODULE_KEYS = (
     "plugins",
     "plugins.dynamic_monitor",
     "plugins.dynamic_monitor.config",
+    "plugins.dynamic_monitor.state_store",
     "plugins.dynamic_monitor.dynamic_monitor",
     "plugins.dynamic_monitor.sender",
     "nonebot_plugin_apscheduler",
@@ -65,6 +58,11 @@ def _ensure_real_db_modules():
                         getattr(service_mod, "SystemSetting", None), MagicMock
                     ):
                         sys.modules.pop("shared.config.service", None)
+                    for name in (
+                        "plugins.dynamic_monitor.state_store",
+                        "plugins.dynamic_monitor.dynamic_monitor",
+                    ):
+                        sys.modules.pop(name, None)
                     from shared.config.service import ConfigService
 
                     return (
@@ -81,6 +79,8 @@ def _ensure_real_db_modules():
         "shared.db.models",
         "shared.db.base",
         "nonebot_plugin_orm",
+        "plugins.dynamic_monitor.state_store",
+        "plugins.dynamic_monitor.dynamic_monitor",
     ):
         sys.modules.pop(name, None)
 
@@ -115,63 +115,6 @@ def _ensure_real_db_modules():
     )
 
 
-def _ensure_package(name: str, path: Path) -> types.ModuleType:
-    if name in sys.modules:
-        module = sys.modules[name]
-        if not getattr(module, "__path__", None):
-            module.__path__ = [str(path)]
-        return module
-    module = types.ModuleType(name)
-    module.__path__ = [str(path)]
-    sys.modules[name] = module
-    return module
-
-
-def _load_dynamic_monitor_module(qualified_name: str, filename: str):
-    path = DYNAMIC_MONITOR_ROOT / filename
-    spec = importlib.util.spec_from_file_location(
-        qualified_name,
-        path,
-        submodule_search_locations=[str(DYNAMIC_MONITOR_ROOT)],
-    )
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    sys.modules[qualified_name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def _import_dynamic_monitor_modules(
-    session_factory: async_sessionmaker[AsyncSession],
-) -> tuple[Any, Any]:
-    sys.modules.pop("plugins.dynamic_monitor.dynamic_monitor", None)
-    sys.modules.pop("plugins.dynamic_monitor.config", None)
-
-    _ensure_package("plugins", PLUGINS_ROOT)
-    _ensure_package("plugins.dynamic_monitor", DYNAMIC_MONITOR_ROOT)
-
-    sys.modules["nonebot_plugin_apscheduler"] = MagicMock(scheduler=MagicMock())
-    sys.modules["plugins.dynamic_monitor.sender"] = MagicMock(
-        DynamicSender=MagicMock(),
-    )
-    sys.modules["utils.screenshot"] = MagicMock(
-        init_screenshot_service=AsyncMock(),
-        close_screenshot_service=AsyncMock(),
-        get_dynamic_screenshot=AsyncMock(),
-    )
-
-    config_mod = _load_dynamic_monitor_module(
-        "plugins.dynamic_monitor.config", "config.py"
-    )
-    monitor_mod = _load_dynamic_monitor_module(
-        "plugins.dynamic_monitor.dynamic_monitor", "dynamic_monitor.py"
-    )
-    if isinstance(monitor_mod.DynamicMonitorState, MagicMock):
-        raise RuntimeError("DynamicMonitorState was not loaded from real DB models")
-    monitor_mod.get_session = lambda: session_factory()
-    return config_mod.Config, monitor_mod.DynamicMonitor
-
-
 @pytest.fixture
 def dynamic_monitor_plugin_modules() -> Iterator[tuple[Any, Any]]:
     snapshot = {key: sys.modules.get(key) for key in _DYNAMIC_MONITOR_MODULE_KEYS}
@@ -197,7 +140,8 @@ async def db_context():
         LiveTarget,
     ) = _ensure_real_db_modules()
 
-    engine = create_async_engine(_shared_sqlite_url())
+    db_url = os.environ["SQLALCHEMY_DATABASE_URL"]
+    engine = create_async_engine(db_url)
     async with engine.begin() as conn:
         await conn.run_sync(Model.metadata.create_all)
 
@@ -343,9 +287,22 @@ async def test_dynamic_monitor_reload_config_deletes_persisted_state_from_db(
         type,
     ],
     dynamic_monitor_plugin_modules: None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _ConfigService, factory, DynamicMonitorState, _DynamicTarget, _, _ = db_context
-    Config, DynamicMonitor = _import_dynamic_monitor_modules(factory)
+    _ConfigService, factory, _, _DynamicTarget, _, _ = db_context
+    for name in (
+        "plugins.dynamic_monitor.state_store",
+        "plugins.dynamic_monitor.dynamic_monitor",
+    ):
+        sys.modules.pop(name, None)
+    from plugins.dynamic_monitor import state_store as dynamic_state_store
+    from plugins.dynamic_monitor.config import Config
+    from plugins.dynamic_monitor.dynamic_monitor import DynamicMonitor
+    from shared.db.models import DynamicMonitorState
+
+    monkeypatch.setattr(dynamic_state_store, "DynamicMonitorState", DynamicMonitorState)
+    monkeypatch.setattr(dynamic_state_store, "get_session", lambda: factory())
+    monkeypatch.setattr("nonebot_plugin_orm.get_session", lambda: factory())
 
     monitor = DynamicMonitor(
         Config(dynamic_monitor_mapping={uid: ["group1"] for uid in ["111", "222"]})
@@ -369,9 +326,15 @@ async def test_dynamic_monitor_reload_config_deletes_persisted_state_from_db(
         dynamic_monitor_mapping={"222": ["group1"]},
     )
 
-    with patch(
-        "plugins.dynamic_monitor.dynamic_monitor.Config.from_service",
-        return_value=reduced_config,
+    with (
+        patch(
+            "plugins.dynamic_monitor.dynamic_monitor.Config.from_service",
+            return_value=reduced_config,
+        ),
+        patch(
+            "plugins.dynamic_monitor.state_store.get_session",
+            lambda: factory(),
+        ),
     ):
         await monitor.reload_config()
 
