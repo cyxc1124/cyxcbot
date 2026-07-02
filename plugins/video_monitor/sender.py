@@ -52,8 +52,8 @@ class VideoSender:
         if video.cover:
             try:
                 message.append(MessageSegment.image(video.cover))
-            except Exception as e:
-                logger.warning(f"添加视频封面失败: {e}")
+            except Exception:
+                logger.opt(exception=True).warning("添加视频封面失败")
 
         # 第三行：视频标题
         message.append(f"{video.title}\n")
@@ -72,11 +72,11 @@ class VideoSender:
             bot = get_bot()
 
             if not bot:
-                logger.warning(f"机器人未连接，跳过发送到群组 {group_id}")
+                logger.warning("机器人未连接，跳过发送到群组 {}", group_id)
                 return
 
             await bot.send_group_msg(group_id=int(group_id), message=message)
-            logger.info(f"成功发送视频消息到群组 {group_id}")
-        except Exception as e:
-            logger.error(f"发送消息到群组 {group_id} 失败: {e}")
+            logger.info("成功发送视频消息到群组 {}", group_id)
+        except Exception:
+            logger.opt(exception=True).error("发送消息到群组 {} 失败", group_id)
             raise

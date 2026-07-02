@@ -140,7 +140,7 @@ class ConfigService:
             try:
                 cookie = decrypt_value(cookie_encrypted)
             except ValueError as exc:
-                logger.error(f"Failed to decrypt bilibili cookie: {exc}")
+                logger.error("B 站 Cookie 解密失败: {}", exc)
 
         self._snapshot = AppConfigSnapshot(
             dynamic_monitor_mapping=dynamic_mapping,
@@ -190,8 +190,9 @@ class ConfigService:
         )
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
         logger.info(
-            f"Config loaded from DB: {len(dynamic_mapping)} dynamic targets, "
-            f"{len(live_mapping)} live targets"
+            "配置已从数据库加载: {} 个动态目标, {} 个直播目标",
+            len(dynamic_mapping),
+            len(live_mapping),
         )
         return self._snapshot
 
@@ -219,8 +220,8 @@ class ConfigService:
         for callback in list(self._reload_callbacks):
             try:
                 await callback(snapshot)
-            except Exception as exc:
-                logger.error(f"Config reload callback failed: {exc}")
+            except Exception:
+                logger.opt(exception=True).error("配置热重载回调执行失败")
         logger.info("配置热重载完成")
         return snapshot
 
@@ -288,8 +289,9 @@ class ConfigService:
         deleted = result.rowcount or 0
         if deleted:
             logger.info(
-                f"已清除 {deleted} 条动态监控持久化状态"
-                f"（当前启用目标: {len(active_uids)} 个）"
+                "已清除 {} 条动态监控持久化状态（当前启用目标: {} 个）",
+                deleted,
+                len(active_uids),
             )
 
     async def _prune_live_monitor_states(
@@ -303,8 +305,9 @@ class ConfigService:
         deleted = result.rowcount or 0
         if deleted:
             logger.info(
-                f"已清除 {deleted} 条直播监控持久化状态"
-                f"（当前启用目标: {len(active_room_ids)} 个）"
+                "已清除 {} 条直播监控持久化状态（当前启用目标: {} 个）",
+                deleted,
+                len(active_room_ids),
             )
 
     async def _load_dynamic_target_data(
