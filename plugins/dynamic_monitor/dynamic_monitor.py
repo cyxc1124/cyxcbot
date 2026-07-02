@@ -11,12 +11,8 @@ from typing import Dict, List, Optional, Set
 import aiohttp
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.log import logger
-from nonebot_plugin_apscheduler import scheduler
-from nonebot_plugin_orm import get_session
-from sqlalchemy import select
 
 from shared.config.service import get_config_service
-from shared.db.models import DynamicMonitorState
 from shared.monitor.background_task import spawn_background_task
 from shared.monitor.check_cycle import CheckCycleLogger
 from shared.monitor.concurrency import run_with_concurrency
@@ -28,8 +24,16 @@ from utils.screenshot import (
     init_screenshot_service,
 )
 
+from .check_logic import (
+    collect_new_dynamics,
+    compute_first_baseline_last_id,
+    find_pinned_dynamic,
+    should_notify_pinned_change,
+)
 from .config import Config
+from .poll_scheduler import register_poll_job, remove_poll_job
 from .sender import DynamicSender
+from .state_store import DynamicMonitorStateStore
 
 # 全局截图并发与排队上限；超出并发时排队等待，不降级跳过
 _SCREENSHOT_CONCURRENCY = 2
@@ -93,6 +97,7 @@ class DynamicMonitor:
         self._delivery_tasks: Set[asyncio.Task] = set()
         self._screenshot_semaphore = asyncio.Semaphore(_SCREENSHOT_CONCURRENCY)
         self._screenshot_queue_semaphore = asyncio.Semaphore(_SCREENSHOT_QUEUE_MAX)
+        self._state_store = DynamicMonitorStateStore()
 
     def _touch_last_check_at(self) -> None:
         self.last_check_at = datetime.now().isoformat(timespec="seconds")
@@ -131,11 +136,7 @@ class DynamicMonitor:
 
     async def _delete_persisted_state(self, uid: str) -> None:
         """清除 DB 中已停用/移除目标的持久化状态。"""
-        session = get_session()
-        async with session.begin():
-            row = await session.get(DynamicMonitorState, uid)
-            if row:
-                await session.delete(row)
+        await self._state_store.delete(uid)
 
     def _schedule_poll_job(self) -> None:
         uid_list = self._uid_list()
@@ -147,38 +148,14 @@ class DynamicMonitor:
             self.config.monitor_interval,
             use_stagger=self.config.use_stagger_poll,
         )
-
-        if self.config.use_stagger_poll:
-            tick = schedule["tick_interval_seconds"]
-            callback = self._check_next_dynamic
-            mode_label = "分散检查"
-        else:
-            tick = self.config.monitor_interval
-            callback = self._check_all_dynamics
-            mode_label = "批量检查"
-
-        scheduler.add_job(
-            callback,
-            "interval",
-            seconds=tick,
-            id="dynamic_monitor_check",
-            replace_existing=True,
-            max_instances=1,
-            misfire_grace_time=60,
+        register_poll_job(
+            use_stagger_poll=self.config.use_stagger_poll,
+            uid_count=len(uid_list),
+            monitor_interval=self.config.monitor_interval,
+            stagger_callback=self._check_next_dynamic,
+            batch_callback=self._check_all_dynamics,
+            schedule=schedule,
         )
-        logger.info(
-            "动态监控调度({}): {} 个UP主, "
-            "定时 {:.1f}秒, "
-            "每人周期约 {:.0f}秒, "
-            "峰值约 {:.2f} 次/秒",
-            mode_label,
-            len(uid_list),
-            tick,
-            schedule["per_target_cycle_seconds"],
-            schedule["requests_per_second_peak"],
-        )
-        if schedule.get("warning"):
-            logger.warning(schedule["warning"])
 
     async def init_resources(self):
         """初始化资源"""
@@ -204,32 +181,13 @@ class DynamicMonitor:
 
     async def _load_persisted_states(self):
         """从 DB 恢复监控状态"""
-        for uid in self.config.dynamic_monitor_mapping.keys():
-            if uid not in self.pinned_dynamic_ids:
-                self.pinned_dynamic_ids[uid] = None
-
         uids = list(self.config.dynamic_monitor_mapping.keys())
-        if not uids:
-            return
-
-        session = get_session()
-        async with session.begin():
-            rows = (
-                await session.scalars(
-                    select(DynamicMonitorState).where(DynamicMonitorState.uid.in_(uids))
-                )
-            ).all()
-            by_uid = {row.uid: row for row in rows}
-
-            for uid in uids:
-                row = by_uid.get(uid)
-                if row:
-                    self.last_dynamic_ids[uid] = row.last_dynamic_id
-                    self.initialized_uids[uid] = row.initialized
-                    self.pinned_dynamic_ids[uid] = row.pinned_dynamic_id
-                else:
-                    self.last_dynamic_ids[uid] = 0
-                    self.initialized_uids[uid] = False
+        await self._state_store.load(
+            uids=uids,
+            last_dynamic_ids=self.last_dynamic_ids,
+            initialized_uids=self.initialized_uids,
+            pinned_dynamic_ids=self.pinned_dynamic_ids,
+        )
 
     async def _persist_state(self, uid: str, *, check_generation: Optional[int] = None):
         """持久化单个 UID 的监控状态"""
@@ -239,15 +197,12 @@ class DynamicMonitor:
             uid, check_generation
         ):
             return
-        session = get_session()
-        async with session.begin():
-            row = await session.get(DynamicMonitorState, uid)
-            if not row:
-                row = DynamicMonitorState(uid=uid)
-                session.add(row)
-            row.last_dynamic_id = self.last_dynamic_ids.get(uid, 0)
-            row.initialized = self.initialized_uids.get(uid, False)
-            row.pinned_dynamic_id = self.pinned_dynamic_ids.get(uid)
+        await self._state_store.persist(
+            uid,
+            last_dynamic_ids=self.last_dynamic_ids,
+            initialized_uids=self.initialized_uids,
+            pinned_dynamic_ids=self.pinned_dynamic_ids,
+        )
 
     async def reload_config(self):
         """热重载配置并调整调度任务"""
@@ -369,12 +324,7 @@ class DynamicMonitor:
         logger.info("正在停止UP主动态监控...")
         self.is_running = False
 
-        # 移除定时任务
-        try:
-            scheduler.remove_job("dynamic_monitor_check")
-            logger.info("动态监控定时任务已从调度器移除")
-        except Exception:
-            logger.opt(exception=True).warning("移除定时任务时出错")
+        remove_poll_job()
 
         # 等待后台投递完成后再关闭 session/截图服务，避免慢投递被中断后游标不前进
         await self._drain_pending_deliveries()
@@ -500,18 +450,14 @@ class DynamicMonitor:
 
         # 检查是否有新动态
         last_dynamic_id = self.last_dynamic_ids.get(uid, 0)
-        new_dynamics = []
-
-        for dynamic in dynamics:
-            if dynamic.id > last_dynamic_id:
-                new_dynamics.append(dynamic)
+        new_dynamics = collect_new_dynamics(dynamics, last_dynamic_id)
 
         # 首次检查只记录基准状态，不推送（避免启动时刷屏）
         # 注意：不能用 last_dynamic_id == 0 判断，无动态用户的基准 ID 也会一直是 0
         if not self.initialized_uids.get(uid, False):
             if not self._check_still_valid(uid, check_generation):
                 return True
-            new_last_dynamic_id = max(d.id for d in dynamics) if dynamics else None
+            new_last_dynamic_id = compute_first_baseline_last_id(dynamics)
             if dynamics:
                 logger.info(
                     "UP主 {} 首次监控，已记录最新动态ID: {}", uid, new_last_dynamic_id
@@ -546,10 +492,8 @@ class DynamicMonitor:
 
             should_update_pinned_id = True
             # 只有当前置顶动态ID存在且有变化时，才推送置顶动态通知
-            if new_pinned_id and current_pinned_id is not None:
-                pinned_dynamic = next(
-                    (d for d in dynamics if d.id == new_pinned_id), None
-                )
+            if should_notify_pinned_change(new_pinned_id, current_pinned_id):
+                pinned_dynamic = find_pinned_dynamic(dynamics, new_pinned_id)
                 if pinned_dynamic:
                     if not self._check_still_valid(uid, check_generation):
                         return True

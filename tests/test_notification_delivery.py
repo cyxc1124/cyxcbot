@@ -563,7 +563,7 @@ async def test_end_notification_sent_after_start_delivery_failed(
             "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
             side_effect=fetch_room,
         ),
-        patch.object(monitor, "_send_live_notification", send_mock),
+        patch.object(monitor._delivery, "_send_notification", send_mock),
         patch.object(monitor, "_persist_state", AsyncMock()),
     ):
         await monitor._check_room_status("111")
@@ -640,7 +640,7 @@ async def test_pending_start_flushed_before_end_on_websocket_short_stream(
             "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
             side_effect=fetch_room,
         ),
-        patch.object(monitor, "_send_live_notification", send_mock),
+        patch.object(monitor._delivery, "_send_notification", send_mock),
         patch.object(monitor, "_persist_state", AsyncMock()),
     ):
         await monitor._handle_live_signal("111")
@@ -698,7 +698,7 @@ async def test_live_signal_delivers_end_when_api_already_offline(
             "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
             return_value=(FakeRoomInfo(), None),
         ),
-        patch.object(monitor, "_send_live_notification", send_mock),
+        patch.object(monitor._delivery, "_send_notification", send_mock),
         patch.object(monitor, "_persist_state", AsyncMock()),
     ):
         await monitor._handle_live_signal("111")
@@ -747,7 +747,7 @@ async def test_pending_start_retried_while_room_stays_live(
             "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
             return_value=(FakeRoomInfo(), None),
         ),
-        patch.object(monitor, "_send_live_notification", send_mock),
+        patch.object(monitor._delivery, "_send_notification", send_mock),
         patch.object(monitor, "_persist_state", AsyncMock()),
     ):
         await monitor._check_room_status("111")
@@ -793,13 +793,13 @@ async def test_pending_start_retry_only_targets_failed_groups(
     send_notify = AsyncMock(side_effect=[partial, success])
 
     with patch.object(monitor._sender, "send_notification", send_notify):
-        first_ok = await monitor._deliver_start_notification(
+        first_ok = await monitor._delivery.deliver_start(
             "111",
             state,
             room_info=SimpleNamespace(title="title", cover=""),
             user_info=None,
         )
-        second_ok = await monitor._deliver_start_notification(
+        second_ok = await monitor._delivery.deliver_start(
             "111",
             state,
             room_info=SimpleNamespace(title="title", cover=""),
@@ -850,13 +850,13 @@ async def test_pending_end_retry_only_targets_failed_groups(
     send_notify = AsyncMock(side_effect=[partial, success])
 
     with patch.object(monitor._sender, "send_notification", send_notify):
-        first_ok = await monitor._deliver_end_notification(
+        first_ok = await monitor._delivery.deliver_end(
             "111",
             state,
             room_info=SimpleNamespace(title="title", cover=""),
             user_info=None,
         )
-        second_ok = await monitor._deliver_end_notification(
+        second_ok = await monitor._delivery.deliver_end(
             "111",
             state,
             room_info=SimpleNamespace(title="title", cover=""),
@@ -909,13 +909,13 @@ async def test_pending_start_retry_only_targets_failed_users(
     send_notify = AsyncMock(side_effect=[partial, success])
 
     with patch.object(monitor._sender, "send_notification", send_notify):
-        first_ok = await monitor._deliver_start_notification(
+        first_ok = await monitor._delivery.deliver_start(
             "111",
             state,
             room_info=SimpleNamespace(title="title", cover=""),
             user_info=None,
         )
-        second_ok = await monitor._deliver_start_notification(
+        second_ok = await monitor._delivery.deliver_start(
             "111",
             state,
             room_info=SimpleNamespace(title="title", cover=""),
@@ -983,7 +983,7 @@ async def test_pending_end_cleared_when_new_live_begins_before_retry(
             "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
             side_effect=fetch_room,
         ),
-        patch.object(monitor, "_send_live_notification", send_mock),
+        patch.object(monitor._delivery, "_send_notification", send_mock),
         patch.object(monitor, "_persist_state", AsyncMock()),
     ):
         await monitor._check_room_status("111")
@@ -1050,7 +1050,7 @@ async def test_pending_end_cleared_when_websocket_live_signal_before_retry(
             "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
             side_effect=fetch_room,
         ),
-        patch.object(monitor, "_send_live_notification", send_mock),
+        patch.object(monitor._delivery, "_send_notification", send_mock),
         patch.object(monitor, "_persist_state", AsyncMock()),
     ):
         await monitor._handle_preparing_signal("111", round_status=None)
