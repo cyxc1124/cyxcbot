@@ -57,6 +57,9 @@ SETTING_KEYS = {
     "status_check_show_uptime": ("true", bool),
     "status_check_show_memory": ("true", bool),
     "status_check_allowed_qq": ("[]", "json_list"),
+    "group_special_title_restrict": ("true", bool),
+    "group_special_title_enabled_group_ids": ("[]", "json_list"),
+    "group_special_title_daily_limit": ("10", int),
     "nonebot_superusers": ("[]", "json_list"),
 }
 
@@ -184,6 +187,15 @@ class ConfigService:
             status_check_show_uptime=settings.get("status_check_show_uptime", True),
             status_check_show_memory=settings.get("status_check_show_memory", True),
             status_check_allowed_qq=settings.get("status_check_allowed_qq", []),
+            group_special_title_restrict=settings.get(
+                "group_special_title_restrict", True
+            ),
+            group_special_title_enabled_group_ids=settings.get(
+                "group_special_title_enabled_group_ids", []
+            ),
+            group_special_title_daily_limit=settings.get(
+                "group_special_title_daily_limit", 10
+            ),
             nonebot_superusers=settings.get("nonebot_superusers", []),
             link_parser_group_policies=link_parser_group_policies,
             link_parser_user_policies=link_parser_user_policies,
@@ -257,6 +269,8 @@ class ConfigService:
                     result[key] = max(0, min(3650, parsed))
                 elif key.startswith("dynamic"):
                     result[key] = max(10, min(3600, parsed))
+                elif key == "group_special_title_daily_limit":
+                    result[key] = max(1, min(100, parsed))
                 else:
                     result[key] = max(30, min(3600, parsed))
             elif typ is bool:

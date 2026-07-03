@@ -7,6 +7,10 @@ import json
 from fastapi import APIRouter, HTTPException, status
 
 from admin.deps import AdminUser, RequireSetup
+from admin.schemas.group_special_title import (
+    GroupSpecialTitlePolicyResponse,
+    GroupSpecialTitlePolicyUpdateRequest,
+)
 from admin.schemas.groups import (
     GroupInfo,
     GroupListResponse,
@@ -96,6 +100,14 @@ def _ensure_group_message_enabled(group_id: str, snap) -> None:
         )
 
 
+def _ensure_group_message_enabled_for_special_title(group_id: str, snap) -> None:
+    if not is_group_message_enabled_from_snapshot(group_id, snap):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该群未启用群消息，无法配置群头衔",
+        )
+
+
 def _filter_status_enabled_group_ids(
     enabled_ids: list[str], groups: list[dict]
 ) -> list[str]:
@@ -152,4 +164,63 @@ async def update_status_policy(
         ),
         groups=[GroupInfo(**g) for g in groups],
         display=_status_display_options(snap),
+    )
+
+
+def _filter_special_title_enabled_group_ids(
+    enabled_ids: list[str], groups: list[dict]
+) -> list[str]:
+    allowed = {str(group["group_id"]) for group in groups}
+    return [gid for gid in enabled_ids if gid in allowed]
+
+
+@router.get("/special-title-policy", response_model=GroupSpecialTitlePolicyResponse)
+async def get_special_title_policy(_: AdminUser):
+    snap = get_config_service().get_snapshot()
+    groups = _message_enabled_groups(snap, await get_group_list())
+    return GroupSpecialTitlePolicyResponse(
+        restrict=snap.group_special_title_restrict,
+        enabled_group_ids=_filter_special_title_enabled_group_ids(
+            snap.group_special_title_enabled_group_ids, groups
+        ),
+        groups=[GroupInfo(**g) for g in groups],
+        daily_limit=snap.group_special_title_daily_limit,
+    )
+
+
+@router.put("/special-title-policy", response_model=GroupSpecialTitlePolicyResponse)
+async def update_special_title_policy(
+    body: GroupSpecialTitlePolicyUpdateRequest,
+    _: AdminUser,
+):
+    svc = get_config_service()
+    snap = svc.get_snapshot()
+    message_groups = _message_enabled_groups(snap, await get_group_list())
+    enabled_ids = [
+        str(gid).strip() for gid in body.enabled_group_ids if str(gid).strip()
+    ]
+    for group_id in enabled_ids:
+        _ensure_group_message_enabled_for_special_title(group_id, snap)
+    enabled_ids = _filter_special_title_enabled_group_ids(enabled_ids, message_groups)
+    updates: dict[str, str] = {
+        "group_special_title_restrict": str(body.restrict).lower(),
+        "group_special_title_enabled_group_ids": json.dumps(
+            enabled_ids, ensure_ascii=False
+        ),
+    }
+    if body.daily_limit is not None:
+        updates["group_special_title_daily_limit"] = str(body.daily_limit)
+
+    await svc.set_settings(updates)
+    await svc.reload()
+
+    snap = svc.get_snapshot()
+    groups = _message_enabled_groups(snap, await get_group_list())
+    return GroupSpecialTitlePolicyResponse(
+        restrict=snap.group_special_title_restrict,
+        enabled_group_ids=_filter_special_title_enabled_group_ids(
+            snap.group_special_title_enabled_group_ids, groups
+        ),
+        groups=[GroupInfo(**g) for g in groups],
+        daily_limit=snap.group_special_title_daily_limit,
     )
