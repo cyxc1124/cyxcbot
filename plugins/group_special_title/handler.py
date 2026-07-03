@@ -65,7 +65,7 @@ async def handle_group_special_title(bot: Bot, event: GroupMessageEvent) -> None
         return
 
     used = await get_today_usage(group_id, user_id)
-    if used >= daily_limit:
+    if daily_limit > 0 and used >= daily_limit:
         logger.info(
             "群头衔今日次数已用尽: group={} user={} limit={}",
             group_id,

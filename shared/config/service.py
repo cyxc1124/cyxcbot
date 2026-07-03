@@ -270,7 +270,7 @@ class ConfigService:
                 elif key.startswith("dynamic"):
                     result[key] = max(10, min(3600, parsed))
                 elif key == "group_special_title_daily_limit":
-                    result[key] = max(1, min(100, parsed))
+                    result[key] = max(0, min(100, parsed))
                 else:
                     result[key] = max(30, min(3600, parsed))
             elif typ is bool:

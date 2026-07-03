@@ -47,11 +47,13 @@ def test_group_special_title_policy() -> None:
     class Snap:
         group_special_title_restrict = True
         group_special_title_enabled_group_ids = ["123", "456"]
+        group_special_title_daily_limit = 0
 
     assert is_group_special_title_enabled("123", restrict=True, enabled_group_ids=["123"])
     assert not is_group_special_title_enabled("999", restrict=True, enabled_group_ids=["123"])
     assert is_group_special_title_enabled("999", restrict=False, enabled_group_ids=[])
     assert is_group_special_title_enabled_from_snapshot("456", Snap())
+    assert Snap().group_special_title_daily_limit == 0
 
 
 def test_title_applied() -> None:

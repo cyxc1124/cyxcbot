@@ -3,7 +3,7 @@
 群内成员发送 `/头衔 我的头衔` 或 `#头衔 我的头衔` 即可设置自己的 QQ 专属头衔。
 
 - 头衔最多 6 个字（QQ 限制）
-- 每人每群每天最多设置次数可在 Web Admin「群组 → 群头衔」配置（默认 10 次，按 Asia/Shanghai 自然日计）
+- 每人每群每天最多设置次数可在 Web Admin「群组 → 群头衔」配置（默认 10 次，设为 0 不限制，按 Asia/Shanghai 自然日计）
 - 须在「群头衔」Tab 中启用对应群组（白名单模式，与状态查询类似）
 - 机器人需为**群主**（[LLBot](https://github.com/LLOneBot/LuckyLilliaBot) 的 `set_group_special_title` 仅群主可调用；管理员不够）
 - 群须在 Web Admin「群组管理」中开启「处理群消息」（群组消息守卫白名单）

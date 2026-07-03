@@ -40,10 +40,15 @@ group_title_cmd = on_message(
 @driver.on_startup
 async def _group_special_title_startup() -> None:
     daily_limit = daily_usage_limit_from_snapshot(get_config_service().get_snapshot())
-    logger.info(
-        "群头衔设置已就绪: /头衔 或 #头衔，每人每日最多 {} 次（可在 Web Admin 群组页调整）",
-        daily_limit,
-    )
+    if daily_limit > 0:
+        logger.info(
+            "群头衔设置已就绪: /头衔 或 #头衔，每人每日最多 {} 次（可在 Web Admin 群组页调整）",
+            daily_limit,
+        )
+    else:
+        logger.info(
+            "群头衔设置已就绪: /头衔 或 #头衔，每日次数不限制（可在 Web Admin 群组页调整）",
+        )
 
 
 @group_title_cmd.handle()

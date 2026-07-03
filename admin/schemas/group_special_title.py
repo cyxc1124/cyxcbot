@@ -19,4 +19,4 @@ class GroupSpecialTitlePolicyResponse(BaseModel):
 class GroupSpecialTitlePolicyUpdateRequest(BaseModel):
     restrict: bool
     enabled_group_ids: List[str] = []
-    daily_limit: Optional[int] = Field(None, ge=1, le=100)
+    daily_limit: Optional[int] = Field(None, ge=0, le=100)

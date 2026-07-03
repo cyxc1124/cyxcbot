@@ -116,8 +116,8 @@ export function GroupSpecialTitlePolicyTab() {
 
   const handleSaveDailyLimit = async () => {
     const parsed = Number(dailyLimitDraft)
-    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
-      showToast('error', '每日上限须为 1–100 的整数')
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 100) {
+      showToast('error', '每日上限须为 0–100 的整数（0 表示不限制）')
       setDailyLimitDraft(String(dailyLimit))
       return
     }
@@ -152,7 +152,8 @@ export function GroupSpecialTitlePolicyTab() {
         <div>
           <h3 className="font-semibold text-foreground">每日使用上限</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            每个群每位成员每天最多可成功设置专属头衔的次数（按北京时间自然日计算，全局统一）。
+            每个群每位成员每天最多可成功设置专属头衔的次数（按北京时间自然日计算，全局统一）。设为{' '}
+            <span className="font-medium text-foreground">0</span> 表示不限制。
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
@@ -163,7 +164,7 @@ export function GroupSpecialTitlePolicyTab() {
             <input
               id="special_title_daily_limit"
               type="number"
-              min={1}
+              min={0}
               max={100}
               className="input"
               value={dailyLimitDraft}
