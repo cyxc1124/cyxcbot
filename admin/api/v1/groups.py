@@ -28,7 +28,10 @@ from admin.services.onebot_bridge import (
 )
 from shared.config.service import get_config_service
 from shared.group_policy import is_group_message_enabled_from_snapshot
-from shared.group_special_title_policy import filter_enabled_group_ids_to_visible_groups
+from shared.group_special_title_policy import (
+    filter_enabled_group_ids_to_visible_groups,
+    special_title_policy_group_list_available,
+)
 
 router = APIRouter(
     prefix="/groups",
@@ -197,7 +200,10 @@ async def update_status_policy(
 @router.get("/special-title-policy", response_model=GroupSpecialTitlePolicyResponse)
 async def get_special_title_policy(_: AdminUser):
     snap = get_config_service().get_snapshot()
-    raw_groups, group_list_available = await get_group_list_with_availability()
+    raw_groups, fetch_available = await get_group_list_with_availability()
+    group_list_available = special_title_policy_group_list_available(
+        fetch_available, raw_groups, snap
+    )
     groups = _message_enabled_groups(snap, raw_groups)
     return _special_title_policy_response(
         snap,
@@ -213,7 +219,10 @@ async def update_special_title_policy(
 ):
     svc = get_config_service()
     snap = svc.get_snapshot()
-    raw_groups, group_list_available = await get_group_list_with_availability()
+    raw_groups, fetch_available = await get_group_list_with_availability()
+    group_list_available = special_title_policy_group_list_available(
+        fetch_available, raw_groups, snap
+    )
     message_groups = _message_enabled_groups(snap, raw_groups)
     body_enabled_ids = [
         str(gid).strip() for gid in body.enabled_group_ids if str(gid).strip()
@@ -255,7 +264,10 @@ async def update_special_title_policy(
     await svc.reload()
 
     snap = svc.get_snapshot()
-    raw_groups, group_list_available = await get_group_list_with_availability()
+    raw_groups, fetch_available = await get_group_list_with_availability()
+    group_list_available = special_title_policy_group_list_available(
+        fetch_available, raw_groups, snap
+    )
     groups = _message_enabled_groups(snap, raw_groups)
     return _special_title_policy_response(
         snap,

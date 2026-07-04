@@ -30,6 +30,53 @@ def daily_usage_limit_from_snapshot(snapshot) -> int:
     return snapshot.group_special_title_daily_limit
 
 
+def _message_enabled_group_ids_from_snapshot(snapshot) -> list[str]:
+    if snapshot.message_group_restrict:
+        return [
+            str(gid).strip()
+            for gid in snapshot.message_enabled_group_ids
+            if str(gid).strip()
+        ]
+    return []
+
+
+def special_title_relevant_group_ids(snapshot) -> list[str]:
+    """IDs that must appear in a fetched group list for the title policy to be complete."""
+    if snapshot.group_special_title_restrict:
+        ids = [
+            str(gid).strip()
+            for gid in snapshot.group_special_title_enabled_group_ids
+            if str(gid).strip()
+        ]
+        if snapshot.message_group_restrict:
+            message_enabled = set(_message_enabled_group_ids_from_snapshot(snapshot))
+            ids = [gid for gid in ids if gid in message_enabled]
+        return ids
+    return _message_enabled_group_ids_from_snapshot(snapshot)
+
+
+def raw_group_ids(raw_groups: list[dict]) -> set[str]:
+    return {
+        str(group["group_id"])
+        for group in raw_groups
+        if str(group.get("group_id", "")).strip()
+    }
+
+
+def special_title_policy_group_list_available(
+    fetch_available: bool,
+    raw_groups: list[dict],
+    snapshot,
+) -> bool:
+    """Return whether the fetched group list is complete for special-title policy edits."""
+    if not fetch_available:
+        return False
+    relevant = special_title_relevant_group_ids(snapshot)
+    if not relevant:
+        return True
+    return all(gid in raw_group_ids(raw_groups) for gid in relevant)
+
+
 def filter_enabled_group_ids_to_visible_groups(
     enabled_ids: list[str],
     groups: list[dict],
