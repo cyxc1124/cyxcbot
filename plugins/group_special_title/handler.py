@@ -13,7 +13,7 @@ from shared.group_special_title_policy import (
     is_group_special_title_enabled_from_snapshot,
 )
 
-from .usage_store import get_today_usage, record_successful_set
+from .usage_store import release_daily_quota, try_consume_daily_quota
 
 
 async def _bot_group_role(bot: Bot, group_id: int) -> str | None:
@@ -64,22 +64,21 @@ async def handle_group_special_title(bot: Bot, event: GroupMessageEvent) -> None
         )
         return
 
-    used = await get_today_usage(group_id, user_id)
-    if daily_limit > 0 and used >= daily_limit:
-        logger.info(
-            "群头衔今日次数已用尽: group={} user={} limit={}",
-            group_id,
-            user_id,
-            daily_limit,
-        )
-        return
-
     bot_role = await _bot_group_role(bot, event.group_id)
     if bot_role != "owner":
         logger.warning(
             "机器人非群主，无法设置头衔: group={} role={}",
             group_id,
             bot_role,
+        )
+        return
+
+    if not await try_consume_daily_quota(group_id, user_id, daily_limit):
+        logger.info(
+            "群头衔今日次数已用尽: group={} user={} limit={}",
+            group_id,
+            user_id,
+            daily_limit,
         )
         return
 
@@ -90,6 +89,8 @@ async def handle_group_special_title(bot: Bot, event: GroupMessageEvent) -> None
             special_title=title,
         )
     except (ActionFailed, ApiNotAvailable) as exc:
+        if daily_limit > 0:
+            await release_daily_quota(group_id, user_id)
         if isinstance(exc, ActionFailed):
             logger.warning(
                 "设置群头衔 API 失败: group={} user={} title={} retcode={} msg={}",
@@ -107,8 +108,6 @@ async def handle_group_special_title(bot: Bot, event: GroupMessageEvent) -> None
                 title,
             )
         return
-
-    await record_successful_set(group_id, user_id)
     logger.info(
         "群头衔已设置: group={} user={} title={}",
         group_id,
