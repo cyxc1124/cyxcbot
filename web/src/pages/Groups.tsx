@@ -4,6 +4,7 @@ import { useMountAsync } from '../hooks/useMountAsync'
 import { createRetryHandler } from '../utils/retryLoad'
 import { getMessagePolicy, updateMessagePolicy } from '../api/client'
 import type { Group } from '../api/types'
+import { GroupSpecialTitlePolicyTab } from '../components/GroupSpecialTitlePolicyTab'
 import { LinkParserGroupPolicyTab } from '../components/LinkParserPolicyTabs'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
@@ -18,7 +19,7 @@ import {
   isItemEnabled,
 } from '../utils/restrictPolicy'
 
-type GroupsTab = 'message' | 'link-groups' | 'status'
+type GroupsTab = 'message' | 'link-groups' | 'status' | 'special-title'
 
 export function GroupsPage() {
   const { showToast } = useToast()
@@ -53,6 +54,7 @@ export function GroupsPage() {
     message: '群消息',
     'link-groups': '群链接解析',
     status: '状态查询',
+    'special-title': '群头衔',
   }
 
   const allGroupIds = useMemo(() => groups.map((g) => g.group_id), [groups])
@@ -130,7 +132,7 @@ export function GroupsPage() {
         <div>
           <h2 className="text-2xl font-bold text-foreground">群组</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            管理群消息响应范围、状态查询权限，以及链接解析的群级开关
+            管理群消息响应范围、状态查询与群头衔权限，以及链接解析的群级开关
           </p>
         </div>
         {tab === 'message' && groups.length > 0 && (
@@ -229,6 +231,8 @@ export function GroupsPage() {
       )}
 
       {tab === 'status' && <StatusCheckPolicyTab scope="group" />}
+
+      {tab === 'special-title' && <GroupSpecialTitlePolicyTab />}
     </div>
   )
 }

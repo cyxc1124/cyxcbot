@@ -226,3 +226,14 @@ class LinkParserUserPolicy(Model):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )
+
+
+class GroupSpecialTitleUsage(Model):
+    """Daily usage counter for group special title self-service."""
+
+    __tablename__ = "shared_db_groupspecialtitleusage"
+
+    group_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    usage_date: Mapped[str] = mapped_column(String(10), primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

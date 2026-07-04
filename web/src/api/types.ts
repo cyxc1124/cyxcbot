@@ -165,6 +165,14 @@ export interface GroupStatusPolicy {
   display: StatusCheckDisplayOptions
 }
 
+export interface GroupSpecialTitlePolicy {
+  restrict: boolean
+  enabled_group_ids: string[]
+  groups: Group[]
+  daily_limit: number
+  group_list_available: boolean
+}
+
 export interface PrivateStatusPolicy {
   restrict: boolean
   enabled_user_ids: string[]

@@ -19,6 +19,7 @@ import type {
   PrivateMessagePolicy,
   PrivateStatusPolicy,
   GroupStatusPolicy,
+  GroupSpecialTitlePolicy,
   StatusCheckDisplayOptions,
   LiveMonitorStatus,
   LiveTarget,
@@ -293,6 +294,19 @@ export const updateGroupStatusPolicy = (payload: {
   display?: StatusCheckDisplayOptions
 }) =>
   request<GroupStatusPolicy>('/groups/status-policy', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+
+export const getGroupSpecialTitlePolicy = () =>
+  request<GroupSpecialTitlePolicy>('/groups/special-title-policy')
+
+export const updateGroupSpecialTitlePolicy = (payload: {
+  restrict: boolean
+  enabled_group_ids: string[]
+  daily_limit?: number
+}) =>
+  request<GroupSpecialTitlePolicy>('/groups/special-title-policy', {
     method: 'PUT',
     body: JSON.stringify(payload),
   })

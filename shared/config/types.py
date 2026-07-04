@@ -59,6 +59,9 @@ class AppConfigSnapshot:
     status_check_show_uptime: bool = True
     status_check_show_memory: bool = True
     status_check_allowed_qq: List[str] = field(default_factory=list)
+    group_special_title_restrict: bool = True
+    group_special_title_enabled_group_ids: List[str] = field(default_factory=list)
+    group_special_title_daily_limit: int = 10
     nonebot_superusers: List[str] = field(default_factory=list)
     link_parser_group_policies: Dict[str, LinkParserGroupPolicyRecord] = field(
         default_factory=dict
