@@ -29,6 +29,7 @@ export function GroupSpecialTitlePolicyTab() {
   const [error, setError] = useState('')
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [savingDailyLimit, setSavingDailyLimit] = useState(false)
+  const [groupListAvailable, setGroupListAvailable] = useState(true)
 
   const items = groups.map((g) => ({ id: g.group_id, name: g.group_name, extra: g.member_count }))
   const allIds = items.map((item) => item.id)
@@ -41,6 +42,7 @@ export function GroupSpecialTitlePolicyTab() {
       setEnabledIds(data.enabled_group_ids)
       setDailyLimit(data.daily_limit)
       setDailyLimitDraft(String(data.daily_limit))
+      setGroupListAvailable(data.group_list_available)
       setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
@@ -59,6 +61,7 @@ export function GroupSpecialTitlePolicyTab() {
     setEnabledIds(data.enabled_group_ids)
     setDailyLimit(data.daily_limit)
     setDailyLimitDraft(String(data.daily_limit))
+    setGroupListAvailable(data.group_list_available)
   }
 
   const savePolicy = async (payload: {
@@ -145,6 +148,7 @@ export function GroupSpecialTitlePolicyTab() {
   const allEnabled = !restrict
   const noneEnabled = restrict && enabledIds.length === 0
   const busy = togglingId !== null || savingDailyLimit
+  const policyEditable = groupListAvailable
 
   return (
     <div className="space-y-6">
@@ -195,7 +199,7 @@ export function GroupSpecialTitlePolicyTab() {
             <button
               type="button"
               className="btn-secondary text-sm"
-              disabled={busy || allEnabled}
+              disabled={busy || !policyEditable || allEnabled}
               onClick={() => void handleToggleAll(true)}
             >
               全部启用
@@ -203,7 +207,7 @@ export function GroupSpecialTitlePolicyTab() {
             <button
               type="button"
               className="btn-secondary text-sm"
-              disabled={busy || noneEnabled}
+              disabled={busy || !policyEditable || noneEnabled}
               onClick={() => void handleToggleAll(false)}
             >
               全部关闭
@@ -211,6 +215,12 @@ export function GroupSpecialTitlePolicyTab() {
           </div>
         )}
       </div>
+
+      {!groupListAvailable && items.length > 0 && (
+        <p className="text-sm text-amber-700 dark:text-amber-300">
+          群列表尚未完整同步（例如部分机器人离线），暂不可修改群头衔白名单；可先调整每日上限，待连接恢复后再改群组开关。
+        </p>
+      )}
 
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
@@ -254,7 +264,7 @@ export function GroupSpecialTitlePolicyTab() {
                           </span>
                           <ToggleSwitch
                             checked={enabled}
-                            disabled={busy}
+                            disabled={busy || !policyEditable}
                             onChange={(checked) => void handleToggle(item.id, checked)}
                           />
                         </div>

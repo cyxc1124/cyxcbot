@@ -14,6 +14,7 @@ class GroupSpecialTitlePolicyResponse(BaseModel):
     enabled_group_ids: List[str]
     groups: List[GroupInfo]
     daily_limit: int
+    group_list_available: bool = True
 
 
 class GroupSpecialTitlePolicyUpdateRequest(BaseModel):

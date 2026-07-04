@@ -170,6 +170,7 @@ export interface GroupSpecialTitlePolicy {
   enabled_group_ids: string[]
   groups: Group[]
   daily_limit: number
+  group_list_available: boolean
 }
 
 export interface PrivateStatusPolicy {
