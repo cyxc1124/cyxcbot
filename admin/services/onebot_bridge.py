@@ -12,7 +12,8 @@ from nonebot.log import logger
 async def get_group_list_with_availability() -> tuple[List[dict], bool]:
     """Return ``(groups, available)``.
 
-    *available* is false when no bot is connected or every ``get_group_list`` call failed.
+    *available* is false when no bot is connected, every fetch failed, or any connected
+    bot's ``get_group_list`` call failed (partial lists must not prune stored policy IDs).
     """
     groups: List[dict] = []
     bots = get_bots()
@@ -20,11 +21,11 @@ async def get_group_list_with_availability() -> tuple[List[dict], bool]:
         logger.warning("无已连接的 OneBot 机器人，无法获取群列表")
         return groups, False
 
-    fetched = False
+    success_count = 0
     for bot in bots.values():
         try:
             result = await bot.call_api("get_group_list")
-            fetched = True
+            success_count += 1
             for item in result:
                 groups.append(
                     {
@@ -43,7 +44,7 @@ async def get_group_list_with_availability() -> tuple[List[dict], bool]:
         if gid and gid not in seen:
             seen.add(gid)
             unique.append(g)
-    return unique, fetched
+    return unique, success_count == len(bots)
 
 
 async def get_group_list() -> List[dict]:
