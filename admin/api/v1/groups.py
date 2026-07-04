@@ -195,7 +195,9 @@ async def update_special_title_policy(
     ]
     for group_id in enabled_ids:
         _ensure_group_message_enabled_for_special_title(group_id, snap)
-    enabled_ids = filter_enabled_group_ids_to_visible_groups(enabled_ids, message_groups)
+    enabled_ids = filter_enabled_group_ids_to_visible_groups(
+        enabled_ids, message_groups
+    )
     updates: dict[str, str] = {
         "group_special_title_restrict": str(body.restrict).lower(),
         "group_special_title_enabled_group_ids": json.dumps(

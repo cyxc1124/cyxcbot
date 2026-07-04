@@ -12,6 +12,4 @@ def test_filter_preserves_ids_when_group_list_empty() -> None:
 
 def test_filter_removes_unknown_groups() -> None:
     groups = [{"group_id": "123", "group_name": "test", "member_count": 1}]
-    assert filter_enabled_group_ids_to_visible_groups(["123", "456"], groups) == [
-        "123"
-    ]
+    assert filter_enabled_group_ids_to_visible_groups(["123", "456"], groups) == ["123"]

@@ -70,3 +70,17 @@ def test_action_failed_exposes_retcode_via_info() -> None:
     exc = ActionFailed(retcode=120, message="permission denied")
     assert exc.info.get("retcode") == 120
     assert exc.info.get("message") == "permission denied"
+
+
+@pytest.mark.asyncio
+async def test_role_lookup_network_error_returns_none() -> None:
+    _ensure_nonebot()
+    from plugins.group_special_title.handler import _bot_group_role
+
+    bot = MagicMock()
+    bot.self_id = "100"
+    bot.get_group_member_info = AsyncMock(side_effect=NetworkError("timeout"))
+
+    role = await _bot_group_role(bot, 123)
+
+    assert role is None

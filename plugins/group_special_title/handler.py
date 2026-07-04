@@ -27,7 +27,7 @@ async def _bot_group_role(bot: Bot, group_id: int) -> str | None:
             user_id=int(bot.self_id),
             no_cache=True,
         )
-    except (ActionFailed, ApiNotAvailable):
+    except ActionFailed, ApiNotAvailable, NetworkError:
         logger.opt(exception=True).warning(
             "读取机器人群身份失败: group={} self={}",
             group_id,

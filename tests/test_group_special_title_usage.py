@@ -126,10 +126,7 @@ async def test_concurrent_consume_never_exceeds_limit(
     _, factory, GroupSpecialTitleUsage = db_context
     daily_limit = 3
     results = await asyncio.gather(
-        *(
-            usage_store.try_consume_daily_quota("9", "8", daily_limit)
-            for _ in range(10)
-        )
+        *(usage_store.try_consume_daily_quota("9", "8", daily_limit) for _ in range(10))
     )
 
     assert sum(results) == daily_limit

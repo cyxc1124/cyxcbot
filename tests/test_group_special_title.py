@@ -49,8 +49,12 @@ def test_group_special_title_policy() -> None:
         group_special_title_enabled_group_ids = ["123", "456"]
         group_special_title_daily_limit = 0
 
-    assert is_group_special_title_enabled("123", restrict=True, enabled_group_ids=["123"])
-    assert not is_group_special_title_enabled("999", restrict=True, enabled_group_ids=["123"])
+    assert is_group_special_title_enabled(
+        "123", restrict=True, enabled_group_ids=["123"]
+    )
+    assert not is_group_special_title_enabled(
+        "999", restrict=True, enabled_group_ids=["123"]
+    )
     assert is_group_special_title_enabled("999", restrict=False, enabled_group_ids=[])
     assert is_group_special_title_enabled_from_snapshot("456", Snap())
     assert Snap().group_special_title_daily_limit == 0
@@ -66,7 +70,10 @@ def test_title_applied() -> None:
 def test_extract_member_special_title() -> None:
     assert extract_member_special_title({"title": "小草"}) == "小草"
     assert extract_member_special_title({"special_title": "小花"}) == "小花"
-    assert extract_member_special_title({"title": "小草", "special_title": "小花"}) == "小花"
+    assert (
+        extract_member_special_title({"title": "小草", "special_title": "小花"})
+        == "小花"
+    )
     assert extract_member_special_title({}) is None
 
 
