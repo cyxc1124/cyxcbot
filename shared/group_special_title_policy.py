@@ -28,3 +28,13 @@ def is_group_special_title_enabled_from_snapshot(group_id: str, snapshot) -> boo
 
 def daily_usage_limit_from_snapshot(snapshot) -> int:
     return snapshot.group_special_title_daily_limit
+
+
+def filter_enabled_group_ids_to_visible_groups(
+    enabled_ids: list[str], groups: list[dict]
+) -> list[str]:
+    """Drop IDs not in *groups*; preserve *enabled_ids* when the list is unavailable."""
+    if not groups:
+        return enabled_ids
+    allowed = {str(group["group_id"]) for group in groups}
+    return [gid for gid in enabled_ids if gid in allowed]

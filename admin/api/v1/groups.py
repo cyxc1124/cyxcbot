@@ -25,6 +25,7 @@ from admin.schemas.status_check import (
 from admin.services.onebot_bridge import get_group_list
 from shared.config.service import get_config_service
 from shared.group_policy import is_group_message_enabled_from_snapshot
+from shared.group_special_title_policy import filter_enabled_group_ids_to_visible_groups
 
 router = APIRouter(
     prefix="/groups",
@@ -167,20 +168,13 @@ async def update_status_policy(
     )
 
 
-def _filter_special_title_enabled_group_ids(
-    enabled_ids: list[str], groups: list[dict]
-) -> list[str]:
-    allowed = {str(group["group_id"]) for group in groups}
-    return [gid for gid in enabled_ids if gid in allowed]
-
-
 @router.get("/special-title-policy", response_model=GroupSpecialTitlePolicyResponse)
 async def get_special_title_policy(_: AdminUser):
     snap = get_config_service().get_snapshot()
     groups = _message_enabled_groups(snap, await get_group_list())
     return GroupSpecialTitlePolicyResponse(
         restrict=snap.group_special_title_restrict,
-        enabled_group_ids=_filter_special_title_enabled_group_ids(
+        enabled_group_ids=filter_enabled_group_ids_to_visible_groups(
             snap.group_special_title_enabled_group_ids, groups
         ),
         groups=[GroupInfo(**g) for g in groups],
@@ -201,7 +195,7 @@ async def update_special_title_policy(
     ]
     for group_id in enabled_ids:
         _ensure_group_message_enabled_for_special_title(group_id, snap)
-    enabled_ids = _filter_special_title_enabled_group_ids(enabled_ids, message_groups)
+    enabled_ids = filter_enabled_group_ids_to_visible_groups(enabled_ids, message_groups)
     updates: dict[str, str] = {
         "group_special_title_restrict": str(body.restrict).lower(),
         "group_special_title_enabled_group_ids": json.dumps(
@@ -218,7 +212,7 @@ async def update_special_title_policy(
     groups = _message_enabled_groups(snap, await get_group_list())
     return GroupSpecialTitlePolicyResponse(
         restrict=snap.group_special_title_restrict,
-        enabled_group_ids=_filter_special_title_enabled_group_ids(
+        enabled_group_ids=filter_enabled_group_ids_to_visible_groups(
             snap.group_special_title_enabled_group_ids, groups
         ),
         groups=[GroupInfo(**g) for g in groups],
