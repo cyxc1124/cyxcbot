@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
-from nonebot.adapters.onebot.v11.exception import ActionFailed, ApiNotAvailable
+from nonebot.adapters.onebot.v11.exception import (
+    ActionFailed,
+    ApiNotAvailable,
+    NetworkError,
+)
 from nonebot.log import logger
 
 from shared.config.service import get_config_service
@@ -88,7 +92,7 @@ async def handle_group_special_title(bot: Bot, event: GroupMessageEvent) -> None
             user_id=event.user_id,
             special_title=title,
         )
-    except (ActionFailed, ApiNotAvailable) as exc:
+    except (ActionFailed, ApiNotAvailable, NetworkError) as exc:
         if daily_limit > 0:
             await release_daily_quota(group_id, user_id)
         if isinstance(exc, ActionFailed):
@@ -97,8 +101,16 @@ async def handle_group_special_title(bot: Bot, event: GroupMessageEvent) -> None
                 group_id,
                 user_id,
                 title,
-                exc.retcode,
-                exc.message,
+                exc.info.get("retcode"),
+                exc.info.get("message"),
+            )
+        elif isinstance(exc, NetworkError):
+            logger.warning(
+                "设置群头衔网络失败: group={} user={} title={} msg={}",
+                group_id,
+                user_id,
+                title,
+                exc.msg,
             )
         else:
             logger.warning(
