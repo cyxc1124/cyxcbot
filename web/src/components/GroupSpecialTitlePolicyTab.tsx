@@ -235,7 +235,6 @@ export function GroupSpecialTitlePolicyTab() {
               <tbody>
                 {items.map((item) => {
                   const enabled = isItemEnabled(item.id, restrict, enabledIds)
-                  const rowBusy = busy && (togglingId === item.id || togglingId === '__all__')
                   return (
                     <tr
                       key={item.id}
@@ -255,7 +254,7 @@ export function GroupSpecialTitlePolicyTab() {
                           </span>
                           <ToggleSwitch
                             checked={enabled}
-                            disabled={rowBusy}
+                            disabled={busy}
                             onChange={(checked) => void handleToggle(item.id, checked)}
                           />
                         </div>

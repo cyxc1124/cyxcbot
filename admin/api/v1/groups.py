@@ -22,7 +22,10 @@ from admin.schemas.status_check import (
     GroupStatusPolicyUpdateRequest,
     StatusCheckDisplayOptions,
 )
-from admin.services.onebot_bridge import get_group_list
+from admin.services.onebot_bridge import (
+    get_group_list,
+    get_group_list_with_availability,
+)
 from shared.config.service import get_config_service
 from shared.group_policy import is_group_message_enabled_from_snapshot
 from shared.group_special_title_policy import filter_enabled_group_ids_to_visible_groups
@@ -171,11 +174,14 @@ async def update_status_policy(
 @router.get("/special-title-policy", response_model=GroupSpecialTitlePolicyResponse)
 async def get_special_title_policy(_: AdminUser):
     snap = get_config_service().get_snapshot()
-    groups = _message_enabled_groups(snap, await get_group_list())
+    raw_groups, group_list_available = await get_group_list_with_availability()
+    groups = _message_enabled_groups(snap, raw_groups)
     return GroupSpecialTitlePolicyResponse(
         restrict=snap.group_special_title_restrict,
         enabled_group_ids=filter_enabled_group_ids_to_visible_groups(
-            snap.group_special_title_enabled_group_ids, groups
+            snap.group_special_title_enabled_group_ids,
+            groups,
+            group_list_available=group_list_available,
         ),
         groups=[GroupInfo(**g) for g in groups],
         daily_limit=snap.group_special_title_daily_limit,
@@ -189,14 +195,17 @@ async def update_special_title_policy(
 ):
     svc = get_config_service()
     snap = svc.get_snapshot()
-    message_groups = _message_enabled_groups(snap, await get_group_list())
+    raw_groups, group_list_available = await get_group_list_with_availability()
+    message_groups = _message_enabled_groups(snap, raw_groups)
     enabled_ids = [
         str(gid).strip() for gid in body.enabled_group_ids if str(gid).strip()
     ]
     for group_id in enabled_ids:
         _ensure_group_message_enabled_for_special_title(group_id, snap)
     enabled_ids = filter_enabled_group_ids_to_visible_groups(
-        enabled_ids, message_groups
+        enabled_ids,
+        message_groups,
+        group_list_available=group_list_available,
     )
     updates: dict[str, str] = {
         "group_special_title_restrict": str(body.restrict).lower(),
@@ -211,11 +220,14 @@ async def update_special_title_policy(
     await svc.reload()
 
     snap = svc.get_snapshot()
-    groups = _message_enabled_groups(snap, await get_group_list())
+    raw_groups, group_list_available = await get_group_list_with_availability()
+    groups = _message_enabled_groups(snap, raw_groups)
     return GroupSpecialTitlePolicyResponse(
         restrict=snap.group_special_title_restrict,
         enabled_group_ids=filter_enabled_group_ids_to_visible_groups(
-            snap.group_special_title_enabled_group_ids, groups
+            snap.group_special_title_enabled_group_ids,
+            groups,
+            group_list_available=group_list_available,
         ),
         groups=[GroupInfo(**g) for g in groups],
         daily_limit=snap.group_special_title_daily_limit,

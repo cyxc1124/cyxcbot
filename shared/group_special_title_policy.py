@@ -31,10 +31,17 @@ def daily_usage_limit_from_snapshot(snapshot) -> int:
 
 
 def filter_enabled_group_ids_to_visible_groups(
-    enabled_ids: list[str], groups: list[dict]
+    enabled_ids: list[str],
+    groups: list[dict],
+    *,
+    group_list_available: bool = True,
 ) -> list[str]:
-    """Drop IDs not in *groups*; preserve *enabled_ids* when the list is unavailable."""
-    if not groups:
+    """Drop IDs not in *groups*.
+
+    When *group_list_available* is false (OneBot offline / fetch failed), preserve
+    *enabled_ids* unchanged so offline saves do not wipe the whitelist.
+    """
+    if not group_list_available:
         return enabled_ids
     allowed = {str(group["group_id"]) for group in groups}
     return [gid for gid in enabled_ids if gid in allowed]

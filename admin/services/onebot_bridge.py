@@ -9,17 +9,22 @@ from nonebot import get_bots
 from nonebot.log import logger
 
 
-async def get_group_list() -> List[dict]:
-    """Fetch group list from connected OneBot bots."""
+async def get_group_list_with_availability() -> tuple[List[dict], bool]:
+    """Return ``(groups, available)``.
+
+    *available* is false when no bot is connected or every ``get_group_list`` call failed.
+    """
     groups: List[dict] = []
     bots = get_bots()
     if not bots:
         logger.warning("无已连接的 OneBot 机器人，无法获取群列表")
-        return groups
+        return groups, False
 
+    fetched = False
     for bot in bots.values():
         try:
             result = await bot.call_api("get_group_list")
+            fetched = True
             for item in result:
                 groups.append(
                     {
@@ -31,7 +36,6 @@ async def get_group_list() -> List[dict]:
         except Exception as exc:
             logger.error("从机器人 {} 获取群列表失败: {}", bot.self_id, exc)
 
-    # Deduplicate by group_id
     seen = set()
     unique = []
     for g in groups:
@@ -39,7 +43,13 @@ async def get_group_list() -> List[dict]:
         if gid and gid not in seen:
             seen.add(gid)
             unique.append(g)
-    return unique
+    return unique, fetched
+
+
+async def get_group_list() -> List[dict]:
+    """Fetch group list from connected OneBot bots."""
+    groups, _ = await get_group_list_with_availability()
+    return groups
 
 
 def _merge_user(
