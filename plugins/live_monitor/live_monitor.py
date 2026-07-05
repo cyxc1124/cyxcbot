@@ -41,6 +41,7 @@ from .state_store import LiveMonitorStateStore
 # 全局监控实例
 live_monitor_instance: Optional["LiveMonitor"] = None
 _config_reload_registered = False
+_lifecycle_lock = asyncio.Lock()
 
 
 async def sync_from_config_reload(snapshot) -> None:
@@ -885,60 +886,68 @@ async def start_live_monitor():
     """启动直播监控"""
     global live_monitor_instance
 
-    _ensure_config_reload_registered()
+    async with _lifecycle_lock:
+        _ensure_config_reload_registered()
 
-    if live_monitor_instance is not None:
-        logger.warning("直播监控已在运行中")
-        return
+        if live_monitor_instance is not None:
+            if live_monitor_instance.is_running:
+                logger.warning("直播监控已在运行中")
+                return
+            live_monitor_instance = None
 
-    config = Config.from_service()
+        config = Config.from_service()
 
-    # 检查是否有配置的房间
-    if not config.live_monitor_mapping:
-        logger.warning("未配置任何直播间监控，跳过启动")
-        return
+        # 检查是否有配置的房间
+        if not config.live_monitor_mapping:
+            logger.warning("未配置任何直播间监控，跳过启动")
+            return
 
-    group_count = sum(len(groups) for groups in config.live_monitor_mapping.values())
-    user_count = sum(len(users) for users in config.live_monitor_user_mapping.values())
-    mode = "WebSocket+轮询备用" if config.use_websocket else "仅轮询"
-    logger.info(
-        "准备启动直播监控: {} 个房间, {} 个群推送目标, {} 个好友推送目标, "
-        "模式 {}, 间隔 {}秒",
-        len(config.live_monitor_mapping),
-        group_count,
-        user_count,
-        mode,
-        config.monitor_interval,
-    )
+        group_count = sum(
+            len(groups) for groups in config.live_monitor_mapping.values()
+        )
+        user_count = sum(
+            len(users) for users in config.live_monitor_user_mapping.values()
+        )
+        mode = "WebSocket+轮询备用" if config.use_websocket else "仅轮询"
+        logger.info(
+            "准备启动直播监控: {} 个房间, {} 个群推送目标, {} 个好友推送目标, "
+            "模式 {}, 间隔 {}秒",
+            len(config.live_monitor_mapping),
+            group_count,
+            user_count,
+            mode,
+            config.monitor_interval,
+        )
 
-    try:
-        # 创建监控实例
-        live_monitor_instance = LiveMonitor(config)
+        try:
+            # 创建监控实例
+            live_monitor_instance = LiveMonitor(config)
 
-        # 启动监控
-        await live_monitor_instance.start_monitoring()
+            # 启动监控
+            await live_monitor_instance.start_monitoring()
 
-        logger.info("B站直播监控已启动")
+            logger.info("B站直播监控已启动")
 
-    except Exception:
-        logger.opt(exception=True).error("启动直播监控失败")
-        live_monitor_instance = None
+        except Exception:
+            logger.opt(exception=True).error("启动直播监控失败")
+            live_monitor_instance = None
 
 
 async def stop_live_monitor():
     """停止直播监控"""
     global live_monitor_instance
 
-    if not live_monitor_instance:
-        return
+    async with _lifecycle_lock:
+        if not live_monitor_instance:
+            return
 
-    logger.info("正在停止直播监控...")
+        logger.info("正在停止直播监控...")
 
-    try:
-        await live_monitor_instance.stop_monitoring()
-        live_monitor_instance = None
-        logger.info("直播监控已完全停止")
+        try:
+            await live_monitor_instance.stop_monitoring()
+            live_monitor_instance = None
+            logger.info("直播监控已完全停止")
 
-    except Exception:
-        logger.opt(exception=True).error("停止直播监控时出错")
-        live_monitor_instance = None
+        except Exception:
+            logger.opt(exception=True).error("停止直播监控时出错")
+            live_monitor_instance = None

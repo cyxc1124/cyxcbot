@@ -3,7 +3,6 @@
 负责构建和发送动态通知消息
 """
 
-import asyncio
 from typing import Iterable, List, Optional, Tuple, Union
 
 from nonebot import get_driver
@@ -16,7 +15,6 @@ from shared.notify.at_all import DYNAMIC_AT_ALL_FALLBACK, resolve_at_all_prefix
 from shared.notify.delivery import (
     DeliveryResult,
     TargetDelivery,
-    aggregate_by_target,
     empty_delivery_result,
 )
 from shared.notify.message_template import build_message_from_template
@@ -118,23 +116,17 @@ class DynamicSender:
                 ]
             )
 
-        send_tasks = [
-            self._send_group_via_bot(
-                bot, group_id, message, at_all_enabled=at_all_enabled
-            )
-            for _, bot in valid_bots
-            for group_id in group_ids
-        ]
-        deliveries = await asyncio.gather(*send_tasks, return_exceptions=True)
         targets: List[TargetDelivery] = []
-        for delivery in deliveries:
-            if isinstance(delivery, TargetDelivery):
-                targets.append(delivery)
-            else:
-                targets.append(
-                    TargetDelivery("unknown", "unknown", False, str(delivery))
+        for group_id in group_ids:
+            delivery = TargetDelivery("group", group_id, False, "没有可用的机器人实例")
+            for _, bot in valid_bots:
+                delivery = await self._send_group_via_bot(
+                    bot, group_id, message, at_all_enabled=at_all_enabled
                 )
-        return aggregate_by_target(DeliveryResult(targets=targets))
+                if delivery.success:
+                    break
+            targets.append(delivery)
+        return DeliveryResult(targets=targets)
 
     async def _send_group_via_bot(
         self,
@@ -179,21 +171,15 @@ class DynamicSender:
                 ]
             )
 
-        send_tasks = [
-            self._send_user_via_bot(bot, user_id, message)
-            for _, bot in valid_bots
-            for user_id in user_ids
-        ]
-        deliveries = await asyncio.gather(*send_tasks, return_exceptions=True)
         targets: List[TargetDelivery] = []
-        for delivery in deliveries:
-            if isinstance(delivery, TargetDelivery):
-                targets.append(delivery)
-            else:
-                targets.append(
-                    TargetDelivery("unknown", "unknown", False, str(delivery))
-                )
-        return aggregate_by_target(DeliveryResult(targets=targets))
+        for user_id in user_ids:
+            delivery = TargetDelivery("user", user_id, False, "没有可用的机器人实例")
+            for _, bot in valid_bots:
+                delivery = await self._send_user_via_bot(bot, user_id, message)
+                if delivery.success:
+                    break
+            targets.append(delivery)
+        return DeliveryResult(targets=targets)
 
     async def _send_user_via_bot(
         self, bot: Bot, user_id: str, message: Message
