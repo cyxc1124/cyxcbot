@@ -34,7 +34,6 @@ def upgrade(name: str = "") -> None:
                 nullable=False,
                 server_default=sa.false(),
             ),
-            info={"bind_key": "shared.db"},
         )
 
 
@@ -46,4 +45,4 @@ def downgrade(name: str = "") -> None:
         "shared_db_linkparseruserpolicy",
         "shared_db_linkparsergrouppolicy",
     ):
-        op.drop_column(table, "dynamic_enabled", info={"bind_key": "shared.db"})
+        op.drop_column(table, "dynamic_enabled")
