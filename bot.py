@@ -9,6 +9,8 @@ from nonebot.adapters.console import Adapter as ConsoleAdapter  # 避免重复�
 from nonebot.adapters.onebot.v11 import Adapter as OneBotAdapter  # 添加OneBot适配器
 from nonebot.log import LoguruHandler, logger
 
+from shared.security.database_url import mask_database_url
+
 # 启动时记录仍通过环境变量生效的配置
 _SECRET_ENV_VARS = frozenset({"WEB_SECRET_KEY"})
 _OBSOLETE_ENV_EXACT = frozenset({"NOTIFY_GROUPS", "BILIBILI_COOKIE", "SUPERUSERS"})
@@ -35,21 +37,8 @@ def _format_env_value(key: str, value: str | None) -> str:
     if key in _SECRET_ENV_VARS:
         return "(已设置)" if value.strip() else "(未设置)"
     if key == "SQLALCHEMY_DATABASE_URL":
-        return _mask_database_url(value)
+        return mask_database_url(value)
     return value
-
-
-def _mask_database_url(url: str) -> str:
-    """Hide credentials in database URLs while keeping engine/host/db name visible."""
-    if "@" in url and "://" in url:
-        scheme, rest = url.split("://", 1)
-        if "@" in rest:
-            creds, host_part = rest.rsplit("@", 1)
-            if ":" in creds:
-                user = creds.split(":", 1)[0]
-                return f"{scheme}://{user}:***@{host_part}"
-            return f"{scheme}://***@{host_part}"
-    return url
 
 
 def _collect_obsolete_env_vars() -> list[str]:
@@ -140,6 +129,20 @@ def _ensure_sqlite_parent_dir(url: str) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _configure_alembic_auto_upgrade() -> None:
+    """启动时自动执行 Alembic upgrade，不弹出人工确认。"""
+    import click
+
+    _confirm = click.confirm
+
+    def _auto_confirm(message: str, *args, **kwargs) -> bool:
+        if "迁移" in message:
+            return True
+        return _confirm(message, *args, **kwargs)
+
+    click.confirm = _auto_confirm  # type: ignore[method-assign]
+
+
 # 尽早加载 .env（供 SQLALCHEMY_DATABASE_URL、WEB_SECRET_KEY 等使用）
 _env_path = Path(".env")
 if _env_path.exists():
@@ -163,11 +166,17 @@ _app_base = (
 )
 _migrations_dir = _app_base / "shared" / "db" / "migrations"
 
+from shared.db.alembic_repair import repair_alembic_version_if_needed
+
+repair_alembic_version_if_needed(_db_url)
+_configure_alembic_auto_upgrade()
+
 # 初始化 NoneBot
-# alembic_startup_check=False：启动时自动同步数据库 schema（建表/更新），无需额外脚本
+# alembic_startup_check=True：通过 Alembic upgrade 应用 migrations/ 中的迁移。
+# 勿用 False（sync）：模型与库不一致且 autogenerate 失败时会回退为删表重建，导致数据丢失。
 nonebot.init(
     sqlalchemy_database_url=_db_url,
-    alembic_startup_check=False,
+    alembic_startup_check=True,
     alembic_version_locations=_migrations_dir,
 )
 

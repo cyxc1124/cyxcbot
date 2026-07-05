@@ -150,6 +150,7 @@ export function LinkParserUserPolicyTab() {
         name: row.name ?? undefined,
         video_enabled: payload.video_enabled,
         live_enabled: payload.live_enabled,
+        dynamic_enabled: payload.dynamic_enabled,
       }),
     resetItem: resetLinkParserUserPolicy,
     toggleAllSuccessMessage: (enabled) =>

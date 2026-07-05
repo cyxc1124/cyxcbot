@@ -10,7 +10,9 @@ import pytest
 from utils.bilibili_api.link_parser import (
     BilibiliRef,
     _dedupe_preserve_order,
+    _dynamic_id_from_url,
     _live_room_id_from_url,
+    _ref_from_url,
     _video_ref_from_url,
     extract_bilibili_refs,
 )
@@ -39,6 +41,44 @@ def test_live_room_id_from_path() -> None:
 def test_live_room_id_from_query() -> None:
     url = "https://live.bilibili.com/h5/123?room_id=99887766"
     assert _live_room_id_from_url(url) == 99887766
+
+
+def test_dynamic_id_from_opus_url() -> None:
+    url = "https://www.bilibili.com/opus/1217074344495153155?plat_id=5"
+    assert _dynamic_id_from_url(url) == 1217074344495153155
+    ref = _ref_from_url(url)
+    assert ref == BilibiliRef(kind="dynamic", dynamic_id=1217074344495153155)
+
+
+def test_dynamic_id_from_t_bilibili_url() -> None:
+    url = "https://t.bilibili.com/1217074344495153155"
+    assert _dynamic_id_from_url(url) == 1217074344495153155
+
+
+@pytest.mark.asyncio
+async def test_extract_bilibili_refs_b23_opus_short_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opus_url = (
+        "https://www.bilibili.com/opus/1217074344495153155?plat_id=5&unique_k=p4xCtl6"
+    )
+
+    async def fake_resolve(
+        _session: object, url: str, *, cookie: str | None = None
+    ) -> str:
+        assert url == "https://b23.tv/p4xCtl6"
+        return opus_url
+
+    monkeypatch.setattr(
+        "utils.bilibili_api.link_parser.resolve_short_url", fake_resolve
+    )
+
+    refs = await extract_bilibili_refs(
+        "https://b23.tv/p4xCtl6", MagicMock(), max_count=3
+    )
+    assert refs == [
+        BilibiliRef(kind="dynamic", dynamic_id=1217074344495153155),
+    ]
 
 
 def test_dedupe_preserve_order() -> None:

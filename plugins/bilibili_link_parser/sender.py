@@ -8,7 +8,7 @@ from nonebot.log import logger
 
 from shared.config.message_templates import LinkMessageTemplates
 from shared.notify.message_template import build_message_from_template
-from utils.bilibili_api import RoomInfo, UserInfo, VideoInfo
+from utils.bilibili_api import DynamicItem, RoomInfo, UserInfo, VideoInfo
 from utils.bilibili_api.live_models import LiveStatus
 
 SegmentPart = Union[MessageSegment, str]
@@ -36,6 +36,31 @@ def _cover_parts(cover_url: str | None) -> Iterable[SegmentPart]:
     except Exception as exc:
         logger.warning(f"添加封面失败: {exc}")
         return []
+
+
+def _dynamic_cover_parts(
+    dynamic: DynamicItem,
+    *,
+    screenshot_image: bytes | None = None,
+    include_dynamic_media: bool = False,
+) -> Iterable[SegmentPart]:
+    """与动态监控一致：优先网页截图，失败或未启用时降级为 API 图片。"""
+    if include_dynamic_media:
+        parts: list[SegmentPart] = []
+        if dynamic.body_text:
+            parts.append(f"{dynamic.body_text}\n")
+        for image_url in dynamic.images:
+            try:
+                parts.append(MessageSegment.image(image_url))
+            except Exception:
+                logger.opt(exception=True).warning("添加动态图片失败: {}", image_url)
+        return parts
+    if screenshot_image:
+        try:
+            return [MessageSegment.image(screenshot_image)]
+        except Exception:
+            logger.opt(exception=True).warning("添加动态截图失败")
+    return _cover_parts(dynamic.images[0] if dynamic.images else None)
 
 
 def build_video_link_message(
@@ -80,4 +105,39 @@ def build_live_link_message(
         tpl.live,
         text_variables,
         {"cover": lambda: _cover_parts(room.cover)},
+    )
+
+
+def build_dynamic_link_message(
+    dynamic: DynamicItem,
+    templates: Optional[LinkMessageTemplates] = None,
+    *,
+    screenshot_image: bytes | None = None,
+    include_dynamic_media: bool = False,
+) -> Message:
+    """复用视频链接模板构建动态/opus 链接解析消息。"""
+    tpl = templates or LinkMessageTemplates()
+    title = (
+        dynamic.title or dynamic.body_text or dynamic.get_type_description()
+    ).strip()
+    if len(title) > 100:
+        title = f"{title[:100]}…"
+    text_variables = {
+        "title": title or "暂无标题",
+        "author": dynamic.name or "未知",
+        "pub_date": dynamic.format_beijing_time(),
+        "url": dynamic.url or f"https://www.bilibili.com/opus/{dynamic.id}",
+        "bvid": "",
+        "aid": "",
+    }
+    return build_message_from_template(
+        tpl.video,
+        text_variables,
+        {
+            "cover": lambda: _dynamic_cover_parts(
+                dynamic,
+                screenshot_image=screenshot_image,
+                include_dynamic_media=include_dynamic_media,
+            )
+        },
     )

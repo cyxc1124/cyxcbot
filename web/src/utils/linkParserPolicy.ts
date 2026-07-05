@@ -3,6 +3,7 @@
 export interface LinkParserPolicyFlags {
   video_enabled: boolean
   live_enabled: boolean
+  dynamic_enabled: boolean
 }
 
 export function buildPolicyPayload(
@@ -13,21 +14,39 @@ export function buildPolicyPayload(
   const payload = {
     video_enabled: Boolean(next.video_enabled),
     live_enabled: Boolean(next.live_enabled),
+    dynamic_enabled: Boolean(next.dynamic_enabled),
   }
   return {
     ...payload,
-    customized: payload.video_enabled || payload.live_enabled,
+    customized:
+      payload.video_enabled || payload.live_enabled || payload.dynamic_enabled,
   }
 }
 
 export function isAllPoliciesEnabled(items: LinkParserPolicyFlags[]): boolean {
-  return items.length > 0 && items.every((item) => item.video_enabled && item.live_enabled)
+  return (
+    items.length > 0 &&
+    items.every(
+      (item) =>
+        item.video_enabled && item.live_enabled && item.dynamic_enabled,
+    )
+  )
 }
 
 export function isNoPoliciesEnabled(items: LinkParserPolicyFlags[]): boolean {
-  return items.length > 0 && items.every((item) => !item.video_enabled && !item.live_enabled)
+  return (
+    items.length > 0 &&
+    items.every(
+      (item) =>
+        !item.video_enabled && !item.live_enabled && !item.dynamic_enabled,
+    )
+  )
 }
 
 export function buildToggleAllPayload(enabled: boolean): LinkParserPolicyFlags {
-  return { video_enabled: enabled, live_enabled: enabled }
+  return {
+    video_enabled: enabled,
+    live_enabled: enabled,
+    dynamic_enabled: enabled,
+  }
 }

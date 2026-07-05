@@ -26,7 +26,7 @@ export function GlobalPolicyHint({ scope }: { scope: 'group' | 'user' }) {
   return (
     <div className="space-y-1">
       <p className="text-sm text-muted-foreground">
-        在下方为每个{scope === 'group' ? '群' : '好友'}单独开启视频链接或直播链接解析；两者都关闭时不解析。文案可在「消息模板」中配置。
+        在下方为每个{scope === 'group' ? '群' : '好友'}单独开启视频、直播或动态链接解析；三者都关闭时不解析。文案可在「消息模板」中配置。
       </p>
       {scope === 'group' && (
         <p className="text-sm text-muted-foreground">
@@ -50,7 +50,10 @@ interface LinkParserPolicyTableProps<T extends LinkParserPolicyRow> {
   nameColumnLabel: string
   savingIds: Set<string>
   togglingAll: boolean
-  onPatch: (id: string, patch: Partial<Pick<T, 'video_enabled' | 'live_enabled'>>) => void
+  onPatch: (
+    id: string,
+    patch: Partial<Pick<T, 'video_enabled' | 'live_enabled' | 'dynamic_enabled'>>,
+  ) => void
   onReset: (id: string) => void
 }
 
@@ -74,6 +77,7 @@ export function LinkParserPolicyTable<T extends LinkParserPolicyRow>({
             <th className="pb-3 pr-4 font-medium">{idColumnLabel}</th>
             <th className="pb-3 pr-4 font-medium">视频链接</th>
             <th className="pb-3 pr-4 font-medium">直播链接</th>
+            <th className="pb-3 pr-4 font-medium">动态链接</th>
             <th className="pb-3 font-medium text-right">操作</th>
           </tr>
         </thead>
@@ -102,6 +106,15 @@ export function LinkParserPolicyTable<T extends LinkParserPolicyRow>({
                     checked={item.live_enabled}
                     disabled={saving}
                     onChange={(checked) => void onPatch(itemId, { live_enabled: checked })}
+                  />
+                </td>
+                <td className="py-3.5 pr-4">
+                  <PolicyToggleRow
+                    checked={item.dynamic_enabled}
+                    disabled={saving}
+                    onChange={(checked) =>
+                      void onPatch(itemId, { dynamic_enabled: checked })
+                    }
                   />
                 </td>
                 <td className="py-3.5 text-right">

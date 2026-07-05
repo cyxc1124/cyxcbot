@@ -23,14 +23,20 @@ LIVE_URL_PATTERN = re.compile(
     r"https?://(?:www\.|m\.)?live\.bilibili\.com(?:/blanc)?/(\d+)",
     re.IGNORECASE,
 )
+DYNAMIC_URL_PATTERN = re.compile(
+    r"https?://(?:www\.|m\.)?bilibili\.com/opus/(\d+)"
+    r"|https?://t\.bilibili\.com/(\d+)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
 class BilibiliRef:
-    kind: Literal["video", "live"]
+    kind: Literal["video", "live", "dynamic"]
     bvid: str | None = None
     aid: int | None = None
     room_id: int | None = None
+    dynamic_id: int | None = None
 
 
 def _normalize_bvid(value: str) -> str:
@@ -57,6 +63,27 @@ def _live_room_id_from_url(url: str) -> int | None:
     path_match = re.search(r"/(\d+)", parsed.path)
     if path_match:
         return int(path_match.group(1))
+
+    return None
+
+
+def _dynamic_id_from_url(url: str) -> int | None:
+    match = DYNAMIC_URL_PATTERN.search(url)
+    if match:
+        raw_id = next(group for group in match.groups() if group)
+        if raw_id.isdigit() and int(raw_id) > 0:
+            return int(raw_id)
+
+    parsed = urlparse(url)
+    if parsed.netloc.endswith("bilibili.com"):
+        opus_match = re.search(r"/opus/(\d+)", parsed.path, re.IGNORECASE)
+        if opus_match:
+            return int(opus_match.group(1))
+
+    if "t.bilibili.com" in parsed.netloc:
+        path_match = re.fullmatch(r"/(\d+)", parsed.path)
+        if path_match:
+            return int(path_match.group(1))
 
     return None
 
@@ -93,6 +120,10 @@ def _ref_from_url(url: str) -> BilibiliRef | None:
     room_id = _live_room_id_from_url(url)
     if room_id:
         return BilibiliRef(kind="live", room_id=room_id)
+
+    dynamic_id = _dynamic_id_from_url(url)
+    if dynamic_id:
+        return BilibiliRef(kind="dynamic", dynamic_id=dynamic_id)
 
     return None
 
@@ -143,6 +174,7 @@ def _dedupe_preserve_order(items: Iterable[BilibiliRef]) -> list[BilibiliRef]:
             item.bvid,
             item.aid,
             item.room_id,
+            item.dynamic_id,
         )
         if key in seen:
             continue
@@ -176,6 +208,10 @@ async def extract_bilibili_refs(
 
     for match in LIVE_URL_PATTERN.finditer(text):
         refs.append(BilibiliRef(kind="live", room_id=int(match.group(1))))
+
+    for match in DYNAMIC_URL_PATTERN.finditer(text):
+        raw_id = next(group for group in match.groups() if group)
+        refs.append(BilibiliRef(kind="dynamic", dynamic_id=int(raw_id)))
 
     b23_urls = [match.group(0) for match in B23_URL_PATTERN.finditer(text)]
     cursor = 0

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import nonebot
 import pytest
 
-os.environ.setdefault("SQLALCHEMY_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ["SQLALCHEMY_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 try:
     nonebot.get_driver()
 except ValueError:

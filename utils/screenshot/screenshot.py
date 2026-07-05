@@ -3,6 +3,7 @@
 负责获取 B 站动态/opus 页面的网页截图
 """
 
+import asyncio
 from typing import List, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -536,6 +537,13 @@ class DynamicScreenshot:
 # 全局截图器实例
 dynamic_screenshot = DynamicScreenshot()
 
+# 浏览器是全局单例，共享同一个 browser_context。所有调用方（动态监控 + 链接解析）
+# 都经由本便捷函数，故在此处统一给「同时打开的截图页数」封顶，避免用户刷 opus 链接
+# 触发无上限的并发 new_page() 拖垮进程。_init_lock 防止懒初始化被并发重复触发。
+_SCREENSHOT_CONCURRENCY = 2
+_screenshot_semaphore = asyncio.Semaphore(_SCREENSHOT_CONCURRENCY)
+_init_lock = asyncio.Lock()
+
 
 async def get_dynamic_screenshot(
     dynamic_id: int,
@@ -552,17 +560,20 @@ async def get_dynamic_screenshot(
     global dynamic_screenshot
     logger.debug("请求获取动态 {} 截图", dynamic_id)
 
-    # 如果浏览器未初始化，尝试初始化
+    # 如果浏览器未初始化，尝试初始化（加锁做双重检查，避免并发重复启动浏览器）
     if not dynamic_screenshot.browser_context:
-        logger.info("为动态 {} 初始化浏览器", dynamic_id)
-        success = await dynamic_screenshot.init_browser()
-        if not success:
-            logger.error("浏览器初始化失败")
-            return None, "浏览器初始化失败", None
+        async with _init_lock:
+            if not dynamic_screenshot.browser_context:
+                logger.info("为动态 {} 初始化浏览器", dynamic_id)
+                success = await dynamic_screenshot.init_browser()
+                if not success:
+                    logger.error("浏览器初始化失败")
+                    return None, "浏览器初始化失败", None
 
-    screenshot, error, page_url = await dynamic_screenshot.get_dynamic_screenshot(
-        dynamic_id
-    )
+    async with _screenshot_semaphore:
+        screenshot, error, page_url = await dynamic_screenshot.get_dynamic_screenshot(
+            dynamic_id
+        )
     if error:
         logger.warning("动态 {} 截图失败: {}", dynamic_id, error)
     else:

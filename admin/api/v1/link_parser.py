@@ -64,23 +64,35 @@ def _ensure_group_message_enabled(group_id: str, snap) -> None:
         )
 
 
-def _group_policy_values(snap, group_id: str) -> tuple[bool, bool, bool]:
+def _group_policy_values(snap, group_id: str) -> tuple[bool, bool, bool, bool]:
     override = snap.link_parser_group_policies.get(str(group_id).strip())
     if override:
-        return override.video_enabled, override.live_enabled, True
-    return False, False, False
+        return (
+            override.video_enabled,
+            override.live_enabled,
+            override.dynamic_enabled,
+            True,
+        )
+    return False, False, False, False
 
 
-def _user_policy_values(snap, user_id: str) -> tuple[bool, bool, bool]:
+def _user_policy_values(snap, user_id: str) -> tuple[bool, bool, bool, bool]:
     override = snap.link_parser_user_policies.get(str(user_id).strip())
     if override:
-        return override.video_enabled, override.live_enabled, True
-    return False, False, False
+        return (
+            override.video_enabled,
+            override.live_enabled,
+            override.dynamic_enabled,
+            True,
+        )
+    return False, False, False, False
 
 
 def _build_group_item(snap, group: dict) -> LinkParserGroupPolicyItem:
     group_id = str(group["group_id"])
-    video_enabled, live_enabled, customized = _group_policy_values(snap, group_id)
+    video_enabled, live_enabled, dynamic_enabled, customized = _group_policy_values(
+        snap, group_id
+    )
     return LinkParserGroupPolicyItem(
         group_id=group_id,
         group_name=group.get("group_name"),
@@ -88,6 +100,7 @@ def _build_group_item(snap, group: dict) -> LinkParserGroupPolicyItem:
         customized=customized,
         video_enabled=video_enabled,
         live_enabled=live_enabled,
+        dynamic_enabled=dynamic_enabled,
     )
 
 
@@ -97,7 +110,9 @@ def _build_group_items(snap, groups: list[dict]) -> list[LinkParserGroupPolicyIt
 
 def _build_user_item(snap, user: dict) -> LinkParserUserPolicyItem:
     user_id = str(user["user_id"])
-    video_enabled, live_enabled, customized = _user_policy_values(snap, user_id)
+    video_enabled, live_enabled, dynamic_enabled, customized = _user_policy_values(
+        snap, user_id
+    )
     override = snap.link_parser_user_policies.get(user_id)
     return LinkParserUserPolicyItem(
         user_id=user_id,
@@ -106,6 +121,7 @@ def _build_user_item(snap, user: dict) -> LinkParserUserPolicyItem:
         customized=customized,
         video_enabled=video_enabled,
         live_enabled=live_enabled,
+        dynamic_enabled=dynamic_enabled,
     )
 
 
@@ -128,7 +144,7 @@ def _build_user_items(snap, users: list[dict]) -> list[LinkParserUserPolicyItem]
 def _is_default_off(
     body: LinkParserGroupPolicyUpdateRequest | LinkParserUserPolicyUpdateRequest,
 ) -> bool:
-    return not body.video_enabled and not body.live_enabled
+    return not body.video_enabled and not body.live_enabled and not body.dynamic_enabled
 
 
 async def _group_meta(group_id: str) -> dict:
@@ -185,6 +201,7 @@ async def update_group_policy(
             group_id,
             video_enabled=body.video_enabled,
             live_enabled=body.live_enabled,
+            dynamic_enabled=body.dynamic_enabled,
         )
     await svc.reload()
 
@@ -242,6 +259,7 @@ async def create_user_policy(
             user_id,
             video_enabled=body.video_enabled,
             live_enabled=body.live_enabled,
+            dynamic_enabled=body.dynamic_enabled,
             name=body.name,
         )
     await svc.reload()
@@ -271,6 +289,7 @@ async def update_user_policy(
             user_id,
             video_enabled=body.video_enabled,
             live_enabled=body.live_enabled,
+            dynamic_enabled=body.dynamic_enabled,
             name=body.name
             if body.name is not None
             else (existing.name if existing else None),

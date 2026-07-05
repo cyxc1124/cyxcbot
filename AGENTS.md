@@ -74,7 +74,11 @@ deploy/             # Docker Compose / Helm
 2. 需热重载的插件注册 `get_config_service().register_reload_callback(...)`（见 `dynamic_monitor`、`live_monitor`、`video_monitor`、`bilibili_link_parser`）
 3. 超级用户由 `shared/config/nonebot_superusers.py` 从 DB 同步到 NoneBot
 
-数据库迁移在 `shared/db/migrations/`；启动时由 `nonebot.init(alembic_startup_check=False)` 自动应用。
+数据库迁移在 `shared/db/migrations/`；启动时 `nonebot.init(alembic_startup_check=True)` 经 Alembic **upgrade** 应用（勿用 sync 模式，模型变更失败时可能删表重建）。
+
+启动前 `bot.py` 会调用 `shared/db/alembic_repair.py` 的 `repair_alembic_version_if_needed()`，补救历史上 sync 模式（`alembic_startup_check=False`）留下的漂移——那种模式会建表却把 `alembic_version` 清空，直接切到 upgrade 会因 `CREATE TABLE` 冲突失败。repair **仅在「核心表已存在但 `alembic_version` 空/缺」时**，按现有表结构推断并回填一次 revision；`alembic_version` 非空的健康库一律不动。它会按 URL 依次尝试已安装的同步/异步驱动（`postgresql+asyncpg` 优先 async 再回退 `psycopg`；SQLite 固定用内置 pysqlite），缺驱动时跳过 repair 而不阻断启动。
+
+**`alembic_repair.py` 是一次性过渡代码，新增迁移无需改它。** `infer_alembic_revision()` 的推断上限冻结在切换前的 head（`g7h8i9j0k1l2`）：sync 模式只可能把库建到那个版本，之后新增的迁移不会出现在漂移库里，交给 Alembic upgrade 应用即可。待所有历史部署都迁移完毕（`alembic_version` 均已正常）后，可整体删除本模块。
 
 ## 代码风格
 
@@ -149,7 +153,7 @@ logger.error(f"错误: {traceback.format_exc()}")
 ### 敏感信息
 
 - Cookie、Token、密码：只记录「是否已配置」或计数，不记录值。
-- 启动环境变量脱敏见 `bot.py` 的 `_format_env_value()` / `_mask_database_url()`，新增启动日志时沿用同样规则。
+- 启动环境变量脱敏见 `shared/security/database_url.py` 的 `mask_database_url()` 与 `bot.py` 的 `_format_env_value()`，新增启动/诊断日志时沿用同样规则。
 
 ## 常见修改入口
 

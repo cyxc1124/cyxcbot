@@ -12,7 +12,7 @@ from nonebot.adapters.onebot.v11.exception import ActionFailed, NetworkError
 
 
 def _ensure_nonebot() -> None:
-    os.environ.setdefault("SQLALCHEMY_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+    os.environ["SQLALCHEMY_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
     try:
         nonebot.get_driver()
     except ValueError:

@@ -176,6 +176,8 @@ class DynamicFetcher:
         self,
         dynamic_id: str,
         cookie: Optional[str] = None,
+        *,
+        skip_live_dynamic: bool = True,
     ) -> Optional[DynamicItem]:
         """Fetch a single dynamic by ID and parse images/text."""
         if not self.session:
@@ -232,7 +234,9 @@ class DynamicFetcher:
                     logger.warning("动态 {} 不存在或响应为空", dynamic_id)
                     return None
 
-                return await self._parse_dynamic_item(item, uid="0", is_pinned=False)
+                return await self._parse_dynamic_item(
+                    item, uid="0", is_pinned=False, skip_live_dynamic=skip_live_dynamic
+                )
         except asyncio.TimeoutError:
             logger.warning("获取动态 {} 超时", dynamic_id)
             return None
@@ -240,8 +244,75 @@ class DynamicFetcher:
             logger.opt(exception=True).error("获取动态 {} 异常", dynamic_id)
             return None
 
+    @staticmethod
+    def _extract_live_room_id_from_major(major: dict | None) -> int | None:
+        if not major or not isinstance(major, dict):
+            return None
+        live = major.get("live")
+        if isinstance(live, dict) and live.get("id"):
+            try:
+                return int(live["id"])
+            except TypeError, ValueError:
+                pass
+        live_rcmd = major.get("live_rcmd")
+        if isinstance(live_rcmd, dict) and live_rcmd.get("content"):
+            try:
+                payload = json.loads(live_rcmd["content"])
+                room_id = (payload.get("live_play_info") or {}).get("room_id")
+                if room_id is not None:
+                    return int(room_id)
+            except json.JSONDecodeError, TypeError, ValueError:
+                pass
+        return None
+
+    @classmethod
+    def _parse_live_dynamic_content(
+        cls, module_dynamic: dict | None
+    ) -> tuple[str, str, List[str], int | None]:
+        major = (
+            module_dynamic.get("major") if isinstance(module_dynamic, dict) else None
+        )
+        room_id = cls._extract_live_room_id_from_major(major)
+        title = ""
+        body_text = ""
+        images: List[str] = []
+        if not isinstance(major, dict):
+            return title, body_text, images, room_id
+
+        live_rcmd = major.get("live_rcmd")
+        if isinstance(live_rcmd, dict) and live_rcmd.get("content"):
+            try:
+                payload = json.loads(live_rcmd["content"])
+                info = payload.get("live_play_info") or {}
+                title = (info.get("title") or "").strip()
+                cover = info.get("cover")
+                if cover:
+                    images = cls._dedupe_images([cover])
+                area = (info.get("area_name") or "").strip()
+                watched = (
+                    (info.get("watched_show") or {}).get("text_large") or ""
+                ).strip()
+                body_text = " · ".join(part for part in (area, watched) if part)
+            except json.JSONDecodeError:
+                pass
+
+        live = major.get("live")
+        if isinstance(live, dict):
+            if not title:
+                title = (live.get("title") or "").strip()
+            cover = live.get("cover")
+            if cover and not images:
+                images = cls._dedupe_images([cover])
+
+        return title, body_text, images, room_id
+
     async def _parse_dynamic_item(
-        self, item: dict, uid: str, is_pinned: bool = False
+        self,
+        item: dict,
+        uid: str,
+        is_pinned: bool = False,
+        *,
+        skip_live_dynamic: bool = True,
     ) -> Optional[DynamicItem]:
         """解析单个动态项"""
         try:
@@ -279,8 +350,12 @@ class DynamicFetcher:
             # 提取动态类型 - 只需基本类型信息用于描述
             bili_dynamic_type = item.get("type", "DYNAMIC_TYPE_WORD")
 
-            # 过滤直播动态，因为直播推送由其他插件负责
-            if bili_dynamic_type in ("DYNAMIC_TYPE_LIVE_RCMD", "DYNAMIC_TYPE_LIVE"):
+            is_live_dynamic = bili_dynamic_type in (
+                "DYNAMIC_TYPE_LIVE_RCMD",
+                "DYNAMIC_TYPE_LIVE",
+            )
+            # 动态监控轮询跳过直播动态（由 live_monitor 负责）
+            if is_live_dynamic and skip_live_dynamic:
                 logger.debug(
                     "跳过直播动态: {}, 类型={}, UID={}",
                     dynamic_id,
@@ -295,6 +370,7 @@ class DynamicFetcher:
             body_text = ""
             title = ""
             images: List[str] = []
+            live_room_id: int | None = None
             module_dynamic = modules.get("module_dynamic", {})
 
             # 特殊处理转发动态 - 需要解析原始动态信息用于描述
@@ -324,6 +400,10 @@ class DynamicFetcher:
                         if isinstance(orig_dynamic, dict)
                         else None
                     )
+            elif is_live_dynamic:
+                title, body_text, images, live_room_id = (
+                    self._parse_live_dynamic_content(module_dynamic)
+                )
             else:
                 body_text, title = self._extract_text_from_module_dynamic(
                     module_dynamic
@@ -356,7 +436,11 @@ class DynamicFetcher:
                 images=images,
                 author_type=author_type,
                 is_pinned=is_pinned,
+                live_room_id=live_room_id,
             )
+
+            if live_room_id:
+                dynamic_item.url = f"https://live.bilibili.com/{live_room_id}"
 
             # 对于视频动态，尝试提取视频链接而不是动态链接
             if bili_dynamic_type == "DYNAMIC_TYPE_AV":
