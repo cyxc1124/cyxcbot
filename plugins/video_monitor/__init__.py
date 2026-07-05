@@ -13,7 +13,7 @@ B站视频查询插件
 """
 
 from nonebot import get_driver, on_message
-from nonebot.adapters.onebot.v11 import GroupMessageEvent
+from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
 from nonebot.log import logger
 
 from .config import get_cached_config, reload_config
@@ -66,7 +66,7 @@ _register_config_reload()
 
 
 @video_command.handle()
-async def handle_video_commands(event: GroupMessageEvent):
+async def handle_video_commands(bot: Bot, event: GroupMessageEvent):
     """处理视频查询命令"""
     message_text = event.get_plaintext().strip()
     logger.debug("收到群消息: {}", message_text)
@@ -136,42 +136,30 @@ async def handle_video_commands(event: GroupMessageEvent):
 
                 if videos:
                     message = video_sender.build_video_message(videos)
-                    await video_sender.send_to_group(group_id, message)
+                    await video_sender.send_to_group(group_id, message, bot=bot)
                     logger.info("UP主 {} 最新视频已回复到群 {}", uid, group_id)
                 else:
                     logger.warning("无法获取UP主 {} 的视频", uid)
-                    from nonebot import get_bot
-
-                    bot = get_bot()
-                    if bot:
-                        await bot.send_group_msg(
-                            group_id=int(group_id),
-                            message=f"无法获取UP主 {uid} 的视频，请检查UID是否正确",
-                        )
+                    await bot.send_group_msg(
+                        group_id=int(group_id),
+                        message=f"无法获取UP主 {uid} 的视频，请检查UID是否正确",
+                    )
 
             except Exception:
                 logger.opt(exception=True).error("获取UP主 {} 最新视频失败", uid)
                 try:
-                    from nonebot import get_bot
-
-                    bot = get_bot()
-                    if bot:
-                        await bot.send_group_msg(
-                            group_id=int(group_id),
-                            message=f"UP主 {uid} 视频查询失败，请稍后重试",
-                        )
+                    await bot.send_group_msg(
+                        group_id=int(group_id),
+                        message=f"UP主 {uid} 视频查询失败，请稍后重试",
+                    )
                 except Exception:
                     logger.opt(exception=True).error("发送失败提示消息失败")
 
     except Exception:
         logger.opt(exception=True).error("处理视频查询命令失败")
         try:
-            from nonebot import get_bot
-
-            bot = get_bot()
-            if bot:
-                await bot.send_group_msg(
-                    group_id=int(group_id), message="系统错误，请稍后重试"
-                )
+            await bot.send_group_msg(
+                group_id=int(group_id), message="系统错误，请稍后重试"
+            )
         except Exception:
             logger.opt(exception=True).error("发送系统错误消息失败")

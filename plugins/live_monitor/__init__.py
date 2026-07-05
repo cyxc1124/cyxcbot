@@ -10,6 +10,8 @@ from nonebot.log import logger
 from nonebot.params import CommandArg
 from nonebot.plugin import PluginMetadata
 
+from shared.onebot.lifecycle import stop_monitor_if_no_bots
+
 from .config import Config
 from .live_monitor import live_monitor_instance, start_live_monitor, stop_live_monitor
 
@@ -45,11 +47,15 @@ async def _(bot):
 
 @driver.on_bot_disconnect
 async def _(bot):
-    """机器人断开连接时停止监控"""
-    logger.info(f"机器人 {bot.self_id} 断开连接，正在停止直播监控...")
+    """机器人断开连接时，仅在没有其他 Bot 在线时停止监控"""
     try:
-        await stop_live_monitor()
-        logger.info("直播监控已停止")
+        stopped = await stop_monitor_if_no_bots(
+            stop_live_monitor,
+            bot_self_id=bot.self_id,
+            monitor_name="直播监控",
+        )
+        if stopped:
+            logger.info("直播监控已停止")
     except Exception as e:
         logger.error(f"直播监控停止失败: {e}")
 
