@@ -8,7 +8,7 @@ from nonebot.log import logger
 
 from shared.config.message_templates import LinkMessageTemplates
 from shared.notify.message_template import build_message_from_template
-from utils.bilibili_api import RoomInfo, UserInfo, VideoInfo
+from utils.bilibili_api import DynamicItem, RoomInfo, UserInfo, VideoInfo
 from utils.bilibili_api.live_models import LiveStatus
 
 SegmentPart = Union[MessageSegment, str]
@@ -80,4 +80,29 @@ def build_live_link_message(
         tpl.live,
         text_variables,
         {"cover": lambda: _cover_parts(room.cover)},
+    )
+
+
+def build_dynamic_link_message(
+    dynamic: DynamicItem,
+    templates: Optional[LinkMessageTemplates] = None,
+) -> Message:
+    """复用视频链接模板构建动态/opus 链接解析消息。"""
+    tpl = templates or LinkMessageTemplates()
+    title = (dynamic.title or dynamic.body_text or dynamic.get_type_description()).strip()
+    if len(title) > 100:
+        title = f"{title[:100]}…"
+    text_variables = {
+        "title": title or "暂无标题",
+        "author": dynamic.name or "未知",
+        "pub_date": dynamic.format_beijing_time(),
+        "url": f"https://www.bilibili.com/opus/{dynamic.id}",
+        "bvid": "",
+        "aid": "",
+    }
+    cover_url = dynamic.images[0] if dynamic.images else None
+    return build_message_from_template(
+        tpl.video,
+        text_variables,
+        {"cover": lambda: _cover_parts(cover_url)},
     )

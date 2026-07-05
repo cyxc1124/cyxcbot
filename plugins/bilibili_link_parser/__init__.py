@@ -15,12 +15,16 @@ from shared.config.link_parser_policy import (
     resolve_link_parser_policy,
 )
 from shared.config.service import get_config_service
+from utils.bilibili_api import DynamicFetcher, extract_bilibili_refs, video_api_manager
 from utils.bilibili_api import api_manager as live_api_manager
-from utils.bilibili_api import extract_bilibili_refs, video_api_manager
 
 from .config import Config, get_config, reload_config
 from .message_text import collect_message_text
-from .sender import build_live_link_message, build_video_link_message
+from .sender import (
+    build_dynamic_link_message,
+    build_live_link_message,
+    build_video_link_message,
+)
 
 __plugin_meta__ = PluginMetadata(
     name="B 站链接解析",
@@ -52,6 +56,8 @@ async def _resolve_reply(
         logger.debug("B 站链接解析：未识别到链接，text={!r}", message_text[:120])
         return None
 
+    fetcher = DynamicFetcher(session, cookie)
+
     for ref in refs:
         try:
             if ref.kind == "video":
@@ -62,6 +68,14 @@ async def _resolve_reply(
                 )
                 if video:
                     return build_video_link_message(video, config.message_templates)
+            elif ref.kind == "dynamic" and ref.dynamic_id:
+                if not scope.video_enabled and not scope.live_enabled:
+                    continue
+                dynamic = await fetcher.fetch_dynamic_detail(
+                    str(ref.dynamic_id), cookie=cookie
+                )
+                if dynamic:
+                    return build_dynamic_link_message(dynamic, config.message_templates)
             elif ref.room_id:
                 if not scope.live_enabled:
                     continue
