@@ -9,6 +9,8 @@ from nonebot.adapters.console import Adapter as ConsoleAdapter  # 避免重复�
 from nonebot.adapters.onebot.v11 import Adapter as OneBotAdapter  # 添加OneBot适配器
 from nonebot.log import LoguruHandler, logger
 
+from shared.security.database_url import mask_database_url
+
 # 启动时记录仍通过环境变量生效的配置
 _SECRET_ENV_VARS = frozenset({"WEB_SECRET_KEY"})
 _OBSOLETE_ENV_EXACT = frozenset({"NOTIFY_GROUPS", "BILIBILI_COOKIE", "SUPERUSERS"})
@@ -35,21 +37,8 @@ def _format_env_value(key: str, value: str | None) -> str:
     if key in _SECRET_ENV_VARS:
         return "(已设置)" if value.strip() else "(未设置)"
     if key == "SQLALCHEMY_DATABASE_URL":
-        return _mask_database_url(value)
+        return mask_database_url(value)
     return value
-
-
-def _mask_database_url(url: str) -> str:
-    """Hide credentials in database URLs while keeping engine/host/db name visible."""
-    if "@" in url and "://" in url:
-        scheme, rest = url.split("://", 1)
-        if "@" in rest:
-            creds, host_part = rest.rsplit("@", 1)
-            if ":" in creds:
-                user = creds.split(":", 1)[0]
-                return f"{scheme}://{user}:***@{host_part}"
-            return f"{scheme}://***@{host_part}"
-    return url
 
 
 def _collect_obsolete_env_vars() -> list[str]:

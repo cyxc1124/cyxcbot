@@ -156,7 +156,7 @@ logger.error(f"错误: {traceback.format_exc()}")
 ### 敏感信息
 
 - Cookie、Token、密码：只记录「是否已配置」或计数，不记录值。
-- 启动环境变量脱敏见 `bot.py` 的 `_format_env_value()` / `_mask_database_url()`，新增启动日志时沿用同样规则。
+- 启动环境变量脱敏见 `shared/security/database_url.py` 的 `mask_database_url()` 与 `bot.py` 的 `_format_env_value()`，新增启动/诊断日志时沿用同样规则。
 
 ## 常见修改入口
 

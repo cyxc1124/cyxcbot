@@ -12,6 +12,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from shared.security.database_url import mask_database_url
+
 _ALEMBIC_REVISION_ORDER = (
     "a1b2c3d4e5f6",
     "b2c3d4e5f6a7",
@@ -198,13 +200,13 @@ def repair_alembic_version_if_needed(url: str) -> None:
             if is_last:
                 logger.opt(exception=True).warning(
                     "无法连接数据库或修复 alembic_version（最后尝试 {}），跳过自动标记: {}",
-                    candidate_url,
+                    mask_database_url(candidate_url),
                     exc,
                 )
             else:
                 logger.debug(
                     "alembic repair 使用 {} 失败，尝试下一种连接方式: {}",
-                    candidate_url,
+                    mask_database_url(candidate_url),
                     exc,
                 )
 
