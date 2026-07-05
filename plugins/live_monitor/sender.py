@@ -18,7 +18,6 @@ from shared.notify.at_all import LIVE_AT_ALL_FALLBACK, bot_can_at_all
 from shared.notify.delivery import (
     DeliveryResult,
     TargetDelivery,
-    aggregate_by_target,
     empty_delivery_result,
 )
 from shared.notify.message_template import build_message_from_template
@@ -375,16 +374,16 @@ class LiveNotificationSender:
             else:
                 at_all_maps.append(result)
 
-        send_tasks: List = []
-        for index, (bot_id, bot) in enumerate(valid_bots):
-            logger.debug("使用机器人 {} 发送通知", bot_id)
-            at_all_map = (
-                at_all_maps[index]
-                if index < len(at_all_maps)
-                else {group_id: False for group_id in target_groups}
-            )
-
-            for group_id in target_groups:
+        # 按 Bot 顺序 failover：同一目标只投递给首个成功的 Bot，避免多 Bot 同群/同好友重复推送。
+        targets: List[TargetDelivery] = []
+        for group_id in target_groups:
+            delivery = TargetDelivery("group", group_id, False, "没有可用的机器人实例")
+            for index, (_, bot) in enumerate(valid_bots):
+                at_all_map = (
+                    at_all_maps[index]
+                    if index < len(at_all_maps)
+                    else {group_id: False for group_id in target_groups}
+                )
                 if status == "start":
                     message = self.build_start_message(
                         streamer_name=streamer_name,
@@ -400,43 +399,42 @@ class LiveNotificationSender:
                         duration_seconds=duration_seconds,
                     )
 
-                send_tasks.append(
-                    self._send_group_message(bot, group_id, message, status)
+                delivery = await self._send_group_message(
+                    bot, group_id, message, status
+                )
+                if delivery.success:
+                    break
+            targets.append(delivery)
+
+        for user_id in target_users:
+            if status == "start":
+                message = self.build_start_message(
+                    streamer_name=streamer_name,
+                    room_info=room_info,
+                    card_image=card_image,
+                    at_all_enabled=False,
+                    can_at_all=False,
+                )
+            else:
+                message = self.build_end_message(
+                    streamer_name=streamer_name,
+                    card_image=card_image,
+                    duration_seconds=duration_seconds,
                 )
 
-            for user_id in target_users:
-                if status == "start":
-                    message = self.build_start_message(
-                        streamer_name=streamer_name,
-                        room_info=room_info,
-                        card_image=card_image,
-                        at_all_enabled=False,
-                        can_at_all=False,
-                    )
-                else:
-                    message = self.build_end_message(
-                        streamer_name=streamer_name,
-                        card_image=card_image,
-                        duration_seconds=duration_seconds,
-                    )
-
-                send_tasks.append(
-                    self._send_private_message(bot, user_id, message, status)
+            delivery = TargetDelivery("user", user_id, False, "没有可用的机器人实例")
+            for _, bot in valid_bots:
+                delivery = await self._send_private_message(
+                    bot, user_id, message, status
                 )
+                if delivery.success:
+                    break
+            targets.append(delivery)
 
-        if not send_tasks:
+        if not targets:
             return empty_delivery_result()
 
-        deliveries = await asyncio.gather(*send_tasks, return_exceptions=True)
-        targets: List[TargetDelivery] = []
-        for delivery in deliveries:
-            if isinstance(delivery, TargetDelivery):
-                targets.append(delivery)
-            else:
-                targets.append(
-                    TargetDelivery("unknown", "unknown", False, str(delivery))
-                )
-        return aggregate_by_target(DeliveryResult(targets=targets))
+        return DeliveryResult(targets=targets)
 
 
 notification_sender: Optional[LiveNotificationSender] = None

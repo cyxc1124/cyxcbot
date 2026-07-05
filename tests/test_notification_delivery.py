@@ -289,7 +289,29 @@ async def test_dynamic_sender_any_bot_success_counts_as_delivered(
 
     assert len(result.targets) == 1
     assert result.all_succeeded
+    failing_bot.send_group_msg.assert_awaited_once()
     succeeding_bot.send_group_msg.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_dynamic_sender_does_not_duplicate_when_first_bot_succeeds(
+    dynamic_sender_module,
+) -> None:
+    from nonebot.adapters.onebot.v11 import Bot
+
+    sender = dynamic_sender_module.DynamicSender()
+    first_bot = MagicMock(spec=Bot)
+    first_bot.send_group_msg = AsyncMock()
+    second_bot = MagicMock(spec=Bot)
+    second_bot.send_group_msg = AsyncMock()
+    driver = SimpleNamespace(bots={"a": first_bot, "b": second_bot})
+
+    with patch("plugins.dynamic_monitor.sender.get_driver", return_value=driver):
+        result = await sender.send_to_groups(Message("hi"), ["1001"])
+
+    assert result.all_succeeded
+    first_bot.send_group_msg.assert_awaited_once()
+    second_bot.send_group_msg.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -343,19 +365,20 @@ async def test_live_sender_partial_failure(live_sender_module) -> None:
 
 
 @pytest.mark.asyncio
-async def test_live_sender_aggregates_multi_bot_delivery_by_target(
+async def test_live_sender_any_bot_success_counts_as_delivered(
     live_sender_module,
 ) -> None:
+    """首个 Bot 失败时应 failover 到下一个 Bot，最终仍算投递成功。"""
     from nonebot.adapters.onebot.v11 import Bot
 
     sender = live_sender_module.LiveNotificationSender()
-    bot_ok = MagicMock(spec=Bot)
-    bot_ok.send_group_msg = AsyncMock()
-    bot_ok.send_private_msg = AsyncMock()
     bot_fail = MagicMock(spec=Bot)
     bot_fail.send_group_msg = AsyncMock(side_effect=RuntimeError("no access"))
     bot_fail.send_private_msg = AsyncMock(side_effect=RuntimeError("no access"))
-    driver = SimpleNamespace(bots={"ok": bot_ok, "fail": bot_fail})
+    bot_ok = MagicMock(spec=Bot)
+    bot_ok.send_group_msg = AsyncMock()
+    bot_ok.send_private_msg = AsyncMock()
+    driver = SimpleNamespace(bots={"fail": bot_fail, "ok": bot_ok})
 
     with (
         patch("plugins.live_monitor.sender.get_driver", return_value=driver),
@@ -377,8 +400,45 @@ async def test_live_sender_aggregates_multi_bot_delivery_by_target(
 
     assert len(result.targets) == 1
     assert result.all_succeeded
-    bot_ok.send_group_msg.assert_awaited_once()
     bot_fail.send_group_msg.assert_awaited_once()
+    bot_ok.send_group_msg.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_live_sender_does_not_duplicate_when_first_bot_succeeds(
+    live_sender_module,
+) -> None:
+    """多 Bot 同群时，首个 Bot 成功后不应再向第二个 Bot 重复投递。"""
+    from nonebot.adapters.onebot.v11 import Bot
+
+    sender = live_sender_module.LiveNotificationSender()
+    first_bot = MagicMock(spec=Bot)
+    first_bot.send_group_msg = AsyncMock()
+    second_bot = MagicMock(spec=Bot)
+    second_bot.send_group_msg = AsyncMock()
+    driver = SimpleNamespace(bots={"a": first_bot, "b": second_bot})
+
+    with (
+        patch("plugins.live_monitor.sender.get_driver", return_value=driver),
+        patch.object(sender, "_generate_card_if_needed", AsyncMock(return_value=None)),
+        patch.object(
+            sender,
+            "_resolve_at_all_map",
+            AsyncMock(return_value={"1001": False}),
+        ),
+    ):
+        result = await sender.send_notification(
+            status="start",
+            streamer_name="tester",
+            room_info=None,
+            target_groups=["1001"],
+            target_users=[],
+            at_all_enabled=False,
+        )
+
+    assert result.all_succeeded
+    first_bot.send_group_msg.assert_awaited_once()
+    second_bot.send_group_msg.assert_not_awaited()
 
 
 def _room_info(live_models_module, status):
