@@ -224,7 +224,8 @@ async def test_dynamic_sender_no_bot_marks_all_targets_failed(
     dynamic_sender_module,
 ) -> None:
     sender = dynamic_sender_module.DynamicSender()
-    with patch("nonebot.get_bot", side_effect=RuntimeError("no bot")):
+    driver = SimpleNamespace(bots={})
+    with patch("plugins.dynamic_monitor.sender.get_driver", return_value=driver):
         result = await sender.send_message(Message("hi"), ["1001"], ["2002"])
 
     assert result.attempted
@@ -235,12 +236,15 @@ async def test_dynamic_sender_no_bot_marks_all_targets_failed(
 
 @pytest.mark.asyncio
 async def test_dynamic_sender_all_targets_succeed(dynamic_sender_module) -> None:
+    from nonebot.adapters.onebot.v11 import Bot
+
     sender = dynamic_sender_module.DynamicSender()
-    bot = AsyncMock()
+    bot = MagicMock(spec=Bot)
     bot.send_group_msg = AsyncMock()
     bot.send_private_msg = AsyncMock()
+    driver = SimpleNamespace(bots={"bot": bot})
 
-    with patch("nonebot.get_bot", return_value=bot):
+    with patch("plugins.dynamic_monitor.sender.get_driver", return_value=driver):
         result = await sender.send_message(Message("hi"), ["1001"], ["2002"])
 
     assert result.all_succeeded
@@ -250,18 +254,42 @@ async def test_dynamic_sender_all_targets_succeed(dynamic_sender_module) -> None
 
 @pytest.mark.asyncio
 async def test_dynamic_sender_partial_failure(dynamic_sender_module) -> None:
+    from nonebot.adapters.onebot.v11 import Bot
+
     sender = dynamic_sender_module.DynamicSender()
-    bot = AsyncMock()
+    bot = MagicMock(spec=Bot)
     bot.send_group_msg = AsyncMock(side_effect=RuntimeError("send failed"))
     bot.send_private_msg = AsyncMock()
+    driver = SimpleNamespace(bots={"bot": bot})
 
-    with patch("nonebot.get_bot", return_value=bot):
+    with patch("plugins.dynamic_monitor.sender.get_driver", return_value=driver):
         result = await sender.send_message(Message("hi"), ["1001"], ["2002"])
 
     assert result.any_succeeded
     assert not result.all_succeeded
     assert result.targets[0].success is False
     assert result.targets[1].success is True
+
+
+@pytest.mark.asyncio
+async def test_dynamic_sender_any_bot_success_counts_as_delivered(
+    dynamic_sender_module,
+) -> None:
+    from nonebot.adapters.onebot.v11 import Bot
+
+    sender = dynamic_sender_module.DynamicSender()
+    failing_bot = MagicMock(spec=Bot)
+    failing_bot.send_group_msg = AsyncMock(side_effect=RuntimeError("not in group"))
+    succeeding_bot = MagicMock(spec=Bot)
+    succeeding_bot.send_group_msg = AsyncMock()
+    driver = SimpleNamespace(bots={"a": failing_bot, "b": succeeding_bot})
+
+    with patch("plugins.dynamic_monitor.sender.get_driver", return_value=driver):
+        result = await sender.send_to_groups(Message("hi"), ["1001"])
+
+    assert len(result.targets) == 1
+    assert result.all_succeeded
+    succeeding_bot.send_group_msg.assert_awaited_once()
 
 
 @pytest.mark.asyncio
