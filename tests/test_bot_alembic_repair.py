@@ -78,28 +78,31 @@ def test_repair_falls_back_to_async_when_sync_driver_missing(
     assert revision == ("b2c3d4e5f6a7",)
 
 
-def test_infer_revision_with_dynamic_enabled_column() -> None:
+def test_infer_revision_caps_at_pre_switch_head() -> None:
+    """推断上限冻结在切换前 head（g7）：建到 g7 的漂移库应推断为 g7。"""
     engine = create_engine("sqlite:///:memory:")
     with engine.begin() as conn:
         _create_base_schema(conn)
         conn.execute(
+            text("CREATE TABLE shared_db_dynamictargetuser (id INTEGER PRIMARY KEY)")
+        )
+        conn.execute(
             text(
-                """
-                CREATE TABLE shared_db_linkparsergrouppolicy (
-                    group_id TEXT PRIMARY KEY,
-                    video_enabled BOOLEAN,
-                    live_enabled BOOLEAN,
-                    dynamic_enabled BOOLEAN
-                )
-                """
+                "CREATE TABLE shared_db_linkparsergrouppolicy (group_id TEXT PRIMARY KEY)"
             )
         )
-    assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "h8i9j0k1l2m3"
+        conn.execute(
+            text(
+                "CREATE TABLE shared_db_groupspecialtitleusage (id INTEGER PRIMARY KEY)"
+            )
+        )
+    assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "g7h8i9j0k1l2"
     engine.dispose()
 
 
-def test_repair_updates_stale_alembic_version(tmp_path: Path) -> None:
-    db_path = tmp_path / "stale.db"
+def test_repair_leaves_populated_alembic_version_untouched(tmp_path: Path) -> None:
+    """alembic_version 非空即视为健康库，repair 一律不动（交给 Alembic 处理）。"""
+    db_path = tmp_path / "populated.db"
     engine = create_engine(f"sqlite:///{db_path}")
     with engine.begin() as conn:
         _create_base_schema(conn)
@@ -122,24 +125,26 @@ def test_repair_updates_stale_alembic_version(tmp_path: Path) -> None:
     with verify.connect() as conn:
         revision = conn.execute(text("SELECT version_num FROM alembic_version")).first()
     verify.dispose()
-    assert revision == ("e5f6a7b8c9d0",)
+    assert revision == ("c3d4e5f6a7b8",)
 
 
 def test_repair_stamps_empty_alembic_version(tmp_path: Path) -> None:
+    """sync 漂移库（表建到 g7、alembic_version 空）应回填为 g7。"""
     db_path = tmp_path / "test.db"
     engine = create_engine(f"sqlite:///{db_path}")
     with engine.begin() as conn:
         _create_base_schema(conn)
         conn.execute(
+            text("CREATE TABLE shared_db_dynamictargetuser (id INTEGER PRIMARY KEY)")
+        )
+        conn.execute(
             text(
-                """
-                CREATE TABLE shared_db_linkparsergrouppolicy (
-                    group_id TEXT PRIMARY KEY,
-                    video_enabled BOOLEAN,
-                    live_enabled BOOLEAN,
-                    dynamic_enabled BOOLEAN
-                )
-                """
+                "CREATE TABLE shared_db_linkparsergrouppolicy (group_id TEXT PRIMARY KEY)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE shared_db_groupspecialtitleusage (id INTEGER PRIMARY KEY)"
             )
         )
     engine.dispose()
@@ -150,7 +155,7 @@ def test_repair_stamps_empty_alembic_version(tmp_path: Path) -> None:
     with verify.connect() as conn:
         revision = conn.execute(text("SELECT version_num FROM alembic_version")).first()
     verify.dispose()
-    assert revision == ("h8i9j0k1l2m3",)
+    assert revision == ("g7h8i9j0k1l2",)
 
 
 def test_repair_leaves_unknown_alembic_version_untouched(tmp_path: Path) -> None:

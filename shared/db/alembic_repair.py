@@ -1,4 +1,11 @@
-"""Recover alembic_version after sync-mode schema drift."""
+"""Recover alembic_version after sync-mode schema drift.
+
+一次性过渡代码：旧版 alembic_startup_check=False（sync 模式）会建表但把
+alembic_version 清空，切到 upgrade 模式后首次启动会因 CREATE TABLE 冲突失败。
+本模块仅在「表已存在但 alembic_version 空/缺」时回填推断出的 revision，让 Alembic
+upgrade 只补差异。alembic_version 非空的健康库一律不动。
+待所有历史部署都迁移完毕（alembic_version 均已正常）后，可整体删除本模块。
+"""
 
 from __future__ import annotations
 
@@ -13,17 +20,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from shared.security.database_url import mask_database_url
-
-_ALEMBIC_REVISION_ORDER = (
-    "a1b2c3d4e5f6",
-    "b2c3d4e5f6a7",
-    "c3d4e5f6a7b8",
-    "d4e5f6a7b8c9",
-    "e5f6a7b8c9d0",
-    "f6a7b8c9d0e1",
-    "g7h8i9j0k1l2",
-    "h8i9j0k1l2m3",
-)
 
 _SYNC_URL_PREFIXES = (
     ("sqlite+aiosqlite", "sqlite"),
@@ -91,17 +87,14 @@ def _sqlite_file_missing(sync_url: str) -> bool:
     return not db_path.is_file()
 
 
-def _alembic_revision_index(revision: str) -> int | None:
-    try:
-        return _ALEMBIC_REVISION_ORDER.index(revision)
-    except ValueError:
-        return None
-
-
 def infer_alembic_revision(probe: SchemaProbe) -> str:
-    """Infer alembic head from existing schema (recover from sync mode)."""
-    if probe.column_exists("shared_db_linkparsergrouppolicy", "dynamic_enabled"):
-        return "h8i9j0k1l2m3"
+    """按现有表结构推断 sync 漂移库应回填的 revision。
+
+    仅用于「旧 sync 模式遗留：表已建但 alembic_version 为空」的一次性恢复。
+    sync 模式只会把库建到切换 alembic_startup_check=True 之前的 head
+    （g7h8i9j0k1l2）为止，因此推断上限冻结在 g7；此后新增的迁移不可能出现在
+    漂移库中，无需在此登记新分支，交给 Alembic upgrade 应用即可。
+    """
     if probe.table_exists("shared_db_groupspecialtitleusage"):
         return "g7h8i9j0k1l2"
     if probe.table_exists("shared_db_dynamictargetuser") and not probe.table_exists(
@@ -117,58 +110,37 @@ def infer_alembic_revision(probe: SchemaProbe) -> str:
     return "a1b2c3d4e5f6"
 
 
-def _apply_repair_on_connection(
-    conn: Connection, probe: _InspectorProbe, inferred: str
-) -> None:
-    if not probe.table_exists("alembic_version"):
+def _run_repair_on_connection(conn: Connection) -> None:
+    probe = _InspectorProbe(inspect(conn))
+    if not probe.table_exists("shared_db_user"):
+        # 全新库（或非本项目库）：交给 Alembic upgrade 正常建表 + stamp head。
+        return
+
+    if probe.table_exists("alembic_version"):
+        current = conn.execute(
+            text("SELECT version_num FROM alembic_version LIMIT 1")
+        ).first()
+        if current is not None:
+            # 非空即为新代码正常 upgrade 出来的健康库，交给 Alembic，勿覆盖（否则可能降级）。
+            return
+    else:
         conn.execute(
             text(
                 "CREATE TABLE alembic_version ("
                 "version_num VARCHAR(32) NOT NULL PRIMARY KEY)"
             )
         )
-    current = conn.execute(
-        text("SELECT version_num FROM alembic_version LIMIT 1")
-    ).first()
-    if current is None:
-        conn.execute(
-            text("INSERT INTO alembic_version (version_num) VALUES (:revision)"),
-            {"revision": inferred},
-        )
-        logger.warning(
-            "alembic_version 为空但库表已存在，已自动标记为 {}",
-            inferred,
-        )
-        return
 
-    current_revision = str(current[0])
-    current_index = _alembic_revision_index(current_revision)
-    if current_index is None:
-        # alembic_version 指向本代码未知的 revision（多为库被更新版本升级过或手动改动），
-        # 无法可靠比较，保持原样交给 Alembic 自行处理，切勿用推断值覆盖导致降级。
-        logger.warning(
-            "alembic_version={} 不在已知迁移序列中，跳过自动标记",
-            current_revision,
-        )
-        return
-    if current_index < _ALEMBIC_REVISION_ORDER.index(inferred):
-        conn.execute(
-            text("UPDATE alembic_version SET version_num = :revision"),
-            {"revision": inferred},
-        )
-        logger.warning(
-            "alembic_version={} 落后于现有 schema，已自动标记为 {}",
-            current_revision,
-            inferred,
-        )
-
-
-def _run_repair_on_connection(conn: Connection) -> None:
-    probe = _InspectorProbe(inspect(conn))
-    if not probe.table_exists("shared_db_user"):
-        return
     inferred = infer_alembic_revision(probe)
-    _apply_repair_on_connection(conn, probe, inferred)
+    conn.execute(
+        text("INSERT INTO alembic_version (version_num) VALUES (:revision)"),
+        {"revision": inferred},
+    )
+    logger.warning(
+        "检测到 sync 模式遗留（表已存在但 alembic_version 为空），已标记为 {}，"
+        "后续由 Alembic upgrade 补齐差异",
+        inferred,
+    )
 
 
 def _repair_sync(url: str) -> None:
