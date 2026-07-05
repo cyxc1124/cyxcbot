@@ -56,7 +56,7 @@ def test_repair_updates_stale_alembic_version(tmp_path: Path) -> None:
     conn = sqlite3.connect(db_path)
     revision = conn.execute("SELECT version_num FROM alembic_version").fetchone()
     conn.close()
-    assert revision == ("d4e5f6a7b8c9",)
+    assert revision == ("e5f6a7b8c9d0",)
 
 
 def test_repair_stamps_empty_alembic_version(tmp_path: Path) -> None:
