@@ -94,7 +94,12 @@ def infer_alembic_revision(probe: SchemaProbe) -> str:
     sync 模式只会把库建到切换 alembic_startup_check=True 之前的 head
     （g7h8i9j0k1l2）为止，因此推断上限冻结在 g7；此后新增的迁移不可能出现在
     漂移库中，无需在此登记新分支，交给 Alembic upgrade 应用即可。
+
+    若 alembic_version 被旧 sync 模式再次清空，但 h8 迁移已应用过的列仍在，
+    须识别为 h8，否则 upgrade 会重复 ADD COLUMN 导致启动失败。
     """
+    if probe.column_exists("shared_db_linkparsergrouppolicy", "dynamic_enabled"):
+        return "h8i9j0k1l2m3"
     if probe.table_exists("shared_db_groupspecialtitleusage"):
         return "g7h8i9j0k1l2"
     if probe.table_exists("shared_db_dynamictargetuser") and not probe.table_exists(
