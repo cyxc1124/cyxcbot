@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
+from typing import Protocol
 
 from nonebot.log import logger
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 
 _ALEMBIC_REVISION_ORDER = (
     "a1b2c3d4e5f6",
@@ -18,82 +21,93 @@ _ALEMBIC_REVISION_ORDER = (
     "h8i9j0k1l2m3",
 )
 
+_SYNC_URL_PREFIXES = (
+    ("sqlite+aiosqlite", "sqlite"),
+    ("postgresql+asyncpg", "postgresql+psycopg"),
+    ("mysql+aiomysql", "mysql+pymysql"),
+    ("mysql+asyncmy", "mysql+pymysql"),
+)
 
-def _sqlite_db_path(url: str) -> Path | None:
-    if not url.lower().startswith("sqlite") or "///" not in url:
-        return None
-    db_part = url.split("///", 1)[1].split("?", 1)[0]
+
+class SchemaProbe(Protocol):
+    def table_exists(self, table: str) -> bool: ...
+
+    def column_exists(self, table: str, column: str) -> bool: ...
+
+
+class _InspectorProbe:
+    def __init__(self, engine: Engine) -> None:
+        self._inspector = inspect(engine)
+
+    def table_exists(self, table: str) -> bool:
+        return table in self._inspector.get_table_names()
+
+    def column_exists(self, table: str, column: str) -> bool:
+        if not self.table_exists(table):
+            return False
+        return column in {col["name"] for col in self._inspector.get_columns(table)}
+
+
+def sync_database_url(url: str) -> str:
+    """Map async SQLAlchemy URLs to sync drivers for startup repair."""
+    for async_prefix, sync_prefix in _SYNC_URL_PREFIXES:
+        if url.startswith(f"{async_prefix}:"):
+            return f"{sync_prefix}:{url[len(async_prefix) + 1 :]}"
+    return url
+
+
+def _sqlite_file_missing(sync_url: str) -> bool:
+    if not sync_url.startswith("sqlite:///"):
+        return False
+    db_part = sync_url.removeprefix("sqlite:///").split("?", 1)[0]
     if not db_part or db_part == ":memory:":
-        return None
+        return True
     db_path = Path(db_part)
     if not db_path.is_absolute():
         db_path = Path.cwd() / db_path
-    return db_path
-
-
-def _sqlite_table_exists(cur, table: str) -> bool:
-    return (
-        cur.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
-            (table,),
-        ).fetchone()
-        is not None
-    )
-
-
-def _sqlite_column_exists(cur, table: str, column: str) -> bool:
-    if not _sqlite_table_exists(cur, table):
-        return False
-    return any(
-        row[1] == column
-        for row in cur.execute(f"PRAGMA table_info({table})").fetchall()
-    )
+    return not db_path.is_file()
 
 
 def _alembic_revision_index(revision: str) -> int:
     return _ALEMBIC_REVISION_ORDER.index(revision)
 
 
-def infer_alembic_revision(cur) -> str:
+def infer_alembic_revision(probe: SchemaProbe) -> str:
     """Infer alembic head from existing schema (recover from sync mode)."""
-    if _sqlite_column_exists(cur, "shared_db_linkparsergrouppolicy", "dynamic_enabled"):
+    if probe.column_exists("shared_db_linkparsergrouppolicy", "dynamic_enabled"):
         return "h8i9j0k1l2m3"
-    if _sqlite_table_exists(cur, "shared_db_groupspecialtitleusage"):
+    if probe.table_exists("shared_db_groupspecialtitleusage"):
         return "g7h8i9j0k1l2"
-    if _sqlite_table_exists(
-        cur, "shared_db_dynamictargetuser"
-    ) and not _sqlite_table_exists(cur, "shared_db_auditlog"):
+    if probe.table_exists("shared_db_dynamictargetuser") and not probe.table_exists(
+        "shared_db_auditlog"
+    ):
         return "e5f6a7b8c9d0"
-    if _sqlite_table_exists(cur, "shared_db_dynamictargetuser"):
+    if probe.table_exists("shared_db_dynamictargetuser"):
         return "d4e5f6a7b8c9"
-    if _sqlite_table_exists(cur, "shared_db_linkparsergrouppolicy"):
+    if probe.table_exists("shared_db_linkparsergrouppolicy"):
         return "c3d4e5f6a7b8"
-    if _sqlite_column_exists(cur, "shared_db_dynamictarget", "at_all"):
+    if probe.column_exists("shared_db_dynamictarget", "at_all"):
         return "b2c3d4e5f6a7"
     return "a1b2c3d4e5f6"
 
 
-def repair_alembic_version_if_needed(url: str) -> None:
-    """sync 模式可能留下表但清空 alembic_version；补齐版本号以便 upgrade 不重复建表。"""
-    db_path = _sqlite_db_path(url)
-    if db_path is None or not db_path.is_file():
-        return
-
-    conn = sqlite3.connect(db_path)
-    try:
-        cur = conn.cursor()
-        if not _sqlite_table_exists(cur, "shared_db_user"):
-            return
-        inferred = infer_alembic_revision(cur)
-        current = cur.execute(
-            "SELECT version_num FROM alembic_version LIMIT 1"
-        ).fetchone()
-        if current is None:
-            cur.execute(
-                "INSERT INTO alembic_version (version_num) VALUES (?)",
-                (inferred,),
+def _apply_repair(engine: Engine, inferred: str) -> None:
+    with engine.begin() as conn:
+        if not _InspectorProbe(engine).table_exists("alembic_version"):
+            conn.execute(
+                text(
+                    "CREATE TABLE alembic_version ("
+                    "version_num VARCHAR(32) NOT NULL PRIMARY KEY)"
+                )
             )
-            conn.commit()
+        current = conn.execute(
+            text("SELECT version_num FROM alembic_version LIMIT 1")
+        ).first()
+        if current is None:
+            conn.execute(
+                text("INSERT INTO alembic_version (version_num) VALUES (:revision)"),
+                {"revision": inferred},
+            )
             logger.warning(
                 "alembic_version 为空但库表已存在，已自动标记为 {}",
                 inferred,
@@ -104,15 +118,47 @@ def repair_alembic_version_if_needed(url: str) -> None:
         if _alembic_revision_index(current_revision) < _alembic_revision_index(
             inferred
         ):
-            cur.execute(
-                "UPDATE alembic_version SET version_num = ?",
-                (inferred,),
+            conn.execute(
+                text("UPDATE alembic_version SET version_num = :revision"),
+                {"revision": inferred},
             )
-            conn.commit()
             logger.warning(
                 "alembic_version={} 落后于现有 schema，已自动标记为 {}",
                 current_revision,
                 inferred,
             )
+
+
+def repair_alembic_version_if_needed(url: str) -> None:
+    """sync 模式可能留下表但清空 alembic_version；补齐版本号以便 upgrade 不重复建表。"""
+    sync_url = sync_database_url(url)
+    if _sqlite_file_missing(sync_url):
+        return
+
+    engine: Engine | None = None
+    try:
+        engine = create_engine(sync_url, pool_pre_ping=True)
+        probe = _InspectorProbe(engine)
+        if not probe.table_exists("shared_db_user"):
+            return
+        inferred = infer_alembic_revision(probe)
+        _apply_repair(engine, inferred)
+    except SQLAlchemyError:
+        logger.opt(exception=True).warning(
+            "无法连接数据库或修复 alembic_version，跳过自动标记"
+        )
     finally:
-        conn.close()
+        if engine is not None:
+            engine.dispose()
+
+
+# ponytail: URL 归一化仅覆盖文档/Helm 中的常见写法
+assert sync_database_url("sqlite+aiosqlite:///data/cyxcbot.db") == (
+    "sqlite:///data/cyxcbot.db"
+)
+assert sync_database_url("postgresql+asyncpg://u:p@h/db") == (
+    "postgresql+psycopg://u:p@h/db"
+)
+assert sync_database_url("postgresql+psycopg://u:p@h/db") == (
+    "postgresql+psycopg://u:p@h/db"
+)
