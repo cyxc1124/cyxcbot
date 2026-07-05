@@ -75,9 +75,7 @@ class VideoSender:
             bots = [bot]
         else:
             bots = [
-                item
-                for item in get_driver().bots.values()
-                if isinstance(item, Bot)
+                item for item in get_driver().bots.values() if isinstance(item, Bot)
             ]
 
         if not bots:
@@ -87,9 +85,7 @@ class VideoSender:
         errors: List[str] = []
         for candidate in bots:
             try:
-                await candidate.send_group_msg(
-                    group_id=int(group_id), message=message
-                )
+                await candidate.send_group_msg(group_id=int(group_id), message=message)
                 logger.info("成功发送视频消息到群组 {}", group_id)
                 return
             except Exception as exc:

@@ -17,11 +17,11 @@ async def stop_monitor_if_no_bots(
 ) -> bool:
     """Stop *monitor_name* only when no OneBot remains connected.
 
-  NoneBot removes the disconnecting bot from ``get_bots()`` before
-  ``on_bot_disconnect`` hooks run, so a non-empty dict means another session
-  is still online.
+    NoneBot removes the disconnecting bot from ``get_bots()`` before
+    ``on_bot_disconnect`` hooks run, so a non-empty dict means another session
+    is still online.
 
-  Returns True when *stop_fn* was invoked.
+    Returns True when *stop_fn* was invoked.
     """
     remaining = get_bots()
     if remaining:
@@ -33,6 +33,8 @@ async def stop_monitor_if_no_bots(
         )
         return False
 
-    logger.info("机器人 {} 断开连接，无可用 Bot，正在停止{}...", bot_self_id, monitor_name)
+    logger.info(
+        "机器人 {} 断开连接，无可用 Bot，正在停止{}...", bot_self_id, monitor_name
+    )
     await stop_fn()
     return True
