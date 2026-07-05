@@ -91,10 +91,14 @@ def infer_alembic_revision(probe: SchemaProbe) -> str:
     """按现有表结构推断 sync 漂移库应回填的 revision。
 
     仅用于「旧 sync 模式遗留：表已建但 alembic_version 为空」的一次性恢复。
-    sync 模式只会把库建到切换 alembic_startup_check=True 之前的 head
-    （g7h8i9j0k1l2）为止，因此推断上限冻结在 g7；此后新增的迁移不可能出现在
-    漂移库中，无需在此登记新分支，交给 Alembic upgrade 应用即可。
+    sync 模式切换前的漂移库止步于 g7h8i9j0k1l2，这是推断的基础上限——但并非硬性
+    冻结：若部署被回滚到仍带 alembic_startup_check=False 的旧版本并启动过一次，
+    该版本之后新增迁移引入的列/表会残留，但 alembic_version 可能被再次清空
+    （例如 h8 的 dynamic_enabled 列）。因此新增会改表结构的 migration 时，仍需
+    在此登记其可唯一识别的表/列特征，否则 upgrade 会因重复建表/加列而启动失败。
     """
+    if probe.column_exists("shared_db_linkparsergrouppolicy", "dynamic_enabled"):
+        return "h8i9j0k1l2m3"
     if probe.table_exists("shared_db_groupspecialtitleusage"):
         return "g7h8i9j0k1l2"
     if probe.table_exists("shared_db_dynamictargetuser") and not probe.table_exists(

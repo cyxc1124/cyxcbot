@@ -78,6 +78,59 @@ def test_repair_falls_back_to_async_when_sync_driver_missing(
     assert revision == ("b2c3d4e5f6a7",)
 
 
+def test_infer_revision_detects_h8_dynamic_enabled_column() -> None:
+    """h8 列已存在但 alembic_version 被清空时，不得再推断为 g7。"""
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        _create_base_schema(conn)
+        conn.execute(
+            text(
+                "CREATE TABLE shared_db_linkparsergrouppolicy ("
+                "group_id TEXT PRIMARY KEY, video_enabled BOOLEAN, "
+                "live_enabled BOOLEAN, dynamic_enabled BOOLEAN NOT NULL DEFAULT 0, "
+                "updated_at TEXT)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE shared_db_groupspecialtitleusage (id INTEGER PRIMARY KEY)"
+            )
+        )
+    assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "h8i9j0k1l2m3"
+    engine.dispose()
+
+
+def test_repair_stamps_h8_when_dynamic_enabled_column_exists(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "h8-schema.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        _create_base_schema(conn)
+        conn.execute(
+            text(
+                "CREATE TABLE shared_db_linkparsergrouppolicy ("
+                "group_id TEXT PRIMARY KEY, video_enabled BOOLEAN, "
+                "live_enabled BOOLEAN, dynamic_enabled BOOLEAN NOT NULL DEFAULT 0, "
+                "updated_at TEXT)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE shared_db_groupspecialtitleusage (id INTEGER PRIMARY KEY)"
+            )
+        )
+    engine.dispose()
+
+    repair_alembic_version_if_needed(f"sqlite+aiosqlite:///{db_path}")
+
+    verify = create_engine(f"sqlite:///{db_path}")
+    with verify.connect() as conn:
+        revision = conn.execute(text("SELECT version_num FROM alembic_version")).first()
+    verify.dispose()
+    assert revision == ("h8i9j0k1l2m3",)
+
+
 def test_infer_revision_caps_at_pre_switch_head() -> None:
     """推断上限冻结在切换前 head（g7）：建到 g7 的漂移库应推断为 g7。"""
     engine = create_engine("sqlite:///:memory:")
