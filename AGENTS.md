@@ -74,7 +74,7 @@ deploy/             # Docker Compose / Helm
 2. 需热重载的插件注册 `get_config_service().register_reload_callback(...)`（见 `dynamic_monitor`、`live_monitor`、`video_monitor`、`bilibili_link_parser`）
 3. 超级用户由 `shared/config/nonebot_superusers.py` 从 DB 同步到 NoneBot
 
-数据库迁移在 `shared/db/migrations/`；启动时由 `nonebot.init(alembic_startup_check=False)` 自动应用。
+数据库迁移在 `shared/db/migrations/`；启动时 `nonebot.init(alembic_startup_check=True)` 经 Alembic **upgrade** 应用（勿用 sync 模式，模型变更失败时可能删表重建）。
 
 ## 代码风格
 

@@ -140,6 +140,24 @@ def _ensure_sqlite_parent_dir(url: str) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _configure_alembic_non_interactive_upgrade() -> None:
+    """无 TTY 时自动确认 Alembic upgrade，避免 Docker 等环境启动卡住。"""
+    if sys.stdin.isatty():
+        return
+
+    import click
+
+    _confirm = click.confirm
+
+    def _auto_confirm(message: str, *args, **kwargs) -> bool:
+        if "迁移" in message:
+            logger.info("非交互环境，自动执行数据库迁移")
+            return True
+        return _confirm(message, *args, **kwargs)
+
+    click.confirm = _auto_confirm  # type: ignore[method-assign]
+
+
 # 尽早加载 .env（供 SQLALCHEMY_DATABASE_URL、WEB_SECRET_KEY 等使用）
 _env_path = Path(".env")
 if _env_path.exists():
@@ -163,11 +181,14 @@ _app_base = (
 )
 _migrations_dir = _app_base / "shared" / "db" / "migrations"
 
+_configure_alembic_non_interactive_upgrade()
+
 # 初始化 NoneBot
-# alembic_startup_check=False：启动时自动同步数据库 schema（建表/更新），无需额外脚本
+# alembic_startup_check=True：通过 Alembic upgrade 应用 migrations/ 中的迁移。
+# 勿用 False（sync）：模型与库不一致且 autogenerate 失败时会回退为删表重建，导致数据丢失。
 nonebot.init(
     sqlalchemy_database_url=_db_url,
-    alembic_startup_check=False,
+    alembic_startup_check=True,
     alembic_version_locations=_migrations_dir,
 )
 
