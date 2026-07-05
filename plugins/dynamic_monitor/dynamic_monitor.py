@@ -42,6 +42,7 @@ _SCREENSHOT_QUEUE_MAX = 8
 # 全局监控实例
 dynamic_monitor_instance: Optional["DynamicMonitor"] = None
 _config_reload_registered = False
+_lifecycle_lock = asyncio.Lock()
 
 
 async def sync_from_config_reload(snapshot) -> None:
@@ -873,61 +874,67 @@ async def start_dynamic_monitor():
     """启动动态监控"""
     global dynamic_monitor_instance
 
-    _ensure_config_reload_registered()
+    async with _lifecycle_lock:
+        _ensure_config_reload_registered()
 
-    if dynamic_monitor_instance is not None:
-        logger.warning("动态监控已在运行中")
-        return
+        if dynamic_monitor_instance is not None:
+            if dynamic_monitor_instance.is_running:
+                logger.warning("动态监控已在运行中")
+                return
+            dynamic_monitor_instance = None
 
-    config = Config.from_service()
+        config = Config.from_service()
 
-    # 检查是否有配置的用户
-    if not config.dynamic_monitor_mapping:
-        logger.warning("未配置任何UP主动态监控，跳过启动")
-        return
+        # 检查是否有配置的用户
+        if not config.dynamic_monitor_mapping:
+            logger.warning("未配置任何UP主动态监控，跳过启动")
+            return
 
-    group_count = sum(len(groups) for groups in config.dynamic_monitor_mapping.values())
-    user_count = sum(
-        len(users) for users in config.dynamic_monitor_user_mapping.values()
-    )
-    logger.info(
-        "准备启动动态监控: {} 个UP主, {} 个群推送目标, {} 个好友推送目标, 间隔 {}秒",
-        len(config.dynamic_monitor_mapping),
-        group_count,
-        user_count,
-        config.monitor_interval,
-    )
+        group_count = sum(
+            len(groups) for groups in config.dynamic_monitor_mapping.values()
+        )
+        user_count = sum(
+            len(users) for users in config.dynamic_monitor_user_mapping.values()
+        )
+        logger.info(
+            "准备启动动态监控: {} 个UP主, {} 个群推送目标, {} 个好友推送目标, 间隔 {}秒",
+            len(config.dynamic_monitor_mapping),
+            group_count,
+            user_count,
+            config.monitor_interval,
+        )
 
-    try:
-        # 创建监控实例
-        dynamic_monitor_instance = DynamicMonitor(config)
+        try:
+            # 创建监控实例
+            dynamic_monitor_instance = DynamicMonitor(config)
 
-        # 启动监控（会添加APScheduler定时任务）
-        await dynamic_monitor_instance.start_monitoring()
+            # 启动监控（会添加APScheduler定时任务）
+            await dynamic_monitor_instance.start_monitoring()
 
-        logger.info("UP主动态监控已启动")
+            logger.info("UP主动态监控已启动")
 
-    except Exception:
-        logger.opt(exception=True).error("启动动态监控失败")
-        dynamic_monitor_instance = None
+        except Exception:
+            logger.opt(exception=True).error("启动动态监控失败")
+            dynamic_monitor_instance = None
 
 
 async def stop_dynamic_monitor():
     """停止动态监控"""
     global dynamic_monitor_instance
 
-    if not dynamic_monitor_instance:
-        return
+    async with _lifecycle_lock:
+        if not dynamic_monitor_instance:
+            return
 
-    logger.info("正在停止动态监控...")
+        logger.info("正在停止动态监控...")
 
-    try:
-        # 停止监控实例（会移除APScheduler定时任务并清理资源）
-        await dynamic_monitor_instance.stop_monitoring()
-        dynamic_monitor_instance = None
-        logger.info("动态监控已完全停止")
+        try:
+            # 停止监控实例（会移除APScheduler定时任务并清理资源）
+            await dynamic_monitor_instance.stop_monitoring()
+            dynamic_monitor_instance = None
+            logger.info("动态监控已完全停止")
 
-    except Exception:
-        logger.opt(exception=True).error("停止动态监控时出错")
-        # 即使出错也要清理资源
-        dynamic_monitor_instance = None
+        except Exception:
+            logger.opt(exception=True).error("停止动态监控时出错")
+            # 即使出错也要清理资源
+            dynamic_monitor_instance = None

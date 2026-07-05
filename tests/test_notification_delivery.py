@@ -289,7 +289,29 @@ async def test_dynamic_sender_any_bot_success_counts_as_delivered(
 
     assert len(result.targets) == 1
     assert result.all_succeeded
+    failing_bot.send_group_msg.assert_awaited_once()
     succeeding_bot.send_group_msg.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_dynamic_sender_does_not_duplicate_when_first_bot_succeeds(
+    dynamic_sender_module,
+) -> None:
+    from nonebot.adapters.onebot.v11 import Bot
+
+    sender = dynamic_sender_module.DynamicSender()
+    first_bot = MagicMock(spec=Bot)
+    first_bot.send_group_msg = AsyncMock()
+    second_bot = MagicMock(spec=Bot)
+    second_bot.send_group_msg = AsyncMock()
+    driver = SimpleNamespace(bots={"a": first_bot, "b": second_bot})
+
+    with patch("plugins.dynamic_monitor.sender.get_driver", return_value=driver):
+        result = await sender.send_to_groups(Message("hi"), ["1001"])
+
+    assert result.all_succeeded
+    first_bot.send_group_msg.assert_awaited_once()
+    second_bot.send_group_msg.assert_not_awaited()
 
 
 @pytest.mark.asyncio
