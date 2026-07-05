@@ -38,6 +38,33 @@ def _cover_parts(cover_url: str | None) -> Iterable[SegmentPart]:
         return []
 
 
+def _dynamic_cover_parts(
+    dynamic: DynamicItem,
+    *,
+    screenshot_image: bytes | None = None,
+    include_dynamic_media: bool = False,
+) -> Iterable[SegmentPart]:
+    """与动态监控一致：优先网页截图，失败或未启用时降级为 API 图片。"""
+    if include_dynamic_media:
+        parts: list[SegmentPart] = []
+        if dynamic.body_text:
+            parts.append(f"{dynamic.body_text}\n")
+        for image_url in dynamic.images:
+            try:
+                parts.append(MessageSegment.image(image_url))
+            except Exception:
+                logger.opt(exception=True).warning(
+                    "添加动态图片失败: {}", image_url
+                )
+        return parts
+    if screenshot_image:
+        try:
+            return [MessageSegment.image(screenshot_image)]
+        except Exception:
+            logger.opt(exception=True).warning("添加动态截图失败")
+    return _cover_parts(dynamic.images[0] if dynamic.images else None)
+
+
 def build_video_link_message(
     video: VideoInfo,
     templates: Optional[LinkMessageTemplates] = None,
@@ -86,6 +113,9 @@ def build_live_link_message(
 def build_dynamic_link_message(
     dynamic: DynamicItem,
     templates: Optional[LinkMessageTemplates] = None,
+    *,
+    screenshot_image: bytes | None = None,
+    include_dynamic_media: bool = False,
 ) -> Message:
     """复用视频链接模板构建动态/opus 链接解析消息。"""
     tpl = templates or LinkMessageTemplates()
@@ -96,13 +126,18 @@ def build_dynamic_link_message(
         "title": title or "暂无标题",
         "author": dynamic.name or "未知",
         "pub_date": dynamic.format_beijing_time(),
-        "url": f"https://www.bilibili.com/opus/{dynamic.id}",
+        "url": dynamic.url or f"https://www.bilibili.com/opus/{dynamic.id}",
         "bvid": "",
         "aid": "",
     }
-    cover_url = dynamic.images[0] if dynamic.images else None
     return build_message_from_template(
         tpl.video,
         text_variables,
-        {"cover": lambda: _cover_parts(cover_url)},
+        {
+            "cover": lambda: _dynamic_cover_parts(
+                dynamic,
+                screenshot_image=screenshot_image,
+                include_dynamic_media=include_dynamic_media,
+            )
+        },
     )

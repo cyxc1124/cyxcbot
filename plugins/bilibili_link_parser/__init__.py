@@ -17,6 +17,7 @@ from shared.config.link_parser_policy import (
 from shared.config.service import get_config_service
 from utils.bilibili_api import DynamicFetcher, extract_bilibili_refs, video_api_manager
 from utils.bilibili_api import api_manager as live_api_manager
+from utils.screenshot import get_dynamic_screenshot
 
 from .config import Config, get_config, reload_config
 from .message_text import collect_message_text
@@ -39,10 +40,31 @@ group_link_parser = on_message(priority=4, block=False)
 private_link_parser = on_message(priority=4, block=False)
 
 
+async def _fetch_dynamic_screenshot(
+    dynamic,
+    *,
+    enabled: bool,
+) -> bytes | None:
+    if not enabled:
+        return None
+    screenshot_image, screenshot_error, page_url = await get_dynamic_screenshot(
+        dynamic.id
+    )
+    if screenshot_error:
+        logger.warning(
+            "链接解析动态 {} 截图失败: {}", dynamic.id, screenshot_error
+        )
+    elif page_url and dynamic.url.startswith("https://t.bilibili.com/"):
+        dynamic.url = page_url
+    return screenshot_image
+
+
 async def _resolve_reply(
     config: Config,
     message_text: str,
     scope: LinkParserScopePolicy,
+    *,
+    enable_dynamic_screenshot: bool,
 ):
     cookie = config.bilibili_cookie or None
     if not cookie:
@@ -72,10 +94,33 @@ async def _resolve_reply(
                 if not scope.dynamic_enabled:
                     continue
                 dynamic = await fetcher.fetch_dynamic_detail(
-                    str(ref.dynamic_id), cookie=cookie
+                    str(ref.dynamic_id),
+                    cookie=cookie,
+                    skip_live_dynamic=False,
                 )
                 if dynamic:
-                    return build_dynamic_link_message(dynamic, config.message_templates)
+                    if dynamic.live_room_id and scope.live_enabled:
+                        room_info, user_info = (
+                            await live_api_manager.get_room_and_user_info(
+                                dynamic.live_room_id
+                            )
+                        )
+                        if room_info:
+                            return build_live_link_message(
+                                room_info, user_info, config.message_templates
+                            )
+                    screenshot_image = await _fetch_dynamic_screenshot(
+                        dynamic, enabled=enable_dynamic_screenshot
+                    )
+                    return build_dynamic_link_message(
+                        dynamic,
+                        config.message_templates,
+                        screenshot_image=screenshot_image,
+                        include_dynamic_media=(
+                            not enable_dynamic_screenshot
+                            or screenshot_image is None
+                        ),
+                    )
             elif ref.room_id:
                 if not scope.live_enabled:
                     continue
@@ -140,7 +185,12 @@ async def _handle_link_message(
         message_text[:120],
     )
 
-    reply = await _resolve_reply(config, message_text, scope)
+    reply = await _resolve_reply(
+        config,
+        message_text,
+        scope,
+        enable_dynamic_screenshot=snap.dynamic_enable_screenshot,
+    )
     if reply is None:
         return
 

@@ -23,6 +23,7 @@ class DynamicItem:
         images: List[str] = None,
         author_type: str = "",
         is_pinned: bool = False,
+        live_room_id: int | None = None,
     ):
         self.id = dynamic_id
         self.uid = uid
@@ -35,6 +36,7 @@ class DynamicItem:
         self.images = images or []
         self.author_type = author_type  # 作者类型
         self.is_pinned = is_pinned  # 是否为置顶动态
+        self.live_room_id = live_room_id
         self.url = f"https://t.bilibili.com/{dynamic_id}"
 
     def format_beijing_time(self) -> str:
