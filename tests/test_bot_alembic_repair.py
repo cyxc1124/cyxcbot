@@ -153,6 +153,26 @@ def test_repair_stamps_empty_alembic_version(tmp_path: Path) -> None:
     assert revision == ("h8i9j0k1l2m3",)
 
 
+def test_repair_leaves_unknown_alembic_version_untouched(tmp_path: Path) -> None:
+    """库被更新版本升级过（版本号本代码未知）时不得崩溃，也不得回改版本号。"""
+    db_path = tmp_path / "future.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        _create_base_schema(conn)
+        conn.execute(
+            text("INSERT INTO alembic_version (version_num) VALUES ('zz_future_rev')")
+        )
+    engine.dispose()
+
+    repair_alembic_version_if_needed(f"sqlite+aiosqlite:///{db_path}")
+
+    verify = create_engine(f"sqlite:///{db_path}")
+    with verify.connect() as conn:
+        revision = conn.execute(text("SELECT version_num FROM alembic_version")).first()
+    verify.dispose()
+    assert revision == ("zz_future_rev",)
+
+
 def test_repair_creates_alembic_version_table_when_missing(tmp_path: Path) -> None:
     db_path = tmp_path / "no-version.db"
     engine = create_engine(f"sqlite:///{db_path}")

@@ -91,8 +91,11 @@ def _sqlite_file_missing(sync_url: str) -> bool:
     return not db_path.is_file()
 
 
-def _alembic_revision_index(revision: str) -> int:
-    return _ALEMBIC_REVISION_ORDER.index(revision)
+def _alembic_revision_index(revision: str) -> int | None:
+    try:
+        return _ALEMBIC_REVISION_ORDER.index(revision)
+    except ValueError:
+        return None
 
 
 def infer_alembic_revision(probe: SchemaProbe) -> str:
@@ -139,7 +142,16 @@ def _apply_repair_on_connection(
         return
 
     current_revision = str(current[0])
-    if _alembic_revision_index(current_revision) < _alembic_revision_index(inferred):
+    current_index = _alembic_revision_index(current_revision)
+    if current_index is None:
+        # alembic_version 指向本代码未知的 revision（多为库被更新版本升级过或手动改动），
+        # 无法可靠比较，保持原样交给 Alembic 自行处理，切勿用推断值覆盖导致降级。
+        logger.warning(
+            "alembic_version={} 不在已知迁移序列中，跳过自动标记",
+            current_revision,
+        )
+        return
+    if current_index < _ALEMBIC_REVISION_ORDER.index(inferred):
         conn.execute(
             text("UPDATE alembic_version SET version_num = :revision"),
             {"revision": inferred},
