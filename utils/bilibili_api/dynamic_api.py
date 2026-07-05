@@ -252,7 +252,7 @@ class DynamicFetcher:
         if isinstance(live, dict) and live.get("id"):
             try:
                 return int(live["id"])
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 pass
         live_rcmd = major.get("live_rcmd")
         if isinstance(live_rcmd, dict) and live_rcmd.get("content"):
@@ -261,7 +261,7 @@ class DynamicFetcher:
                 room_id = (payload.get("live_play_info") or {}).get("room_id")
                 if room_id is not None:
                     return int(room_id)
-            except (json.JSONDecodeError, TypeError, ValueError):
+            except json.JSONDecodeError, TypeError, ValueError:
                 pass
         return None
 
@@ -270,9 +270,7 @@ class DynamicFetcher:
         cls, module_dynamic: dict | None
     ) -> tuple[str, str, List[str], int | None]:
         major = (
-            module_dynamic.get("major")
-            if isinstance(module_dynamic, dict)
-            else None
+            module_dynamic.get("major") if isinstance(module_dynamic, dict) else None
         )
         room_id = cls._extract_live_room_id_from_major(major)
         title = ""

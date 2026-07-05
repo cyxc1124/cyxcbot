@@ -53,9 +53,7 @@ def _dynamic_cover_parts(
             try:
                 parts.append(MessageSegment.image(image_url))
             except Exception:
-                logger.opt(exception=True).warning(
-                    "添加动态图片失败: {}", image_url
-                )
+                logger.opt(exception=True).warning("添加动态图片失败: {}", image_url)
         return parts
     if screenshot_image:
         try:
@@ -119,7 +117,9 @@ def build_dynamic_link_message(
 ) -> Message:
     """复用视频链接模板构建动态/opus 链接解析消息。"""
     tpl = templates or LinkMessageTemplates()
-    title = (dynamic.title or dynamic.body_text or dynamic.get_type_description()).strip()
+    title = (
+        dynamic.title or dynamic.body_text or dynamic.get_type_description()
+    ).strip()
     if len(title) > 100:
         title = f"{title[:100]}…"
     text_variables = {

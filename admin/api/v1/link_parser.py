@@ -144,11 +144,7 @@ def _build_user_items(snap, users: list[dict]) -> list[LinkParserUserPolicyItem]
 def _is_default_off(
     body: LinkParserGroupPolicyUpdateRequest | LinkParserUserPolicyUpdateRequest,
 ) -> bool:
-    return (
-        not body.video_enabled
-        and not body.live_enabled
-        and not body.dynamic_enabled
-    )
+    return not body.video_enabled and not body.live_enabled and not body.dynamic_enabled
 
 
 async def _group_meta(group_id: str) -> dict:

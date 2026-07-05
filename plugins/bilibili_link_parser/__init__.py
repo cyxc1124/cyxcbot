@@ -51,9 +51,7 @@ async def _fetch_dynamic_screenshot(
         dynamic.id
     )
     if screenshot_error:
-        logger.warning(
-            "链接解析动态 {} 截图失败: {}", dynamic.id, screenshot_error
-        )
+        logger.warning("链接解析动态 {} 截图失败: {}", dynamic.id, screenshot_error)
     elif page_url and dynamic.url.startswith("https://t.bilibili.com/"):
         dynamic.url = page_url
     return screenshot_image
@@ -100,10 +98,11 @@ async def _resolve_reply(
                 )
                 if dynamic:
                     if dynamic.live_room_id and scope.live_enabled:
-                        room_info, user_info = (
-                            await live_api_manager.get_room_and_user_info(
-                                dynamic.live_room_id
-                            )
+                        (
+                            room_info,
+                            user_info,
+                        ) = await live_api_manager.get_room_and_user_info(
+                            dynamic.live_room_id
                         )
                         if room_info:
                             return build_live_link_message(
@@ -117,8 +116,7 @@ async def _resolve_reply(
                         config.message_templates,
                         screenshot_image=screenshot_image,
                         include_dynamic_media=(
-                            not enable_dynamic_screenshot
-                            or screenshot_image is None
+                            not enable_dynamic_screenshot or screenshot_image is None
                         ),
                     )
             elif ref.room_id:
@@ -160,11 +158,7 @@ async def _handle_link_message(
             is_private=False,
         )
 
-    if (
-        not scope.video_enabled
-        and not scope.live_enabled
-        and not scope.dynamic_enabled
-    ):
+    if not scope.video_enabled and not scope.live_enabled and not scope.dynamic_enabled:
         logger.info(
             "B 站链接解析: 策略未启用 user={} video={} live={} dynamic={}",
             event.user_id,

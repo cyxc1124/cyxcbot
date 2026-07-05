@@ -60,8 +60,7 @@ async def test_extract_bilibili_refs_b23_opus_short_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     opus_url = (
-        "https://www.bilibili.com/opus/1217074344495153155"
-        "?plat_id=5&unique_k=p4xCtl6"
+        "https://www.bilibili.com/opus/1217074344495153155?plat_id=5&unique_k=p4xCtl6"
     )
 
     async def fake_resolve(
