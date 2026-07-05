@@ -78,7 +78,7 @@ deploy/             # Docker Compose / Helm
 
 启动前 `bot.py` 会调用 `shared/db/alembic_repair.py` 的 `repair_alembic_version_if_needed()`，补救历史上 sync 模式（`alembic_startup_check=False`）留下的漂移——那种模式会建表却把 `alembic_version` 清空，直接切到 upgrade 会因 `CREATE TABLE` 冲突失败。repair **仅在「核心表已存在但 `alembic_version` 空/缺」时**，按现有表结构推断并回填一次 revision；`alembic_version` 非空的健康库一律不动。它会按 URL 依次尝试已安装的同步/异步驱动（`postgresql+asyncpg` 优先 async 再回退 `psycopg`；SQLite 固定用内置 pysqlite），缺驱动时跳过 repair 而不阻断启动。
 
-**`alembic_repair.py` 是一次性过渡代码，新增迁移无需改它。** `infer_alembic_revision()` 的推断上限冻结在切换前的 head（`g7h8i9j0k1l2`）：sync 模式只可能把库建到那个版本，之后新增的迁移不会出现在漂移库里，交给 Alembic upgrade 应用即可。待所有历史部署都迁移完毕（`alembic_version` 均已正常）后，可整体删除本模块。
+**`alembic_repair.py` 是一次性过渡代码**，待所有历史部署都迁移完毕（`alembic_version` 均已正常）后可整体删除。`infer_alembic_revision()` 的推断基础上限是切换前的 head（`g7h8i9j0k1l2`）——sync 模式切换前的漂移库只会止步于这个版本；但若部署被回滚到仍带 `alembic_startup_check=False` 的旧版本并启动过一次，之后新增迁移引入的列/表（如 h8 的 `dynamic_enabled` 列）也可能残留在漂移库中而 `alembic_version` 被再次清空。**因此新增会改表结构的 migration 时，仍需在 `infer_alembic_revision()` 中为其登记可唯一识别的表/列特征**（参考 h8 分支的写法），否则 Alembic upgrade 会因重复建表/加列而启动失败。
 
 ## 代码风格
 
