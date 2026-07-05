@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 
 from shared.db.alembic_repair import (
     _InspectorProbe,
     infer_alembic_revision,
     repair_alembic_version_if_needed,
+    repair_url_candidates,
     sync_database_url,
 )
 
@@ -36,6 +38,46 @@ def test_sync_database_url_maps_async_drivers() -> None:
     )
 
 
+def test_repair_url_candidates_prefers_async_driver_for_asyncpg() -> None:
+    assert repair_url_candidates("postgresql+asyncpg://u:p@h/db") == [
+        ("postgresql+asyncpg://u:p@h/db", True),
+        ("postgresql+psycopg://u:p@h/db", False),
+    ]
+
+
+def test_repair_falls_back_to_async_when_sync_driver_missing(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "async-fallback.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        _create_base_schema(conn)
+    engine.dispose()
+
+    async_url = f"sqlite+aiosqlite:///{db_path}"
+    with (
+        patch(
+            "shared.db.alembic_repair.repair_url_candidates",
+            return_value=[
+                ("postgresql+psycopg://missing/db", False),
+                (async_url, True),
+            ],
+        ),
+        patch(
+            "shared.db.alembic_repair._repair_sync",
+            side_effect=ModuleNotFoundError("psycopg"),
+        ) as sync_repair,
+    ):
+        repair_alembic_version_if_needed("postgresql+asyncpg://u:p@h/db")
+
+    sync_repair.assert_called_once()
+    verify = create_engine(f"sqlite:///{db_path}")
+    with verify.connect() as conn:
+        revision = conn.execute(text("SELECT version_num FROM alembic_version")).first()
+    verify.dispose()
+    assert revision == ("b2c3d4e5f6a7",)
+
+
 def test_infer_revision_with_dynamic_enabled_column() -> None:
     engine = create_engine("sqlite:///:memory:")
     with engine.begin() as conn:
@@ -52,7 +94,7 @@ def test_infer_revision_with_dynamic_enabled_column() -> None:
                 """
             )
         )
-    assert infer_alembic_revision(_InspectorProbe(engine)) == "h8i9j0k1l2m3"
+    assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "h8i9j0k1l2m3"
     engine.dispose()
 
 

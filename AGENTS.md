@@ -76,6 +76,13 @@ deploy/             # Docker Compose / Helm
 
 数据库迁移在 `shared/db/migrations/`；启动时 `nonebot.init(alembic_startup_check=True)` 经 Alembic **upgrade** 应用（勿用 sync 模式，模型变更失败时可能删表重建）。
 
+启动前 `bot.py` 会调用 `shared/db/alembic_repair.py` 的 `repair_alembic_version_if_needed()`，根据现有表/列推断 `alembic_version`（补救历史上 sync 模式留下的版本漂移）。repair 会按 URL 依次尝试已安装的同步/异步驱动（如 `postgresql+asyncpg` 优先 async，再回退 `psycopg`；SQLite 固定用内置 pysqlite），缺驱动时跳过 repair 而不阻断启动。**新增会改表结构的 migration 时**，除 `models.py` + 迁移脚本外，还须同步更新 `alembic_repair.py`：
+
+1. 在 `_ALEMBIC_REVISION_ORDER` 末尾追加新 revision id
+2. 在 `infer_alembic_revision()` **最前面**增加该 migration 引入的、可唯一识别的表或列检测
+
+纯数据 backfill、不改 schema 的迁移通常不必改。正常全程走 Alembic、版本已对齐的库不受此项影响；未更新时主要影响「表已新、`alembic_version` 仍空或落后」的升级场景。
+
 ## 代码风格
 
 - **最小改动**：只改任务相关代码，不扩 scope、不加未请求的抽象。
