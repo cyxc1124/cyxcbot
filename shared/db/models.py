@@ -209,6 +209,9 @@ class LinkParserGroupPolicy(Model):
     group_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     video_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     live_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    dynamic_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )
@@ -223,6 +226,9 @@ class LinkParserUserPolicy(Model):
     name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     video_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     live_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    dynamic_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )

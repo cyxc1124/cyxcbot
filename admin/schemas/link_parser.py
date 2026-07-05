@@ -14,6 +14,7 @@ class LinkParserGroupPolicyItem(BaseModel):
     customized: bool
     video_enabled: bool
     live_enabled: bool
+    dynamic_enabled: bool
 
 
 class LinkParserGroupPolicyListResponse(BaseModel):
@@ -27,6 +28,7 @@ class LinkParserGroupPolicyMutationResponse(BaseModel):
 class LinkParserGroupPolicyUpdateRequest(BaseModel):
     video_enabled: bool
     live_enabled: bool
+    dynamic_enabled: bool
 
 
 class LinkParserUserPolicyItem(BaseModel):
@@ -36,6 +38,7 @@ class LinkParserUserPolicyItem(BaseModel):
     customized: bool
     video_enabled: bool
     live_enabled: bool
+    dynamic_enabled: bool
 
 
 class LinkParserUserPolicyListResponse(BaseModel):
@@ -51,9 +54,11 @@ class LinkParserUserPolicyCreateRequest(BaseModel):
     name: Optional[str] = Field(default=None, max_length=128)
     video_enabled: bool = False
     live_enabled: bool = False
+    dynamic_enabled: bool = False
 
 
 class LinkParserUserPolicyUpdateRequest(BaseModel):
     name: Optional[str] = Field(default=None, max_length=128)
     video_enabled: bool
     live_enabled: bool
+    dynamic_enabled: bool

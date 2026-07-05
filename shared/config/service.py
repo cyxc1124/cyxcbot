@@ -395,6 +395,7 @@ class ConfigService:
                 group_id=row.group_id,
                 video_enabled=row.video_enabled,
                 live_enabled=row.live_enabled,
+                dynamic_enabled=row.dynamic_enabled,
             )
             for row in rows
         }
@@ -408,6 +409,7 @@ class ConfigService:
                 user_id=row.user_id,
                 video_enabled=row.video_enabled,
                 live_enabled=row.live_enabled,
+                dynamic_enabled=row.dynamic_enabled,
                 name=row.name,
             )
             for row in rows
@@ -419,6 +421,7 @@ class ConfigService:
         *,
         video_enabled: bool,
         live_enabled: bool,
+        dynamic_enabled: bool,
     ) -> None:
         gid = str(group_id).strip()
         session = get_session()
@@ -427,12 +430,14 @@ class ConfigService:
             if row:
                 row.video_enabled = video_enabled
                 row.live_enabled = live_enabled
+                row.dynamic_enabled = dynamic_enabled
             else:
                 session.add(
                     LinkParserGroupPolicy(
                         group_id=gid,
                         video_enabled=video_enabled,
                         live_enabled=live_enabled,
+                        dynamic_enabled=dynamic_enabled,
                     )
                 )
 
@@ -450,6 +455,7 @@ class ConfigService:
         *,
         video_enabled: bool,
         live_enabled: bool,
+        dynamic_enabled: bool,
         name: str | None = None,
     ) -> None:
         uid = str(user_id).strip()
@@ -459,6 +465,7 @@ class ConfigService:
             if row:
                 row.video_enabled = video_enabled
                 row.live_enabled = live_enabled
+                row.dynamic_enabled = dynamic_enabled
                 row.name = name
             else:
                 session.add(
@@ -467,6 +474,7 @@ class ConfigService:
                         name=name,
                         video_enabled=video_enabled,
                         live_enabled=live_enabled,
+                        dynamic_enabled=dynamic_enabled,
                     )
                 )
 

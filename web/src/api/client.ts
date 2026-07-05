@@ -343,7 +343,11 @@ export const getLinkParserGroupPolicies = () =>
 
 export const updateLinkParserGroupPolicy = (
   groupId: string,
-  payload: { video_enabled: boolean; live_enabled: boolean },
+  payload: {
+    video_enabled: boolean
+    live_enabled: boolean
+    dynamic_enabled: boolean
+  },
 ) =>
   request<LinkParserGroupPolicyMutation>(`/link-parser/policies/groups/${encodeURIComponent(groupId)}`, {
     method: 'PUT',

@@ -69,7 +69,7 @@ async def _resolve_reply(
                 if video:
                     return build_video_link_message(video, config.message_templates)
             elif ref.kind == "dynamic" and ref.dynamic_id:
-                if not scope.video_enabled and not scope.live_enabled:
+                if not scope.dynamic_enabled:
                     continue
                 dynamic = await fetcher.fetch_dynamic_detail(
                     str(ref.dynamic_id), cookie=cookie
@@ -115,12 +115,17 @@ async def _handle_link_message(
             is_private=False,
         )
 
-    if not scope.video_enabled and not scope.live_enabled:
+    if (
+        not scope.video_enabled
+        and not scope.live_enabled
+        and not scope.dynamic_enabled
+    ):
         logger.info(
-            "B 站链接解析: 策略未启用 user={} video={} live={}",
+            "B 站链接解析: 策略未启用 user={} video={} live={} dynamic={}",
             event.user_id,
             scope.video_enabled,
             scope.live_enabled,
+            scope.dynamic_enabled,
         )
         return
 

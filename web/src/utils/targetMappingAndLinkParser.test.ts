@@ -90,39 +90,52 @@ describe('targetMapping types', () => {
 
 describe('linkParserPolicy utils', () => {
   it('buildPolicyPayload normalizes booleans and customized flag', () => {
-    expect(buildPolicyPayload({ video_enabled: false, live_enabled: false }, { video_enabled: true })).toEqual({
+    expect(
+      buildPolicyPayload(
+        { video_enabled: false, live_enabled: false, dynamic_enabled: false },
+        { video_enabled: true },
+      ),
+    ).toEqual({
       video_enabled: true,
       live_enabled: false,
+      dynamic_enabled: false,
       customized: true,
     })
-    expect(buildPolicyPayload({ video_enabled: true, live_enabled: true }, { live_enabled: false })).toEqual({
+    expect(
+      buildPolicyPayload(
+        { video_enabled: true, live_enabled: true, dynamic_enabled: false },
+        { dynamic_enabled: true },
+      ),
+    ).toEqual({
       video_enabled: true,
-      live_enabled: false,
+      live_enabled: true,
+      dynamic_enabled: true,
       customized: true,
     })
-    expect(buildPolicyPayload({ video_enabled: true, live_enabled: false }, { live_enabled: false })).toEqual({
-      video_enabled: true,
-      live_enabled: false,
-      customized: true,
-    })
-    expect(buildPolicyPayload({ video_enabled: false, live_enabled: false }, {})).toEqual({
+    expect(
+      buildPolicyPayload(
+        { video_enabled: false, live_enabled: false, dynamic_enabled: false },
+        {},
+      ),
+    ).toEqual({
       video_enabled: false,
       live_enabled: false,
+      dynamic_enabled: false,
       customized: false,
     })
   })
 
   it('detects all enabled or all disabled policies', () => {
     const items = [
-      { video_enabled: true, live_enabled: true },
-      { video_enabled: true, live_enabled: true },
+      { video_enabled: true, live_enabled: true, dynamic_enabled: true },
+      { video_enabled: true, live_enabled: true, dynamic_enabled: true },
     ]
     expect(isAllPoliciesEnabled(items)).toBe(true)
     expect(isNoPoliciesEnabled(items)).toBe(false)
 
     const off = [
-      { video_enabled: false, live_enabled: false },
-      { video_enabled: false, live_enabled: false },
+      { video_enabled: false, live_enabled: false, dynamic_enabled: false },
+      { video_enabled: false, live_enabled: false, dynamic_enabled: false },
     ]
     expect(isAllPoliciesEnabled(off)).toBe(false)
     expect(isNoPoliciesEnabled(off)).toBe(true)
@@ -132,7 +145,15 @@ describe('linkParserPolicy utils', () => {
   })
 
   it('buildToggleAllPayload mirrors bulk enable/disable', () => {
-    expect(buildToggleAllPayload(true)).toEqual({ video_enabled: true, live_enabled: true })
-    expect(buildToggleAllPayload(false)).toEqual({ video_enabled: false, live_enabled: false })
+    expect(buildToggleAllPayload(true)).toEqual({
+      video_enabled: true,
+      live_enabled: true,
+      dynamic_enabled: true,
+    })
+    expect(buildToggleAllPayload(false)).toEqual({
+      video_enabled: false,
+      live_enabled: false,
+      dynamic_enabled: false,
+    })
   })
 })

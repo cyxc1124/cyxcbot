@@ -1,4 +1,4 @@
-"""Link parser policy resolution: per-group / per-user video & live modes."""
+"""Link parser policy resolution: per-group / per-user video, live & dynamic modes."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 class LinkParserScopePolicy:
     video_enabled: bool = False
     live_enabled: bool = False
+    dynamic_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,7 @@ class LinkParserGroupPolicyRecord:
     group_id: str
     video_enabled: bool = False
     live_enabled: bool = False
+    dynamic_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -27,6 +29,7 @@ class LinkParserUserPolicyRecord:
     user_id: str
     video_enabled: bool = False
     live_enabled: bool = False
+    dynamic_enabled: bool = False
     name: str | None = None
 
 
@@ -45,6 +48,7 @@ def resolve_link_parser_policy(
                 return LinkParserScopePolicy(
                     video_enabled=user_override.video_enabled,
                     live_enabled=user_override.live_enabled,
+                    dynamic_enabled=user_override.dynamic_enabled,
                 )
         return LinkParserScopePolicy()
 
@@ -54,6 +58,7 @@ def resolve_link_parser_policy(
             return LinkParserScopePolicy(
                 video_enabled=group_override.video_enabled,
                 live_enabled=group_override.live_enabled,
+                dynamic_enabled=group_override.dynamic_enabled,
             )
 
     return LinkParserScopePolicy()
