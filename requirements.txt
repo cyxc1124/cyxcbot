@@ -9,8 +9,8 @@ nonebot-plugin-orm[sqlite]==0.8.3
 python-dotenv==1.2.2
 
 # Admin 后台 API
-fastapi==0.138.1
-uvicorn==0.49.0
+fastapi==0.139.0
+uvicorn==0.50.0
 python-multipart==0.0.32
 
 # 认证与安全
@@ -23,14 +23,14 @@ aiohttp==3.14.1
 
 # B 站监控与内容抓取
 feedparser==6.0.12
-playwright==1.60.0
+playwright==1.61.0
 playwright-stealth==2.0.3
 brotli==1.2.0
-Pillow==12.2.0
+Pillow==12.3.0
 
 # 系统状态
 psutil==7.2.2
-prometheus_client==0.24.1
+prometheus_client==0.25.0
 
 # 开发与测试
 pytest==8.4.2
