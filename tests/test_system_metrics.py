@@ -242,30 +242,50 @@ def test_get_cgroup_memory_limit_mb_none_when_all_candidates_unlimited(
     assert system_metrics._get_cgroup_memory_limit_mb() is None
 
 
-def test_get_container_memory_info_requires_both_limit_and_usage(monkeypatch):
-    def fake_find(patterns, **kwargs):
-        if patterns is system_metrics._CGROUP_MEMORY_LIMIT_PATTERNS:
-            return 2 * 1024**3, "/limit"
-        return None, None
+def test_sibling_cgroup_usage_path_v1_and_v2():
+    assert (
+        system_metrics._sibling_cgroup_usage_path(
+            "/sys/fs/cgroup/memory/kubepods.slice/pod-x/memory.limit_in_bytes"
+        )
+        == "/sys/fs/cgroup/memory/kubepods.slice/pod-x/memory.usage_in_bytes"
+    )
+    assert (
+        system_metrics._sibling_cgroup_usage_path("/sys/fs/cgroup/memory.max")
+        == "/sys/fs/cgroup/memory.current"
+    )
+    assert system_metrics._sibling_cgroup_usage_path("/weird/path/other") is None
 
-    monkeypatch.setattr(system_metrics, "_find_cgroup_value", fake_find)
+
+def test_get_container_memory_info_requires_usage_in_same_directory(
+    tmp_path, monkeypatch
+):
+    """限制文件命中，但同目录下没有对应的用量文件时应放弃，而不是去别处找。"""
+    limit_file = tmp_path / "memory.limit_in_bytes"
+    limit_file.write_text(str(2 * 1024**3))
+
+    monkeypatch.setattr(
+        system_metrics, "_CGROUP_MEMORY_LIMIT_PATTERNS", [str(limit_file)]
+    )
     assert system_metrics.get_container_memory_info() is None
 
 
-def test_get_container_memory_info_returns_usage_percent(monkeypatch):
-    def fake_find(patterns, **kwargs):
-        if patterns is system_metrics._CGROUP_MEMORY_LIMIT_PATTERNS:
-            return 2 * 1024**3, "/limit"
-        return 1 * 1024**3, "/usage"
+def test_get_container_memory_info_returns_usage_percent(tmp_path, monkeypatch):
+    limit_file = tmp_path / "memory.limit_in_bytes"
+    limit_file.write_text(str(2 * 1024**3))
+    usage_file = tmp_path / "memory.usage_in_bytes"
+    usage_file.write_text(str(1 * 1024**3))
 
-    monkeypatch.setattr(system_metrics, "_find_cgroup_value", fake_find)
+    monkeypatch.setattr(
+        system_metrics, "_CGROUP_MEMORY_LIMIT_PATTERNS", [str(limit_file)]
+    )
+
     info = system_metrics.get_container_memory_info()
     assert info is not None
     assert info["total_gb"] == pytest.approx(2.0)
     assert info["used_gb"] == pytest.approx(1.0)
     assert info["percent"] == pytest.approx(50.0)
-    assert info["limit_file"] == "/limit"
-    assert info["usage_file"] == "/usage"
+    assert info["limit_file"] == str(limit_file)
+    assert info["usage_file"] == str(usage_file)
 
 
 def test_get_container_memory_info_skips_unlimited_root_limit(tmp_path, monkeypatch):
@@ -277,9 +297,7 @@ def test_get_container_memory_info_skips_unlimited_root_limit(tmp_path, monkeypa
     slice_dir = tmp_path / "kubepods.slice" / "pod-abc"
     slice_dir.mkdir(parents=True)
     (slice_dir / "memory.limit_in_bytes").write_text(str(2 * 1024**3))
-
-    usage_file = tmp_path / "memory.usage_in_bytes"
-    usage_file.write_text(str(1 * 1024**3))
+    (slice_dir / "memory.usage_in_bytes").write_text(str(1 * 1024**3))
 
     monkeypatch.setattr(
         system_metrics,
@@ -289,14 +307,41 @@ def test_get_container_memory_info_skips_unlimited_root_limit(tmp_path, monkeypa
             str(tmp_path / "kubepods.slice" / "*" / "memory.limit_in_bytes"),
         ],
     )
-    monkeypatch.setattr(
-        system_metrics, "_CGROUP_MEMORY_USAGE_PATTERNS", [str(usage_file)]
-    )
 
     info = system_metrics.get_container_memory_info()
     assert info is not None
     assert info["total_gb"] == pytest.approx(2.0)
     assert info["used_gb"] == pytest.approx(1.0)
+
+
+def test_get_container_memory_info_does_not_pair_usage_from_root(tmp_path, monkeypatch):
+    """issue 回归测试：即便根目录也有一份用量文件，也绝不能把它和 slice
+    的限制值配对——那会算出跨容器/宿主机的错误百分比。"""
+    root_limit = tmp_path / "memory.limit_in_bytes"
+    root_limit.write_text(str(2 * system_metrics._CGROUP_UNLIMITED_THRESHOLD_BYTES))
+    # 根目录（宿主机整体）用量远大于 slice 限制，若被错误配对会得到 >100% 用量
+    (tmp_path / "memory.usage_in_bytes").write_text(str(50 * 1024**3))
+
+    slice_dir = tmp_path / "kubepods.slice" / "pod-abc"
+    slice_dir.mkdir(parents=True)
+    (slice_dir / "memory.limit_in_bytes").write_text(str(2 * 1024**3))
+    (slice_dir / "memory.usage_in_bytes").write_text(str(1 * 1024**3))
+
+    monkeypatch.setattr(
+        system_metrics,
+        "_CGROUP_MEMORY_LIMIT_PATTERNS",
+        [
+            str(root_limit),
+            str(tmp_path / "kubepods.slice" / "*" / "memory.limit_in_bytes"),
+        ],
+    )
+
+    info = system_metrics.get_container_memory_info()
+    assert info is not None
+    assert info["used_gb"] == pytest.approx(1.0)
+    assert info["percent"] == pytest.approx(50.0)
+    assert 0 <= info["percent"] <= 100
+    assert info["available_gb"] >= 0
 
 
 def test_detect_container_environment_kubernetes(monkeypatch):

@@ -27,14 +27,11 @@ _CGROUP_MEMORY_LIMIT_PATTERNS = [
     "/sys/fs/cgroup/memory/docker/*/memory.limit_in_bytes",
     "/sys/fs/cgroup/memory/system.slice/*/memory.limit_in_bytes",
 ]
-_CGROUP_MEMORY_USAGE_PATTERNS = [
-    "/sys/fs/cgroup/memory/memory.usage_in_bytes",
-    "/sys/fs/cgroup/memory.current",
-    "/sys/fs/cgroup/memory/kubepods*/memory.usage_in_bytes",
-    "/sys/fs/cgroup/memory/kubepods.slice/*/memory.usage_in_bytes",
-    "/sys/fs/cgroup/memory/docker/*/memory.usage_in_bytes",
-    "/sys/fs/cgroup/memory/system.slice/*/memory.usage_in_bytes",
-]
+# 内存限制文件名 -> 同目录下用量文件名（cgroup v1/v2 用量与限制始终同目录）
+_CGROUP_MEMORY_USAGE_FILENAMES = {
+    "memory.limit_in_bytes": "memory.usage_in_bytes",
+    "memory.max": "memory.current",
+}
 # 大于 1TB 的 cgroup v1 限制值视为"未设置限制"（内核默认填充的巨大数字）
 _CGROUP_UNLIMITED_THRESHOLD_BYTES = 1024**4
 
@@ -163,20 +160,34 @@ def _get_cgroup_memory_limit_mb() -> float | None:
     return limit_bytes / (1024**2)
 
 
+def _sibling_cgroup_usage_path(limit_file: str) -> str | None:
+    """按命中的限制文件名，推导同一 cgroup 目录下对应的用量文件路径。
+
+    用量必须与限制来自同一 cgroup 目录，否则会把宿主机/根 cgroup 的整体用量
+    和某个容器 slice 的限制值错误配对，算出 >100% 用量或负数可用内存。
+    """
+    path = Path(limit_file)
+    usage_name = _CGROUP_MEMORY_USAGE_FILENAMES.get(path.name)
+    return str(path.with_name(usage_name)) if usage_name else None
+
+
 def get_container_memory_info() -> dict[str, Any] | None:
-    """获取容器内存信息（cgroup 限制 + 用量），用于 `/status` 等展示场景。"""
+    """获取容器内存信息（cgroup 限制 + 同目录用量），用于 `/status` 等展示场景。"""
     try:
         limit_bytes, limit_file = _find_cgroup_value(
             _CGROUP_MEMORY_LIMIT_PATTERNS, skip_if_ge=_CGROUP_UNLIMITED_THRESHOLD_BYTES
         )
-        usage_bytes, usage_file = _find_cgroup_value(_CGROUP_MEMORY_USAGE_PATTERNS)
+        if limit_bytes is None or limit_file is None:
+            logger.debug("未找到有效的容器内存限制")
+            return None
 
-        if limit_bytes is None or usage_bytes is None:
-            logger.debug(
-                "未找到有效的容器内存信息: limit_bytes={}, usage_bytes={}",
-                limit_bytes,
-                usage_bytes,
-            )
+        usage_path = _sibling_cgroup_usage_path(limit_file)
+        usage_bytes, usage_file = (
+            _find_cgroup_value([usage_path]) if usage_path else (None, None)
+        )
+
+        if usage_bytes is None:
+            logger.debug("内存限制 {} 所在目录未找到匹配的用量文件", limit_file)
             return None
 
         limit_gb = limit_bytes / (1024**3)
