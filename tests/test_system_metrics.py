@@ -146,6 +146,128 @@ async def test_sampler_keeps_last_good_value_on_failure(monkeypatch):
     assert snap.process_cpu_percent == 12.3
 
 
+def test_find_cgroup_value_matches_plain_path(tmp_path):
+    f = tmp_path / "memory.max"
+    f.write_text("12345\n")
+    value, path = system_metrics._find_cgroup_value([str(f)])
+    assert value == 12345
+    assert path == str(f)
+
+
+def test_find_cgroup_value_matches_glob_pattern(tmp_path):
+    slice_dir = tmp_path / "kubepods.slice" / "podabc"
+    slice_dir.mkdir(parents=True)
+    (slice_dir / "memory.limit_in_bytes").write_text("999")
+    pattern = str(tmp_path / "kubepods.slice" / "*" / "memory.limit_in_bytes")
+    value, path = system_metrics._find_cgroup_value([pattern])
+    assert value == 999
+    assert path.endswith("memory.limit_in_bytes")
+
+
+def test_find_cgroup_value_skips_max_and_missing(tmp_path):
+    unlimited = tmp_path / "memory.max"
+    unlimited.write_text("max")
+    value, path = system_metrics._find_cgroup_value(
+        [str(unlimited), str(tmp_path / "does-not-exist")]
+    )
+    assert value is None
+    assert path is None
+
+
+def test_get_cgroup_memory_limit_mb_uses_wide_search(monkeypatch):
+    monkeypatch.setattr(
+        system_metrics, "_find_cgroup_value", lambda patterns: (512 * 1024**2, "/x")
+    )
+    assert system_metrics._get_cgroup_memory_limit_mb() == 512.0
+
+
+def test_get_cgroup_memory_limit_mb_treats_huge_value_as_unlimited(monkeypatch):
+    monkeypatch.setattr(
+        system_metrics,
+        "_find_cgroup_value",
+        lambda patterns: (2 * system_metrics._CGROUP_UNLIMITED_THRESHOLD_BYTES, "/x"),
+    )
+    assert system_metrics._get_cgroup_memory_limit_mb() is None
+
+
+def test_get_container_memory_info_requires_both_limit_and_usage(monkeypatch):
+    def fake_find(patterns):
+        if patterns is system_metrics._CGROUP_MEMORY_LIMIT_PATTERNS:
+            return 2 * 1024**3, "/limit"
+        return None, None
+
+    monkeypatch.setattr(system_metrics, "_find_cgroup_value", fake_find)
+    assert system_metrics.get_container_memory_info() is None
+
+
+def test_get_container_memory_info_returns_usage_percent(monkeypatch):
+    def fake_find(patterns):
+        if patterns is system_metrics._CGROUP_MEMORY_LIMIT_PATTERNS:
+            return 2 * 1024**3, "/limit"
+        return 1 * 1024**3, "/usage"
+
+    monkeypatch.setattr(system_metrics, "_find_cgroup_value", fake_find)
+    info = system_metrics.get_container_memory_info()
+    assert info is not None
+    assert info["total_gb"] == pytest.approx(2.0)
+    assert info["used_gb"] == pytest.approx(1.0)
+    assert info["percent"] == pytest.approx(50.0)
+    assert info["limit_file"] == "/limit"
+    assert info["usage_file"] == "/usage"
+
+
+def test_detect_container_environment_kubernetes(monkeypatch):
+    monkeypatch.setattr(system_metrics, "_DOCKERENV_PATH", "/does/not/exist")
+    monkeypatch.setattr(system_metrics, "_PROC_1_CGROUP_PATH", "/does/not/exist")
+    monkeypatch.delenv("DOCKER_CONTAINER", raising=False)
+    monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+
+    env = system_metrics.detect_container_environment()
+    assert env["is_kubernetes"] is True
+    assert env["is_container"] is True
+    assert env["container_type"] == "Kubernetes Pod"
+
+
+def test_detect_container_environment_docker_env_var(monkeypatch):
+    monkeypatch.setattr(system_metrics, "_DOCKERENV_PATH", "/does/not/exist")
+    monkeypatch.setattr(system_metrics, "_PROC_1_CGROUP_PATH", "/does/not/exist")
+    monkeypatch.delenv("KUBERNETES_SERVICE_HOST", raising=False)
+    monkeypatch.setenv("DOCKER_CONTAINER", "true")
+
+    env = system_metrics.detect_container_environment()
+    assert env["is_docker"] is True
+    assert env["container_type"] == "Docker Container"
+
+
+def test_detect_container_environment_bare_metal(monkeypatch):
+    monkeypatch.setattr(system_metrics, "_DOCKERENV_PATH", "/does/not/exist")
+    monkeypatch.setattr(system_metrics, "_PROC_1_CGROUP_PATH", "/does/not/exist")
+    monkeypatch.delenv("DOCKER_CONTAINER", raising=False)
+    monkeypatch.delenv("KUBERNETES_SERVICE_HOST", raising=False)
+
+    env = system_metrics.detect_container_environment()
+    assert env["is_container"] is False
+    assert env["container_type"] == "Physical/VM"
+
+
+def test_get_container_cpu_limit_reads_cgroup_v2(tmp_path, monkeypatch):
+    cpu_max = tmp_path / "cpu.max"
+    cpu_max.write_text("50000 100000")
+    monkeypatch.setattr(system_metrics, "_CGROUP_CPU_QUOTA_PATHS", [str(cpu_max)])
+    monkeypatch.setattr(system_metrics, "_CGROUP_CPU_PERIOD_PATHS", [str(cpu_max)])
+
+    assert system_metrics.get_container_cpu_limit() == pytest.approx(0.5)
+
+
+def test_get_container_cpu_limit_unset_returns_none(tmp_path, monkeypatch):
+    cpu_max = tmp_path / "cpu.max"
+    cpu_max.write_text("max 100000")
+    monkeypatch.setattr(system_metrics, "_CGROUP_CPU_QUOTA_PATHS", [str(cpu_max)])
+    monkeypatch.setattr(system_metrics, "_CGROUP_CPU_PERIOD_PATHS", [str(cpu_max)])
+
+    assert system_metrics.get_container_cpu_limit() is None
+
+
 @pytest.mark.asyncio
 async def test_status_query_does_not_block_event_loop():
     system_metrics._cache = _sample_snapshot()

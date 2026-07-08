@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import glob
 import os
 import time
 from dataclasses import dataclass
@@ -16,6 +17,37 @@ from shared.monitor.background_task import spawn_background_task
 
 SAMPLE_INTERVAL_SECONDS = 5.0
 CPU_SAMPLE_INTERVAL_SECONDS = 1.0
+
+# cgroup v1/v2 及 Docker/Kubernetes 常见 slice 路径（含通配符）
+_CGROUP_MEMORY_LIMIT_PATTERNS = [
+    "/sys/fs/cgroup/memory/memory.limit_in_bytes",
+    "/sys/fs/cgroup/memory.max",
+    "/sys/fs/cgroup/memory/kubepods*/memory.limit_in_bytes",
+    "/sys/fs/cgroup/memory/kubepods.slice/*/memory.limit_in_bytes",
+    "/sys/fs/cgroup/memory/docker/*/memory.limit_in_bytes",
+    "/sys/fs/cgroup/memory/system.slice/*/memory.limit_in_bytes",
+]
+_CGROUP_MEMORY_USAGE_PATTERNS = [
+    "/sys/fs/cgroup/memory/memory.usage_in_bytes",
+    "/sys/fs/cgroup/memory.current",
+    "/sys/fs/cgroup/memory/kubepods*/memory.usage_in_bytes",
+    "/sys/fs/cgroup/memory/kubepods.slice/*/memory.usage_in_bytes",
+    "/sys/fs/cgroup/memory/docker/*/memory.usage_in_bytes",
+    "/sys/fs/cgroup/memory/system.slice/*/memory.usage_in_bytes",
+]
+# 大于 1TB 的 cgroup v1 限制值视为"未设置限制"（内核默认填充的巨大数字）
+_CGROUP_UNLIMITED_THRESHOLD_BYTES = 1024**4
+
+_DOCKERENV_PATH = "/.dockerenv"
+_PROC_1_CGROUP_PATH = "/proc/1/cgroup"
+_CGROUP_CPU_QUOTA_PATHS = [
+    "/sys/fs/cgroup/cpu/cpu.cfs_quota_us",
+    "/sys/fs/cgroup/cpu.max",  # cgroup v2
+]
+_CGROUP_CPU_PERIOD_PATHS = [
+    "/sys/fs/cgroup/cpu/cpu.cfs_period_us",
+    "/sys/fs/cgroup/cpu.max",  # cgroup v2 (同一文件，不同格式)
+]
 
 _cache: SystemMetricsSnapshot | None = None
 _sampler_task: asyncio.Task[None] | None = None
@@ -69,21 +101,135 @@ def _get_log_dir_size_mb() -> float:
         return 0.0
 
 
-def _get_cgroup_memory_limit_mb() -> float | None:
-    try:
-        raw = Path("/sys/fs/cgroup/memory.max").read_text().strip()
-        if raw != "max":
-            return int(raw) / (1024**2)
-    except OSError, ValueError:
-        pass
+def detect_container_environment() -> dict[str, Any]:
+    """检测容器环境（Docker / Kubernetes）。"""
+    is_docker = (
+        os.path.exists(_DOCKERENV_PATH)
+        or os.getenv("DOCKER_CONTAINER", "").lower() == "true"
+    )
+    is_kubernetes = any(key.startswith(("KUBERNETES_", "KUBE_")) for key in os.environ)
 
     try:
-        raw = Path("/sys/fs/cgroup/memory/memory.limit_in_bytes").read_text().strip()
-        limit_bytes = int(raw)
-        if limit_bytes > 0 and limit_bytes < 2**60:
-            return limit_bytes / (1024**2)
-    except OSError, ValueError:
+        cgroup_info = Path(_PROC_1_CGROUP_PATH).read_text()
+        if "docker" in cgroup_info or "kubepods" in cgroup_info:
+            is_docker = True
+    except OSError:
         pass
+
+    return {
+        "is_container": is_docker or is_kubernetes,
+        "is_docker": is_docker,
+        "is_kubernetes": is_kubernetes,
+        "container_type": "Kubernetes Pod"
+        if is_kubernetes
+        else ("Docker Container" if is_docker else "Physical/VM"),
+    }
+
+
+def _find_cgroup_value(patterns: list[str]) -> tuple[int | None, str | None]:
+    """按路径模式（支持通配符）查找第一个有效的 cgroup 数值文件，返回 (数值, 命中路径)。"""
+    for pattern in patterns:
+        candidates = glob.glob(pattern) if "*" in pattern else [pattern]
+        for path in candidates:
+            if not os.path.exists(path):
+                continue
+            try:
+                content = Path(path).read_text().strip()
+            except OSError:
+                continue
+            if content != "max" and content.isdigit():
+                return int(content), path
+    return None, None
+
+
+def _get_cgroup_memory_limit_mb() -> float | None:
+    limit_bytes, _ = _find_cgroup_value(_CGROUP_MEMORY_LIMIT_PATTERNS)
+    if limit_bytes is None or limit_bytes > _CGROUP_UNLIMITED_THRESHOLD_BYTES:
+        return None
+    return limit_bytes / (1024**2)
+
+
+def get_container_memory_info() -> dict[str, Any] | None:
+    """获取容器内存信息（cgroup 限制 + 用量），用于 `/status` 等展示场景。"""
+    try:
+        limit_bytes, limit_file = _find_cgroup_value(_CGROUP_MEMORY_LIMIT_PATTERNS)
+        usage_bytes, usage_file = _find_cgroup_value(_CGROUP_MEMORY_USAGE_PATTERNS)
+
+        if limit_bytes is None or usage_bytes is None:
+            logger.debug(
+                "未找到有效的容器内存信息: limit_bytes={}, usage_bytes={}",
+                limit_bytes,
+                usage_bytes,
+            )
+            return None
+        if limit_bytes > _CGROUP_UNLIMITED_THRESHOLD_BYTES:
+            logger.debug("检测到无限制内存设置: {} bytes", limit_bytes)
+            return None
+
+        limit_gb = limit_bytes / (1024**3)
+        usage_gb = usage_bytes / (1024**3)
+        available_gb = limit_gb - usage_gb
+        usage_percent = (usage_gb / limit_gb) * 100
+
+        logger.debug(
+            "成功读取容器内存: 限制={:.1f}GB, 使用={:.1f}GB (来源: {})",
+            limit_gb,
+            usage_gb,
+            limit_file,
+        )
+
+        return {
+            "used_gb": usage_gb,
+            "total_gb": limit_gb,
+            "available_gb": available_gb,
+            "percent": usage_percent,
+            "is_container": True,
+            "limit_file": limit_file,
+            "usage_file": usage_file,
+        }
+    except Exception as e:
+        logger.debug("容器内存检测异常: {}", e)
+        return None
+
+
+def get_container_cpu_limit() -> float | None:
+    """获取容器 CPU 限制信息（以核心数表示）。"""
+    try:
+        quota = None
+        period = None
+
+        for quota_file in _CGROUP_CPU_QUOTA_PATHS:
+            if not os.path.exists(quota_file):
+                continue
+            try:
+                content = Path(quota_file).read_text().strip()
+                if quota_file.endswith("cpu.max"):  # cgroup v2
+                    parts = content.split()
+                    if len(parts) >= 2 and parts[0] != "max":
+                        quota = int(parts[0])
+                        period = int(parts[1])
+                        break
+                elif content != "-1" and content.isdigit():  # cgroup v1
+                    quota = int(content)
+            except OSError, ValueError:
+                continue
+
+        if quota and not period:
+            for period_file in _CGROUP_CPU_PERIOD_PATHS:
+                if not os.path.exists(period_file):
+                    continue
+                try:
+                    content = Path(period_file).read_text().strip()
+                    if content.isdigit():
+                        period = int(content)
+                        break
+                except OSError, ValueError:
+                    continue
+
+        if quota and period and quota > 0:
+            return quota / period
+    except Exception as e:
+        logger.debug("读取容器CPU限制失败: {}", e)
 
     return None
 
