@@ -154,16 +154,6 @@ def test_find_cgroup_value_matches_plain_path(tmp_path):
     assert path == str(f)
 
 
-def test_find_cgroup_value_matches_glob_pattern(tmp_path):
-    slice_dir = tmp_path / "kubepods.slice" / "podabc"
-    slice_dir.mkdir(parents=True)
-    (slice_dir / "memory.limit_in_bytes").write_text("999")
-    pattern = str(tmp_path / "kubepods.slice" / "*" / "memory.limit_in_bytes")
-    value, path = system_metrics._find_cgroup_value([pattern])
-    assert value == 999
-    assert path.endswith("memory.limit_in_bytes")
-
-
 def test_find_cgroup_value_skips_max_and_missing(tmp_path):
     unlimited = tmp_path / "memory.max"
     unlimited.write_text("max")
@@ -212,21 +202,19 @@ def test_get_cgroup_memory_limit_mb_skips_unlimited_root_and_finds_slice_value(
     tmp_path, monkeypatch
 ):
     """issue 回归测试：根路径读到"无限制"哨兵值时，应继续尝试更具体的
-    kubepods/docker slice 路径，而不是直接判定为无限制。"""
+    本进程专属 slice 路径，而不是直接判定为无限制。"""
     root = tmp_path / "memory.limit_in_bytes"
     root.write_text(str(2 * system_metrics._CGROUP_UNLIMITED_THRESHOLD_BYTES))
 
-    slice_dir = tmp_path / "kubepods.slice" / "pod-abc"
-    slice_dir.mkdir(parents=True)
-    (slice_dir / "memory.limit_in_bytes").write_text(str(512 * 1024**2))
+    slice_file = tmp_path / "kubepods.slice" / "pod-abc" / "memory.limit_in_bytes"
+    slice_file.parent.mkdir(parents=True)
+    slice_file.write_text(str(512 * 1024**2))
 
+    monkeypatch.setattr(system_metrics, "_own_cgroup_subpath", lambda controller: None)
     monkeypatch.setattr(
         system_metrics,
         "_CGROUP_MEMORY_LIMIT_PATTERNS",
-        [
-            str(root),
-            str(tmp_path / "kubepods.slice" / "*" / "memory.limit_in_bytes"),
-        ],
+        [str(root), str(slice_file)],
     )
 
     assert system_metrics._get_cgroup_memory_limit_mb() == pytest.approx(512.0)
@@ -237,9 +225,76 @@ def test_get_cgroup_memory_limit_mb_none_when_all_candidates_unlimited(
 ):
     root = tmp_path / "memory.limit_in_bytes"
     root.write_text(str(2 * system_metrics._CGROUP_UNLIMITED_THRESHOLD_BYTES))
+    monkeypatch.setattr(system_metrics, "_own_cgroup_subpath", lambda controller: None)
     monkeypatch.setattr(system_metrics, "_CGROUP_MEMORY_LIMIT_PATTERNS", [str(root)])
 
     assert system_metrics._get_cgroup_memory_limit_mb() is None
+
+
+def test_own_cgroup_subpath_parses_v1_memory_line(tmp_path, monkeypatch):
+    proc_self_cgroup = tmp_path / "cgroup"
+    proc_self_cgroup.write_text(
+        "11:memory:/kubepods.slice/kubepods-podx.slice/docker-abc.scope\n"
+        "10:cpu,cpuacct:/kubepods.slice/kubepods-podx.slice/docker-abc.scope\n"
+    )
+    monkeypatch.setattr(system_metrics, "_PROC_SELF_CGROUP_PATH", str(proc_self_cgroup))
+
+    assert (
+        system_metrics._own_cgroup_subpath("memory")
+        == "kubepods.slice/kubepods-podx.slice/docker-abc.scope"
+    )
+
+
+def test_own_cgroup_subpath_parses_v2_unified_line(tmp_path, monkeypatch):
+    proc_self_cgroup = tmp_path / "cgroup"
+    proc_self_cgroup.write_text(
+        "0::/kubepods.slice/kubepods-pody.slice/crio-def.scope\n"
+    )
+    monkeypatch.setattr(system_metrics, "_PROC_SELF_CGROUP_PATH", str(proc_self_cgroup))
+
+    assert (
+        system_metrics._own_cgroup_subpath("memory")
+        == "kubepods.slice/kubepods-pody.slice/crio-def.scope"
+    )
+
+
+def test_own_cgroup_subpath_returns_none_when_at_namespace_root(tmp_path, monkeypatch):
+    """已启用 cgroup namespace 隔离时，本进程看到的路径就是"/"，此时根路径
+    本身即本进程的 cgroup，无需（也无法）派生更具体的子路径。"""
+    proc_self_cgroup = tmp_path / "cgroup"
+    proc_self_cgroup.write_text("0::/\n")
+    monkeypatch.setattr(system_metrics, "_PROC_SELF_CGROUP_PATH", str(proc_self_cgroup))
+
+    assert system_metrics._own_cgroup_subpath("memory") is None
+
+
+def test_own_cgroup_subpath_missing_file_returns_none(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        system_metrics, "_PROC_SELF_CGROUP_PATH", str(tmp_path / "does-not-exist")
+    )
+    assert system_metrics._own_cgroup_subpath("memory") is None
+
+
+def test_own_cgroup_memory_limit_candidates_prepends_derived_path(monkeypatch):
+    monkeypatch.setattr(
+        system_metrics,
+        "_own_cgroup_subpath",
+        lambda controller: "kubepods.slice/pod-x",
+    )
+    candidates = system_metrics._own_cgroup_memory_limit_candidates()
+
+    assert candidates[:2] == [
+        "/sys/fs/cgroup/memory/kubepods.slice/pod-x/memory.limit_in_bytes",
+        "/sys/fs/cgroup/kubepods.slice/pod-x/memory.max",
+    ]
+    assert candidates[2:] == system_metrics._CGROUP_MEMORY_LIMIT_PATTERNS
+
+
+def test_own_cgroup_memory_limit_candidates_falls_back_to_root_only(monkeypatch):
+    monkeypatch.setattr(system_metrics, "_own_cgroup_subpath", lambda controller: None)
+    candidates = system_metrics._own_cgroup_memory_limit_candidates()
+
+    assert candidates == system_metrics._CGROUP_MEMORY_LIMIT_PATTERNS
 
 
 def test_sibling_cgroup_usage_path_v1_and_v2():
@@ -263,6 +318,7 @@ def test_get_container_memory_info_requires_usage_in_same_directory(
     limit_file = tmp_path / "memory.limit_in_bytes"
     limit_file.write_text(str(2 * 1024**3))
 
+    monkeypatch.setattr(system_metrics, "_own_cgroup_subpath", lambda controller: None)
     monkeypatch.setattr(
         system_metrics, "_CGROUP_MEMORY_LIMIT_PATTERNS", [str(limit_file)]
     )
@@ -275,6 +331,7 @@ def test_get_container_memory_info_returns_usage_percent(tmp_path, monkeypatch):
     usage_file = tmp_path / "memory.usage_in_bytes"
     usage_file.write_text(str(1 * 1024**3))
 
+    monkeypatch.setattr(system_metrics, "_own_cgroup_subpath", lambda controller: None)
     monkeypatch.setattr(
         system_metrics, "_CGROUP_MEMORY_LIMIT_PATTERNS", [str(limit_file)]
     )
@@ -290,7 +347,7 @@ def test_get_container_memory_info_returns_usage_percent(tmp_path, monkeypatch):
 
 def test_get_container_memory_info_skips_unlimited_root_limit(tmp_path, monkeypatch):
     """issue 回归测试：get_container_memory_info 同样不应被根路径的
-    "无限制"哨兵值挡住，需继续搜索到 kubepods slice 里的真实限制。"""
+    "无限制"哨兵值挡住，需继续搜索到本进程专属 slice 里的真实限制。"""
     root_limit = tmp_path / "memory.limit_in_bytes"
     root_limit.write_text(str(2 * system_metrics._CGROUP_UNLIMITED_THRESHOLD_BYTES))
 
@@ -299,13 +356,11 @@ def test_get_container_memory_info_skips_unlimited_root_limit(tmp_path, monkeypa
     (slice_dir / "memory.limit_in_bytes").write_text(str(2 * 1024**3))
     (slice_dir / "memory.usage_in_bytes").write_text(str(1 * 1024**3))
 
+    monkeypatch.setattr(system_metrics, "_own_cgroup_subpath", lambda controller: None)
     monkeypatch.setattr(
         system_metrics,
         "_CGROUP_MEMORY_LIMIT_PATTERNS",
-        [
-            str(root_limit),
-            str(tmp_path / "kubepods.slice" / "*" / "memory.limit_in_bytes"),
-        ],
+        [str(root_limit), str(slice_dir / "memory.limit_in_bytes")],
     )
 
     info = system_metrics.get_container_memory_info()
@@ -327,13 +382,11 @@ def test_get_container_memory_info_does_not_pair_usage_from_root(tmp_path, monke
     (slice_dir / "memory.limit_in_bytes").write_text(str(2 * 1024**3))
     (slice_dir / "memory.usage_in_bytes").write_text(str(1 * 1024**3))
 
+    monkeypatch.setattr(system_metrics, "_own_cgroup_subpath", lambda controller: None)
     monkeypatch.setattr(
         system_metrics,
         "_CGROUP_MEMORY_LIMIT_PATTERNS",
-        [
-            str(root_limit),
-            str(tmp_path / "kubepods.slice" / "*" / "memory.limit_in_bytes"),
-        ],
+        [str(root_limit), str(slice_dir / "memory.limit_in_bytes")],
     )
 
     info = system_metrics.get_container_memory_info()
@@ -342,6 +395,39 @@ def test_get_container_memory_info_does_not_pair_usage_from_root(tmp_path, monke
     assert info["percent"] == pytest.approx(50.0)
     assert 0 <= info["percent"] <= 100
     assert info["available_gb"] >= 0
+
+
+def test_get_container_memory_info_uses_own_cgroup_not_sibling_pod(
+    tmp_path, monkeypatch
+):
+    """issue 回归测试：未做 cgroup namespace 隔离的宿主机上，kubepods.slice
+    下会并列存在其他 Pod/容器的目录；即使它们先被枚举到，也必须只使用
+    /proc/self/cgroup 推导出的本进程自己的目录，而不是随便一个兄弟目录。"""
+    memory_root = tmp_path / "memory"
+    other_pod = memory_root / "kubepods.slice" / "aaaa-other-pod"
+    own_pod = memory_root / "kubepods.slice" / "zzzz-own-pod"
+    other_pod.mkdir(parents=True)
+    own_pod.mkdir(parents=True)
+    # 兄弟 Pod 排在字母序更前面，若按枚举顺序取第一个会错误地读到它
+    (other_pod / "memory.limit_in_bytes").write_text(str(8 * 1024**3))
+    (other_pod / "memory.usage_in_bytes").write_text(str(6 * 1024**3))
+    (own_pod / "memory.limit_in_bytes").write_text(str(1 * 1024**3))
+    (own_pod / "memory.usage_in_bytes").write_text(str(256 * 1024**2))
+
+    monkeypatch.setattr(system_metrics, "_CGROUP_V1_MEMORY_ROOT", str(memory_root))
+    monkeypatch.setattr(system_metrics, "_CGROUP_UNIFIED_ROOT", str(tmp_path))
+    monkeypatch.setattr(
+        system_metrics,
+        "_own_cgroup_subpath",
+        lambda controller: "kubepods.slice/zzzz-own-pod",
+    )
+    monkeypatch.setattr(system_metrics, "_CGROUP_MEMORY_LIMIT_PATTERNS", [])
+
+    info = system_metrics.get_container_memory_info()
+    assert info is not None
+    assert info["total_gb"] == pytest.approx(1.0)
+    assert info["used_gb"] == pytest.approx(0.25)
+    assert info["limit_file"] == str(own_pod / "memory.limit_in_bytes")
 
 
 def test_detect_container_environment_kubernetes(monkeypatch):

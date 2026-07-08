@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import glob
 import os
 import time
 from dataclasses import dataclass
@@ -18,14 +17,11 @@ from shared.monitor.background_task import spawn_background_task
 SAMPLE_INTERVAL_SECONDS = 5.0
 CPU_SAMPLE_INTERVAL_SECONDS = 1.0
 
-# cgroup v1/v2 及 Docker/Kubernetes 常见 slice 路径（含通配符）
+# cgroup v1/v2 根路径。未做 cgroup namespace 隔离的宿主机上，这不一定是
+# 本进程自己的限制——具体见 _own_cgroup_memory_limit_candidates()。
 _CGROUP_MEMORY_LIMIT_PATTERNS = [
     "/sys/fs/cgroup/memory/memory.limit_in_bytes",
     "/sys/fs/cgroup/memory.max",
-    "/sys/fs/cgroup/memory/kubepods*/memory.limit_in_bytes",
-    "/sys/fs/cgroup/memory/kubepods.slice/*/memory.limit_in_bytes",
-    "/sys/fs/cgroup/memory/docker/*/memory.limit_in_bytes",
-    "/sys/fs/cgroup/memory/system.slice/*/memory.limit_in_bytes",
 ]
 # 内存限制文件名 -> 同目录下用量文件名（cgroup v1/v2 用量与限制始终同目录）
 _CGROUP_MEMORY_USAGE_FILENAMES = {
@@ -37,6 +33,9 @@ _CGROUP_UNLIMITED_THRESHOLD_BYTES = 1024**4
 
 _DOCKERENV_PATH = "/.dockerenv"
 _PROC_1_CGROUP_PATH = "/proc/1/cgroup"
+_PROC_SELF_CGROUP_PATH = "/proc/self/cgroup"
+_CGROUP_V1_MEMORY_ROOT = "/sys/fs/cgroup/memory"
+_CGROUP_UNIFIED_ROOT = "/sys/fs/cgroup"
 _CGROUP_CPU_QUOTA_PATHS = [
     "/sys/fs/cgroup/cpu/cpu.cfs_quota_us",
     "/sys/fs/cgroup/cpu.max",  # cgroup v2
@@ -124,36 +123,73 @@ def detect_container_environment() -> dict[str, Any]:
 
 
 def _find_cgroup_value(
-    patterns: list[str], *, skip_if_ge: int | None = None
+    paths: list[str], *, skip_if_ge: int | None = None
 ) -> tuple[int | None, str | None]:
-    """按路径模式（支持通配符）查找第一个有效的 cgroup 数值文件，返回 (数值, 命中路径)。
+    """按候选路径顺序查找第一个有效的 cgroup 数值文件，返回 (数值, 命中路径)。
 
     根路径（如 `/sys/fs/cgroup/memory/memory.limit_in_bytes`）在未做 cgroup
     namespace 隔离的环境下几乎总是存在，其"无限制"哨兵值是一个巨大的合法数字，
     并非 `max` 字符串。若 `skip_if_ge` 给定，命中值达到该阈值时视为"此路径未设置"，
-    跳过并继续尝试后续（更具体的 kubepods/docker slice）路径，而不是直接返回。
+    跳过并继续尝试后续路径，而不是直接返回。
     """
-    for pattern in patterns:
-        candidates = glob.glob(pattern) if "*" in pattern else [pattern]
-        for path in candidates:
-            if not os.path.exists(path):
-                continue
-            try:
-                content = Path(path).read_text().strip()
-            except OSError:
-                continue
-            if content == "max" or not content.isdigit():
-                continue
-            value = int(content)
-            if skip_if_ge is not None and value >= skip_if_ge:
-                continue
-            return value, path
+    for path in paths:
+        if not os.path.exists(path):
+            continue
+        try:
+            content = Path(path).read_text().strip()
+        except OSError:
+            continue
+        if content == "max" or not content.isdigit():
+            continue
+        value = int(content)
+        if skip_if_ge is not None and value >= skip_if_ge:
+            continue
+        return value, path
     return None, None
+
+
+def _own_cgroup_subpath(controller: str) -> str | None:
+    """读取 /proc/self/cgroup，返回本进程在指定 controller 下的相对 cgroup 路径。
+
+    cgroup v2 统一层级行的 controllers 字段为空，适用于所有 controller。
+    读取失败、未找到匹配行、或本进程就在根路径（通常意味着已启用 cgroup
+    namespace 隔离，`/sys/fs/cgroup/...` 本身即本进程的 cgroup）时返回 None，
+    交由调用方退化为根路径直读。
+    """
+    try:
+        lines = Path(_PROC_SELF_CGROUP_PATH).read_text().splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        _, _, rest = line.partition(":")
+        controllers, _, subpath = rest.partition(":")
+        if controllers == "" or controller in controllers.split(","):
+            subpath = subpath.strip("/")
+            return subpath or None
+    return None
+
+
+def _own_cgroup_memory_limit_candidates() -> list[str]:
+    """本进程专属的内存限制候选路径，按优先级排序。
+
+    未做 cgroup namespace 隔离的宿主机上，`/sys/fs/cgroup/memory/kubepods.slice/`
+    等目录下会并列存在同机其他 Pod/容器的 cgroup，用通配符盲目搜索可能读到
+    别的工作负载的限制/用量。这里优先用 /proc/self/cgroup 推导出本进程精确的
+    cgroup 子路径；推导失败时才退化为根路径（此时根路径本身就是本进程的）。
+    """
+    subpath = _own_cgroup_subpath("memory")
+    candidates: list[str] = []
+    if subpath:
+        candidates.append(f"{_CGROUP_V1_MEMORY_ROOT}/{subpath}/memory.limit_in_bytes")
+        candidates.append(f"{_CGROUP_UNIFIED_ROOT}/{subpath}/memory.max")
+    candidates.extend(_CGROUP_MEMORY_LIMIT_PATTERNS)
+    return candidates
 
 
 def _get_cgroup_memory_limit_mb() -> float | None:
     limit_bytes, _ = _find_cgroup_value(
-        _CGROUP_MEMORY_LIMIT_PATTERNS, skip_if_ge=_CGROUP_UNLIMITED_THRESHOLD_BYTES
+        _own_cgroup_memory_limit_candidates(),
+        skip_if_ge=_CGROUP_UNLIMITED_THRESHOLD_BYTES,
     )
     if limit_bytes is None:
         return None
@@ -175,7 +211,8 @@ def get_container_memory_info() -> dict[str, Any] | None:
     """获取容器内存信息（cgroup 限制 + 同目录用量），用于 `/status` 等展示场景。"""
     try:
         limit_bytes, limit_file = _find_cgroup_value(
-            _CGROUP_MEMORY_LIMIT_PATTERNS, skip_if_ge=_CGROUP_UNLIMITED_THRESHOLD_BYTES
+            _own_cgroup_memory_limit_candidates(),
+            skip_if_ge=_CGROUP_UNLIMITED_THRESHOLD_BYTES,
         )
         if limit_bytes is None or limit_file is None:
             logger.debug("未找到有效的容器内存限制")
