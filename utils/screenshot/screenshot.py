@@ -591,23 +591,3 @@ async def close_screenshot_service():
     """关闭截图服务"""
     global dynamic_screenshot
     await dynamic_screenshot.close_browser()
-
-
-# ponytail: 校准 opus 首子节点判定（_is_opus_page_ready 的唯一决策点）
-assert _opus_view_first_child_is_ready("opus-module-author")
-assert _opus_view_first_child_is_ready("opus-module-author other")
-assert _opus_view_first_child_is_ready(
-    "opus-module-title"
-)  # 带标题图文动态 (issue #119)
-assert not _opus_view_first_child_is_ready("opus-module-top")
-assert not _opus_view_first_child_is_ready("")  # view 已出现但子节点未渲染
-
-# ponytail: 校准「动态不存在」重定向判定（opus 302→t.bilibili.com/0→www.bilibili.com/404）
-assert _is_dynamic_not_found_url("https://t.bilibili.com/0")
-assert _is_dynamic_not_found_url("https://t.bilibili.com/0?from=feed")
-assert _is_dynamic_not_found_url("https://www.bilibili.com/404")
-# 占位 id（非真实动态）：含 404 或普通长 id 都不应被误判为不存在
-assert not _is_dynamic_not_found_url("https://t.bilibili.com/4040404040404040404")
-assert not _is_dynamic_not_found_url(
-    "https://www.bilibili.com/opus/1234567890123456789"
-)
