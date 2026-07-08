@@ -174,24 +174,76 @@ def test_find_cgroup_value_skips_max_and_missing(tmp_path):
     assert path is None
 
 
+def test_find_cgroup_value_skip_if_ge_continues_to_next_pattern(tmp_path):
+    """回归测试：根 cgroup 的"无限制"哨兵值不应挡住后续更具体的路径。"""
+    unlimited_root = tmp_path / "root_limit"
+    unlimited_root.write_text("999999999999999")
+    real_limit = tmp_path / "slice_limit"
+    real_limit.write_text("1000")
+
+    value, path = system_metrics._find_cgroup_value(
+        [str(unlimited_root), str(real_limit)], skip_if_ge=1_000_000_000
+    )
+    assert value == 1000
+    assert path == str(real_limit)
+
+
+def test_find_cgroup_value_skip_if_ge_returns_none_when_all_skipped(tmp_path):
+    unlimited_root = tmp_path / "root_limit"
+    unlimited_root.write_text("999999999999999")
+
+    value, path = system_metrics._find_cgroup_value(
+        [str(unlimited_root)], skip_if_ge=1_000_000_000
+    )
+    assert value is None
+    assert path is None
+
+
 def test_get_cgroup_memory_limit_mb_uses_wide_search(monkeypatch):
     monkeypatch.setattr(
-        system_metrics, "_find_cgroup_value", lambda patterns: (512 * 1024**2, "/x")
+        system_metrics,
+        "_find_cgroup_value",
+        lambda patterns, **kwargs: (512 * 1024**2, "/x"),
     )
     assert system_metrics._get_cgroup_memory_limit_mb() == 512.0
 
 
-def test_get_cgroup_memory_limit_mb_treats_huge_value_as_unlimited(monkeypatch):
+def test_get_cgroup_memory_limit_mb_skips_unlimited_root_and_finds_slice_value(
+    tmp_path, monkeypatch
+):
+    """issue 回归测试：根路径读到"无限制"哨兵值时，应继续尝试更具体的
+    kubepods/docker slice 路径，而不是直接判定为无限制。"""
+    root = tmp_path / "memory.limit_in_bytes"
+    root.write_text(str(2 * system_metrics._CGROUP_UNLIMITED_THRESHOLD_BYTES))
+
+    slice_dir = tmp_path / "kubepods.slice" / "pod-abc"
+    slice_dir.mkdir(parents=True)
+    (slice_dir / "memory.limit_in_bytes").write_text(str(512 * 1024**2))
+
     monkeypatch.setattr(
         system_metrics,
-        "_find_cgroup_value",
-        lambda patterns: (2 * system_metrics._CGROUP_UNLIMITED_THRESHOLD_BYTES, "/x"),
+        "_CGROUP_MEMORY_LIMIT_PATTERNS",
+        [
+            str(root),
+            str(tmp_path / "kubepods.slice" / "*" / "memory.limit_in_bytes"),
+        ],
     )
+
+    assert system_metrics._get_cgroup_memory_limit_mb() == pytest.approx(512.0)
+
+
+def test_get_cgroup_memory_limit_mb_none_when_all_candidates_unlimited(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "memory.limit_in_bytes"
+    root.write_text(str(2 * system_metrics._CGROUP_UNLIMITED_THRESHOLD_BYTES))
+    monkeypatch.setattr(system_metrics, "_CGROUP_MEMORY_LIMIT_PATTERNS", [str(root)])
+
     assert system_metrics._get_cgroup_memory_limit_mb() is None
 
 
 def test_get_container_memory_info_requires_both_limit_and_usage(monkeypatch):
-    def fake_find(patterns):
+    def fake_find(patterns, **kwargs):
         if patterns is system_metrics._CGROUP_MEMORY_LIMIT_PATTERNS:
             return 2 * 1024**3, "/limit"
         return None, None
@@ -201,7 +253,7 @@ def test_get_container_memory_info_requires_both_limit_and_usage(monkeypatch):
 
 
 def test_get_container_memory_info_returns_usage_percent(monkeypatch):
-    def fake_find(patterns):
+    def fake_find(patterns, **kwargs):
         if patterns is system_metrics._CGROUP_MEMORY_LIMIT_PATTERNS:
             return 2 * 1024**3, "/limit"
         return 1 * 1024**3, "/usage"
@@ -214,6 +266,37 @@ def test_get_container_memory_info_returns_usage_percent(monkeypatch):
     assert info["percent"] == pytest.approx(50.0)
     assert info["limit_file"] == "/limit"
     assert info["usage_file"] == "/usage"
+
+
+def test_get_container_memory_info_skips_unlimited_root_limit(tmp_path, monkeypatch):
+    """issue 回归测试：get_container_memory_info 同样不应被根路径的
+    "无限制"哨兵值挡住，需继续搜索到 kubepods slice 里的真实限制。"""
+    root_limit = tmp_path / "memory.limit_in_bytes"
+    root_limit.write_text(str(2 * system_metrics._CGROUP_UNLIMITED_THRESHOLD_BYTES))
+
+    slice_dir = tmp_path / "kubepods.slice" / "pod-abc"
+    slice_dir.mkdir(parents=True)
+    (slice_dir / "memory.limit_in_bytes").write_text(str(2 * 1024**3))
+
+    usage_file = tmp_path / "memory.usage_in_bytes"
+    usage_file.write_text(str(1 * 1024**3))
+
+    monkeypatch.setattr(
+        system_metrics,
+        "_CGROUP_MEMORY_LIMIT_PATTERNS",
+        [
+            str(root_limit),
+            str(tmp_path / "kubepods.slice" / "*" / "memory.limit_in_bytes"),
+        ],
+    )
+    monkeypatch.setattr(
+        system_metrics, "_CGROUP_MEMORY_USAGE_PATTERNS", [str(usage_file)]
+    )
+
+    info = system_metrics.get_container_memory_info()
+    assert info is not None
+    assert info["total_gb"] == pytest.approx(2.0)
+    assert info["used_gb"] == pytest.approx(1.0)
 
 
 def test_detect_container_environment_kubernetes(monkeypatch):

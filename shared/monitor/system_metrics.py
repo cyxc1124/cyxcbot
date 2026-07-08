@@ -126,8 +126,16 @@ def detect_container_environment() -> dict[str, Any]:
     }
 
 
-def _find_cgroup_value(patterns: list[str]) -> tuple[int | None, str | None]:
-    """按路径模式（支持通配符）查找第一个有效的 cgroup 数值文件，返回 (数值, 命中路径)。"""
+def _find_cgroup_value(
+    patterns: list[str], *, skip_if_ge: int | None = None
+) -> tuple[int | None, str | None]:
+    """按路径模式（支持通配符）查找第一个有效的 cgroup 数值文件，返回 (数值, 命中路径)。
+
+    根路径（如 `/sys/fs/cgroup/memory/memory.limit_in_bytes`）在未做 cgroup
+    namespace 隔离的环境下几乎总是存在，其"无限制"哨兵值是一个巨大的合法数字，
+    并非 `max` 字符串。若 `skip_if_ge` 给定，命中值达到该阈值时视为"此路径未设置"，
+    跳过并继续尝试后续（更具体的 kubepods/docker slice）路径，而不是直接返回。
+    """
     for pattern in patterns:
         candidates = glob.glob(pattern) if "*" in pattern else [pattern]
         for path in candidates:
@@ -137,14 +145,20 @@ def _find_cgroup_value(patterns: list[str]) -> tuple[int | None, str | None]:
                 content = Path(path).read_text().strip()
             except OSError:
                 continue
-            if content != "max" and content.isdigit():
-                return int(content), path
+            if content == "max" or not content.isdigit():
+                continue
+            value = int(content)
+            if skip_if_ge is not None and value >= skip_if_ge:
+                continue
+            return value, path
     return None, None
 
 
 def _get_cgroup_memory_limit_mb() -> float | None:
-    limit_bytes, _ = _find_cgroup_value(_CGROUP_MEMORY_LIMIT_PATTERNS)
-    if limit_bytes is None or limit_bytes > _CGROUP_UNLIMITED_THRESHOLD_BYTES:
+    limit_bytes, _ = _find_cgroup_value(
+        _CGROUP_MEMORY_LIMIT_PATTERNS, skip_if_ge=_CGROUP_UNLIMITED_THRESHOLD_BYTES
+    )
+    if limit_bytes is None:
         return None
     return limit_bytes / (1024**2)
 
@@ -152,7 +166,9 @@ def _get_cgroup_memory_limit_mb() -> float | None:
 def get_container_memory_info() -> dict[str, Any] | None:
     """获取容器内存信息（cgroup 限制 + 用量），用于 `/status` 等展示场景。"""
     try:
-        limit_bytes, limit_file = _find_cgroup_value(_CGROUP_MEMORY_LIMIT_PATTERNS)
+        limit_bytes, limit_file = _find_cgroup_value(
+            _CGROUP_MEMORY_LIMIT_PATTERNS, skip_if_ge=_CGROUP_UNLIMITED_THRESHOLD_BYTES
+        )
         usage_bytes, usage_file = _find_cgroup_value(_CGROUP_MEMORY_USAGE_PATTERNS)
 
         if limit_bytes is None or usage_bytes is None:
@@ -161,9 +177,6 @@ def get_container_memory_info() -> dict[str, Any] | None:
                 limit_bytes,
                 usage_bytes,
             )
-            return None
-        if limit_bytes > _CGROUP_UNLIMITED_THRESHOLD_BYTES:
-            logger.debug("检测到无限制内存设置: {} bytes", limit_bytes)
             return None
 
         limit_gb = limit_bytes / (1024**3)
