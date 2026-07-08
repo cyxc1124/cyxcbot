@@ -10,6 +10,12 @@ from nonebot.log import logger
 from nonebot.permission import SUPERUSER
 
 from shared.config.service import get_config_service
+from shared.monitor.system_metrics import (
+    detect_container_environment,
+    get_cached_snapshot,
+    get_container_cpu_limit,
+    get_container_memory_info,
+)
 from shared.status_check_policy import (
     is_status_check_enabled_for_group_from_snapshot,
     is_status_check_enabled_for_user_from_snapshot,
@@ -220,192 +226,6 @@ def get_bot_connection_status() -> str:
         return "未知"
 
 
-def detect_container_environment():
-    """检测容器环境"""
-    import os
-
-    # 检查是否在Docker容器中
-    is_docker = (
-        os.path.exists("/.dockerenv")
-        or os.getenv("DOCKER_CONTAINER", "").lower() == "true"
-    )
-
-    # 检查是否在Kubernetes中
-    is_kubernetes = any(key.startswith(("KUBERNETES_", "KUBE_")) for key in os.environ)
-
-    # 检查cgroup信息
-    try:
-        if os.path.exists("/proc/1/cgroup"):
-            with open("/proc/1/cgroup", "r") as f:
-                cgroup_info = f.read()
-                if "docker" in cgroup_info or "kubepods" in cgroup_info:
-                    is_docker = True
-    except OSError:
-        pass
-
-    return {
-        "is_container": is_docker or is_kubernetes,
-        "is_docker": is_docker,
-        "is_kubernetes": is_kubernetes,
-        "container_type": "Kubernetes Pod"
-        if is_kubernetes
-        else ("Docker Container" if is_docker else "Physical/VM"),
-    }
-
-
-def get_container_memory_info():
-    """获取容器内存信息（cgroup限制）- 增强版"""
-    import glob
-    import os
-
-    debug_info = []
-
-    try:
-        # 扩展的cgroup路径列表，覆盖更多可能的位置
-        memory_limit_paths = [
-            # cgroup v1 标准路径
-            "/sys/fs/cgroup/memory/memory.limit_in_bytes",
-            # cgroup v2 标准路径
-            "/sys/fs/cgroup/memory.max",
-            # Kubernetes特定路径
-            "/sys/fs/cgroup/memory/kubepods*/memory.limit_in_bytes",
-            "/sys/fs/cgroup/memory/kubepods.slice/*/memory.limit_in_bytes",
-            # Docker特定路径
-            "/sys/fs/cgroup/memory/docker/*/memory.limit_in_bytes",
-            # systemd路径
-            "/sys/fs/cgroup/memory/system.slice/*/memory.limit_in_bytes",
-        ]
-
-        memory_usage_paths = [
-            # cgroup v1 标准路径
-            "/sys/fs/cgroup/memory/memory.usage_in_bytes",
-            # cgroup v2 标准路径
-            "/sys/fs/cgroup/memory.current",
-            # Kubernetes特定路径
-            "/sys/fs/cgroup/memory/kubepods*/memory.usage_in_bytes",
-            "/sys/fs/cgroup/memory/kubepods.slice/*/memory.usage_in_bytes",
-            # Docker特定路径
-            "/sys/fs/cgroup/memory/docker/*/memory.usage_in_bytes",
-            # systemd路径
-            "/sys/fs/cgroup/memory/system.slice/*/memory.usage_in_bytes",
-        ]
-
-        limit_bytes = None
-        usage_bytes = None
-        found_limit_file = None
-        found_usage_file = None
-
-        # 查找内存限制文件
-        for pattern in memory_limit_paths:
-            if "*" in pattern:
-                # 使用glob匹配通配符路径
-                matched_files = glob.glob(pattern)
-                for limit_file in matched_files:
-                    if os.path.exists(limit_file):
-                        try:
-                            with open(limit_file, "r") as f:
-                                content = f.read().strip()
-                                debug_info.append(
-                                    f"检查限制文件 {limit_file}: {content}"
-                                )
-                                if content != "max" and content.isdigit():
-                                    limit_bytes = int(content)
-                                    found_limit_file = limit_file
-                                    break
-                        except Exception as e:
-                            debug_info.append(f"读取失败 {limit_file}: {e}")
-                if limit_bytes:
-                    break
-            else:
-                if os.path.exists(pattern):
-                    try:
-                        with open(pattern, "r") as f:
-                            content = f.read().strip()
-                            debug_info.append(f"检查限制文件 {pattern}: {content}")
-                            if content != "max" and content.isdigit():
-                                limit_bytes = int(content)
-                                found_limit_file = pattern
-                                break
-                    except Exception as e:
-                        debug_info.append(f"读取失败 {pattern}: {e}")
-
-        # 查找内存使用文件
-        for pattern in memory_usage_paths:
-            if "*" in pattern:
-                # 使用glob匹配通配符路径
-                matched_files = glob.glob(pattern)
-                for usage_file in matched_files:
-                    if os.path.exists(usage_file):
-                        try:
-                            with open(usage_file, "r") as f:
-                                content = f.read().strip()
-                                if content.isdigit():
-                                    usage_bytes = int(content)
-                                    found_usage_file = usage_file
-                                    debug_info.append(
-                                        f"找到使用文件 {usage_file}: {content}"
-                                    )
-                                    break
-                        except Exception as e:
-                            debug_info.append(f"读取失败 {usage_file}: {e}")
-                if usage_bytes is not None:
-                    break
-            else:
-                if os.path.exists(pattern):
-                    try:
-                        with open(pattern, "r") as f:
-                            content = f.read().strip()
-                            if content.isdigit():
-                                usage_bytes = int(content)
-                                found_usage_file = pattern
-                                debug_info.append(f"找到使用文件 {pattern}: {content}")
-                                break
-                    except Exception as e:
-                        debug_info.append(f"读取失败 {pattern}: {e}")
-
-        # 记录调试信息
-        logger.debug("容器内存检测调试: {}", "; ".join(debug_info))
-
-        if limit_bytes and usage_bytes is not None:
-            # 处理无限制的情况（通常是一个很大的数字）
-            if limit_bytes > 1024**4:  # 大于1TB，可能是无限制
-                logger.debug("检测到无限制内存设置: {} bytes", limit_bytes)
-                return None
-
-            limit_gb = limit_bytes / (1024**3)
-            usage_gb = usage_bytes / (1024**3)
-            available_gb = limit_gb - usage_gb
-            usage_percent = (usage_gb / limit_gb) * 100
-
-            logger.info(
-                "成功读取容器内存: 限制={:.1f}GB, 使用={:.1f}GB (来源: {})",
-                limit_gb,
-                usage_gb,
-                found_limit_file,
-            )
-
-            return {
-                "used_gb": usage_gb,
-                "total_gb": limit_gb,
-                "available_gb": available_gb,
-                "percent": usage_percent,
-                "is_container": True,
-                "limit_file": found_limit_file,
-                "usage_file": found_usage_file,
-            }
-        else:
-            logger.debug(
-                "未找到有效的容器内存信息: limit_bytes={}, usage_bytes={}",
-                limit_bytes,
-                usage_bytes,
-            )
-
-    except Exception as e:
-        logger.debug("容器内存检测异常: {}", e)
-
-    return None
-
-
 def get_detailed_memory_info() -> str:
     """获取详细内存使用情况（优先显示容器信息）"""
     try:
@@ -440,71 +260,9 @@ def get_detailed_memory_info() -> str:
         return get_memory_info()  # 降级到基础信息
 
 
-def get_container_cpu_limit():
-    """获取容器CPU限制信息"""
-    import os
-
-    try:
-        # CPU配额文件路径
-        cpu_quota_paths = [
-            "/sys/fs/cgroup/cpu/cpu.cfs_quota_us",
-            "/sys/fs/cgroup/cpu.max",  # cgroup v2
-        ]
-        cpu_period_paths = [
-            "/sys/fs/cgroup/cpu/cpu.cfs_period_us",
-            "/sys/fs/cgroup/cpu.max",  # cgroup v2 (same file, different format)
-        ]
-
-        quota = None
-        period = None
-
-        # 查找CPU配额
-        for quota_file in cpu_quota_paths:
-            if os.path.exists(quota_file):
-                try:
-                    with open(quota_file, "r") as f:
-                        content = f.read().strip()
-                        if quota_file.endswith("cpu.max"):  # cgroup v2
-                            parts = content.split()
-                            if len(parts) >= 2 and parts[0] != "max":
-                                quota = int(parts[0])
-                                period = int(parts[1])
-                                break
-                        else:  # cgroup v1
-                            if content != "-1" and content.isdigit():
-                                quota = int(content)
-                except OSError, ValueError:
-                    continue
-
-        # 查找CPU周期（仅cgroup v1需要）
-        if quota and not period:
-            for period_file in cpu_period_paths:
-                if os.path.exists(period_file):
-                    try:
-                        with open(period_file, "r") as f:
-                            content = f.read().strip()
-                            if content.isdigit():
-                                period = int(content)
-                                break
-                    except OSError, ValueError:
-                        continue
-
-        if quota and period and quota > 0:
-            # 计算CPU限制（以核心数表示）
-            cpu_limit_cores = quota / period
-            return cpu_limit_cores
-
-    except Exception as e:
-        logger.debug("读取容器CPU限制失败: {}", e)
-
-    return None
-
-
 def get_cpu_info() -> str:
     """获取CPU使用率和核心数（容器感知，读后台采样缓存）"""
     try:
-        from shared.monitor.system_metrics import get_cached_snapshot
-
         snap = get_cached_snapshot()
         cpu_percent = snap.cpu_percent if snap is not None else psutil.cpu_percent()
         cpu_count = snap.cpu_count if snap is not None else (psutil.cpu_count() or 1)
@@ -534,8 +292,6 @@ def get_cpu_info() -> str:
 def get_process_cpu_info() -> str:
     """获取本进程 CPU 使用率（读后台采样缓存）"""
     try:
-        from shared.monitor.system_metrics import get_cached_snapshot
-
         snap = get_cached_snapshot()
         if snap is not None:
             return f"{snap.process_cpu_percent:.1f}%"
