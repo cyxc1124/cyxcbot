@@ -28,8 +28,11 @@ _CGROUP_MEMORY_USAGE_FILENAMES = {
     "memory.limit_in_bytes": "memory.usage_in_bytes",
     "memory.max": "memory.current",
 }
-# 大于 1TB 的 cgroup v1 限制值视为"未设置限制"（内核默认填充的巨大数字）
-_CGROUP_UNLIMITED_THRESHOLD_BYTES = 1024**4
+# 64 位内核 cgroup v1 "无限制"哨兵值：LLONG_MAX（2^63-1）按 4096 字节页对齐
+# 后的结果，约 8388608 TiB。真实场景可能显式配置 1 TiB 甚至更大的限制，
+# 因此阈值必须紧贴内核哨兵值本身，不能用 1 TiB 这类"看起来很大"的整数——
+# 否则会把合法的大内存限制误判为未设置。
+_CGROUP_UNLIMITED_THRESHOLD_BYTES = 9223372036854771712
 
 _DOCKERENV_PATH = "/.dockerenv"
 _PROC_1_CGROUP_PATH = "/proc/1/cgroup"

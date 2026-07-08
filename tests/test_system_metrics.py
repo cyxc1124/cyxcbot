@@ -231,6 +231,41 @@ def test_get_cgroup_memory_limit_mb_none_when_all_candidates_unlimited(
     assert system_metrics._get_cgroup_memory_limit_mb() is None
 
 
+def test_get_cgroup_memory_limit_mb_preserves_legitimate_1tib_limit(
+    tmp_path, monkeypatch
+):
+    """issue 回归测试：显式配置的 1 TiB（甚至更大）限制是合法值，不应被当成
+    "无限制"哨兵值跳过——阈值必须紧贴内核哨兵本身，而不是 1 TiB 这类整数。"""
+    limit_file = tmp_path / "memory.limit_in_bytes"
+    one_tib = 1024**4
+    limit_file.write_text(str(one_tib))
+
+    monkeypatch.setattr(system_metrics, "_own_cgroup_subpath", lambda controller: None)
+    monkeypatch.setattr(
+        system_metrics, "_CGROUP_MEMORY_LIMIT_PATTERNS", [str(limit_file)]
+    )
+
+    assert system_metrics._get_cgroup_memory_limit_mb() == pytest.approx(
+        one_tib / (1024**2)
+    )
+
+
+def test_get_cgroup_memory_limit_mb_still_skips_real_kernel_sentinel(
+    tmp_path, monkeypatch
+):
+    """回归测试：阈值调整后，真正的内核哨兵值（LLONG_MAX 页对齐）依然要被
+    识别为"未设置限制"，不能因为放宽了 1 TiB 就连哨兵本身也放过。"""
+    limit_file = tmp_path / "memory.limit_in_bytes"
+    limit_file.write_text(str(system_metrics._CGROUP_UNLIMITED_THRESHOLD_BYTES))
+
+    monkeypatch.setattr(system_metrics, "_own_cgroup_subpath", lambda controller: None)
+    monkeypatch.setattr(
+        system_metrics, "_CGROUP_MEMORY_LIMIT_PATTERNS", [str(limit_file)]
+    )
+
+    assert system_metrics._get_cgroup_memory_limit_mb() is None
+
+
 def test_own_cgroup_subpath_parses_v1_memory_line(tmp_path, monkeypatch):
     proc_self_cgroup = tmp_path / "cgroup"
     proc_self_cgroup.write_text(
