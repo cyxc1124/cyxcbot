@@ -179,9 +179,10 @@ def test_opus_first_child_title_is_ready() -> None:
     from utils.screenshot.screenshot import _opus_view_first_child_is_ready
 
     assert _opus_view_first_child_is_ready("opus-module-author")
+    assert _opus_view_first_child_is_ready("opus-module-author other")
     assert _opus_view_first_child_is_ready("opus-module-title")
     assert not _opus_view_first_child_is_ready("opus-module-top")
-    assert not _opus_view_first_child_is_ready("")
+    assert not _opus_view_first_child_is_ready("")  # 半加载：子节点未渲染
 
 
 def test_is_dynamic_not_found_url() -> None:
