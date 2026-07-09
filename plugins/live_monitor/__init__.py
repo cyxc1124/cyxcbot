@@ -12,8 +12,9 @@ from nonebot.plugin import PluginMetadata
 
 from shared.onebot.lifecycle import stop_monitor_if_no_bots
 
+from . import live_monitor as live_monitor_mod
 from .config import Config
-from .live_monitor import live_monitor_instance, start_live_monitor, stop_live_monitor
+from .live_monitor import start_live_monitor, stop_live_monitor
 
 __plugin_meta__ = PluginMetadata(
     name="B站直播监控",
@@ -95,17 +96,22 @@ async def handle_live_status(
     await live_status_cmd.send(f"正在查询房间 {room_id} 的直播状态...")
 
     try:
-        if live_monitor_instance:
-            result = await live_monitor_instance.check_room_now(room_id)
-        else:
-            # 如果监控实例未启动，临时获取状态
-            from utils.bilibili_api import api_manager
-
-            await api_manager.init()
-            room_info, user_info = await api_manager.get_room_and_user_info(
-                int(room_id)
+        if live_monitor_mod.live_monitor_instance:
+            result = await live_monitor_mod.live_monitor_instance.check_room_now(
+                room_id
             )
-            await api_manager.close()
+        else:
+            # 监控实例未启动：使用独立 session 临时查询，避免关闭监控正在使用的共享 api_manager
+            import aiohttp
+
+            from utils.bilibili_api import LiveApi
+
+            cookie = Config.from_service().bilibili_cookie
+            async with aiohttp.ClientSession() as session:
+                temp_api = LiveApi(session, cookie)
+                room_info, user_info = await temp_api.get_room_and_user_info(
+                    int(room_id)
+                )
 
             if room_info:
                 result = {
@@ -169,10 +175,11 @@ async def handle_list_monitor(bot: Bot, event: GroupMessageEvent):
     message = f"📺 当前群组监控的直播间 ({len(monitored_rooms)} 个):\n"
 
     # 获取各房间状态
+    instance = live_monitor_mod.live_monitor_instance
     for room_id in monitored_rooms:
         try:
-            if live_monitor_instance and room_id in live_monitor_instance.room_states:
-                state = live_monitor_instance.room_states[room_id]
+            if instance and room_id in instance.room_states:
+                state = instance.room_states[room_id]
                 name = state.user_info.name if state.user_info else f"房间{room_id}"
                 is_living = state.room_info.is_living() if state.room_info else False
             else:
