@@ -156,20 +156,15 @@ def _special_title_policy_response(
     )
 
 
-def _filter_status_enabled_group_ids(
-    enabled_ids: list[str], groups: list[dict]
-) -> list[str]:
-    allowed = {str(group["group_id"]) for group in groups}
-    return [gid for gid in enabled_ids if gid in allowed]
-
-
 def _status_policy_response(
     snap, groups: list[dict], *, group_list_available: bool
 ) -> GroupStatusPolicyResponse:
     return GroupStatusPolicyResponse(
         restrict=snap.status_check_group_restrict,
-        enabled_group_ids=_filter_status_enabled_group_ids(
-            snap.status_check_enabled_group_ids, groups
+        enabled_group_ids=filter_enabled_group_ids_to_visible_groups(
+            snap.status_check_enabled_group_ids,
+            groups,
+            group_list_available=group_list_available,
         ),
         groups=[GroupInfo(**g) for g in groups],
         display=_status_display_options(snap),
@@ -221,7 +216,11 @@ async def update_status_policy(
         restrict = body.restrict
         for group_id in enabled_ids:
             _ensure_group_message_enabled(group_id, snap)
-        enabled_ids = _filter_status_enabled_group_ids(enabled_ids, message_groups)
+        enabled_ids = filter_enabled_group_ids_to_visible_groups(
+            enabled_ids,
+            message_groups,
+            group_list_available=True,
+        )
 
     updates: dict[str, str] = {
         "status_check_group_restrict": str(restrict).lower(),

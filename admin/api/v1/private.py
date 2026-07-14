@@ -24,7 +24,10 @@ from admin.services.onebot_bridge import (
     invalidate_user_list_cache,
 )
 from shared.config.service import get_config_service
-from shared.private_policy import is_private_message_enabled_from_snapshot
+from shared.private_policy import (
+    filter_enabled_user_ids_to_visible_users,
+    is_private_message_enabled_from_snapshot,
+)
 
 router = APIRouter(
     prefix="/private",
@@ -128,20 +131,15 @@ def _ensure_private_message_enabled(user_id: str, snap) -> None:
         )
 
 
-def _filter_status_enabled_user_ids(
-    enabled_ids: list[str], users: list[dict]
-) -> list[str]:
-    allowed = {str(user["user_id"]) for user in users}
-    return [uid for uid in enabled_ids if uid in allowed]
-
-
 def _status_policy_response(
     snap, users: list[dict], *, friend_list_available: bool
 ) -> PrivateStatusPolicyResponse:
     return PrivateStatusPolicyResponse(
         restrict=snap.status_check_private_restrict,
-        enabled_user_ids=_filter_status_enabled_user_ids(
-            snap.status_check_enabled_user_ids, users
+        enabled_user_ids=filter_enabled_user_ids_to_visible_users(
+            snap.status_check_enabled_user_ids,
+            users,
+            friend_list_available=friend_list_available,
         ),
         users=[FriendInfo(**user) for user in users],
         display=_status_display_options(snap),
@@ -193,7 +191,11 @@ async def update_status_policy(
         restrict = body.restrict
         for user_id in enabled_ids:
             _ensure_private_message_enabled(user_id, snap)
-        enabled_ids = _filter_status_enabled_user_ids(enabled_ids, message_users)
+        enabled_ids = filter_enabled_user_ids_to_visible_users(
+            enabled_ids,
+            message_users,
+            friend_list_available=True,
+        )
 
     updates: dict[str, str] = {
         "status_check_private_restrict": str(restrict).lower(),
