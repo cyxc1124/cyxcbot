@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import {
   getLinkParserGroupPolicies,
   getLinkParserUserPolicies,
@@ -39,8 +39,11 @@ function mergeUserItem(
 }
 
 export function LinkParserGroupPolicyTab() {
+  const [groupListAvailable, setGroupListAvailable] = useState(true)
+
   const loadGroups = useCallback(async () => {
     const data = await getLinkParserGroupPolicies()
+    setGroupListAvailable(data.group_list_available)
     return data.groups
   }, [])
 
@@ -68,6 +71,8 @@ export function LinkParserGroupPolicyTab() {
       enabled ? '已为全部群组启用链接解析' : '已为全部群组关闭链接解析',
   })
 
+  const policyEditable = groupListAvailable
+
   if (loading && groups.length === 0 && !error) return <PageLoading />
   if (error && groups.length === 0) return <LoadErrorBanner message={error} onRetry={retryLoad} />
 
@@ -82,7 +87,7 @@ export function LinkParserGroupPolicyTab() {
             <button
               type="button"
               className="btn-secondary text-sm"
-              disabled={busy || allEnabled}
+              disabled={busy || !policyEditable || allEnabled}
               onClick={() => void handleToggleAll(true)}
             >
               全部启用
@@ -90,7 +95,7 @@ export function LinkParserGroupPolicyTab() {
             <button
               type="button"
               className="btn-secondary text-sm"
-              disabled={busy || noneEnabled}
+              disabled={busy || !policyEditable || noneEnabled}
               onClick={() => void handleToggleAll(false)}
             >
               全部关闭
@@ -98,11 +103,18 @@ export function LinkParserGroupPolicyTab() {
           </div>
         )}
       </div>
+      {!groupListAvailable && groups.length > 0 && (
+        <p className="text-sm text-amber-700 dark:text-amber-300">
+          群列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改链接解析开关；待连接恢复后再调整。
+        </p>
+      )}
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       {groups.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          暂无已启用群消息的群组。请先在「群消息」Tab 中启用对应群组，或确保机器人已连接 OneBot。
+          {groupListAvailable
+            ? '暂无已启用群消息的群组。请先在「群消息」Tab 中启用对应群组，或确保机器人已连接 OneBot。'
+            : '暂无群组数据。请确保机器人已连接 OneBot，或等待群列表同步完成。'}
         </p>
       ) : (
         <LinkParserPolicyTable
@@ -113,6 +125,7 @@ export function LinkParserGroupPolicyTab() {
           nameColumnLabel="群名称"
           savingIds={savingIds}
           togglingAll={togglingAll}
+          editable={policyEditable}
           onPatch={patchItem}
           onReset={handleReset}
         />
@@ -122,8 +135,11 @@ export function LinkParserGroupPolicyTab() {
 }
 
 export function LinkParserUserPolicyTab() {
+  const [friendListAvailable, setFriendListAvailable] = useState(true)
+
   const loadUsers = useCallback(async () => {
     const data = await getLinkParserUserPolicies()
+    setFriendListAvailable(data.friend_list_available)
     return data.users
   }, [])
 
@@ -157,6 +173,8 @@ export function LinkParserUserPolicyTab() {
       enabled ? '已为全部好友启用链接解析' : '已为全部好友关闭链接解析',
   })
 
+  const policyEditable = friendListAvailable
+
   if (loading && users.length === 0 && !error) return <PageLoading />
   if (error && users.length === 0) return <LoadErrorBanner message={error} onRetry={retryLoad} />
 
@@ -171,7 +189,7 @@ export function LinkParserUserPolicyTab() {
             <button
               type="button"
               className="btn-secondary text-sm"
-              disabled={busy || allEnabled}
+              disabled={busy || !policyEditable || allEnabled}
               onClick={() => void handleToggleAll(true)}
             >
               全部启用
@@ -179,7 +197,7 @@ export function LinkParserUserPolicyTab() {
             <button
               type="button"
               className="btn-secondary text-sm"
-              disabled={busy || noneEnabled}
+              disabled={busy || !policyEditable || noneEnabled}
               onClick={() => void handleToggleAll(false)}
             >
               全部关闭
@@ -187,11 +205,18 @@ export function LinkParserUserPolicyTab() {
           </div>
         )}
       </div>
+      {!friendListAvailable && users.length > 0 && (
+        <p className="text-sm text-amber-700 dark:text-amber-300">
+          好友列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改链接解析开关；待连接恢复后再调整。
+        </p>
+      )}
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       {users.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          暂无已启用好友消息的好友。请先在「好友消息」Tab 中启用对应好友，或确保机器人已连接 OneBot。
+          {friendListAvailable
+            ? '暂无已启用好友消息的好友。请先在「好友消息」Tab 中启用对应好友，或确保机器人已连接 OneBot。'
+            : '暂无好友数据。请确保机器人已连接 OneBot，或等待好友列表同步完成。'}
         </p>
       ) : (
         <LinkParserPolicyTable
@@ -202,6 +227,7 @@ export function LinkParserUserPolicyTab() {
           nameColumnLabel="昵称"
           savingIds={savingIds}
           togglingAll={togglingAll}
+          editable={policyEditable}
           onPatch={patchItem}
           onReset={handleReset}
         />

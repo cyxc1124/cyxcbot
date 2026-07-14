@@ -20,6 +20,7 @@ class PrivateMessagePolicyResponse(BaseModel):
     restrict: bool
     enabled_user_ids: List[str]
     users: List[FriendInfo]
+    friend_list_available: bool = True
 
 
 class PrivateMessagePolicyUpdateRequest(BaseModel):

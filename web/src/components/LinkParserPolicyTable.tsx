@@ -50,6 +50,7 @@ interface LinkParserPolicyTableProps<T extends LinkParserPolicyRow> {
   nameColumnLabel: string
   savingIds: Set<string>
   togglingAll: boolean
+  editable?: boolean
   onPatch: (
     id: string,
     patch: Partial<Pick<T, 'video_enabled' | 'live_enabled' | 'dynamic_enabled'>>,
@@ -65,6 +66,7 @@ export function LinkParserPolicyTable<T extends LinkParserPolicyRow>({
   nameColumnLabel,
   savingIds,
   togglingAll,
+  editable = true,
   onPatch,
   onReset,
 }: LinkParserPolicyTableProps<T>) {
@@ -85,6 +87,7 @@ export function LinkParserPolicyTable<T extends LinkParserPolicyRow>({
           {items.map((item) => {
             const itemId = getItemId(item)
             const saving = savingIds.has(itemId) || togglingAll
+            const disabled = saving || !editable
             return (
               <tr key={itemId} className="border-b border-border last:border-0 border-border">
                 <td className="py-3.5 pr-4 font-medium text-foreground">
@@ -97,21 +100,21 @@ export function LinkParserPolicyTable<T extends LinkParserPolicyRow>({
                 <td className="py-3.5 pr-4">
                   <PolicyToggleRow
                     checked={item.video_enabled}
-                    disabled={saving}
+                    disabled={disabled}
                     onChange={(checked) => void onPatch(itemId, { video_enabled: checked })}
                   />
                 </td>
                 <td className="py-3.5 pr-4">
                   <PolicyToggleRow
                     checked={item.live_enabled}
-                    disabled={saving}
+                    disabled={disabled}
                     onChange={(checked) => void onPatch(itemId, { live_enabled: checked })}
                   />
                 </td>
                 <td className="py-3.5 pr-4">
                   <PolicyToggleRow
                     checked={item.dynamic_enabled}
-                    disabled={saving}
+                    disabled={disabled}
                     onChange={(checked) =>
                       void onPatch(itemId, { dynamic_enabled: checked })
                     }
@@ -122,7 +125,7 @@ export function LinkParserPolicyTable<T extends LinkParserPolicyRow>({
                     <button
                       type="button"
                       className="btn-secondary text-xs"
-                      disabled={saving}
+                      disabled={disabled}
                       onClick={() => void onReset(itemId)}
                     >
                       恢复默认

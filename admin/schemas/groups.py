@@ -21,6 +21,7 @@ class GroupMessagePolicyResponse(BaseModel):
     restrict: bool
     enabled_group_ids: List[str]
     groups: List[GroupInfo]
+    group_list_available: bool = True
 
 
 class GroupMessagePolicyUpdateRequest(BaseModel):

@@ -139,6 +139,7 @@ export interface GroupMessagePolicy {
   restrict: boolean
   enabled_group_ids: string[]
   groups: Group[]
+  group_list_available: boolean
 }
 
 export interface Friend {
@@ -150,6 +151,7 @@ export interface PrivateMessagePolicy {
   restrict: boolean
   enabled_user_ids: string[]
   users: Friend[]
+  friend_list_available: boolean
 }
 
 export interface StatusCheckDisplayOptions {
@@ -163,6 +165,7 @@ export interface GroupStatusPolicy {
   enabled_group_ids: string[]
   groups: Group[]
   display: StatusCheckDisplayOptions
+  group_list_available: boolean
 }
 
 export interface GroupSpecialTitlePolicy {
@@ -178,6 +181,7 @@ export interface PrivateStatusPolicy {
   enabled_user_ids: string[]
   users: Friend[]
   display: StatusCheckDisplayOptions
+  friend_list_available: boolean
 }
 
 export interface LinkParserGroupPolicyItem {
@@ -192,6 +196,7 @@ export interface LinkParserGroupPolicyItem {
 
 export interface LinkParserGroupPolicyList {
   groups: LinkParserGroupPolicyItem[]
+  group_list_available: boolean
 }
 
 export interface LinkParserGroupPolicyMutation {
@@ -210,6 +215,7 @@ export interface LinkParserUserPolicyItem {
 
 export interface LinkParserUserPolicyList {
   users: LinkParserUserPolicyItem[]
+  friend_list_available: boolean
 }
 
 export interface LinkParserUserPolicyMutation {

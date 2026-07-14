@@ -25,6 +25,7 @@ from admin.schemas.status_check import (
 from admin.services.onebot_bridge import (
     get_group_list,
     get_group_list_with_availability,
+    get_group_list_with_status,
 )
 from shared.config.service import get_config_service
 from shared.group_policy import is_group_message_enabled_from_snapshot
@@ -40,6 +41,19 @@ router = APIRouter(
 )
 
 
+def _group_list_available(status: str) -> bool:
+    return status == "ok"
+
+
+async def _ensure_group_list_complete_for_mutation() -> None:
+    _, fetch_status = await get_group_list_with_status()
+    if fetch_status != "ok":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="群列表不完整，暂不可修改策略",
+        )
+
+
 @router.get("", response_model=GroupListResponse)
 async def list_groups(_: AdminUser):
     groups = await get_group_list()
@@ -49,11 +63,13 @@ async def list_groups(_: AdminUser):
 @router.get("/message-policy", response_model=GroupMessagePolicyResponse)
 async def get_message_policy(_: AdminUser):
     snap = get_config_service().get_snapshot()
-    groups = await get_group_list()
+    groups, fetch_status = await get_group_list_with_status()
+    available = _group_list_available(fetch_status)
     return GroupMessagePolicyResponse(
         restrict=snap.message_group_restrict,
         enabled_group_ids=snap.message_enabled_group_ids,
-        groups=[GroupInfo(**g) for g in groups],
+        groups=[] if fetch_status == "offline" else [GroupInfo(**g) for g in groups],
+        group_list_available=available,
     )
 
 
@@ -62,6 +78,7 @@ async def update_message_policy(
     body: GroupMessagePolicyUpdateRequest,
     _: AdminUser,
 ):
+    await _ensure_group_list_complete_for_mutation()
     svc = get_config_service()
     enabled_ids = [
         str(gid).strip() for gid in body.enabled_group_ids if str(gid).strip()
@@ -75,11 +92,12 @@ async def update_message_policy(
     await svc.reload()
 
     snap = svc.get_snapshot()
-    groups = await get_group_list()
+    groups, fetch_status = await get_group_list_with_status()
     return GroupMessagePolicyResponse(
         restrict=snap.message_group_restrict,
         enabled_group_ids=snap.message_enabled_group_ids,
-        groups=[GroupInfo(**g) for g in groups],
+        groups=[] if fetch_status == "offline" else [GroupInfo(**g) for g in groups],
+        group_list_available=_group_list_available(fetch_status),
     )
 
 
@@ -138,25 +156,31 @@ def _special_title_policy_response(
     )
 
 
-def _filter_status_enabled_group_ids(
-    enabled_ids: list[str], groups: list[dict]
-) -> list[str]:
-    allowed = {str(group["group_id"]) for group in groups}
-    return [gid for gid in enabled_ids if gid in allowed]
+def _status_policy_response(
+    snap, groups: list[dict], *, group_list_available: bool
+) -> GroupStatusPolicyResponse:
+    return GroupStatusPolicyResponse(
+        restrict=snap.status_check_group_restrict,
+        enabled_group_ids=filter_enabled_group_ids_to_visible_groups(
+            snap.status_check_enabled_group_ids,
+            groups,
+            group_list_available=group_list_available,
+        ),
+        groups=[GroupInfo(**g) for g in groups],
+        display=_status_display_options(snap),
+        group_list_available=group_list_available,
+    )
 
 
 @router.get("/status-policy", response_model=GroupStatusPolicyResponse)
 async def get_status_policy(_: AdminUser):
     snap = get_config_service().get_snapshot()
-    groups = _message_enabled_groups(snap, await get_group_list())
-    return GroupStatusPolicyResponse(
-        restrict=snap.status_check_group_restrict,
-        enabled_group_ids=_filter_status_enabled_group_ids(
-            snap.status_check_enabled_group_ids, groups
-        ),
-        groups=[GroupInfo(**g) for g in groups],
-        display=_status_display_options(snap),
+    raw_groups, fetch_status = await get_group_list_with_status()
+    available = _group_list_available(fetch_status)
+    groups = (
+        [] if fetch_status == "offline" else _message_enabled_groups(snap, raw_groups)
     )
+    return _status_policy_response(snap, groups, group_list_available=available)
 
 
 @router.put("/status-policy", response_model=GroupStatusPolicyResponse)
@@ -166,15 +190,40 @@ async def update_status_policy(
 ):
     svc = get_config_service()
     snap = svc.get_snapshot()
-    message_groups = _message_enabled_groups(snap, await get_group_list())
-    enabled_ids = [
+    raw_groups, fetch_status = await get_group_list_with_status()
+    available = _group_list_available(fetch_status)
+    message_groups = (
+        [] if fetch_status == "offline" else _message_enabled_groups(snap, raw_groups)
+    )
+    body_enabled_ids = [
         str(gid).strip() for gid in body.enabled_group_ids if str(gid).strip()
     ]
-    for group_id in enabled_ids:
-        _ensure_group_message_enabled(group_id, snap)
-    enabled_ids = _filter_status_enabled_group_ids(enabled_ids, message_groups)
+
+    if not available:
+        whitelist_changed = body.restrict != snap.status_check_group_restrict or (
+            _normalized_group_ids(body_enabled_ids)
+            != _normalized_group_ids(snap.status_check_enabled_group_ids)
+        )
+        if whitelist_changed:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="群列表不完整，暂不可修改状态查询白名单",
+            )
+        enabled_ids = list(snap.status_check_enabled_group_ids)
+        restrict = snap.status_check_group_restrict
+    else:
+        enabled_ids = body_enabled_ids
+        restrict = body.restrict
+        for group_id in enabled_ids:
+            _ensure_group_message_enabled(group_id, snap)
+        enabled_ids = filter_enabled_group_ids_to_visible_groups(
+            enabled_ids,
+            message_groups,
+            group_list_available=True,
+        )
+
     updates: dict[str, str] = {
-        "status_check_group_restrict": str(body.restrict).lower(),
+        "status_check_group_restrict": str(restrict).lower(),
         "status_check_enabled_group_ids": json.dumps(enabled_ids, ensure_ascii=False),
     }
     if body.display is not None:
@@ -186,15 +235,12 @@ async def update_status_policy(
     await svc.reload()
 
     snap = svc.get_snapshot()
-    groups = _message_enabled_groups(snap, await get_group_list())
-    return GroupStatusPolicyResponse(
-        restrict=snap.status_check_group_restrict,
-        enabled_group_ids=_filter_status_enabled_group_ids(
-            snap.status_check_enabled_group_ids, groups
-        ),
-        groups=[GroupInfo(**g) for g in groups],
-        display=_status_display_options(snap),
+    raw_groups, fetch_status = await get_group_list_with_status()
+    available = _group_list_available(fetch_status)
+    groups = (
+        [] if fetch_status == "offline" else _message_enabled_groups(snap, raw_groups)
     )
+    return _status_policy_response(snap, groups, group_list_available=available)
 
 
 @router.get("/special-title-policy", response_model=GroupSpecialTitlePolicyResponse)
