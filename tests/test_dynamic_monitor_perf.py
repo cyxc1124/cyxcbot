@@ -193,7 +193,7 @@ async def test_screenshot_semaphore_limits_concurrent_capture(
     in_flight = 0
     peak = 0
 
-    async def slow_screenshot(dynamic_id: int):
+    async def slow_screenshot(dynamic_id: int, *, is_article: bool = False):
         nonlocal in_flight, peak
         in_flight += 1
         peak = max(peak, in_flight)
@@ -229,7 +229,7 @@ async def test_screenshot_queue_waits_when_full(
 
     release = asyncio.Event()
 
-    async def slow_screenshot(dynamic_id: int):
+    async def slow_screenshot(dynamic_id: int, *, is_article: bool = False):
         await release.wait()
         return (b"png", None, f"https://t.bilibili.com/{dynamic_id}")
 
@@ -265,7 +265,7 @@ async def test_screenshot_skipped_if_disabled_while_queued(
     release_first = asyncio.Event()
     capture_calls = 0
 
-    async def slow_screenshot(dynamic_id: int):
+    async def slow_screenshot(dynamic_id: int, *, is_article: bool = False):
         nonlocal capture_calls
         capture_calls += 1
         capture_started.set()
@@ -325,7 +325,7 @@ async def test_screenshot_skipped_if_stale_while_queued(
     release_first = asyncio.Event()
     capture_calls = 0
 
-    async def slow_screenshot(dynamic_id: int):
+    async def slow_screenshot(dynamic_id: int, *, is_article: bool = False):
         nonlocal capture_calls
         capture_calls += 1
         capture_started.set()

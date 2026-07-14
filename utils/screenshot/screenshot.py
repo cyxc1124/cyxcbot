@@ -38,16 +38,19 @@ DYNAMIC_CARD_SELECTORS: List[str] = [
 # 与 DYNAMIC_CARD_SELECTORS 共用同一列表，等的和截的是同一批 DOM。
 DYNAMIC_CONTENT_WAIT_SELECTORS: List[str] = DYNAMIC_CARD_SELECTORS
 
-# opus 页就绪：.bili-opus-view 首子为 .opus-module-author 或 .opus-module-title（带标题图文）即可截图，
+# 普通动态 opus 就绪：.bili-opus-view 首子为 .opus-module-author 或 .opus-module-title 即可截图，
 # 其余（如 opus-module-top 头图类，author 不在首位）才 fallback t.bilibili.com。
+# 专栏（DYNAMIC_TYPE_ARTICLE）常以头图/封面为首子，不套用该首子约束，有 .bili-opus-view 即截图。
 # 校准样例（SSR firstElementChild）：
 #   opus/1216804195345104902 → opus-module-author → 不 fallback
 #   opus/1219265340446343192 → opus-module-title  → 不 fallback（带标题图文动态，issue #119）
-#   opus/1217399988918681625 → opus-module-top     → fallback（头图类动态，author 不在首位）
+#   opus/1217399988918681625 → opus-module-top     → fallback（头图类普通动态，author 不在首位）
 OPUS_READY_FIRST_CHILD_SELECTOR = (
     ".bili-opus-view > .opus-module-author:first-child, "
     ".bili-opus-view > .opus-module-title:first-child"
 )
+# 专栏半加载等待：任意 opus-module 子节点出现即可
+OPUS_ARTICLE_ANY_MODULE_SELECTOR = ".bili-opus-view > [class*='opus-module-']"
 
 # 只取 .bili-opus-view 首子节点的 class，判定统一交给 _opus_view_first_child_is_ready。
 # 返回 None = 无 .bili-opus-view；'' = view 已出现但子节点尚未渲染（半加载）。
@@ -319,10 +322,38 @@ class DynamicScreenshot:
                 continue
         return False
 
-    async def _is_opus_page_ready(self, page: Page) -> bool:
-        """opus 页 .bili-opus-view 首子节点须为 .opus-module-author，否则 fallback。"""
+    async def _is_opus_page_ready(
+        self, page: Page, *, is_article: bool = False
+    ) -> bool:
+        """判断 opus 页是否可截图。
+
+        普通动态：首子须为 .opus-module-author / .opus-module-title，否则 fallback。
+        专栏：不强制首子类型，.bili-opus-view 有模块子节点即可。
+        """
         first_class = await page.evaluate(_OPUS_VIEW_FIRST_CHILD_CLASS_JS)
         if first_class is None:  # 无 .bili-opus-view，交给其它选择器判定
+            return True
+
+        if is_article:
+            if not first_class:  # view 已出现但子节点未渲染，等待任意模块后重试
+                try:
+                    await page.wait_for_selector(
+                        OPUS_ARTICLE_ANY_MODULE_SELECTOR,
+                        state="visible",
+                        timeout=3000,
+                    )
+                except Exception:
+                    pass
+                first_class = await page.evaluate(_OPUS_VIEW_FIRST_CHILD_CLASS_JS) or ""
+            if not first_class:
+                logger.warning(
+                    "专栏 opus 页 .bili-opus-view 子节点未渲染，fallback 到 t.bilibili.com"
+                )
+                return False
+            logger.debug(
+                "专栏 opus 页就绪（首子={}，跳过 author/title 约束）",
+                first_class,
+            )
             return True
 
         if not first_class:  # view 已出现但子节点未渲染，等待后重试一次
@@ -344,7 +375,7 @@ class DynamicScreenshot:
         return ready
 
     async def _navigate_dynamic_page(
-        self, page: Page, dynamic_id: int
+        self, page: Page, dynamic_id: int, *, is_article: bool = False
     ) -> Tuple[ElementHandle, str]:
         # opus 详情优先；旧版动态页 fallback 到 t.bilibili.com（截图区域见 DYNAMIC_CARD_SELECTORS）
         urls = [
@@ -378,7 +409,7 @@ class DynamicScreenshot:
                     logger.debug("动态内容未在超时内渲染: {}", url)
                     continue
                 # 按页面 DOM 校验，不按请求 URL；t.bilibili.com 无 .bili-opus-view 时 _is_opus_page_ready 直接通过
-                if not await self._is_opus_page_ready(page):
+                if not await self._is_opus_page_ready(page, is_article=is_article):
                     transient_failures.append(f"{url} opus 页面未就绪")
                     continue
                 card = await self._find_dynamic_card(page)
@@ -459,15 +490,19 @@ class DynamicScreenshot:
             raise Exception("截图结果为空")
         return screenshot
 
-    async def get_dynamic_screenshot_pc(self, dynamic_id: int, page: Page):
+    async def get_dynamic_screenshot_pc(
+        self, dynamic_id: int, page: Page, *, is_article: bool = False
+    ):
         """加载动态/opus 页面并定位截图区域。"""
-        logger.info("开始截图动态 {}", dynamic_id)
+        logger.info("开始截图动态 {}{}", dynamic_id, "（专栏）" if is_article else "")
 
         try:
             await page.set_viewport_size({"width": 1920, "height": 1080})
             page.set_default_timeout(30000)
 
-            card, page_url = await self._navigate_dynamic_page(page, dynamic_id)
+            card, page_url = await self._navigate_dynamic_page(
+                page, dynamic_id, is_article=is_article
+            )
             return page, card, page_url
 
         except Notfound:
@@ -477,7 +512,11 @@ class DynamicScreenshot:
             raise
 
     async def get_dynamic_screenshot(
-        self, dynamic_id: int, timeout: int = 30000
+        self,
+        dynamic_id: int,
+        timeout: int = 30000,
+        *,
+        is_article: bool = False,
     ) -> Tuple[Optional[bytes], Optional[str], Optional[str]]:
         """
         获取动态截图
@@ -485,6 +524,7 @@ class DynamicScreenshot:
         Args:
             dynamic_id: 动态ID
             timeout: 超时时间（毫秒）
+            is_article: 是否为专栏（DYNAMIC_TYPE_ARTICLE）；专栏不强制 opus 首子约束
 
         Returns:
             Tuple[图片bytes, 错误信息, 实际截图页面 URL]
@@ -501,7 +541,7 @@ class DynamicScreenshot:
             # 首先尝试完整版截图
             try:
                 page, card, page_url = await self.get_dynamic_screenshot_pc(
-                    dynamic_id, page
+                    dynamic_id, page, is_article=is_article
                 )
                 screenshot = await self._capture_dynamic_card(page, card, dynamic_id)
                 screenshot_size = len(screenshot)
@@ -547,18 +587,21 @@ _init_lock = asyncio.Lock()
 
 async def get_dynamic_screenshot(
     dynamic_id: int,
+    *,
+    is_article: bool = False,
 ) -> Tuple[Optional[bytes], Optional[str], Optional[str]]:
     """
     获取动态截图的便捷函数
 
     Args:
         dynamic_id: 动态ID
+        is_article: 是否为专栏（DYNAMIC_TYPE_ARTICLE）；专栏不强制 opus 首子约束
 
     Returns:
         Tuple[图片bytes, 错误信息, 实际截图页面 URL]
     """
     global dynamic_screenshot
-    logger.debug("请求获取动态 {} 截图", dynamic_id)
+    logger.debug("请求获取动态 {} 截图{}", dynamic_id, "（专栏）" if is_article else "")
 
     # 如果浏览器未初始化，尝试初始化（加锁做双重检查，避免并发重复启动浏览器）
     if not dynamic_screenshot.browser_context:
@@ -572,7 +615,7 @@ async def get_dynamic_screenshot(
 
     async with _screenshot_semaphore:
         screenshot, error, page_url = await dynamic_screenshot.get_dynamic_screenshot(
-            dynamic_id
+            dynamic_id, is_article=is_article
         )
     if error:
         logger.warning("动态 {} 截图失败: {}", dynamic_id, error)

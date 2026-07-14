@@ -64,13 +64,14 @@ def _make_dynamic(
     dynamic_id: int = 1234567890,
     *,
     url: str | None = None,
+    dynamic_type: int = 0,
 ) -> DynamicItem:
     item = DynamicItem(
         dynamic_id=dynamic_id,
         uid=1,
         name="tester",
         timestamp=1700000000,
-        dynamic_type=0,
+        dynamic_type=dynamic_type,
     )
     if url is not None:
         item.url = url
@@ -183,6 +184,49 @@ def test_opus_first_child_title_is_ready() -> None:
     assert _opus_view_first_child_is_ready("opus-module-title")
     assert not _opus_view_first_child_is_ready("opus-module-top")
     assert not _opus_view_first_child_is_ready("")  # 半加载：子节点未渲染
+
+
+def test_dynamic_item_is_article() -> None:
+    article = _make_dynamic(dynamic_type=DynamicItem.TYPE_ARTICLE)
+    ordinary = _make_dynamic(dynamic_type=2)
+    assert article.is_article
+    assert not ordinary.is_article
+
+
+@pytest.mark.asyncio
+async def test_opus_page_ready_article_allows_module_top() -> None:
+    """专栏首子常为 opus-module-top，不应因此判定未就绪。"""
+    from utils.screenshot.screenshot import DynamicScreenshot
+
+    page = AsyncMock()
+    page.evaluate = AsyncMock(return_value="opus-module-top")
+    shot = DynamicScreenshot()
+
+    assert await shot._is_opus_page_ready(page, is_article=True) is True
+    assert await shot._is_opus_page_ready(page, is_article=False) is False
+
+
+@pytest.mark.asyncio
+async def test_navigate_dynamic_page_passes_is_article() -> None:
+    """导航应将 is_article 传给 opus 就绪检查。"""
+    from utils.screenshot.screenshot import DynamicScreenshot
+
+    page = AsyncMock()
+    page.url = "https://www.bilibili.com/opus/1234567890"
+    page.goto = AsyncMock(return_value=MagicMock(status=200))
+    page.wait_for_load_state = AsyncMock()
+    page.wait_for_timeout = AsyncMock()
+
+    card = MagicMock()
+    shot = DynamicScreenshot()
+    shot._wait_for_dynamic_content = AsyncMock(return_value=True)
+    shot._is_opus_page_ready = AsyncMock(return_value=True)
+    shot._find_dynamic_card = AsyncMock(return_value=card)
+    shot._is_login_interstitial = AsyncMock(return_value=False)
+
+    await shot._navigate_dynamic_page(page, 1234567890, is_article=True)
+
+    shot._is_opus_page_ready.assert_awaited_with(page, is_article=True)
 
 
 def test_is_dynamic_not_found_url() -> None:
