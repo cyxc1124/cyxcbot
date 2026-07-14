@@ -98,6 +98,8 @@ export function LogsPage() {
     [scheduleFlush],
   )
 
+  // TanStack Virtual returns non-memoizable helpers; React Compiler skips this call site.
+  // eslint-disable-next-line react-hooks/incompatible-library -- known TanStack Virtual limitation
   const rowVirtualizer = useVirtualizer({
     count: logs.length,
     getScrollElement: () => containerRef.current,
@@ -108,12 +110,13 @@ export function LogsPage() {
       return `${entry.session_id}:${entry.entry_id}-${index}`
     },
   })
+  // scrollToIndex is stable; the virtualizer object identity is not.
+  const scrollToIndex = rowVirtualizer.scrollToIndex
 
   useEffect(() => {
     if (!autoScroll || paused || logs.length === 0) return
-    rowVirtualizer.scrollToIndex(logs.length - 1, { align: 'end' })
-    // scrollToIndex is stable; rowVirtualizer object is not (TanStack Virtual)
-  }, [logs, autoScroll, paused, rowVirtualizer.scrollToIndex])
+    scrollToIndex(logs.length - 1, { align: 'end' })
+  }, [logs, autoScroll, paused, scrollToIndex])
 
   useEffect(() => {
     let cancelled = false

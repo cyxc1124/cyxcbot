@@ -43,9 +43,9 @@ export function PrivatePage() {
     } finally {
       setLoading(false)
     }
-  }, [tab])
+  }, [tab, setLoading])
 
-  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load])
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
 
   useMountAsync(load)
 
