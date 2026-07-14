@@ -69,16 +69,16 @@ def build_user_policy_items(
 
 def friend_list_listing_mode(
     status: Literal["ok", "offline", "incomplete"],
-) -> Literal["map", "empty", "error"]:
+) -> Literal["map", "empty", "partial"]:
     """How the admin user-policy list should treat a friend-list fetch.
 
-    - map: complete live list, safe to render (may also show configured non-friends)
-    - empty: no bots connected → show empty state (not DB orphans)
-    - error: bots connected but fetch incomplete → fail the request (do not
-      fall back to DB rows or silently show a partial list)
+    - map: complete live list; may also show configured non-friends; editable
+    - empty: no bots connected → empty list, friend_list_available=false
+    - partial: bots connected but fetch incomplete → show fetched subset only
+      (no DB orphan merge), friend_list_available=false, mutations rejected
     """
     if status == "ok":
         return "map"
     if status == "incomplete":
-        return "error"
+        return "partial"
     return "empty"

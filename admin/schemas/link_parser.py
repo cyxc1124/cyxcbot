@@ -43,6 +43,7 @@ class LinkParserUserPolicyItem(BaseModel):
 
 class LinkParserUserPolicyListResponse(BaseModel):
     users: List[LinkParserUserPolicyItem]
+    friend_list_available: bool = True
 
 
 class LinkParserUserPolicyMutationResponse(BaseModel):

@@ -210,6 +210,7 @@ export interface LinkParserUserPolicyItem {
 
 export interface LinkParserUserPolicyList {
   users: LinkParserUserPolicyItem[]
+  friend_list_available: boolean
 }
 
 export interface LinkParserUserPolicyMutation {

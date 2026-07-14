@@ -123,6 +123,16 @@ async def _user_meta(user_id: str, snap) -> dict:
     return {"user_id": str(user_id)}
 
 
+async def _ensure_friend_list_complete_for_mutation() -> None:
+    """Reject writes when the live friend list is offline or incomplete."""
+    _, fetch_status = await get_friend_list_with_availability()
+    if fetch_status != "ok":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="好友列表不完整，暂不可修改链接解析策略",
+        )
+
+
 async def _list_user_policy_response(
     snap, *, refresh_users: bool = False
 ) -> LinkParserUserPolicyListResponse:
@@ -130,20 +140,19 @@ async def _list_user_policy_response(
         invalidate_user_list_cache()
     friends, fetch_status = await get_friend_list_with_availability()
     mode = friend_list_listing_mode(fetch_status)
-    if mode == "error":
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="好友列表获取不完整，请稍后重试",
-        )
     if mode == "empty":
-        return LinkParserUserPolicyListResponse(users=[])
+        return LinkParserUserPolicyListResponse(
+            users=[],
+            friend_list_available=False,
+        )
     users = _message_enabled_users(snap, friends)
     return LinkParserUserPolicyListResponse(
         users=build_user_policy_items(
             snap,
             users,
-            include_configured_non_friends=True,
+            include_configured_non_friends=(mode == "map"),
         ),
+        friend_list_available=(mode == "map"),
     )
 
 
@@ -221,6 +230,7 @@ async def create_user_policy(
     if not user_id.isdigit():
         raise HTTPException(status_code=400, detail="QQ 号必须为数字")
 
+    await _ensure_friend_list_complete_for_mutation()
     svc = get_config_service()
     snap = svc.get_snapshot()
     _ensure_private_message_enabled(user_id, snap)
@@ -250,6 +260,7 @@ async def update_user_policy(
     body: LinkParserUserPolicyUpdateRequest,
     _: AdminUser,
 ):
+    await _ensure_friend_list_complete_for_mutation()
     svc = get_config_service()
     snap = svc.get_snapshot()
     _ensure_private_message_enabled(user_id, snap)
@@ -278,6 +289,7 @@ async def update_user_policy(
 
 @router.delete("/users/{user_id}", response_model=LinkParserUserPolicyMutationResponse)
 async def reset_user_policy(user_id: str, _: AdminUser):
+    await _ensure_friend_list_complete_for_mutation()
     svc = get_config_service()
     await svc.delete_link_parser_user_policy(user_id)
     await svc.reload()

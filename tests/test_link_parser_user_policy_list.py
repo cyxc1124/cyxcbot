@@ -96,4 +96,4 @@ def test_build_user_items_preserves_configured_non_friends_after_complete_fetch(
 def test_friend_list_listing_mode_distinguishes_offline_and_incomplete() -> None:
     assert friend_list_listing_mode("ok") == "map"
     assert friend_list_listing_mode("offline") == "empty"
-    assert friend_list_listing_mode("incomplete") == "error"
+    assert friend_list_listing_mode("incomplete") == "partial"
