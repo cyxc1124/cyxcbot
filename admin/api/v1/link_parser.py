@@ -11,10 +11,13 @@ from admin.schemas.link_parser import (
     LinkParserGroupPolicyMutationResponse,
     LinkParserGroupPolicyUpdateRequest,
     LinkParserUserPolicyCreateRequest,
-    LinkParserUserPolicyItem,
     LinkParserUserPolicyListResponse,
     LinkParserUserPolicyMutationResponse,
     LinkParserUserPolicyUpdateRequest,
+)
+from admin.services.link_parser_policy_items import (
+    build_user_policy_item,
+    build_user_policy_items,
 )
 from admin.services.onebot_bridge import (
     get_friend_list,
@@ -76,18 +79,6 @@ def _group_policy_values(snap, group_id: str) -> tuple[bool, bool, bool, bool]:
     return False, False, False, False
 
 
-def _user_policy_values(snap, user_id: str) -> tuple[bool, bool, bool, bool]:
-    override = snap.link_parser_user_policies.get(str(user_id).strip())
-    if override:
-        return (
-            override.video_enabled,
-            override.live_enabled,
-            override.dynamic_enabled,
-            True,
-        )
-    return False, False, False, False
-
-
 def _build_group_item(snap, group: dict) -> LinkParserGroupPolicyItem:
     group_id = str(group["group_id"])
     video_enabled, live_enabled, dynamic_enabled, customized = _group_policy_values(
@@ -106,39 +97,6 @@ def _build_group_item(snap, group: dict) -> LinkParserGroupPolicyItem:
 
 def _build_group_items(snap, groups: list[dict]) -> list[LinkParserGroupPolicyItem]:
     return [_build_group_item(snap, group) for group in groups]
-
-
-def _build_user_item(snap, user: dict) -> LinkParserUserPolicyItem:
-    user_id = str(user["user_id"])
-    video_enabled, live_enabled, dynamic_enabled, customized = _user_policy_values(
-        snap, user_id
-    )
-    override = snap.link_parser_user_policies.get(user_id)
-    return LinkParserUserPolicyItem(
-        user_id=user_id,
-        nickname=user.get("nickname"),
-        name=override.name if override else None,
-        customized=customized,
-        video_enabled=video_enabled,
-        live_enabled=live_enabled,
-        dynamic_enabled=dynamic_enabled,
-    )
-
-
-def _build_user_items(snap, users: list[dict]) -> list[LinkParserUserPolicyItem]:
-    enabled_users = _message_enabled_users(snap, users)
-    by_id: dict[str, dict] = {str(user["user_id"]): user for user in enabled_users}
-
-    for user_id, record in snap.link_parser_user_policies.items():
-        if user_id not in by_id:
-            by_id[user_id] = {"user_id": user_id, "nickname": record.name}
-
-    return [
-        _build_user_item(snap, by_id[user_id])
-        for user_id in sorted(
-            by_id.keys(), key=lambda value: (not value.isdigit(), value)
-        )
-    ]
 
 
 def _is_default_off(
@@ -170,7 +128,7 @@ async def _list_user_policy_response(
         invalidate_user_list_cache()
     users = _message_enabled_users(snap, await get_friend_list())
     return LinkParserUserPolicyListResponse(
-        users=_build_user_items(snap, users),
+        users=build_user_policy_items(snap, users),
     )
 
 
@@ -267,7 +225,7 @@ async def create_user_policy(
     snap = svc.get_snapshot()
     user_meta = await _user_meta(user_id, snap)
     return LinkParserUserPolicyMutationResponse(
-        item=_build_user_item(snap, user_meta),
+        item=build_user_policy_item(snap, user_meta),
     )
 
 
@@ -299,7 +257,7 @@ async def update_user_policy(
     snap = svc.get_snapshot()
     user_meta = await _user_meta(user_id, snap)
     return LinkParserUserPolicyMutationResponse(
-        item=_build_user_item(snap, user_meta),
+        item=build_user_policy_item(snap, user_meta),
     )
 
 
@@ -312,5 +270,5 @@ async def reset_user_policy(user_id: str, _: AdminUser):
     snap = svc.get_snapshot()
     user_meta = await _user_meta(user_id, snap)
     return LinkParserUserPolicyMutationResponse(
-        item=_build_user_item(snap, user_meta),
+        item=build_user_policy_item(snap, user_meta),
     )
