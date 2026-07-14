@@ -11,7 +11,7 @@ def test_get_dynamic_screenshot_caps_concurrency(monkeypatch) -> None:
     active = 0
     peak = 0
 
-    async def fake_capture(dynamic_id: int):
+    async def fake_capture(dynamic_id: int, *, is_article: bool = False):
         nonlocal active, peak
         active += 1
         peak = max(peak, active)
