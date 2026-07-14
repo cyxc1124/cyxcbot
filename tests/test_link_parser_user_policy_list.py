@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from admin.services.link_parser_policy_items import build_user_policy_items
+from admin.services.link_parser_policy_items import (
+    build_user_policy_items,
+    friend_list_listing_mode,
+)
 from shared.config.link_parser_policy import LinkParserUserPolicyRecord
 from shared.config.types import AppConfigSnapshot
 
@@ -49,3 +52,9 @@ def test_build_user_items_only_includes_provided_friends() -> None:
     assert items[0].nickname == "Alice"
     assert items[0].live_enabled is True
     assert items[0].customized is True
+
+
+def test_friend_list_listing_mode_distinguishes_offline_and_incomplete() -> None:
+    assert friend_list_listing_mode("ok") == "map"
+    assert friend_list_listing_mode("offline") == "empty"
+    assert friend_list_listing_mode("incomplete") == "error"

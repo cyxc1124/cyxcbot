@@ -18,9 +18,11 @@ from admin.schemas.link_parser import (
 from admin.services.link_parser_policy_items import (
     build_user_policy_item,
     build_user_policy_items,
+    friend_list_listing_mode,
 )
 from admin.services.onebot_bridge import (
     get_friend_list,
+    get_friend_list_with_availability,
     get_group_list,
     invalidate_user_list_cache,
 )
@@ -126,7 +128,16 @@ async def _list_user_policy_response(
 ) -> LinkParserUserPolicyListResponse:
     if refresh_users:
         invalidate_user_list_cache()
-    users = _message_enabled_users(snap, await get_friend_list())
+    friends, fetch_status = await get_friend_list_with_availability()
+    mode = friend_list_listing_mode(fetch_status)
+    if mode == "error":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="好友列表获取不完整，请稍后重试",
+        )
+    if mode == "empty":
+        return LinkParserUserPolicyListResponse(users=[])
+    users = _message_enabled_users(snap, friends)
     return LinkParserUserPolicyListResponse(
         users=build_user_policy_items(snap, users),
     )

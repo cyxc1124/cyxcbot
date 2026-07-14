@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import time
-from typing import List
+from typing import List, Literal
 
 from nonebot import get_bots
 from nonebot.log import logger
+
+FriendListFetchStatus = Literal["ok", "offline", "incomplete"]
 
 
 async def get_group_list_with_availability() -> tuple[List[dict], bool]:
@@ -80,28 +82,40 @@ def invalidate_user_list_cache() -> None:
     _FRIEND_LIST_CACHE = None
 
 
-async def get_friend_list() -> List[dict]:
-    """Fetch QQ users from the bot friend list only."""
+async def get_friend_list_with_availability() -> tuple[
+    List[dict], FriendListFetchStatus
+]:
+    """Return ``(friends, status)``.
+
+    *status*:
+    - ``ok``: every connected bot's ``get_friend_list`` succeeded (may be empty)
+    - ``offline``: no OneBot connected
+    - ``incomplete``: at least one bot is connected but a fetch failed
+
+    Incomplete results are not cached.
+    """
     global _FRIEND_LIST_CACHE
     now = time.time()
     if (
         _FRIEND_LIST_CACHE is not None
         and now - _FRIEND_LIST_CACHE[0] < _FRIEND_LIST_CACHE_TTL_SECONDS
     ):
-        return [dict(user) for user in _FRIEND_LIST_CACHE[1]]
+        return [dict(user) for user in _FRIEND_LIST_CACHE[1]], "ok"
 
     users: dict[str, dict] = {}
     bots = get_bots()
     if not bots:
         logger.warning("无已连接的 OneBot 机器人，无法获取好友列表")
-        return []
+        return [], "offline"
 
     bot_list = list(bots.values())
     self_ids = {str(bot.self_id) for bot in bot_list}
+    success_count = 0
 
     for bot in bot_list:
         try:
             result = await bot.call_api("get_friend_list")
+            success_count += 1
             for item in result:
                 nickname = item.get("remark") or item.get("nickname")
                 _merge_user(
@@ -111,8 +125,22 @@ async def get_friend_list() -> List[dict]:
             logger.error("从机器人 {} 获取好友列表失败: {}", bot.self_id, exc)
 
     result = sorted(users.values(), key=lambda item: item["user_id"])
-    _FRIEND_LIST_CACHE = (now, result)
-    return [dict(user) for user in result]
+    if success_count == len(bot_list):
+        _FRIEND_LIST_CACHE = (now, result)
+        return [dict(user) for user in result], "ok"
+
+    logger.warning(
+        "好友列表获取不完整 ({}/{})，跳过缓存",
+        success_count,
+        len(bot_list),
+    )
+    return [dict(user) for user in result], "incomplete"
+
+
+async def get_friend_list() -> List[dict]:
+    """Fetch QQ users from the bot friend list only."""
+    users, _ = await get_friend_list_with_availability()
+    return users
 
 
 async def get_user_list() -> List[dict]:
