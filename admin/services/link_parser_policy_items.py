@@ -67,18 +67,22 @@ def build_user_policy_items(
     ]
 
 
-def friend_list_listing_mode(
+def onebot_list_listing_mode(
     status: Literal["ok", "offline", "incomplete"],
 ) -> Literal["map", "empty", "partial"]:
-    """How the admin user-policy list should treat a friend-list fetch.
+    """How admin link-parser lists should treat an OneBot roster fetch.
 
-    - map: complete live list; may also show configured non-friends; editable
-    - empty: no bots connected → empty list, friend_list_available=false
+    - map: complete live list; editable (user list may also show configured non-friends)
+    - empty: no bots connected → empty list, *_list_available=false
     - partial: bots connected but fetch incomplete → show fetched subset only
-      (no DB orphan merge), friend_list_available=false, mutations rejected
+      (no DB orphan merge), *_list_available=false, mutations rejected
     """
     if status == "ok":
         return "map"
     if status == "incomplete":
         return "partial"
     return "empty"
+
+
+# Backward-compatible alias.
+friend_list_listing_mode = onebot_list_listing_mode

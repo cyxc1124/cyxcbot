@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from admin.services.link_parser_policy_items import (
     build_user_policy_items,
-    friend_list_listing_mode,
+    onebot_list_listing_mode,
 )
 from shared.config.link_parser_policy import LinkParserUserPolicyRecord
 from shared.config.types import AppConfigSnapshot
@@ -93,7 +93,7 @@ def test_build_user_items_preserves_configured_non_friends_after_complete_fetch(
     assert items[1].customized is True
 
 
-def test_friend_list_listing_mode_distinguishes_offline_and_incomplete() -> None:
-    assert friend_list_listing_mode("ok") == "map"
-    assert friend_list_listing_mode("offline") == "empty"
-    assert friend_list_listing_mode("incomplete") == "partial"
+def test_onebot_list_listing_mode_distinguishes_offline_and_incomplete() -> None:
+    assert onebot_list_listing_mode("ok") == "map"
+    assert onebot_list_listing_mode("offline") == "empty"
+    assert onebot_list_listing_mode("incomplete") == "partial"

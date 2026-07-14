@@ -192,6 +192,7 @@ export interface LinkParserGroupPolicyItem {
 
 export interface LinkParserGroupPolicyList {
   groups: LinkParserGroupPolicyItem[]
+  group_list_available: boolean
 }
 
 export interface LinkParserGroupPolicyMutation {

@@ -18,12 +18,13 @@ from admin.schemas.link_parser import (
 from admin.services.link_parser_policy_items import (
     build_user_policy_item,
     build_user_policy_items,
-    friend_list_listing_mode,
+    onebot_list_listing_mode,
 )
 from admin.services.onebot_bridge import (
     get_friend_list,
     get_friend_list_with_availability,
     get_group_list,
+    get_group_list_with_status,
     invalidate_user_list_cache,
 )
 from shared.config.service import get_config_service
@@ -125,6 +126,8 @@ async def _user_meta(user_id: str, snap) -> dict:
 
 async def _ensure_friend_list_complete_for_mutation() -> None:
     """Reject writes when the live friend list is offline or incomplete."""
+    # Always re-fetch: a TTL cache hit must not bypass the mutation guard after disconnect.
+    invalidate_user_list_cache()
     _, fetch_status = await get_friend_list_with_availability()
     if fetch_status != "ok":
         raise HTTPException(
@@ -133,13 +136,38 @@ async def _ensure_friend_list_complete_for_mutation() -> None:
         )
 
 
+async def _ensure_group_list_complete_for_mutation() -> None:
+    """Reject writes when the live group list is offline or incomplete."""
+    _, fetch_status = await get_group_list_with_status()
+    if fetch_status != "ok":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="群列表不完整，暂不可修改链接解析策略",
+        )
+
+
+async def _list_group_policy_response(snap) -> LinkParserGroupPolicyListResponse:
+    groups, fetch_status = await get_group_list_with_status()
+    mode = onebot_list_listing_mode(fetch_status)
+    if mode == "empty":
+        return LinkParserGroupPolicyListResponse(
+            groups=[],
+            group_list_available=False,
+        )
+    visible = _message_enabled_groups(snap, groups)
+    return LinkParserGroupPolicyListResponse(
+        groups=_build_group_items(snap, visible),
+        group_list_available=(mode == "map"),
+    )
+
+
 async def _list_user_policy_response(
     snap, *, refresh_users: bool = False
 ) -> LinkParserUserPolicyListResponse:
     if refresh_users:
         invalidate_user_list_cache()
     friends, fetch_status = await get_friend_list_with_availability()
-    mode = friend_list_listing_mode(fetch_status)
+    mode = onebot_list_listing_mode(fetch_status)
     if mode == "empty":
         return LinkParserUserPolicyListResponse(
             users=[],
@@ -159,11 +187,7 @@ async def _list_user_policy_response(
 @router.get("/groups", response_model=LinkParserGroupPolicyListResponse)
 async def list_group_policies(_: AdminUser):
     svc = get_config_service()
-    snap = svc.get_snapshot()
-    groups = _message_enabled_groups(snap, await get_group_list())
-    return LinkParserGroupPolicyListResponse(
-        groups=_build_group_items(snap, groups),
-    )
+    return await _list_group_policy_response(svc.get_snapshot())
 
 
 @router.put("/groups/{group_id}", response_model=LinkParserGroupPolicyMutationResponse)
@@ -172,6 +196,7 @@ async def update_group_policy(
     body: LinkParserGroupPolicyUpdateRequest,
     _: AdminUser,
 ):
+    await _ensure_group_list_complete_for_mutation()
     svc = get_config_service()
     snap = svc.get_snapshot()
     _ensure_group_message_enabled(group_id, snap)
@@ -198,6 +223,7 @@ async def update_group_policy(
     "/groups/{group_id}", response_model=LinkParserGroupPolicyMutationResponse
 )
 async def reset_group_policy(group_id: str, _: AdminUser):
+    await _ensure_group_list_complete_for_mutation()
     svc = get_config_service()
     snap = svc.get_snapshot()
     _ensure_group_message_enabled(group_id, snap)

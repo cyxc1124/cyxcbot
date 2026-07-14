@@ -19,6 +19,7 @@ class LinkParserGroupPolicyItem(BaseModel):
 
 class LinkParserGroupPolicyListResponse(BaseModel):
     groups: List[LinkParserGroupPolicyItem]
+    group_list_available: bool = True
 
 
 class LinkParserGroupPolicyMutationResponse(BaseModel):
