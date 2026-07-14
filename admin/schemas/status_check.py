@@ -27,6 +27,7 @@ class GroupStatusPolicyResponse(BaseModel):
     enabled_group_ids: List[str]
     groups: List[GroupInfo]
     display: StatusCheckDisplayOptions
+    group_list_available: bool = True
 
 
 class GroupStatusPolicyUpdateRequest(BaseModel):
@@ -40,6 +41,7 @@ class PrivateStatusPolicyResponse(BaseModel):
     enabled_user_ids: List[str]
     users: List[FriendInfo]
     display: StatusCheckDisplayOptions
+    friend_list_available: bool = True
 
 
 class PrivateStatusPolicyUpdateRequest(BaseModel):

@@ -29,6 +29,7 @@ export function PrivatePage() {
   const [loading, setLoading] = useLoadingOnKeyChange(tab)
   const [error, setError] = useState('')
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [friendListAvailable, setFriendListAvailable] = useState(true)
 
   const load = useCallback(async () => {
     if (tab !== 'message') return
@@ -37,15 +38,16 @@ export function PrivatePage() {
       setUsers(data.users)
       setRestrict(data.restrict)
       setEnabledIds(data.enabled_user_ids)
+      setFriendListAvailable(data.friend_list_available)
       setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [tab])
+  }, [tab, setLoading])
 
-  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load])
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
 
   useMountAsync(load)
 
@@ -81,6 +83,7 @@ export function PrivatePage() {
       setUsers(updated.users)
       setRestrict(updated.restrict)
       setEnabledIds(updated.enabled_user_ids)
+      setFriendListAvailable(updated.friend_list_available)
     } catch (err) {
       setRestrict(prevRestrict)
       setEnabledIds(prevEnabledIds)
@@ -108,6 +111,7 @@ export function PrivatePage() {
       setUsers(updated.users)
       setRestrict(updated.restrict)
       setEnabledIds(updated.enabled_user_ids)
+      setFriendListAvailable(updated.friend_list_available)
       showToast('success', enabled ? '已启用全部好友' : '已关闭全部好友')
     } catch (err) {
       setRestrict(prevRestrict)
@@ -123,6 +127,7 @@ export function PrivatePage() {
   const allEnabled = !restrict
   const noneEnabled = restrict && enabledIds.length === 0
   const busy = togglingId !== null
+  const policyEditable = friendListAvailable
 
   return (
     <div className="space-y-6">
@@ -138,7 +143,7 @@ export function PrivatePage() {
             <button
               type="button"
               className="btn-secondary text-sm"
-              disabled={busy || allEnabled}
+              disabled={busy || !policyEditable || allEnabled}
               onClick={() => void handleToggleAll(true)}
             >
               全部启用
@@ -146,7 +151,7 @@ export function PrivatePage() {
             <button
               type="button"
               className="btn-secondary text-sm"
-              disabled={busy || noneEnabled}
+              disabled={busy || !policyEditable || noneEnabled}
               onClick={() => void handleToggleAll(false)}
             >
               全部关闭
@@ -159,6 +164,11 @@ export function PrivatePage() {
 
       {tab === 'message' && (
         <>
+          {!friendListAvailable && users.length > 0 && (
+            <p className="text-sm text-amber-700 dark:text-amber-300">
+              好友列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改好友消息开关；待连接恢复后再调整。
+            </p>
+          )}
           {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
           <div className="card">
@@ -166,7 +176,9 @@ export function PrivatePage() {
               <p className="text-sm text-muted-foreground">
                 {error
                   ? '数据暂时无法加载'
-                  : '暂无好友数据，请确保机器人已连接 OneBot 且协议端支持 get_friend_list。'}
+                  : friendListAvailable
+                    ? '暂无好友数据，请确保机器人已连接 OneBot 且协议端支持 get_friend_list。'
+                    : '暂无好友数据。请确保机器人已连接 OneBot，或等待好友列表同步完成。'}
               </p>
             ) : (
               <div className="overflow-x-auto">
@@ -202,7 +214,7 @@ export function PrivatePage() {
                               </span>
                               <ToggleSwitch
                                 checked={enabled}
-                                disabled={rowBusy}
+                                disabled={rowBusy || !policyEditable}
                                 onChange={(checked) => void handleToggle(user.user_id, checked)}
                               />
                             </div>

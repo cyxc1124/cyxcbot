@@ -91,6 +91,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
   const [error, setError] = useState('')
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [savingDisplay, setSavingDisplay] = useState(false)
+  const [listAvailable, setListAvailable] = useState(true)
 
   const items = isGroup
     ? groups.map((g) => ({ id: g.group_id, name: g.group_name, extra: g.member_count }))
@@ -106,12 +107,14 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
         setRestrict(data.restrict)
         setEnabledIds(data.enabled_group_ids)
         setDisplay(data.display)
+        setListAvailable(data.group_list_available)
       } else {
         const data = await getPrivateStatusPolicy()
         setFriends(data.users)
         setRestrict(data.restrict)
         setEnabledIds(data.enabled_user_ids)
         setDisplay(data.display)
+        setListAvailable(data.friend_list_available)
       }
       setError('')
     } catch (err) {
@@ -130,6 +133,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
     setRestrict(data.restrict)
     setEnabledIds(data.enabled_group_ids)
     setDisplay(data.display)
+    setListAvailable(data.group_list_available)
   }
 
   const applyFriendResponse = (data: Awaited<ReturnType<typeof getPrivateStatusPolicy>>) => {
@@ -137,6 +141,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
     setRestrict(data.restrict)
     setEnabledIds(data.enabled_user_ids)
     setDisplay(data.display)
+    setListAvailable(data.friend_list_available)
   }
 
   const handleToggle = async (itemId: string, enabled: boolean) => {
@@ -237,6 +242,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
   const allEnabled = !restrict
   const noneEnabled = restrict && enabledIds.length === 0
   const busy = togglingId !== null || savingDisplay
+  const policyEditable = listAvailable
 
   return (
     <div className="space-y-6">
@@ -257,7 +263,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
             <button
               type="button"
               className="btn-secondary text-sm"
-              disabled={busy || allEnabled}
+              disabled={busy || !policyEditable || allEnabled}
               onClick={() => void handleToggleAll(true)}
             >
               全部启用
@@ -265,7 +271,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
             <button
               type="button"
               className="btn-secondary text-sm"
-              disabled={busy || noneEnabled}
+              disabled={busy || !policyEditable || noneEnabled}
               onClick={() => void handleToggleAll(false)}
             >
               全部关闭
@@ -274,6 +280,14 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
         )}
       </div>
 
+      {!listAvailable && items.length > 0 && (
+        <p className="text-sm text-amber-700 dark:text-amber-300">
+          {isGroup
+            ? '群列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改状态查询白名单；可先调整回复内容，待连接恢复后再改群组开关。'
+            : '好友列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改状态查询白名单；可先调整回复内容，待连接恢复后再改好友开关。'}
+        </p>
+      )}
+
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       <div className="card">
@@ -281,9 +295,13 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
           <p className="text-sm text-muted-foreground">
             {error
               ? '数据暂时无法加载'
-              : isGroup
-                ? '暂无已启用群消息的群组。请先在「群消息」Tab 中启用对应群组，或确保机器人已连接 OneBot。'
-                : '暂无已启用好友消息的好友。请先在「好友消息」Tab 中启用对应好友，或确保机器人已连接 OneBot。'}
+              : listAvailable
+                ? isGroup
+                  ? '暂无已启用群消息的群组。请先在「群消息」Tab 中启用对应群组，或确保机器人已连接 OneBot。'
+                  : '暂无已启用好友消息的好友。请先在「好友消息」Tab 中启用对应好友，或确保机器人已连接 OneBot。'
+                : isGroup
+                  ? '暂无群组数据。请确保机器人已连接 OneBot，或等待群列表同步完成。'
+                  : '暂无好友数据。请确保机器人已连接 OneBot，或等待好友列表同步完成。'}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -323,7 +341,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
                           </span>
                           <ToggleSwitch
                             checked={enabled}
-                            disabled={rowBusy}
+                            disabled={rowBusy || !policyEditable}
                             onChange={(checked) => void handleToggle(item.id, checked)}
                           />
                         </div>

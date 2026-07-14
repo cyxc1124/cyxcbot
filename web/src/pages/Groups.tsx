@@ -30,6 +30,7 @@ export function GroupsPage() {
   const [loading, setLoading] = useLoadingOnKeyChange(tab)
   const [error, setError] = useState('')
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [groupListAvailable, setGroupListAvailable] = useState(true)
 
   const load = useCallback(async () => {
     if (tab !== 'message') return
@@ -38,15 +39,16 @@ export function GroupsPage() {
       setGroups(data.groups)
       setRestrict(data.restrict)
       setEnabledIds(data.enabled_group_ids)
+      setGroupListAvailable(data.group_list_available)
       setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
     } finally {
       setLoading(false)
     }
-  }, [tab])
+  }, [tab, setLoading])
 
-  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load])
+  const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
 
   useMountAsync(load)
 
@@ -83,6 +85,7 @@ export function GroupsPage() {
       setGroups(updated.groups)
       setRestrict(updated.restrict)
       setEnabledIds(updated.enabled_group_ids)
+      setGroupListAvailable(updated.group_list_available)
     } catch (err) {
       setRestrict(prevRestrict)
       setEnabledIds(prevEnabledIds)
@@ -110,6 +113,7 @@ export function GroupsPage() {
       setGroups(updated.groups)
       setRestrict(updated.restrict)
       setEnabledIds(updated.enabled_group_ids)
+      setGroupListAvailable(updated.group_list_available)
       showToast('success', enabled ? '已启用全部群组' : '已关闭全部群组')
     } catch (err) {
       setRestrict(prevRestrict)
@@ -125,6 +129,7 @@ export function GroupsPage() {
   const allEnabled = !restrict
   const noneEnabled = restrict && enabledIds.length === 0
   const busy = togglingId !== null
+  const policyEditable = groupListAvailable
 
   return (
     <div className="space-y-6">
@@ -140,7 +145,7 @@ export function GroupsPage() {
             <button
               type="button"
               className="btn-secondary text-sm"
-              disabled={busy || allEnabled}
+              disabled={busy || !policyEditable || allEnabled}
               onClick={() => void handleToggleAll(true)}
             >
               全部启用
@@ -148,7 +153,7 @@ export function GroupsPage() {
             <button
               type="button"
               className="btn-secondary text-sm"
-              disabled={busy || noneEnabled}
+              disabled={busy || !policyEditable || noneEnabled}
               onClick={() => void handleToggleAll(false)}
             >
               全部关闭
@@ -161,6 +166,11 @@ export function GroupsPage() {
 
       {tab === 'message' && (
       <>
+      {!groupListAvailable && groups.length > 0 && (
+        <p className="text-sm text-amber-700 dark:text-amber-300">
+          群列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改群消息开关；待连接恢复后再调整。
+        </p>
+      )}
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       <div className="card">
@@ -168,7 +178,9 @@ export function GroupsPage() {
           <p className="text-sm text-muted-foreground">
             {error
               ? '数据暂时无法加载'
-              : '暂无可用群组，请确保机器人已连接 OneBot 并在线。'}
+              : groupListAvailable
+                ? '暂无可用群组，请确保机器人已连接 OneBot 并在线。'
+                : '暂无群组数据。请确保机器人已连接 OneBot，或等待群列表同步完成。'}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -208,7 +220,7 @@ export function GroupsPage() {
                           </span>
                           <ToggleSwitch
                             checked={enabled}
-                            disabled={rowBusy}
+                            disabled={rowBusy || !policyEditable}
                             onChange={(checked) => void handleToggle(group.group_id, checked)}
                           />
                         </div>
