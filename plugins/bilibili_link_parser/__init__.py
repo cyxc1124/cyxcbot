@@ -48,7 +48,7 @@ async def _fetch_dynamic_screenshot(
     if not enabled:
         return None
     screenshot_image, screenshot_error, page_url = await get_dynamic_screenshot(
-        dynamic.id
+        dynamic.id, is_article=dynamic.is_article
     )
     if screenshot_error:
         logger.warning("链接解析动态 {} 截图失败: {}", dynamic.id, screenshot_error)

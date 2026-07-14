@@ -10,6 +10,9 @@ from typing import List
 class DynamicItem:
     """动态项数据类"""
 
+    # 与 dynamic_api._map_dynamic_type 一致：DYNAMIC_TYPE_ARTICLE → 64
+    TYPE_ARTICLE = 64
+
     def __init__(
         self,
         dynamic_id: int,
@@ -38,6 +41,11 @@ class DynamicItem:
         self.is_pinned = is_pinned  # 是否为置顶动态
         self.live_room_id = live_room_id
         self.url = f"https://t.bilibili.com/{dynamic_id}"
+
+    @property
+    def is_article(self) -> bool:
+        """是否为专栏（DYNAMIC_TYPE_ARTICLE）。"""
+        return self.type == self.TYPE_ARTICLE
 
     def format_beijing_time(self) -> str:
         """格式化北京时间为字符串"""

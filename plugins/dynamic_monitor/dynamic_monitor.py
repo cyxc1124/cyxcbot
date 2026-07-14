@@ -645,7 +645,9 @@ class DynamicMonitor:
                         screenshot_image,
                         screenshot_error,
                         page_url,
-                    ) = await get_dynamic_screenshot(dynamic.id)
+                    ) = await get_dynamic_screenshot(
+                        dynamic.id, is_article=dynamic.is_article
+                    )
                     if screenshot_error:
                         logger.warning(
                             "获取动态{}截图失败: {}", dynamic.id, screenshot_error
