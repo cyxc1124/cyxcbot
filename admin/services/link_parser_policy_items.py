@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Literal
 
 from admin.schemas.link_parser import LinkParserUserPolicyItem
+from shared.private_policy import is_private_message_enabled_from_snapshot
 
 
 def _user_policy_values(snap, user_id: str) -> tuple[bool, bool, bool, bool]:
@@ -36,9 +37,34 @@ def build_user_policy_item(snap, user: dict) -> LinkParserUserPolicyItem:
     )
 
 
-def build_user_policy_items(snap, users: list[dict]) -> list[LinkParserUserPolicyItem]:
-    """Map live friend rows only; do not resurrect DB-only orphan policies."""
-    return [build_user_policy_item(snap, user) for user in users]
+def build_user_policy_items(
+    snap,
+    users: list[dict],
+    *,
+    include_configured_non_friends: bool = False,
+) -> list[LinkParserUserPolicyItem]:
+    """Map live friend rows; optionally keep DB policies for non-friend QQ IDs.
+
+    *include_configured_non_friends* should only be true after a *complete* friend-list
+    fetch. Offline/incomplete callers must leave it false so DB-only rows are not
+    treated as a substitute for a missing list.
+    """
+    by_id: dict[str, dict] = {str(user["user_id"]): user for user in users}
+
+    if include_configured_non_friends:
+        for user_id, record in snap.link_parser_user_policies.items():
+            if user_id in by_id:
+                continue
+            if not is_private_message_enabled_from_snapshot(user_id, snap):
+                continue
+            by_id[user_id] = {"user_id": user_id, "nickname": record.name}
+
+    return [
+        build_user_policy_item(snap, by_id[user_id])
+        for user_id in sorted(
+            by_id.keys(), key=lambda value: (not value.isdigit(), value)
+        )
+    ]
 
 
 def friend_list_listing_mode(
@@ -46,7 +72,7 @@ def friend_list_listing_mode(
 ) -> Literal["map", "empty", "error"]:
     """How the admin user-policy list should treat a friend-list fetch.
 
-    - map: complete live list, safe to render
+    - map: complete live list, safe to render (may also show configured non-friends)
     - empty: no bots connected → show empty state (not DB orphans)
     - error: bots connected but fetch incomplete → fail the request (do not
       fall back to DB rows or silently show a partial list)
@@ -56,4 +82,3 @@ def friend_list_listing_mode(
     if status == "incomplete":
         return "error"
     return "empty"
-

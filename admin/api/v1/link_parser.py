@@ -139,7 +139,11 @@ async def _list_user_policy_response(
         return LinkParserUserPolicyListResponse(users=[])
     users = _message_enabled_users(snap, friends)
     return LinkParserUserPolicyListResponse(
-        users=build_user_policy_items(snap, users),
+        users=build_user_policy_items(
+            snap,
+            users,
+            include_configured_non_friends=True,
+        ),
     )
 
 
