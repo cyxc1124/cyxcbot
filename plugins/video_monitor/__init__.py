@@ -16,6 +16,9 @@ from nonebot import get_driver, on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
 from nonebot.log import logger
 
+from shared.config.command_aliases import match_plain
+from shared.config.service import get_config_service
+
 from .config import get_cached_config, reload_config
 from .sender import VideoSender
 
@@ -82,27 +85,14 @@ async def handle_video_commands(bot: Bot, event: GroupMessageEvent):
         logger.debug("群组 {} 未配置任何UP主监控", group_id)
         return
 
-    # 检查是否是视频查询命令
-    is_command = False
-
-    # 检查是否是@机器人 + 命令
-    if event.is_tome():
-        if message_text in ["最新视频", "最新投稿"]:
-            is_command = True
-        elif message_text.startswith("最新视频") or message_text.startswith("最新投稿"):
-            is_command = True
-        elif message_text.endswith("最新视频") or message_text.endswith("最新投稿"):
-            is_command = True
-
-    # 检查是否是命令前缀 + 命令
-    elif any(message_text.startswith(prefix) for prefix in ["/", "!", "。", "."]):
-        cmd_text = message_text[1:].strip()
-        if cmd_text in ["最新视频", "最新投稿"]:
-            is_command = True
-
-    # 检查是否是纯文本命令
-    elif message_text in ["最新视频", "最新投稿"]:
-        is_command = True
+    # 检查是否是视频查询命令（触发词可在 Web Admin 设置 → 命令 中自定义）
+    command_aliases = get_config_service().get_snapshot().command_aliases
+    is_command = match_plain(
+        message_text,
+        "video_query_latest",
+        command_aliases,
+        is_tome=event.is_tome(),
+    )
 
     if not is_command:
         logger.debug("消息 '{}' 不是视频查询命令", message_text)

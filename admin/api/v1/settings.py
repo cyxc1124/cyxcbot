@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from admin.deps import AdminUser, RequireSetup
 from admin.schemas.settings import (
@@ -15,6 +15,11 @@ from admin.schemas.settings import (
 from admin.services.connection_status import (
     bilibili_status_message,
     get_bilibili_connection_status,
+)
+from shared.config.command_aliases import (
+    normalize_command_aliases,
+    serialize_command_aliases,
+    validation_error,
 )
 from shared.config.message_templates import MESSAGE_TEMPLATE_KEYS
 from shared.config.service import get_config_service
@@ -78,6 +83,15 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
             if item.isdigit()
         ]
         updates["nonebot_superusers"] = json.dumps(cleaned, ensure_ascii=False)
+    if body.command_aliases is not None:
+        raw = {cid: entry.model_dump() for cid, entry in body.command_aliases.items()}
+        normalized = normalize_command_aliases(raw)
+        error = validation_error(normalized)
+        if error:
+            raise HTTPException(status_code=400, detail=error)
+        updates["command_aliases"] = json.dumps(
+            serialize_command_aliases(normalized), ensure_ascii=False
+        )
 
     if updates:
         await svc.set_settings(updates)

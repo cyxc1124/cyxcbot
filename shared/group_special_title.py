@@ -6,11 +6,19 @@ import re
 
 from nonebot.adapters.onebot.v11.message import Message
 
+from shared.config.command_aliases import CommandAliasEntry, trigger_alternation
+
 MAX_TITLE_LENGTH = 6
 
-TITLE_COMMAND_PATTERN = re.compile(
-    r"^(?:#头衔|[/!。.]头衔)\s+(.+)$",
-)
+
+def _build_title_pattern(
+    command_aliases: dict[str, CommandAliasEntry],
+) -> re.Pattern[str] | None:
+    """Build the ``#{触发词} …`` / ``[/!。.]{触发词} …`` pattern from configured trigger words."""
+    alternation = trigger_alternation("group_special_title", command_aliases)
+    if alternation is None:
+        return None
+    return re.compile(rf"^(?:#(?:{alternation})|[/!。.](?:{alternation}))\s+(.+)$")
 
 
 def compose_command_text(message: Message) -> str:
@@ -30,17 +38,26 @@ def compose_command_text(message: Message) -> str:
     return "".join(parts).strip()
 
 
-def parse_title_command(message_text: str) -> str | None:
-    """Return title from ``/头衔 …`` or ``#头衔 …``, or None if not matched."""
-    match = TITLE_COMMAND_PATTERN.match(message_text.strip())
+def parse_title_command(
+    message_text: str,
+    command_aliases: dict[str, CommandAliasEntry] | None = None,
+) -> str | None:
+    """Return title from ``/{触发词} …`` or ``#{触发词} …``, or None if not matched."""
+    pattern = _build_title_pattern(command_aliases or {})
+    if pattern is None:
+        return None
+    match = pattern.match(message_text.strip())
     if not match:
         return None
     return match.group(1).strip()
 
 
-def parse_title_from_message(message: Message) -> str | None:
+def parse_title_from_message(
+    message: Message,
+    command_aliases: dict[str, CommandAliasEntry] | None = None,
+) -> str | None:
     """Parse title command from a group message, including ``@`` display names."""
-    return parse_title_command(compose_command_text(message))
+    return parse_title_command(compose_command_text(message), command_aliases)
 
 
 def validate_title(title: str) -> str | None:

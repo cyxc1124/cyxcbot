@@ -16,6 +16,7 @@ import { MessageTemplatesPage } from './pages/MessageTemplates'
 import { SettingsLayout } from './pages/settings/SettingsLayout'
 import { SettingsAccountPage } from './pages/settings/SettingsAccount'
 import { SettingsBotPage } from './pages/settings/SettingsBot'
+import { SettingsCommandsPage } from './pages/settings/SettingsCommands'
 import { SettingsMonitorPage } from './pages/settings/SettingsMonitor'
 import { SetupPage } from './pages/Setup'
 import { AuthGuard, PublicGuard, SetupGuard } from './routes/Guards'
@@ -47,6 +48,7 @@ export default function App() {
                   <Route path="monitor" element={<SettingsMonitorPage />} />
                   <Route path="account" element={<SettingsAccountPage />} />
                   <Route path="bot" element={<SettingsBotPage />} />
+                  <Route path="commands" element={<SettingsCommandsPage />} />
                 </Route>
                 <Route path="logs" element={<LogsPage />} />
                 <Route path="about" element={<AboutPage />} />

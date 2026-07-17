@@ -11,6 +11,10 @@ from nonebot_plugin_orm import get_session
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
+from shared.config.command_aliases import (
+    normalize_command_aliases,
+    serialize_command_aliases,
+)
 from shared.config.link_parser_policy import (
     LinkParserGroupPolicyRecord,
     LinkParserUserPolicyRecord,
@@ -61,6 +65,7 @@ SETTING_KEYS = {
     "group_special_title_enabled_group_ids": ("[]", "json_list"),
     "group_special_title_daily_limit": ("10", int),
     "nonebot_superusers": ("[]", "json_list"),
+    "command_aliases": ("{}", "json_object"),
 }
 
 for key, default in MESSAGE_TEMPLATE_KEYS.items():
@@ -199,6 +204,7 @@ class ConfigService:
             nonebot_superusers=settings.get("nonebot_superusers", []),
             link_parser_group_policies=link_parser_group_policies,
             link_parser_user_policies=link_parser_user_policies,
+            command_aliases=settings.get("command_aliases", {}),
         )
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
         logger.info(
@@ -284,6 +290,12 @@ class ConfigService:
                         result[key] = []
                 except json.JSONDecodeError:
                     result[key] = []
+            elif typ == "json_object":
+                try:
+                    parsed = json.loads(value or "{}")
+                except json.JSONDecodeError:
+                    parsed = {}
+                result[key] = normalize_command_aliases(parsed)
             elif typ is str and key in MESSAGE_TEMPLATE_KEYS:
                 text = (value or default).strip()
                 result[key] = text[:500] if text else default
@@ -520,6 +532,9 @@ class ConfigService:
             },
             "status_check_allowed_qq": snap.status_check_allowed_qq,
             "nonebot_superusers": snap.nonebot_superusers,
+            "command_aliases": serialize_command_aliases(snap.command_aliases)
+            if snap.command_aliases
+            else serialize_command_aliases(normalize_command_aliases({})),
         }
 
 

@@ -40,13 +40,13 @@ async def _bot_group_role(bot: Bot, group_id: int) -> str | None:
 
 async def handle_group_special_title(bot: Bot, event: GroupMessageEvent) -> None:
     """Apply title when message is a title command; never replies in group."""
-    title = parse_title_from_message(event.message)
+    snap = get_config_service().get_snapshot()
+    title = parse_title_from_message(event.message, snap.command_aliases)
     if title is None:
         return
 
     group_id = str(event.group_id)
     user_id = str(event.user_id)
-    snap = get_config_service().get_snapshot()
     if not is_group_special_title_enabled_from_snapshot(group_id, snap):
         return
 

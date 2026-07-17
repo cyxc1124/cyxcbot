@@ -3,12 +3,13 @@ import time
 from datetime import datetime
 
 import psutil
-from nonebot import on_command
+from nonebot import on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, PrivateMessageEvent
 from nonebot.exception import FinishedException
 from nonebot.log import logger
 from nonebot.permission import SUPERUSER
 
+from shared.config.command_aliases import match_plain
 from shared.config.service import get_config_service
 from shared.monitor.system_metrics import (
     detect_container_environment,
@@ -70,8 +71,8 @@ async def check_status_permission(
     return False
 
 
-# 创建状态查询命令处理器
-status_cmd = on_command("status", aliases={"状态", "运行状态"}, priority=5, block=True)
+# 创建状态查询命令处理器（触发词可在 Web Admin 设置 → 命令 中自定义）
+status_cmd = on_message(priority=5, block=False)
 
 
 @status_cmd.handle()
@@ -79,6 +80,11 @@ async def handle_status_command(
     bot: Bot, event: GroupMessageEvent | PrivateMessageEvent
 ):
     """处理状态查询命令"""
+    text = event.get_plaintext().strip()
+    config = get_config_service().get_snapshot()
+    if not match_plain(text, "status", config.command_aliases, is_tome=event.is_tome()):
+        return
+
     # 检查权限
     if not await check_status_permission(bot, event):
         # 无权限时静默退出，不回复任何消息

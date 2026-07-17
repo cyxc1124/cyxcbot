@@ -18,6 +18,11 @@ class CookieStatusResponse(BaseModel):
     preview: Optional[str] = None
 
 
+class CommandAliasEntryModel(BaseModel):
+    enabled: bool = True
+    triggers: list[str] = Field(default_factory=list)
+
+
 class SettingsResponse(BaseModel):
     dynamic_monitor_interval: int
     dynamic_monitor_use_stagger: bool = True
@@ -56,6 +61,7 @@ class SettingsResponse(BaseModel):
     bilibili_cookie: CookieStatusResponse
     status_check_allowed_qq: list[str] = Field(default_factory=list)
     nonebot_superusers: list[str] = Field(default_factory=list)
+    command_aliases: dict[str, CommandAliasEntryModel] = Field(default_factory=dict)
 
 
 class CookieTestResultResponse(BaseModel):
@@ -89,3 +95,4 @@ class SettingsUpdateRequest(BaseModel):
     link_template_live: Optional[str] = Field(default=None, max_length=500)
     status_check_allowed_qq: Optional[list[str]] = None
     nonebot_superusers: Optional[list[str]] = None
+    command_aliases: Optional[dict[str, CommandAliasEntryModel]] = None

@@ -44,9 +44,13 @@ def _reset_live_monitor_instance():
     live_monitor_mod.live_monitor_instance = None
 
 
-def _make_event(group_id: int = 123) -> MagicMock:
+def _make_event(
+    group_id: int = 123, text: str = "", is_tome: bool = False
+) -> MagicMock:
     event = MagicMock()
     event.group_id = group_id
+    event.get_plaintext.return_value = text
+    event.is_tome.return_value = is_tome
     return event
 
 
@@ -72,11 +76,10 @@ async def test_live_status_uses_instance_set_after_module_import() -> None:
     # 模拟 start_live_monitor() 在运行期赋值模块属性（而不是通过 __init__.py 里绑定的旧引用）
     live_monitor_mod.live_monitor_instance = fake_instance
 
-    args = MagicMock()
-    args.extract_plain_text.return_value = "12345"
+    event = _make_event(text="直播状态 12345")
 
     with _patch_matcher(live_monitor_plugin.live_status_cmd) as mocks:
-        await live_monitor_plugin.handle_live_status(MagicMock(), _make_event(), args)
+        await live_monitor_plugin.handle_live_status(MagicMock(), event)
 
     fake_instance.check_room_now.assert_awaited_once_with("12345")
     mocks["finish"].assert_awaited_once()
@@ -97,8 +100,7 @@ async def test_live_status_without_instance_does_not_close_shared_api_manager() 
     fake_room_info.area_name = "分区B"
     fake_room_info.online = 0
 
-    args = MagicMock()
-    args.extract_plain_text.return_value = "12345"
+    event = _make_event(text="直播状态 12345")
 
     with (
         patch(
@@ -117,7 +119,7 @@ async def test_live_status_without_instance_does_not_close_shared_api_manager() 
         ) as shared_close,
         _patch_matcher(live_monitor_plugin.live_status_cmd) as mocks,
     ):
-        await live_monitor_plugin.handle_live_status(MagicMock(), _make_event(), args)
+        await live_monitor_plugin.handle_live_status(MagicMock(), event)
 
     shared_init.assert_not_awaited()
     shared_close.assert_not_awaited()
@@ -142,7 +144,9 @@ async def test_list_monitor_uses_instance_set_after_module_import() -> None:
         patch("plugins.live_monitor.Config.from_service", return_value=fake_config),
         _patch_matcher(live_monitor_plugin.list_monitor_cmd) as mocks,
     ):
-        await live_monitor_plugin.handle_list_monitor(MagicMock(), _make_event())
+        await live_monitor_plugin.handle_list_monitor(
+            MagicMock(), _make_event(text="监控列表")
+        )
 
     mocks["finish"].assert_awaited_once()
     message = mocks["finish"].await_args.args[0]
@@ -160,7 +164,9 @@ async def test_list_monitor_without_instance_falls_back_to_offline() -> None:
         patch("plugins.live_monitor.Config.from_service", return_value=fake_config),
         _patch_matcher(live_monitor_plugin.list_monitor_cmd) as mocks,
     ):
-        await live_monitor_plugin.handle_list_monitor(MagicMock(), _make_event())
+        await live_monitor_plugin.handle_list_monitor(
+            MagicMock(), _make_event(text="监控列表")
+        )
 
     message = mocks["finish"].await_args.args[0]
     assert "房间12345" in message

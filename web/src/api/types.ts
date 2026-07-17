@@ -31,6 +31,11 @@ export interface CookieStatus {
   preview: string | null
 }
 
+export interface CommandAliasEntry {
+  enabled: boolean
+  triggers: string[]
+}
+
 export interface Settings {
   dynamic_monitor_interval: number
   dynamic_monitor_use_stagger: boolean
@@ -53,6 +58,7 @@ export interface Settings {
   bilibili_cookie: CookieStatus
   status_check_allowed_qq: string[]
   nonebot_superusers: string[]
+  command_aliases: Record<string, CommandAliasEntry>
 }
 
 export type SettingsUpdate = Partial<Omit<Settings, 'bilibili_cookie'>>

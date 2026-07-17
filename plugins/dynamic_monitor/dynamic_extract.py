@@ -16,6 +16,7 @@ from nonebot.adapters.onebot.v11 import (
 )
 from nonebot.log import logger
 
+from shared.config.command_aliases import CommandAliasEntry, trigger_alternation
 from shared.config.message_templates import DynamicMessageTemplates
 from shared.config.service import get_config_service
 from shared.dynamic_subscription import (
@@ -30,17 +31,25 @@ from utils.bilibili_api import DynamicFetcher
 
 from .config import Config
 
-EXTRACT_PATTERN = re.compile(
-    r"^#(?:提取|获取)(?:"
-    r"https?://(?:www\.)?bilibili\.com/opus/(\d+)|"
-    r"https?://t\.bilibili\.com/(\d+)|"
-    r"(\d{10,})"
-    r")\s*$",
-    re.IGNORECASE,
-)
-
 group_dynamic_extract = on_message(priority=4, block=False)
 private_dynamic_extract = on_message(priority=4, block=False)
+
+
+def _build_extract_pattern(
+    command_aliases: dict[str, CommandAliasEntry],
+) -> re.Pattern[str] | None:
+    """Build the ``#{触发词}{id|url}`` pattern from configured trigger words."""
+    alternation = trigger_alternation("dynamic_extract", command_aliases)
+    if alternation is None:
+        return None
+    return re.compile(
+        rf"^#(?:{alternation})(?:"
+        r"https?://(?:www\.)?bilibili\.com/opus/(\d+)|"
+        r"https?://t\.bilibili\.com/(\d+)|"
+        r"(\d{10,})"
+        r")\s*$",
+        re.IGNORECASE,
+    )
 
 
 def _register_extract_startup() -> None:
@@ -59,9 +68,14 @@ def _register_extract_startup() -> None:
 _register_extract_startup()
 
 
-def parse_extract_dynamic_id(message_text: str) -> str | None:
-    """Return dynamic ID from '#提取/#获取{id|url}' message, or None."""
-    match = EXTRACT_PATTERN.match(message_text.strip())
+def parse_extract_dynamic_id(
+    message_text: str, command_aliases: dict[str, CommandAliasEntry]
+) -> str | None:
+    """Return dynamic ID from '#{触发词}{id|url}' message, or None."""
+    pattern = _build_extract_pattern(command_aliases)
+    if pattern is None:
+        return None
+    match = pattern.match(message_text.strip())
     if not match:
         return None
     return next((group for group in match.groups() if group), None)
@@ -141,7 +155,8 @@ async def _handle_extract(
         return
 
     message_text = event.get_plaintext().strip()
-    dynamic_id = parse_extract_dynamic_id(message_text)
+    snap = get_config_service().get_snapshot()
+    dynamic_id = parse_extract_dynamic_id(message_text, snap.command_aliases)
     if not dynamic_id:
         return
 

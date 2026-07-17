@@ -27,7 +27,8 @@ driver = get_driver()
 async def _is_group_title_command(event: Event) -> bool:
     if not isinstance(event, GroupMessageEvent):
         return False
-    return parse_title_from_message(event.message) is not None
+    command_aliases = get_config_service().get_snapshot().command_aliases
+    return parse_title_from_message(event.message, command_aliases) is not None
 
 
 group_title_cmd = on_message(
