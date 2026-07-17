@@ -6,7 +6,11 @@ import re
 
 from nonebot.adapters.onebot.v11.message import Message
 
-from shared.config.command_aliases import CommandAliasEntry, trigger_alternation
+from shared.config.command_aliases import (
+    CommandAliasEntry,
+    prefix_alternation,
+    trigger_alternation,
+)
 
 MAX_TITLE_LENGTH = 6
 
@@ -14,11 +18,11 @@ MAX_TITLE_LENGTH = 6
 def _build_title_pattern(
     command_aliases: dict[str, CommandAliasEntry],
 ) -> re.Pattern[str] | None:
-    """Build the ``#{触发词} …`` / ``[/!。.]{触发词} …`` pattern from configured trigger words."""
+    """Build the ``{prefix}{触发词} …`` pattern from configured trigger words."""
     alternation = trigger_alternation("group_special_title", command_aliases)
     if alternation is None:
         return None
-    return re.compile(rf"^(?:#(?:{alternation})|[/!。.](?:{alternation}))\s+(.+)$")
+    return re.compile(rf"^(?:{prefix_alternation()})(?:{alternation})\s+(.+)$")
 
 
 def compose_command_text(message: Message) -> str:
@@ -42,7 +46,7 @@ def parse_title_command(
     message_text: str,
     command_aliases: dict[str, CommandAliasEntry] | None = None,
 ) -> str | None:
-    """Return title from ``/{触发词} …`` or ``#{触发词} …``, or None if not matched."""
+    """Return title from ``{prefix}{触发词} …``, or None if not matched."""
     pattern = _build_title_pattern(command_aliases or {})
     if pattern is None:
         return None
@@ -63,7 +67,7 @@ def parse_title_from_message(
 def validate_title(title: str) -> str | None:
     """Return an error message when *title* is invalid, else None."""
     if not title:
-        return "请提供头衔，例如：/头衔 我的头衔"
+        return "请提供头衔内容"
     if len(title) > MAX_TITLE_LENGTH:
         return f"头衔最多 {MAX_TITLE_LENGTH} 个字"
     return None

@@ -1,4 +1,4 @@
-"""Extract all images from a Bilibili dynamic via #提取/#获取{dynamic_id}."""
+"""Extract all images from a Bilibili dynamic via {prefix}提取/获取{dynamic_id}."""
 
 from __future__ import annotations
 
@@ -16,7 +16,11 @@ from nonebot.adapters.onebot.v11 import (
 )
 from nonebot.log import logger
 
-from shared.config.command_aliases import CommandAliasEntry, trigger_alternation
+from shared.config.command_aliases import (
+    CommandAliasEntry,
+    prefix_alternation,
+    trigger_alternation,
+)
 from shared.config.message_templates import DynamicMessageTemplates
 from shared.config.service import get_config_service
 from shared.dynamic_subscription import (
@@ -38,12 +42,12 @@ private_dynamic_extract = on_message(priority=4, block=False)
 def _build_extract_pattern(
     command_aliases: dict[str, CommandAliasEntry],
 ) -> re.Pattern[str] | None:
-    """Build the ``#{触发词}{id|url}`` pattern from configured trigger words."""
+    """Build the ``{prefix}{触发词}{id|url}`` pattern from configured trigger words."""
     alternation = trigger_alternation("dynamic_extract", command_aliases)
     if alternation is None:
         return None
     return re.compile(
-        rf"^#(?:{alternation})(?:"
+        rf"^(?:{prefix_alternation()})(?:{alternation})(?:"
         r"https?://(?:www\.)?bilibili\.com/opus/(\d+)|"
         r"https?://t\.bilibili\.com/(\d+)|"
         r"(\d{10,})"
@@ -60,7 +64,9 @@ def _register_extract_startup() -> None:
 
         @driver.on_startup
         async def _dynamic_extract_startup() -> None:
-            logger.info("动态图片提取 (#提取/#获取) 已就绪，需存在订阅映射")
+            logger.info(
+                "动态图片提取 (提取/获取，触发词与前缀可在 Web Admin 自定义) 已就绪，需存在订阅映射"
+            )
     except Exception as exc:
         logger.warning(f"动态图片提取: 启动日志注册失败: {exc}")
 
@@ -71,7 +77,7 @@ _register_extract_startup()
 def parse_extract_dynamic_id(
     message_text: str, command_aliases: dict[str, CommandAliasEntry]
 ) -> str | None:
-    """Return dynamic ID from '#{触发词}{id|url}' message, or None."""
+    """Return dynamic ID from '{prefix}{触发词}{id|url}' message, or None."""
     pattern = _build_extract_pattern(command_aliases)
     if pattern is None:
         return None

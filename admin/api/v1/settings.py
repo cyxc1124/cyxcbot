@@ -18,6 +18,7 @@ from admin.services.connection_status import (
 )
 from shared.config.command_aliases import (
     normalize_command_aliases,
+    normalize_extra_prefixes,
     serialize_command_aliases,
     validation_error,
 )
@@ -91,6 +92,10 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
             raise HTTPException(status_code=400, detail=error)
         updates["command_aliases"] = json.dumps(
             serialize_command_aliases(normalized), ensure_ascii=False
+        )
+    if body.command_extra_prefixes is not None:
+        updates["command_extra_prefixes"] = json.dumps(
+            normalize_extra_prefixes(body.command_extra_prefixes), ensure_ascii=False
         )
 
     if updates:

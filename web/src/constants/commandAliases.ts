@@ -1,3 +1,6 @@
+/** 出厂默认的“习惯性”前缀，需与 shared/config/command_aliases.py 的 DEFAULT_EXTRA_PREFIXES 保持一致 */
+export const DEFAULT_EXTRA_PREFIXES = ['!', '。', '.', '#']
+
 export type CommandId =
   | 'status'
   | 'live_status'
@@ -59,13 +62,13 @@ export const COMMAND_FIELDS: CommandField[] = [
     label: '动态图片提取',
     description: '提取动态内全部图片（群聊或私聊，需已订阅动态）。',
     defaultTriggers: ['提取', '获取'],
-    hint: '仅支持 # 前缀，格式为“#触发词+动态ID或链接”，例如“#提取123456789”',
+    hint: '需带前缀，格式为“前缀+触发词+动态ID或链接”，例如“/提取123456789”',
   },
   {
     id: 'group_special_title',
     label: '群头衔设置',
     description: '群成员自助设置专属头衔（仅群聊，机器人需为群主）。',
     defaultTriggers: ['头衔'],
-    hint: '支持 # / ! / 。 / . 前缀，格式为“触发词 头衔内容”，例如“/头衔 我的头衔”',
+    hint: '需带前缀，格式为“前缀+触发词 头衔内容”，例如“/头衔 我的头衔”',
   },
 ]

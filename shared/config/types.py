@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List
 
-from shared.config.command_aliases import CommandAliasEntry
+from shared.config.command_aliases import DEFAULT_EXTRA_PREFIXES, CommandAliasEntry
 from shared.config.link_parser_policy import (
     LinkParserGroupPolicyRecord,
     LinkParserUserPolicyRecord,
@@ -71,3 +71,6 @@ class AppConfigSnapshot:
         default_factory=dict
     )
     command_aliases: Dict[str, CommandAliasEntry] = field(default_factory=dict)
+    command_extra_prefixes: List[str] = field(
+        default_factory=lambda: list(DEFAULT_EXTRA_PREFIXES)
+    )

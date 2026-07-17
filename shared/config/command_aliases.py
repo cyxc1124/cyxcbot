@@ -5,7 +5,11 @@ Each command has a stable ``command_id`` and a full list of trigger words
 admin) plus an ``enabled`` flag. Matching mirrors the conventions already
 used by ``dynamic_monitor``/``video_monitor``: bare text, the deployment's
 configured ``COMMAND_START`` prefix (see ``env.example``), a few extra
-convenience prefixes (``!``/``。``/``.``), or ``@机器人`` + text.
+convenience prefixes (默认 ``!``/``。``/``.``/``#``，可在 Web Admin → 设置 →
+命令 中自定义), or ``@机器人`` + text. All prefix-aware commands (including
+``#提取``/``#头衔`` style ones) share the same :func:`command_prefixes`
+resolution, so changing either ``COMMAND_START`` or the convenience prefixes
+affects every command consistently.
 """
 
 from __future__ import annotations
@@ -14,11 +18,14 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List
 
-# 额外的“习惯性”前缀：与 NoneBot 的 COMMAND_START 无关，仅为方便用户输入而固定支持。
-EXTRA_COMMAND_PREFIXES = ("!", "。", ".")
+# 额外“习惯性”前缀的出厂默认值：与 NoneBot 的 COMMAND_START 无关，
+# 可在 Web Admin → 设置 → 命令 中自定义（见 normalize_extra_prefixes）。
+DEFAULT_EXTRA_PREFIXES = ("!", "。", ".", "#")
 
 MAX_TRIGGER_LENGTH = 32
 MAX_TRIGGERS_PER_COMMAND = 20
+MAX_EXTRA_PREFIX_LENGTH = 4
+MAX_EXTRA_PREFIXES = 10
 
 COMMAND_DEFAULTS: Dict[str, List[str]] = {
     "status": ["status", "状态", "运行状态"],
@@ -73,6 +80,29 @@ def _clean_triggers(raw: object) -> List[str]:
         seen.add(text)
         cleaned.append(text)
         if len(cleaned) >= MAX_TRIGGERS_PER_COMMAND:
+            break
+    return cleaned
+
+
+def normalize_extra_prefixes(raw: object) -> List[str]:
+    """Clean/dedup a persisted/API prefix list; malformed input yields ``[]``.
+
+    Unlike triggers, an explicitly empty list is a valid choice (no
+    convenience prefixes) and is *not* coerced back to
+    :data:`DEFAULT_EXTRA_PREFIXES` — callers seed a fresh DB with the
+    defaults so "never configured" and "explicitly emptied" stay distinct.
+    """
+    if not isinstance(raw, list):
+        return []
+    cleaned: List[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        text = str(item).strip()
+        if not text or len(text) > MAX_EXTRA_PREFIX_LENGTH or text in seen:
+            continue
+        seen.add(text)
+        cleaned.append(text)
+        if len(cleaned) >= MAX_EXTRA_PREFIXES:
             break
     return cleaned
 
@@ -159,14 +189,34 @@ def _configured_command_starts() -> frozenset[str]:
     return frozenset(starts) if starts else frozenset({"/"})
 
 
+def _extra_prefixes() -> frozenset[str]:
+    """习惯性前缀：默认见 :data:`DEFAULT_EXTRA_PREFIXES`，可在 Web Admin → 设置 →
+    命令 中自定义（存于 DB，热更新，与 COMMAND_START 无关）。"""
+    from shared.config.service import get_config_service
+
+    return frozenset(get_config_service().get_snapshot().command_extra_prefixes)
+
+
 def command_prefixes() -> frozenset[str]:
     """Prefixes accepted before a trigger word: configured ``COMMAND_START`` plus
-    the always-on convenience prefixes."""
-    return _configured_command_starts() | frozenset(EXTRA_COMMAND_PREFIXES)
+    the configurable convenience prefixes."""
+    return _configured_command_starts() | _extra_prefixes()
+
+
+def prefix_alternation() -> str:
+    """Regex-escaped ``a|b|c`` alternation of :func:`command_prefixes`, longest first.
+
+    For commands (``dynamic_extract``/``group_special_title``) that embed the
+    prefix directly into a larger custom regex instead of using
+    :func:`match_plain`/:func:`match_command_arg`.
+    """
+    return "|".join(
+        re.escape(p) for p in sorted(command_prefixes(), key=len, reverse=True)
+    )
 
 
 def _strip_command_prefix(text: str) -> str | None:
-    for prefix in command_prefixes():
+    for prefix in sorted(command_prefixes(), key=len, reverse=True):
         if text.startswith(prefix):
             return text[len(prefix) :]
     return None

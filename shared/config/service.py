@@ -12,7 +12,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from shared.config.command_aliases import (
+    DEFAULT_EXTRA_PREFIXES,
+    command_prefixes,
     normalize_command_aliases,
+    normalize_extra_prefixes,
     serialize_command_aliases,
 )
 from shared.config.link_parser_policy import (
@@ -66,6 +69,10 @@ SETTING_KEYS = {
     "group_special_title_daily_limit": ("10", int),
     "nonebot_superusers": ("[]", "json_list"),
     "command_aliases": ("{}", "json_object"),
+    "command_extra_prefixes": (
+        json.dumps(list(DEFAULT_EXTRA_PREFIXES), ensure_ascii=False),
+        "json_prefix_list",
+    ),
 }
 
 for key, default in MESSAGE_TEMPLATE_KEYS.items():
@@ -205,6 +212,9 @@ class ConfigService:
             link_parser_group_policies=link_parser_group_policies,
             link_parser_user_policies=link_parser_user_policies,
             command_aliases=settings.get("command_aliases", {}),
+            command_extra_prefixes=settings.get(
+                "command_extra_prefixes", list(DEFAULT_EXTRA_PREFIXES)
+            ),
         )
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
         logger.info(
@@ -296,6 +306,12 @@ class ConfigService:
                 except json.JSONDecodeError:
                     parsed = {}
                 result[key] = normalize_command_aliases(parsed)
+            elif typ == "json_prefix_list":
+                try:
+                    parsed = json.loads(value or "[]")
+                except json.JSONDecodeError:
+                    parsed = []
+                result[key] = normalize_extra_prefixes(parsed)
             elif typ is str and key in MESSAGE_TEMPLATE_KEYS:
                 text = (value or default).strip()
                 result[key] = text[:500] if text else default
@@ -535,6 +551,8 @@ class ConfigService:
             "command_aliases": serialize_command_aliases(snap.command_aliases)
             if snap.command_aliases
             else serialize_command_aliases(normalize_command_aliases({})),
+            "command_extra_prefixes": list(snap.command_extra_prefixes),
+            "command_prefixes": sorted(command_prefixes()),
         }
 
 

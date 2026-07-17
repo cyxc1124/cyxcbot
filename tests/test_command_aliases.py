@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import re
+
 import shared.config.command_aliases as command_aliases_module
 from shared.config.command_aliases import (
     COMMAND_DEFAULTS,
+    DEFAULT_EXTRA_PREFIXES,
     CommandAliasEntry,
     command_prefixes,
     default_config,
@@ -12,6 +15,8 @@ from shared.config.command_aliases import (
     match_command_arg,
     match_plain,
     normalize_command_aliases,
+    normalize_extra_prefixes,
+    prefix_alternation,
     resolve_entry,
     serialize_command_aliases,
     trigger_alternation,
@@ -118,7 +123,15 @@ def test_trigger_alternation_escapes_and_orders_by_length() -> None:
     assert trigger_alternation("dynamic_extract", config) == "abc|a"
 
 
-def test_match_plain_bare_and_prefixed_text() -> None:
+def test_match_plain_bare_and_prefixed_text(monkeypatch) -> None:
+    # 显式固定前缀集合，不依赖进程内是否已有其它测试初始化过 NoneBot driver /
+    # 修改过 ConfigService 单例里的 command_extra_prefixes
+    monkeypatch.setattr(
+        command_aliases_module, "_configured_command_starts", lambda: frozenset({"/"})
+    )
+    monkeypatch.setattr(
+        command_aliases_module, "_extra_prefixes", lambda: frozenset({"!"})
+    )
     config = default_config()
     assert match_plain("最新动态", "dynamic_query_latest", config)
     assert match_plain("/最新动态", "dynamic_query_latest", config)
@@ -147,7 +160,10 @@ def test_match_plain_respects_custom_triggers_and_disabled() -> None:
     assert not match_plain("status", "status", disabled)
 
 
-def test_match_command_arg_extracts_trailing_argument() -> None:
+def test_match_command_arg_extracts_trailing_argument(monkeypatch) -> None:
+    monkeypatch.setattr(
+        command_aliases_module, "_configured_command_starts", lambda: frozenset({"/"})
+    )
     config = default_config()
     assert match_command_arg("/直播状态 12345", "live_status", config) == "12345"
     assert match_command_arg("直播状态 12345", "live_status", config) == "12345"
@@ -163,8 +179,15 @@ def test_match_command_arg_none_when_disabled() -> None:
     assert match_command_arg("直播状态 12345", "live_status", disabled) is None
 
 
-def test_command_prefixes_falls_back_to_slash_without_nonebot_start() -> None:
-    # 未拿到有效 COMMAND_START（如未初始化 NoneBot）时，回退为默认的 "/"
+def test_command_prefixes_falls_back_to_slash_without_nonebot_start(
+    monkeypatch,
+) -> None:
+    # 未拿到有效 COMMAND_START（如未初始化 NoneBot）时，回退为默认的 "/"。
+    # 显式让 get_driver() 报错，不依赖进程内是否已有其它测试真正初始化过 driver。
+    def _raise() -> None:
+        raise RuntimeError("driver not initialized")
+
+    monkeypatch.setattr("nonebot.get_driver", _raise)
     assert "/" in command_prefixes()
 
 
@@ -173,6 +196,9 @@ def test_prefix_matching_follows_configured_command_start(monkeypatch) -> None:
     而不是硬编码 "/"（见 issue：#status 不匹配、/status 仍误匹配）。"""
     monkeypatch.setattr(
         command_aliases_module, "_configured_command_starts", lambda: frozenset({"#"})
+    )
+    monkeypatch.setattr(
+        command_aliases_module, "_extra_prefixes", lambda: frozenset({"!"})
     )
     config = default_config()
 
@@ -183,3 +209,48 @@ def test_prefix_matching_follows_configured_command_start(monkeypatch) -> None:
 
     # 习惯性前缀与 COMMAND_START 无关，始终生效
     assert match_plain("!status", "status", config)
+
+
+def test_prefix_alternation_covers_configured_and_extra_prefixes(monkeypatch) -> None:
+    monkeypatch.setattr(
+        command_aliases_module, "_configured_command_starts", lambda: frozenset({"/"})
+    )
+    monkeypatch.setattr(
+        command_aliases_module,
+        "_extra_prefixes",
+        lambda: frozenset({"!", "。", ".", "#"}),
+    )
+    parts = set(prefix_alternation().split("|"))
+    assert parts == {re.escape(p) for p in ("/", "!", "。", ".", "#")}
+
+
+def test_extra_prefixes_include_hash_for_extract_and_title_style_commands() -> None:
+    # #提取/#头衔 等命令历史上固定使用 "#"，现改为跟随统一的前缀集合，
+    # 因此出厂默认值需保留 "#"，避免默认部署下语义变化。
+    assert "#" in DEFAULT_EXTRA_PREFIXES
+
+
+def test_normalize_extra_prefixes_cleans_dedups_and_caps() -> None:
+    cleaned = normalize_extra_prefixes(["  ! ", "!", "", "。", "a" * 10])
+    # 去空白、去重、丢弃超长前缀
+    assert cleaned == ["!", "。"]
+
+
+def test_normalize_extra_prefixes_malformed_input_returns_empty() -> None:
+    assert normalize_extra_prefixes("not-a-list") == []
+    assert normalize_extra_prefixes(None) == []
+
+
+def test_normalize_extra_prefixes_preserves_explicit_empty_choice() -> None:
+    # 显式保存空列表代表“不启用任何习惯性前缀”，不应被强制回退为出厂默认值
+    assert normalize_extra_prefixes([]) == []
+
+
+def test_command_prefixes_respects_configured_extra_prefixes(monkeypatch) -> None:
+    monkeypatch.setattr(
+        command_aliases_module, "_configured_command_starts", lambda: frozenset({"/"})
+    )
+    monkeypatch.setattr(
+        command_aliases_module, "_extra_prefixes", lambda: frozenset({"~"})
+    )
+    assert command_prefixes() == frozenset({"/", "~"})

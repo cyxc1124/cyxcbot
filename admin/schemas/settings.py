@@ -62,6 +62,8 @@ class SettingsResponse(BaseModel):
     status_check_allowed_qq: list[str] = Field(default_factory=list)
     nonebot_superusers: list[str] = Field(default_factory=list)
     command_aliases: dict[str, CommandAliasEntryModel] = Field(default_factory=dict)
+    command_extra_prefixes: list[str] = Field(default_factory=list)
+    command_prefixes: list[str] = Field(default_factory=list)
 
 
 class CookieTestResultResponse(BaseModel):
@@ -96,3 +98,4 @@ class SettingsUpdateRequest(BaseModel):
     status_check_allowed_qq: Optional[list[str]] = None
     nonebot_superusers: Optional[list[str]] = None
     command_aliases: Optional[dict[str, CommandAliasEntryModel]] = None
+    command_extra_prefixes: Optional[list[str]] = None
