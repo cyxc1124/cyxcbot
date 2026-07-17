@@ -222,6 +222,21 @@ def _strip_command_prefix(text: str) -> str | None:
     return None
 
 
+def _exact_match_elsewhere(
+    text: str, command_id: str, config: Dict[str, CommandAliasEntry]
+) -> bool:
+    """Whether *text* exactly matches another *enabled* command's trigger.
+
+    ``find_trigger_conflicts``/``validation_error`` already reject the exact
+    same trigger word being reused by two enabled commands, so at most one
+    other command can match here.
+    """
+    return any(
+        other_id != command_id and other_entry.enabled and text in other_entry.triggers
+        for other_id, other_entry in config.items()
+    )
+
+
 def match_plain(
     text: str,
     command_id: str,
@@ -229,7 +244,13 @@ def match_plain(
     *,
     is_tome: bool = False,
 ) -> bool:
-    """Whole-message trigger match: bare text, prefixed text, or ``@机器人`` mention."""
+    """Whole-message trigger match: bare text, prefixed text, or ``@机器人`` mention.
+
+    在 ``@机器人`` 模糊匹配（消息以触发词开头/结尾即命中）下，若触发词有前缀/
+    后缀重叠（如 "动态" 与 "最新动态"），消息可能同时"模糊命中"本命令、又
+    "精确命中"另一个命令。这里让精确匹配优先：若消息精确命中了别的已启用命令
+    的触发词，本命令的模糊匹配让位，避免被错误分派。
+    """
     entry = resolve_entry(command_id, config)
     if not entry.enabled or not entry.triggers:
         return False
@@ -237,6 +258,8 @@ def match_plain(
     if is_tome:
         if text in entry.triggers:
             return True
+        if _exact_match_elsewhere(text, command_id, config):
+            return False
         return any(text.startswith(t) or text.endswith(t) for t in entry.triggers)
     stripped = _strip_command_prefix(text)
     if stripped is not None:

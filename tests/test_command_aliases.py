@@ -170,6 +170,31 @@ def test_match_plain_at_bot_fuzzy_prefix_suffix() -> None:
     assert not match_plain("最新动态呀", "dynamic_query_latest", config, is_tome=False)
 
 
+def test_match_plain_exact_match_elsewhere_suppresses_fuzzy_match() -> None:
+    """回归测试：最新动态用"动态"、置顶动态用"最新动态"时，@机器人 精确命中
+    "最新动态" 不应被"最新动态查询"的模糊后缀匹配("动态"是"最新动态"的后缀)
+    抢占分派（见 issue：@bot 最新动态 被误判为查最新动态而非置顶动态）。"""
+    config = normalize_command_aliases(
+        {
+            "dynamic_query_latest": {"enabled": True, "triggers": ["动态"]},
+            "dynamic_query_pinned": {"enabled": True, "triggers": ["最新动态"]},
+        }
+    )
+    assert not match_plain("最新动态", "dynamic_query_latest", config, is_tome=True)
+    assert match_plain("最新动态", "dynamic_query_pinned", config, is_tome=True)
+
+    # 精确命中的命令若被禁用，则不应再抑制其他命令的模糊匹配
+    disabled_pinned = normalize_command_aliases(
+        {
+            "dynamic_query_latest": {"enabled": True, "triggers": ["动态"]},
+            "dynamic_query_pinned": {"enabled": False, "triggers": ["最新动态"]},
+        }
+    )
+    assert match_plain(
+        "最新动态", "dynamic_query_latest", disabled_pinned, is_tome=True
+    )
+
+
 def test_match_plain_respects_custom_triggers_and_disabled() -> None:
     config = normalize_command_aliases(
         {"status": {"enabled": True, "triggers": ["查状态"]}}
