@@ -83,6 +83,29 @@ def test_serialize_round_trips_through_normalize() -> None:
     assert restored["status"] == config["status"]
 
 
+def test_partial_update_merge_pattern_preserves_untouched_commands() -> None:
+    """回归测试：PATCH /settings 只传部分命令时，未提及的命令应保留原有配置，
+    而不是被 normalize_command_aliases 的缺省填充逻辑重置为出厂默认
+    （见 admin/api/v1/settings.py::update_settings 的 current | raw 合并写法）。"""
+    current = normalize_command_aliases(
+        {
+            "status": {"enabled": False, "triggers": ["status"]},
+            "live_monitor_list": {"enabled": True, "triggers": ["自定义列表"]},
+        }
+    )
+    current_serialized = serialize_command_aliases(current)
+
+    # 只想改 live_status 一条
+    raw = {"live_status": {"enabled": True, "triggers": ["直播", "查播"]}}
+    merged = normalize_command_aliases({**current_serialized, **raw})
+
+    assert merged["live_status"].triggers == ["直播", "查播"]
+    # 未提及的命令保留原值，而非被重置为出厂默认
+    assert merged["status"].enabled is False
+    assert merged["status"].triggers == ["status"]
+    assert merged["live_monitor_list"].triggers == ["自定义列表"]
+
+
 def test_resolve_entry_falls_back_to_default_for_missing_id() -> None:
     entry = resolve_entry("status", {})
     assert entry.enabled is True

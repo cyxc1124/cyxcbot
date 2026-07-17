@@ -85,8 +85,11 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         ]
         updates["nonebot_superusers"] = json.dumps(cleaned, ensure_ascii=False)
     if body.command_aliases is not None:
+        # 与当前快照合并后再 normalize：只传部分命令时，未提及的命令保留原有
+        # 配置（而非被 normalize_command_aliases 的缺省填充逻辑重置为出厂默认）。
+        current = serialize_command_aliases(svc.get_snapshot().command_aliases)
         raw = {cid: entry.model_dump() for cid, entry in body.command_aliases.items()}
-        normalized = normalize_command_aliases(raw)
+        normalized = normalize_command_aliases({**current, **raw})
         error = validation_error(normalized)
         if error:
             raise HTTPException(status_code=400, detail=error)
