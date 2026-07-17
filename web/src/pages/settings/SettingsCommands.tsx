@@ -10,34 +10,14 @@ import {
 } from '../../constants/commandAliases'
 import { useToast } from '../../contexts/ToastContext'
 import { formatApiError } from '../../utils/apiError'
+import {
+  buildExtraPrefixesText,
+  buildForm,
+  parseLines,
+  type CommandForm,
+  type CommandFormValue,
+} from './commandsForm'
 import { useSettingsForm } from './SettingsContext'
-
-type CommandFormValue = { enabled: boolean; text: string }
-type CommandForm = Record<CommandId, CommandFormValue>
-
-function parseLines(text: string): string[] {
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-}
-
-function buildForm(settings: Settings | null): CommandForm {
-  const result = {} as CommandForm
-  for (const field of COMMAND_FIELDS) {
-    const entry = settings?.command_aliases?.[field.id]
-    const triggers = entry && entry.triggers.length > 0 ? entry.triggers : field.defaultTriggers
-    result[field.id] = {
-      enabled: entry?.enabled ?? true,
-      text: triggers.join('\n'),
-    }
-  }
-  return result
-}
-
-function buildExtraPrefixesText(settings: Settings | null): string {
-  return (settings?.command_extra_prefixes ?? DEFAULT_EXTRA_PREFIXES).join('\n')
-}
 
 function CommandCard({
   field,

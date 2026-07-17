@@ -183,6 +183,29 @@ def test_validation_error_flags_cross_command_conflicts() -> None:
     assert validation_error(config) is not None
 
 
+def test_find_trigger_conflicts_ignores_disabled_commands() -> None:
+    """回归测试：已禁用命令保留的触发词不参与冲突判定，否则关闭后触发词会保留
+    这一设计就无法用来腾出触发词给别的命令复用（见 issue：禁用"群头衔设置"后仍
+    无法把"头衔"配给别的启用命令）。"""
+    config = normalize_command_aliases(
+        {
+            "group_special_title": {"enabled": False, "triggers": ["头衔"]},
+            "live_monitor_list": {"enabled": True, "triggers": ["头衔"]},
+        }
+    )
+    assert find_trigger_conflicts(config) == {}
+    assert validation_error(config) is None
+
+    # 两条都启用时仍应判定为冲突
+    both_enabled = normalize_command_aliases(
+        {
+            "group_special_title": {"enabled": True, "triggers": ["头衔"]},
+            "live_monitor_list": {"enabled": True, "triggers": ["头衔"]},
+        }
+    )
+    assert "头衔" in find_trigger_conflicts(both_enabled)
+
+
 def test_validation_error_none_for_default_config() -> None:
     assert validation_error(default_config()) is None
 
@@ -248,6 +271,21 @@ def test_match_plain_exact_match_elsewhere_suppresses_fuzzy_match() -> None:
     assert match_plain(
         "最新动态", "dynamic_query_latest", disabled_pinned, is_tome=True
     )
+
+
+def test_match_plain_prefers_longer_fuzzy_match_embedded_in_sentence() -> None:
+    """回归测试：即使整条消息不逐字等于任何触发词，句子里嵌了重叠触发词时
+    （"请看最新动态" 同时以 "动态"/"最新动态" 结尾），也应让更长、更具体的
+    触发词优先命中，而不仅是消息恰好等于触发词的极限情形（见 issue：@bot 请看
+    最新动态 仍被误判为查最新动态而非置顶动态）。"""
+    config = normalize_command_aliases(
+        {
+            "dynamic_query_latest": {"enabled": True, "triggers": ["动态"]},
+            "dynamic_query_pinned": {"enabled": True, "triggers": ["最新动态"]},
+        }
+    )
+    assert not match_plain("请看最新动态", "dynamic_query_latest", config, is_tome=True)
+    assert match_plain("请看最新动态", "dynamic_query_pinned", config, is_tome=True)
 
 
 def test_match_plain_respects_custom_triggers_and_disabled() -> None:
