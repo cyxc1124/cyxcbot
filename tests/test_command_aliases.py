@@ -14,6 +14,7 @@ from shared.config.command_aliases import (
     find_trigger_conflicts,
     match_command_arg,
     match_plain,
+    merge_partial_command_aliases,
     normalize_command_aliases,
     normalize_extra_prefixes,
     prefix_alternation,
@@ -86,7 +87,7 @@ def test_serialize_round_trips_through_normalize() -> None:
 def test_partial_update_merge_pattern_preserves_untouched_commands() -> None:
     """回归测试：PATCH /settings 只传部分命令时，未提及的命令应保留原有配置，
     而不是被 normalize_command_aliases 的缺省填充逻辑重置为出厂默认
-    （见 admin/api/v1/settings.py::update_settings 的 current | raw 合并写法）。"""
+    （见 admin/api/v1/settings.py::update_settings 的合并写法）。"""
     current = normalize_command_aliases(
         {
             "status": {"enabled": False, "triggers": ["status"]},
@@ -95,15 +96,69 @@ def test_partial_update_merge_pattern_preserves_untouched_commands() -> None:
     )
     current_serialized = serialize_command_aliases(current)
 
-    # 只想改 live_status 一条
-    raw = {"live_status": {"enabled": True, "triggers": ["直播", "查播"]}}
-    merged = normalize_command_aliases({**current_serialized, **raw})
+    # 只想改 live_status 一条（模拟客户端已带上完整字段的场景）
+    patch = {"live_status": {"enabled": True, "triggers": ["直播", "查播"]}}
+    merged = normalize_command_aliases(
+        merge_partial_command_aliases(current_serialized, patch)
+    )
 
     assert merged["live_status"].triggers == ["直播", "查播"]
     # 未提及的命令保留原值，而非被重置为出厂默认
     assert merged["status"].enabled is False
     assert merged["status"].triggers == ["status"]
     assert merged["live_monitor_list"].triggers == ["自定义列表"]
+
+
+def test_merge_partial_command_aliases_keeps_untouched_fields_within_a_command() -> (
+    None
+):
+    """回归测试：同一条命令内只传 enabled（或只传 triggers）时，另一个字段
+    应保留原值，而不是被 Pydantic 为未传字段填的默认值
+    （enabled=True/triggers=[]）整条覆盖——这要求调用方先用
+    ``model_dump(exclude_unset=True)`` 筛出真正传入的字段，本函数只负责合并
+    （见 admin/api/v1/settings.py::update_settings 及 issue：只关开关会清空触发
+    词、只改触发词会误重启用）。"""
+    current = serialize_command_aliases(
+        normalize_command_aliases(
+            {"status": {"enabled": True, "triggers": ["status", "状态"]}}
+        )
+    )
+
+    # 只传 enabled=False（模拟 exclude_unset 后的结果，不含 triggers）
+    merged = normalize_command_aliases(
+        merge_partial_command_aliases(current, {"status": {"enabled": False}})
+    )
+    assert merged["status"].enabled is False
+    assert merged["status"].triggers == ["status", "状态"]
+
+    # 只传 triggers（模拟 exclude_unset 后的结果，不含 enabled），仍应保持禁用
+    current2 = serialize_command_aliases(merged)
+    merged2 = normalize_command_aliases(
+        merge_partial_command_aliases(current2, {"status": {"triggers": ["新触发词"]}})
+    )
+    assert merged2["status"].enabled is False
+    assert merged2["status"].triggers == ["新触发词"]
+
+
+def test_command_alias_entry_model_dump_exclude_unset_matches_endpoint_usage() -> None:
+    """确认 admin 端点实际依赖的 Pydantic 行为：嵌套在 SettingsUpdateRequest 里的
+    CommandAliasEntryModel，未在请求体中出现的字段不会被 exclude_unset 带出
+    （即使该字段有默认值），这是 merge_partial_command_aliases 能生效的前提。"""
+    from admin.schemas.settings import SettingsUpdateRequest
+
+    body = SettingsUpdateRequest.model_validate(
+        {"command_aliases": {"status": {"enabled": False}}}
+    )
+    assert body.command_aliases is not None
+    dumped = body.command_aliases["status"].model_dump(exclude_unset=True)
+    assert dumped == {"enabled": False}
+
+    body2 = SettingsUpdateRequest.model_validate(
+        {"command_aliases": {"status": {"triggers": ["新触发词"]}}}
+    )
+    assert body2.command_aliases is not None
+    dumped2 = body2.command_aliases["status"].model_dump(exclude_unset=True)
+    assert dumped2 == {"triggers": ["新触发词"]}
 
 
 def test_resolve_entry_falls_back_to_default_for_missing_id() -> None:

@@ -133,6 +133,22 @@ def serialize_command_aliases(config: Dict[str, CommandAliasEntry]) -> dict:
     }
 
 
+def merge_partial_command_aliases(current: dict, patch: Dict[str, dict]) -> dict:
+    """Merge a partial PATCH onto the currently persisted raw config, per command.
+
+    *patch* values must contain only the fields the client actually sent for
+    that command (e.g. via Pydantic's ``model_dump(exclude_unset=True)``) —
+    this only merges dicts, it does not filter out unset/defaulted fields.
+    Without this, patching just ``enabled`` (or just ``triggers``) for one
+    command would have the other field's Pydantic default (``triggers=[]``/
+    ``enabled=True``) blow away the current value before normalization.
+    """
+    merged = dict(current)
+    for command_id, partial_entry in patch.items():
+        merged[command_id] = {**merged.get(command_id, {}), **partial_entry}
+    return merged
+
+
 def find_trigger_conflicts(
     config: Dict[str, CommandAliasEntry],
 ) -> Dict[str, List[str]]:
