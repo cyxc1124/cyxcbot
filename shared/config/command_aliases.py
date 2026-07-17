@@ -3,8 +3,9 @@
 Each command has a stable ``command_id`` and a full list of trigger words
 (seeded from :data:`COMMAND_DEFAULTS`, freely editable/removable by the
 admin) plus an ``enabled`` flag. Matching mirrors the conventions already
-used by ``dynamic_monitor``/``video_monitor``: bare text, ``/``/``!``/``。``/
-``.`` prefix, or ``@机器人`` + text.
+used by ``dynamic_monitor``/``video_monitor``: bare text, the deployment's
+configured ``COMMAND_START`` prefix (see ``env.example``), a few extra
+convenience prefixes (``!``/``。``/``.``), or ``@机器人`` + text.
 """
 
 from __future__ import annotations
@@ -13,7 +14,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List
 
-COMMAND_PREFIXES = ("/", "!", "。", ".")
+# 额外的“习惯性”前缀：与 NoneBot 的 COMMAND_START 无关，仅为方便用户输入而固定支持。
+EXTRA_COMMAND_PREFIXES = ("!", "。", ".")
 
 MAX_TRIGGER_LENGTH = 32
 MAX_TRIGGERS_PER_COMMAND = 20
@@ -146,8 +148,25 @@ def trigger_alternation(
     return "|".join(re.escape(t) for t in sorted(entry.triggers, key=len, reverse=True))
 
 
+def _configured_command_starts() -> frozenset[str]:
+    """NoneBot's ``COMMAND_START`` (fixed at process startup; see ``env.example``)."""
+    try:
+        from nonebot import get_driver
+
+        starts = {str(s) for s in get_driver().config.command_start if s}
+    except Exception:
+        starts = set()
+    return frozenset(starts) if starts else frozenset({"/"})
+
+
+def command_prefixes() -> frozenset[str]:
+    """Prefixes accepted before a trigger word: configured ``COMMAND_START`` plus
+    the always-on convenience prefixes."""
+    return _configured_command_starts() | frozenset(EXTRA_COMMAND_PREFIXES)
+
+
 def _strip_command_prefix(text: str) -> str | None:
-    for prefix in COMMAND_PREFIXES:
+    for prefix in command_prefixes():
         if text.startswith(prefix):
             return text[len(prefix) :]
     return None

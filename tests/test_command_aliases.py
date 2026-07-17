@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import shared.config.command_aliases as command_aliases_module
 from shared.config.command_aliases import (
     COMMAND_DEFAULTS,
     CommandAliasEntry,
+    command_prefixes,
     default_config,
     find_trigger_conflicts,
     match_command_arg,
@@ -159,3 +161,25 @@ def test_match_command_arg_none_when_disabled() -> None:
         {"live_status": {"enabled": False, "triggers": ["直播状态"]}}
     )
     assert match_command_arg("直播状态 12345", "live_status", disabled) is None
+
+
+def test_command_prefixes_falls_back_to_slash_without_nonebot_start() -> None:
+    # 未拿到有效 COMMAND_START（如未初始化 NoneBot）时，回退为默认的 "/"
+    assert "/" in command_prefixes()
+
+
+def test_prefix_matching_follows_configured_command_start(monkeypatch) -> None:
+    """回归测试：迁移自 on_command 的命令必须跟随部署方配置的 COMMAND_START，
+    而不是硬编码 "/"（见 issue：#status 不匹配、/status 仍误匹配）。"""
+    monkeypatch.setattr(
+        command_aliases_module, "_configured_command_starts", lambda: frozenset({"#"})
+    )
+    config = default_config()
+
+    assert match_plain("#status", "status", config)
+    assert not match_plain("/status", "status", config)
+    assert match_command_arg("#直播状态 12345", "live_status", config) == "12345"
+    assert match_command_arg("/直播状态 12345", "live_status", config) is None
+
+    # 习惯性前缀与 COMMAND_START 无关，始终生效
+    assert match_plain("!status", "status", config)
