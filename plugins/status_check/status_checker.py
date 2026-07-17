@@ -82,7 +82,12 @@ async def handle_status_command(
     """处理状态查询命令"""
     text = event.get_plaintext().strip()
     config = get_config_service().get_snapshot()
-    if not match_plain(text, "status", config.command_aliases, is_tome=event.is_tome()):
+    # is_tome 对私聊消息恒为 True（好友消息天然"发给"机器人），若直接传入会让
+    # match_plain 走 @机器人 模糊匹配分支——好友随口一句"状态怎么样"/"请看运行
+    # 状态"就会命中。仅群聊里"被 @/回复"才算模糊匹配场景；私聊强制精确匹配，
+    # 保持迁移前 on_command 的语义（需完整输入触发词，而非包含即命中）。
+    is_tome = isinstance(event, GroupMessageEvent) and event.is_tome()
+    if not match_plain(text, "status", config.command_aliases, is_tome=is_tome):
         return
 
     # 检查权限

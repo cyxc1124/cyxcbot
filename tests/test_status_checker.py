@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import sys
 from types import SimpleNamespace
+from unittest.mock import DEFAULT, MagicMock, patch
 
 import nonebot
 import pytest
@@ -29,6 +30,11 @@ def _ensure_nonebot() -> None:
 
 
 _ensure_nonebot()
+
+from nonebot.adapters.onebot.v11 import (  # noqa: E402
+    GroupMessageEvent,
+    PrivateMessageEvent,
+)
 
 from plugins.status_check import status_checker  # noqa: E402
 
@@ -141,3 +147,57 @@ async def test_check_status_permission_allows_superuser(monkeypatch):
         user_id = 12345
 
     assert await status_checker.check_status_permission(None, FakeEvent()) is True
+
+
+@pytest.mark.asyncio
+async def test_handle_status_command_private_message_requires_exact_trigger(
+    monkeypatch,
+):
+    """回归测试：PrivateMessageEvent.is_tome() 恒为 True，若直接传给
+    match_plain 会走 @机器人 模糊匹配分支，导致好友随口一句"状态怎么样"/
+    "请看运行状态"也触发完整状态播报（迁移自 on_command 前只有逐字精确输入
+    触发词才会响应）。私聊应强制精确匹配，仅群聊被 @/回复时才走模糊匹配。
+    """
+
+    async def fake_permission(bot, event):
+        return True
+
+    monkeypatch.setattr(status_checker, "check_status_permission", fake_permission)
+
+    private_event = MagicMock(spec=PrivateMessageEvent)
+    private_event.is_tome.return_value = True
+
+    private_event.get_plaintext.return_value = "状态怎么样"
+    with patch.multiple(
+        status_checker.status_cmd, send=DEFAULT, finish=DEFAULT
+    ) as mocks:
+        await status_checker.handle_status_command(MagicMock(), private_event)
+    mocks["finish"].assert_not_awaited()
+
+    # 私聊里完整发送触发词仍应正常响应
+    private_event.get_plaintext.return_value = "运行状态"
+    with patch.multiple(
+        status_checker.status_cmd, send=DEFAULT, finish=DEFAULT
+    ) as mocks:
+        await status_checker.handle_status_command(MagicMock(), private_event)
+    mocks["finish"].assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_status_command_group_at_bot_keeps_fuzzy_match(monkeypatch):
+    """群聊里被 @/回复时应保留模糊匹配（迁移前 dynamic_monitor 等插件的既有约定）。"""
+
+    async def fake_permission(bot, event):
+        return True
+
+    monkeypatch.setattr(status_checker, "check_status_permission", fake_permission)
+
+    group_event = MagicMock(spec=GroupMessageEvent)
+    group_event.is_tome.return_value = True
+    group_event.get_plaintext.return_value = "状态怎么样"
+
+    with patch.multiple(
+        status_checker.status_cmd, send=DEFAULT, finish=DEFAULT
+    ) as mocks:
+        await status_checker.handle_status_command(MagicMock(), group_event)
+    mocks["finish"].assert_awaited_once()
