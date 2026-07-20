@@ -9,7 +9,7 @@ nonebot-plugin-orm[sqlite]==0.8.3
 python-dotenv==1.2.2
 
 # Admin 后台 API
-fastapi==0.139.0
+fastapi==0.139.2
 uvicorn==0.51.0
 python-multipart==0.0.32
 
@@ -35,4 +35,4 @@ prometheus_client==0.25.0
 # 开发与测试
 pytest==8.4.2
 pytest-asyncio==1.4.0
-ruff==0.15.21
+ruff==0.15.22
