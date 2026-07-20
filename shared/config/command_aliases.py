@@ -261,19 +261,30 @@ def _more_specific_match_elsewhere(
     config: Dict[str, CommandAliasEntry],
 ) -> bool:
     """Whether another *enabled* command has a strictly longer (more specific)
-    prefix/suffix match for *text* than this command's best match.
+    prefix/suffix match for *text* than this command's best match, or an
+    equally-long match that wins a deterministic tie-break.
 
     触发词若有前缀/后缀重叠（如 "动态" 与 "最新动态"），同一条消息可能同时
     模糊命中多个命令——不仅限于整条消息恰好等于另一命令触发词（那是长度
     ``len(text)`` 的极限情形），句子中间嵌了重叠触发词（如 "请看最新动态"
     同时以 "动态"/"最新动态" 结尾）也会如此。这里让更长、更具体的触发词
     优先命中。
+
+    若两个不同命令的最佳匹配长度相同（如触发词 "最新" 与 "动态" 都是 2
+    个字，"最新动态" 同时以两者为前缀/后缀），仅比较长度无法分出胜负，两条
+    命令的 :func:`match_plain` 会同时返回 ``True``——实际生效的一个取决于
+    调用方插件里 if/elif 的偶然书写顺序，而不是本模块的确定性行为（见
+    issue：Break ties between fuzzy @ trigger matches）。这里以 command_id
+    的字典序作为平局裁决（较小者胜出），保证任意调用顺序下同一输入只有
+    一个命令命中。
     """
     return any(
         other_id != command_id
         and other_entry.enabled
         and (other_best := _best_own_match_length(text, other_entry)) is not None
-        and other_best > own_best
+        and (
+            other_best > own_best or (other_best == own_best and other_id < command_id)
+        )
         for other_id, other_entry in config.items()
     )
 

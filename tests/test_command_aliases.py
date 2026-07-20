@@ -310,6 +310,24 @@ def test_match_plain_prefers_longer_fuzzy_match_embedded_in_sentence() -> None:
     assert match_plain("请看最新动态", "dynamic_query_pinned", config, is_tome=True)
 
 
+def test_match_plain_breaks_ties_between_equal_length_fuzzy_matches() -> None:
+    """回归测试：最新动态用"最新"、置顶动态用"动态"时（两个触发词都是 2 个
+    字），"@bot 最新动态" 对两条命令的最佳匹配长度相同（"最新"是前缀、
+    "动态"是后缀），仅比较长度分不出胜负，两条命令的 match_plain 会同时
+    返回 True——实际生效的一个取决于调用方 if/elif 的偶然顺序（见 issue：
+    Break ties between fuzzy @ trigger matches）。应以 command_id 字典序
+    作为确定性裁决，保证任意调用顺序下只有一个命令命中。"""
+    config = normalize_command_aliases(
+        {
+            "dynamic_query_latest": {"enabled": True, "triggers": ["最新"]},
+            "dynamic_query_pinned": {"enabled": True, "triggers": ["动态"]},
+        }
+    )
+    # "dynamic_query_latest" < "dynamic_query_pinned"（字典序），平局时前者胜出
+    assert match_plain("最新动态", "dynamic_query_latest", config, is_tome=True)
+    assert not match_plain("最新动态", "dynamic_query_pinned", config, is_tome=True)
+
+
 def test_match_plain_respects_custom_triggers_and_disabled() -> None:
     config = normalize_command_aliases(
         {"status": {"enabled": True, "triggers": ["查状态"]}}
