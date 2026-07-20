@@ -1,0 +1,374 @@
+"""Configurable trigger words for user-invoked commands (Web Admin: 设置 → 命令).
+
+Each command has a stable ``command_id`` and a full list of trigger words
+(seeded from :data:`COMMAND_DEFAULTS`, freely editable/removable by the
+admin) plus an ``enabled`` flag. Matching mirrors the conventions already
+used by ``dynamic_monitor``/``video_monitor``: bare text, the deployment's
+configured ``COMMAND_START`` prefix (see ``env.example``), a few extra
+convenience prefixes (默认 ``!``/``。``/``.``/``#``，可在 Web Admin → 设置 →
+命令 中自定义), or ``@机器人`` + text. All prefix-aware commands (including
+``#提取``/``#头衔`` style ones) share the same :func:`command_prefixes`
+resolution, so changing either ``COMMAND_START`` or the convenience prefixes
+affects every command consistently.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import Dict, List
+
+# 额外“习惯性”前缀的出厂默认值：与 NoneBot 的 COMMAND_START 无关，
+# 可在 Web Admin → 设置 → 命令 中自定义（见 normalize_extra_prefixes）。
+DEFAULT_EXTRA_PREFIXES = ("!", "。", ".", "#")
+
+MAX_TRIGGER_LENGTH = 32
+MAX_TRIGGERS_PER_COMMAND = 20
+MAX_EXTRA_PREFIX_LENGTH = 4
+MAX_EXTRA_PREFIXES = 10
+
+COMMAND_DEFAULTS: Dict[str, List[str]] = {
+    "status": ["status", "状态", "运行状态"],
+    "live_status": ["直播状态", "查直播", "live"],
+    "live_monitor_list": ["监控列表", "直播监控列表"],
+    "dynamic_query_latest": ["最新动态"],
+    "dynamic_query_pinned": ["置顶动态"],
+    "video_query_latest": ["最新视频", "最新投稿"],
+    "dynamic_extract": ["提取", "获取"],
+    "group_special_title": ["头衔"],
+}
+
+COMMAND_LABELS: Dict[str, str] = {
+    "status": "运行状态查询",
+    "live_status": "直播状态查询",
+    "live_monitor_list": "直播监控列表",
+    "dynamic_query_latest": "最新动态查询",
+    "dynamic_query_pinned": "置顶动态查询",
+    "video_query_latest": "最新投稿查询",
+    "dynamic_extract": "动态图片提取",
+    "group_special_title": "群头衔设置",
+}
+
+
+@dataclass
+class CommandAliasEntry:
+    """Resolved trigger config for one command."""
+
+    enabled: bool = True
+    triggers: List[str] = field(default_factory=list)
+
+
+def default_entry(command_id: str) -> CommandAliasEntry:
+    return CommandAliasEntry(
+        enabled=True, triggers=list(COMMAND_DEFAULTS.get(command_id, []))
+    )
+
+
+def default_config() -> Dict[str, CommandAliasEntry]:
+    return {command_id: default_entry(command_id) for command_id in COMMAND_DEFAULTS}
+
+
+def _clean_triggers(raw: object) -> List[str]:
+    if not isinstance(raw, list):
+        return []
+    cleaned: List[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        text = str(item).strip()
+        if not text or len(text) > MAX_TRIGGER_LENGTH or text in seen:
+            continue
+        seen.add(text)
+        cleaned.append(text)
+        if len(cleaned) >= MAX_TRIGGERS_PER_COMMAND:
+            break
+    return cleaned
+
+
+def normalize_extra_prefixes(raw: object) -> List[str]:
+    """Clean/dedup a persisted/API prefix list; malformed input yields ``[]``.
+
+    Unlike triggers, an explicitly empty list is a valid choice (no
+    convenience prefixes) and is *not* coerced back to
+    :data:`DEFAULT_EXTRA_PREFIXES` — callers seed a fresh DB with the
+    defaults so "never configured" and "explicitly emptied" stay distinct.
+    """
+    if not isinstance(raw, list):
+        return []
+    cleaned: List[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        text = str(item).strip()
+        if not text or len(text) > MAX_EXTRA_PREFIX_LENGTH or text in seen:
+            continue
+        seen.add(text)
+        cleaned.append(text)
+        if len(cleaned) >= MAX_EXTRA_PREFIXES:
+            break
+    return cleaned
+
+
+def normalize_command_aliases(raw: object) -> Dict[str, CommandAliasEntry]:
+    """Parse persisted/API JSON into a full mapping covering every known command.
+
+    Unknown ids are dropped; missing/malformed ids fall back to defaults.
+    """
+    data = raw if isinstance(raw, dict) else {}
+    result: Dict[str, CommandAliasEntry] = {}
+    for command_id in COMMAND_DEFAULTS:
+        entry_raw = data.get(command_id)
+        if isinstance(entry_raw, dict):
+            enabled = bool(entry_raw.get("enabled", True))
+            triggers = _clean_triggers(entry_raw.get("triggers"))
+            result[command_id] = CommandAliasEntry(enabled=enabled, triggers=triggers)
+        else:
+            result[command_id] = default_entry(command_id)
+    return result
+
+
+def serialize_command_aliases(config: Dict[str, CommandAliasEntry]) -> dict:
+    """Plain-dict form for JSON storage / API responses."""
+    return {
+        command_id: {"enabled": entry.enabled, "triggers": list(entry.triggers)}
+        for command_id, entry in config.items()
+    }
+
+
+def merge_partial_command_aliases(current: dict, patch: Dict[str, dict]) -> dict:
+    """Merge a partial PATCH onto the currently persisted raw config, per command.
+
+    *patch* values must contain only the fields the client actually sent for
+    that command (e.g. via Pydantic's ``model_dump(exclude_unset=True)``) —
+    this only merges dicts, it does not filter out unset/defaulted fields.
+    Without this, patching just ``enabled`` (or just ``triggers``) for one
+    command would have the other field's Pydantic default (``triggers=[]``/
+    ``enabled=True``) blow away the current value before normalization.
+    """
+    merged = dict(current)
+    for command_id, partial_entry in patch.items():
+        merged[command_id] = {**merged.get(command_id, {}), **partial_entry}
+    return merged
+
+
+def find_trigger_conflicts(
+    config: Dict[str, CommandAliasEntry],
+) -> Dict[str, List[str]]:
+    """Return ``{trigger: [command_id, ...]}`` for triggers shared by 2+ *enabled* commands.
+
+    禁用命令的触发词不参与冲突判定：所有匹配函数都先检查 ``enabled``，一条
+    已关闭的命令即使保留了触发词也不会真正响应，因此不应阻止别的命令启用
+    同一触发词（否则"关闭后触发词会保留"这一设计就无法用来腾出触发词供别的
+    命令复用）。
+    """
+    seen: Dict[str, List[str]] = {}
+    for command_id, entry in config.items():
+        if not entry.enabled:
+            continue
+        for trigger in entry.triggers:
+            seen.setdefault(trigger, []).append(command_id)
+    return {trigger: ids for trigger, ids in seen.items() if len(ids) > 1}
+
+
+def validation_error(config: Dict[str, CommandAliasEntry]) -> str | None:
+    """Return a Chinese error message if *config* is invalid to persist, else None."""
+    for command_id, entry in config.items():
+        if entry.enabled and not entry.triggers:
+            label = COMMAND_LABELS.get(command_id, command_id)
+            return f"「{label}」已启用但未配置触发词"
+
+    conflicts = find_trigger_conflicts(config)
+    if conflicts:
+        parts = [
+            f"{trigger}（{'、'.join(COMMAND_LABELS.get(cid, cid) for cid in ids)}）"
+            for trigger, ids in conflicts.items()
+        ]
+        return f"触发词冲突: {'; '.join(parts)}"
+
+    return None
+
+
+def resolve_entry(
+    command_id: str, config: Dict[str, CommandAliasEntry]
+) -> CommandAliasEntry:
+    return config.get(command_id) or default_entry(command_id)
+
+
+def trigger_alternation(
+    command_id: str, config: Dict[str, CommandAliasEntry]
+) -> str | None:
+    """Regex-escaped ``a|b|c`` alternation of enabled triggers, or None if disabled/empty."""
+    entry = resolve_entry(command_id, config)
+    if not entry.enabled or not entry.triggers:
+        return None
+    return "|".join(re.escape(t) for t in sorted(entry.triggers, key=len, reverse=True))
+
+
+def _configured_command_starts() -> frozenset[str]:
+    """NoneBot's ``COMMAND_START`` (fixed at process startup; see ``env.example``)."""
+    try:
+        from nonebot import get_driver
+
+        starts = {str(s) for s in get_driver().config.command_start if s}
+    except Exception:
+        starts = set()
+    return frozenset(starts) if starts else frozenset({"/"})
+
+
+def _extra_prefixes() -> frozenset[str]:
+    """习惯性前缀：默认见 :data:`DEFAULT_EXTRA_PREFIXES`，可在 Web Admin → 设置 →
+    命令 中自定义（存于 DB，热更新，与 COMMAND_START 无关）。"""
+    from shared.config.service import get_config_service
+
+    return frozenset(get_config_service().get_snapshot().command_extra_prefixes)
+
+
+def command_prefixes() -> frozenset[str]:
+    """Prefixes accepted before a trigger word: configured ``COMMAND_START`` plus
+    the configurable convenience prefixes."""
+    return _configured_command_starts() | _extra_prefixes()
+
+
+def prefix_alternation() -> str:
+    """Regex-escaped ``a|b|c`` alternation of :func:`command_prefixes`, longest first.
+
+    For commands (``dynamic_extract``/``group_special_title``) that embed the
+    prefix directly into a larger custom regex instead of using
+    :func:`match_plain`/:func:`match_command_arg`.
+    """
+    return "|".join(
+        re.escape(p) for p in sorted(command_prefixes(), key=len, reverse=True)
+    )
+
+
+def _strip_command_prefix(text: str) -> str | None:
+    for prefix in sorted(command_prefixes(), key=len, reverse=True):
+        if text.startswith(prefix):
+            return text[len(prefix) :]
+    return None
+
+
+def _best_own_match_length(text: str, entry: CommandAliasEntry) -> int | None:
+    """Length of the longest trigger in *entry* that matches *text* as a
+    prefix/suffix, or ``None`` if none match. An exact match is always the
+    longest possible match (its length equals ``len(text)``)."""
+    lengths = [len(t) for t in entry.triggers if text.startswith(t) or text.endswith(t)]
+    return max(lengths) if lengths else None
+
+
+def _more_specific_match_elsewhere(
+    text: str,
+    command_id: str,
+    own_best: int,
+    config: Dict[str, CommandAliasEntry],
+) -> bool:
+    """Whether another *enabled* command has a strictly longer (more specific)
+    prefix/suffix match for *text* than this command's best match, or an
+    equally-long match that wins a deterministic tie-break.
+
+    触发词若有前缀/后缀重叠（如 "动态" 与 "最新动态"），同一条消息可能同时
+    模糊命中多个命令——不仅限于整条消息恰好等于另一命令触发词（那是长度
+    ``len(text)`` 的极限情形），句子中间嵌了重叠触发词（如 "请看最新动态"
+    同时以 "动态"/"最新动态" 结尾）也会如此。这里让更长、更具体的触发词
+    优先命中。
+
+    若两个不同命令的最佳匹配长度相同（如触发词 "最新" 与 "动态" 都是 2
+    个字，"最新动态" 同时以两者为前缀/后缀），仅比较长度无法分出胜负，两条
+    命令的 :func:`match_plain` 会同时返回 ``True``——实际生效的一个取决于
+    调用方插件里 if/elif 的偶然书写顺序，而不是本模块的确定性行为（见
+    issue：Break ties between fuzzy @ trigger matches）。这里以 command_id
+    的字典序作为平局裁决（较小者胜出），保证任意调用顺序下同一输入只有
+    一个命令命中。
+    """
+    return any(
+        other_id != command_id
+        and other_entry.enabled
+        and (other_best := _best_own_match_length(text, other_entry)) is not None
+        and (
+            other_best > own_best or (other_best == own_best and other_id < command_id)
+        )
+        for other_id, other_entry in config.items()
+    )
+
+
+def match_plain(
+    text: str,
+    command_id: str,
+    config: Dict[str, CommandAliasEntry],
+    *,
+    is_tome: bool = False,
+) -> bool:
+    """Whole-message trigger match: bare text, prefixed text, or ``@机器人`` mention.
+
+    在 ``@机器人`` 模糊匹配（消息以触发词开头/结尾即命中）下，若触发词有前缀/
+    后缀重叠，本命令的最佳匹配若比别的已启用命令的最佳匹配更短，则让位，避免
+    被错误分派（见 :func:`_more_specific_match_elsewhere`）。
+
+    自定义前缀（或部署的 ``COMMAND_START``）恰好是某个触发词的开头时（如前缀
+    "s" 与触发词 "status"），裸触发词也可能被 :func:`_strip_command_prefix`
+    剥掉一段而不再是合法触发词——这里剥完不匹配时要继续回退检查原始裸文本，
+    不能直接判定不匹配（裸触发词必须始终可用）。
+    """
+    entry = resolve_entry(command_id, config)
+    if not entry.enabled or not entry.triggers:
+        return False
+    text = text.strip()
+    if is_tome:
+        own_best = _best_own_match_length(text, entry)
+        if own_best is None:
+            return False
+        return not _more_specific_match_elsewhere(text, command_id, own_best, config)
+    stripped = _strip_command_prefix(text)
+    if stripped is not None and stripped.strip() in entry.triggers:
+        return True
+    return text in entry.triggers
+
+
+def _shadowed_by_exact_trigger_elsewhere(
+    candidate: str,
+    command_id: str,
+    config: Dict[str, CommandAliasEntry],
+) -> bool:
+    """Whether another *enabled* command has *candidate* (the whole message)
+    as one of its exact triggers.
+
+    命令 A 的触发词若恰好是命令 B 触发词的空格前缀（如 A="查看"，B="查看
+    列表"），``match_command_arg`` 会把整句 "查看 列表" 拆成 A 的触发词 +
+    参数 "列表"；但 B 的 ``match_plain`` 精确匹配整句同样会命中，导致两条
+    命令同时响应（其中 A 因参数不是合法房间号而给出一条多余的错误回复）。
+    这里让 B 的整句精确匹配（消费了完整消息，天然比 A 的前缀更具体）优先，
+    A 让位（见 issue：Reject aliases that shadow argument commands）。
+    """
+    return any(
+        other_id != command_id
+        and other_entry.enabled
+        and candidate in other_entry.triggers
+        for other_id, other_entry in config.items()
+    )
+
+
+def match_command_arg(
+    text: str,
+    command_id: str,
+    config: Dict[str, CommandAliasEntry],
+) -> str | None:
+    """Match ``[prefix]trigger[ arg]``; return the trailing arg text, or None if unmatched."""
+    entry = resolve_entry(command_id, config)
+    if not entry.enabled or not entry.triggers:
+        return None
+    text = text.strip()
+    candidates = [text]
+    stripped = _strip_command_prefix(text)
+    if stripped is not None:
+        candidates.append(stripped.strip())
+    for candidate in candidates:
+        for trigger in sorted(entry.triggers, key=len, reverse=True):
+            if candidate == trigger:
+                return ""
+            if (
+                candidate.startswith(trigger)
+                and candidate[len(trigger)].isspace()
+                and not _shadowed_by_exact_trigger_elsewhere(
+                    candidate, command_id, config
+                )
+            ):
+                return candidate[len(trigger) :].strip()
+    return None

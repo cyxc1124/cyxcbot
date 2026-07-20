@@ -8,6 +8,8 @@ from nonebot import get_driver, on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
 from nonebot.log import logger
 
+from shared.config.command_aliases import match_plain
+from shared.config.service import get_config_service
 from shared.onebot.lifecycle import stop_monitor_if_no_bots
 
 from . import (
@@ -99,30 +101,17 @@ async def handle_dynamic_commands(bot: Bot, event: GroupMessageEvent):
     #     # 不回复，让其他处理器处理
     #     return
 
-    # 检查是否是动态查询命令
-    is_command = False
+    # 检查是否是动态查询命令（触发词可在 Web Admin 设置 → 命令 中自定义）
+    command_aliases = get_config_service().get_snapshot().command_aliases
+    is_tome = event.is_tome()
+    is_latest = match_plain(
+        message_text, "dynamic_query_latest", command_aliases, is_tome=is_tome
+    )
+    is_pinned = match_plain(
+        message_text, "dynamic_query_pinned", command_aliases, is_tome=is_tome
+    )
 
-    # 检查是否是@机器人 + 命令
-    if event.is_tome():
-        if message_text in ["最新动态", "置顶动态"]:
-            is_command = True
-        # 移除@机器人的部分，检查剩余内容
-        elif message_text.startswith("最新动态") or message_text.startswith("置顶动态"):
-            is_command = True
-        elif message_text.endswith("最新动态") or message_text.endswith("置顶动态"):
-            is_command = True
-
-    # 检查是否是命令前缀 + 命令
-    elif any(message_text.startswith(prefix) for prefix in ["/", "!", "。", "."]):
-        cmd_text = message_text[1:].strip()
-        if cmd_text in ["最新动态", "置顶动态"]:
-            is_command = True
-
-    # 检查是否是纯文本命令（直接发送"最新动态"或"置顶动态"）
-    elif message_text in ["最新动态", "置顶动态"]:
-        is_command = True
-
-    if not is_command:
+    if not (is_latest or is_pinned):
         logger.debug("消息 '{}' 不是动态查询命令", message_text)
         # 不是我们的命令，让其他处理器处理
         return
@@ -130,7 +119,7 @@ async def handle_dynamic_commands(bot: Bot, event: GroupMessageEvent):
     try:
         logger.info("处理动态查询命令: {} in group {}", message_text, group_id)
 
-        if "最新动态" in message_text:
+        if is_latest:
             # 为每个UP主获取最新动态
             for uid in uids:
                 try:
@@ -148,7 +137,7 @@ async def handle_dynamic_commands(bot: Bot, event: GroupMessageEvent):
                     except Exception:
                         logger.opt(exception=True).error("发送失败提示消息失败")
 
-        elif "置顶动态" in message_text:
+        elif is_pinned:
             # 为每个UP主获取置顶动态
             for uid in uids:
                 try:

@@ -2,6 +2,7 @@
 
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 
+import shared.config.command_aliases as command_aliases_module
 from shared.group_special_title import (
     MAX_TITLE_LENGTH,
     compose_command_text,
@@ -18,7 +19,11 @@ from shared.group_special_title_policy import (
 )
 
 
-def test_parse_title_command_slash_and_hash() -> None:
+def test_parse_title_command_slash_and_hash(monkeypatch) -> None:
+    # 显式固定 COMMAND_START，不依赖进程内是否已有其它测试初始化过 NoneBot driver
+    monkeypatch.setattr(
+        command_aliases_module, "_configured_command_starts", lambda: frozenset({"/"})
+    )
     assert parse_title_command("/头衔 我的头衔") == "我的头衔"
     assert parse_title_command("#头衔 我的头衔") == "我的头衔"
     assert parse_title_command("!头衔 测试") == "测试"
@@ -31,7 +36,7 @@ def test_parse_title_command_ignores_unrelated_messages() -> None:
 
 
 def test_validate_title() -> None:
-    assert validate_title("") == "请提供头衔，例如：/头衔 我的头衔"
+    assert validate_title("") == "请提供头衔内容"
     assert (
         validate_title("a" * (MAX_TITLE_LENGTH + 1))
         == f"头衔最多 {MAX_TITLE_LENGTH} 个字"

@@ -4,12 +4,13 @@ B 站直播监控插件：WebSocket 弹幕 + API 轮询，开播/下播推送。
 配置见 Web Admin → 直播监控 / 设置；详见 plugins/live_monitor/README.md。
 """
 
-from nonebot import get_driver, on_command
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message
+from nonebot import get_driver, on_message
+from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
 from nonebot.log import logger
-from nonebot.params import CommandArg
 from nonebot.plugin import PluginMetadata
 
+from shared.config.command_aliases import match_command_arg, match_plain
+from shared.config.service import get_config_service
 from shared.onebot.lifecycle import stop_monitor_if_no_bots
 
 from . import live_monitor as live_monitor_mod
@@ -72,18 +73,19 @@ async def _():
         logger.error(f"应用关闭时直播监控停止失败: {e}")
 
 
-# 查询直播状态命令
-live_status_cmd = on_command(
-    "直播状态", aliases={"查直播", "live"}, priority=10, block=True
-)
+# 查询直播状态命令（触发词可在 Web Admin 设置 → 命令 中自定义）
+live_status_cmd = on_message(priority=10, block=False)
 
 
 @live_status_cmd.handle()
-async def handle_live_status(
-    bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()
-):
+async def handle_live_status(bot: Bot, event: GroupMessageEvent):
     """处理直播状态查询命令"""
-    room_id = args.extract_plain_text().strip()
+    text = event.get_plaintext().strip()
+    snap = get_config_service().get_snapshot()
+    room_id_arg = match_command_arg(text, "live_status", snap.command_aliases)
+    if room_id_arg is None:
+        return
+    room_id = room_id_arg.strip()
     logger.info(f"直播状态查询: group={event.group_id} room={room_id or '(未指定)'}")
 
     if not room_id:
@@ -151,15 +153,20 @@ async def handle_live_status(
         await live_status_cmd.finish(f"查询失败：{str(e)}")
 
 
-# 列出监控房间命令
-list_monitor_cmd = on_command(
-    "监控列表", aliases={"直播监控列表"}, priority=10, block=True
-)
+# 列出监控房间命令（触发词可在 Web Admin 设置 → 命令 中自定义）
+list_monitor_cmd = on_message(priority=10, block=False)
 
 
 @list_monitor_cmd.handle()
 async def handle_list_monitor(bot: Bot, event: GroupMessageEvent):
     """列出当前监控的房间"""
+    text = event.get_plaintext().strip()
+    snap = get_config_service().get_snapshot()
+    if not match_plain(
+        text, "live_monitor_list", snap.command_aliases, is_tome=event.is_tome()
+    ):
+        return
+
     group_id = str(event.group_id)
     config = Config.from_service()
 

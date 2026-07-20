@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from admin.deps import AdminUser, RequireSetup
 from admin.schemas.settings import (
@@ -15,6 +15,13 @@ from admin.schemas.settings import (
 from admin.services.connection_status import (
     bilibili_status_message,
     get_bilibili_connection_status,
+)
+from shared.config.command_aliases import (
+    merge_partial_command_aliases,
+    normalize_command_aliases,
+    normalize_extra_prefixes,
+    serialize_command_aliases,
+    validation_error,
 )
 from shared.config.message_templates import MESSAGE_TEMPLATE_KEYS
 from shared.config.service import get_config_service
@@ -78,6 +85,32 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
             if item.isdigit()
         ]
         updates["nonebot_superusers"] = json.dumps(cleaned, ensure_ascii=False)
+    if body.command_aliases is not None:
+        # 与当前快照合并后再 normalize：
+        # 1) 只传部分命令时，未提及的命令保留原有配置（而非被
+        #    normalize_command_aliases 的缺省填充逻辑重置为出厂默认）；
+        # 2) 同一条命令内只传 enabled 或只传 triggers 时，用 exclude_unset
+        #    只取客户端真正传入的字段与当前值合并，而不是用 Pydantic 为未传
+        #    字段填的默认值（enabled=True/triggers=[]）整条覆盖，否则单独
+        #    改开关会清空触发词、单独改触发词会误重启用。
+        current = serialize_command_aliases(svc.get_snapshot().command_aliases)
+        patch = {
+            cid: entry.model_dump(exclude_unset=True)
+            for cid, entry in body.command_aliases.items()
+        }
+        normalized = normalize_command_aliases(
+            merge_partial_command_aliases(current, patch)
+        )
+        error = validation_error(normalized)
+        if error:
+            raise HTTPException(status_code=400, detail=error)
+        updates["command_aliases"] = json.dumps(
+            serialize_command_aliases(normalized), ensure_ascii=False
+        )
+    if body.command_extra_prefixes is not None:
+        updates["command_extra_prefixes"] = json.dumps(
+            normalize_extra_prefixes(body.command_extra_prefixes), ensure_ascii=False
+        )
 
     if updates:
         await svc.set_settings(updates)

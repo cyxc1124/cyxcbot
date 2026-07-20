@@ -31,6 +31,11 @@ export interface CookieStatus {
   preview: string | null
 }
 
+export interface CommandAliasEntry {
+  enabled: boolean
+  triggers: string[]
+}
+
 export interface Settings {
   dynamic_monitor_interval: number
   dynamic_monitor_use_stagger: boolean
@@ -53,9 +58,14 @@ export interface Settings {
   bilibili_cookie: CookieStatus
   status_check_allowed_qq: string[]
   nonebot_superusers: string[]
+  command_aliases: Record<string, CommandAliasEntry>
+  /** 习惯性前缀（如 !、。），与 COMMAND_START 无关，可编辑，保存后立即生效 */
+  command_extra_prefixes: string[]
+  /** 只读：当前生效的完整前缀集合 = COMMAND_START ∪ command_extra_prefixes */
+  command_prefixes: string[]
 }
 
-export type SettingsUpdate = Partial<Omit<Settings, 'bilibili_cookie'>>
+export type SettingsUpdate = Partial<Omit<Settings, 'bilibili_cookie' | 'command_prefixes'>>
 
 export interface CookieTestResult {
   success: boolean
