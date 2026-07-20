@@ -240,6 +240,28 @@ def test_match_plain_bare_and_prefixed_text(monkeypatch) -> None:
     assert not match_plain("随便说点什么", "dynamic_query_latest", config)
 
 
+def test_match_plain_bare_trigger_still_matches_when_prefix_overlaps_it(
+    monkeypatch,
+) -> None:
+    """回归测试：自定义前缀恰好是触发词的开头时（如前缀 "s" 与触发词
+    "status"），裸触发词会先被 _strip_command_prefix 剥掉一段变成 "tatus"
+    再判定不匹配，导致裸触发词失效——即使 UI 承诺裸触发词始终可用（见 issue：
+    Preserve bare trigger matching when a prefix overlaps it）。"""
+    monkeypatch.setattr(
+        command_aliases_module, "_configured_command_starts", lambda: frozenset({"/"})
+    )
+    monkeypatch.setattr(
+        command_aliases_module, "_extra_prefixes", lambda: frozenset({"s"})
+    )
+    config = normalize_command_aliases(
+        {"status": {"enabled": True, "triggers": ["status"]}}
+    )
+    assert match_plain("status", "status", config)
+    assert match_plain("/status", "status", config)
+    # "s" + "status" 恰好也是合法的前缀+触发词组合，应继续匹配
+    assert match_plain("sstatus", "status", config)
+
+
 def test_match_plain_at_bot_fuzzy_prefix_suffix() -> None:
     config = default_config()
     assert match_plain("最新动态呀", "dynamic_query_latest", config, is_tome=True)

@@ -290,6 +290,11 @@ def match_plain(
     在 ``@机器人`` 模糊匹配（消息以触发词开头/结尾即命中）下，若触发词有前缀/
     后缀重叠，本命令的最佳匹配若比别的已启用命令的最佳匹配更短，则让位，避免
     被错误分派（见 :func:`_more_specific_match_elsewhere`）。
+
+    自定义前缀（或部署的 ``COMMAND_START``）恰好是某个触发词的开头时（如前缀
+    "s" 与触发词 "status"），裸触发词也可能被 :func:`_strip_command_prefix`
+    剥掉一段而不再是合法触发词——这里剥完不匹配时要继续回退检查原始裸文本，
+    不能直接判定不匹配（裸触发词必须始终可用）。
     """
     entry = resolve_entry(command_id, config)
     if not entry.enabled or not entry.triggers:
@@ -301,8 +306,8 @@ def match_plain(
             return False
         return not _more_specific_match_elsewhere(text, command_id, own_best, config)
     stripped = _strip_command_prefix(text)
-    if stripped is not None:
-        return stripped.strip() in entry.triggers
+    if stripped is not None and stripped.strip() in entry.triggers:
+        return True
     return text in entry.triggers
 
 
