@@ -33,6 +33,6 @@ psutil==7.2.2
 prometheus_client==0.25.0
 
 # 开发与测试
-pytest==8.4.2
+pytest==9.1.1
 pytest-asyncio==1.4.0
 ruff==0.15.22
