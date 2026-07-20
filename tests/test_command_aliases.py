@@ -342,6 +342,31 @@ def test_match_command_arg_none_when_disabled() -> None:
     assert match_command_arg("直播状态 12345", "live_status", disabled) is None
 
 
+def test_match_command_arg_yields_to_exact_trigger_elsewhere(monkeypatch) -> None:
+    """回归测试：命令 A 的触发词恰好是命令 B 触发词的空格前缀时（如 A="查看"，
+    B="查看 列表"），match_command_arg 会把整句 "查看 列表" 误拆成 A 的触发词 +
+    参数 "列表"，而 B 的 match_plain 精确匹配整句同样会命中——两条命令同时
+    响应，A 还会因参数不是合法房间号多回一条错误消息（见 issue：Reject
+    aliases that shadow argument commands）。这里应让位给更具体的整句精确
+    匹配，match_command_arg 对这种输入返回 None。"""
+    monkeypatch.setattr(
+        command_aliases_module, "_configured_command_starts", lambda: frozenset({"/"})
+    )
+    monkeypatch.setattr(
+        command_aliases_module, "_extra_prefixes", lambda: frozenset({"!"})
+    )
+    config = normalize_command_aliases(
+        {
+            "live_status": {"enabled": True, "triggers": ["查看"]},
+            "live_monitor_list": {"enabled": True, "triggers": ["查看 列表"]},
+        }
+    )
+    assert match_command_arg("查看 列表", "live_status", config) is None
+    assert match_plain("查看 列表", "live_monitor_list", config)
+    # 正常参数（不与别的命令触发词冲突）不受影响
+    assert match_command_arg("查看 12345", "live_status", config) == "12345"
+
+
 def test_command_prefixes_falls_back_to_slash_without_nonebot_start(
     monkeypatch,
 ) -> None:

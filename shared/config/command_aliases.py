@@ -311,6 +311,29 @@ def match_plain(
     return text in entry.triggers
 
 
+def _shadowed_by_exact_trigger_elsewhere(
+    candidate: str,
+    command_id: str,
+    config: Dict[str, CommandAliasEntry],
+) -> bool:
+    """Whether another *enabled* command has *candidate* (the whole message)
+    as one of its exact triggers.
+
+    命令 A 的触发词若恰好是命令 B 触发词的空格前缀（如 A="查看"，B="查看
+    列表"），``match_command_arg`` 会把整句 "查看 列表" 拆成 A 的触发词 +
+    参数 "列表"；但 B 的 ``match_plain`` 精确匹配整句同样会命中，导致两条
+    命令同时响应（其中 A 因参数不是合法房间号而给出一条多余的错误回复）。
+    这里让 B 的整句精确匹配（消费了完整消息，天然比 A 的前缀更具体）优先，
+    A 让位（见 issue：Reject aliases that shadow argument commands）。
+    """
+    return any(
+        other_id != command_id
+        and other_entry.enabled
+        and candidate in other_entry.triggers
+        for other_id, other_entry in config.items()
+    )
+
+
 def match_command_arg(
     text: str,
     command_id: str,
@@ -329,6 +352,12 @@ def match_command_arg(
         for trigger in sorted(entry.triggers, key=len, reverse=True):
             if candidate == trigger:
                 return ""
-            if candidate.startswith(trigger) and candidate[len(trigger)].isspace():
+            if (
+                candidate.startswith(trigger)
+                and candidate[len(trigger)].isspace()
+                and not _shadowed_by_exact_trigger_elsewhere(
+                    candidate, command_id, config
+                )
+            ):
                 return candidate[len(trigger) :].strip()
     return None
