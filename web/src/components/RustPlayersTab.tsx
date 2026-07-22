@@ -8,6 +8,7 @@ export function RustPlayersTab() {
   const {
     items,
     checkInConfig,
+    rconBindings,
     loading,
     error,
     retryLoad,
@@ -39,7 +40,7 @@ export function RustPlayersTab() {
           <h3 className="font-semibold text-foreground">签到积分范围</h3>
           <p className="mt-1 text-sm text-muted-foreground">
             群成员发送 <code className="font-mono text-xs">@机器人 签到</code>{' '}
-            时，每次随机获得该范围内的积分（每日一次）。
+            时需在游戏内在线；每次随机获得基础积分，在线签到额外获得加成积分（每日一次）。
           </p>
         </div>
 
@@ -72,17 +73,55 @@ export function RustPlayersTab() {
               }
             />
           </label>
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">在线加成积分</span>
+            <input
+              type="number"
+              min={0}
+              max={1000000}
+              className="input w-28"
+              value={configForm.online_bonus_points}
+              disabled={savingConfig}
+              onChange={(e) =>
+                setConfigForm((prev) => ({
+                  ...prev,
+                  online_bonus_points: e.target.value,
+                }))
+              }
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">RCON 服务器</span>
+            <select
+              className="input min-w-40"
+              value={configForm.rcon_binding_id}
+              disabled={savingConfig}
+              onChange={(e) =>
+                setConfigForm((prev) => ({ ...prev, rcon_binding_id: e.target.value }))
+              }
+            >
+              <option value="0">首个启用的绑定</option>
+              {rconBindings
+                .filter((binding) => binding.enabled)
+                .map((binding) => (
+                  <option key={binding.id} value={String(binding.id)}>
+                    {binding.name || binding.alias} ({binding.host}:{binding.port})
+                  </option>
+                ))}
+            </select>
+          </label>
           <button
             type="button"
             className="btn-primary"
             disabled={savingConfig}
             onClick={() => void handleSaveConfig()}
           >
-            {savingConfig ? '保存中…' : '保存范围'}
+            {savingConfig ? '保存中…' : '保存配置'}
           </button>
           {checkInConfig && (
             <span className="text-xs text-muted-foreground">
-              当前生效：{checkInConfig.min_points}–{checkInConfig.max_points}
+              当前生效：基础 {checkInConfig.min_points}–{checkInConfig.max_points}，
+              在线加成 {checkInConfig.online_bonus_points}
             </span>
           )}
         </div>

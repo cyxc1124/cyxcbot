@@ -11,6 +11,7 @@ from shared.config.command_aliases import (
     match_plain,
     resolve_entry,
 )
+from shared.config.rust_rcon import RustRconBindingRecord
 
 STEAM_ID64_RE = re.compile(r"^7656119\d{10}$")
 MAX_RUST_PLAYER_POINTS = 1_000_000
@@ -68,3 +69,30 @@ def normalize_checkin_points_range(min_points: int, max_points: int) -> tuple[in
     if min_val > max_val:
         raise ValueError("最小积分不能大于最大积分")
     return min_val, max_val
+
+
+def normalize_checkin_online_bonus(points: int) -> int:
+    return normalize_player_points(points)
+
+
+def normalize_checkin_rcon_binding_id(binding_id: int) -> int:
+    value = int(binding_id)
+    if value < 0:
+        raise ValueError("RCON 绑定 ID 不能为负数")
+    return value
+
+
+def resolve_checkin_rcon_binding(
+    bindings: list[RustRconBindingRecord],
+    binding_id: int,
+) -> RustRconBindingRecord | None:
+    """Return enabled binding for check-in; 0 picks the first enabled binding."""
+    enabled = [binding for binding in bindings if binding.enabled]
+    if not enabled:
+        return None
+    if binding_id == 0:
+        return enabled[0]
+    for binding in enabled:
+        if binding.id == binding_id:
+            return binding
+    return None

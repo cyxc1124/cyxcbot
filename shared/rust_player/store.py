@@ -24,9 +24,14 @@ def today_check_in_date() -> str:
 @dataclass(frozen=True)
 class CheckInResult:
     ok: bool
-    points_earned: int = 0
+    base_points: int = 0
+    online_bonus: int = 0
     total_points: int = 0
     already_checked_in: bool = False
+
+    @property
+    def points_earned(self) -> int:
+        return self.base_points + self.online_bonus
 
 
 async def _detach_binding(session, row: RustSteamBinding) -> RustSteamBinding:
@@ -121,17 +126,34 @@ async def set_group_points(group_id: str, user_id: str, points: int) -> int:
             return points
 
 
+async def has_checked_in_today(group_id: str, user_id: str) -> bool:
+    session = get_session()
+    async with session.begin():
+        row = await session.get(
+            RustCheckInRecord,
+            {
+                "group_id": str(group_id).strip(),
+                "user_id": str(user_id).strip(),
+                "check_in_date": today_check_in_date(),
+            },
+        )
+        return row is not None
+
+
 async def perform_check_in(
     group_id: str,
     user_id: str,
     *,
     min_points: int,
     max_points: int,
+    online_bonus: int = 0,
 ) -> CheckInResult:
     group_id = str(group_id).strip()
     user_id = str(user_id).strip()
     check_in_date = today_check_in_date()
-    points_earned = random.randint(min_points, max_points)
+    base_points = random.randint(min_points, max_points)
+    online_bonus = max(0, int(online_bonus))
+    points_earned = base_points + online_bonus
 
     async with get_session() as session:
         async with session.begin():
@@ -175,7 +197,8 @@ async def perform_check_in(
 
     return CheckInResult(
         ok=True,
-        points_earned=points_earned,
+        base_points=base_points,
+        online_bonus=online_bonus,
         total_points=total,
     )
 
