@@ -65,7 +65,7 @@ export function RustRconGroupPolicyTab() {
     updateItem: (id, enabled) => updateRustRconGroupPolicy(id, enabled),
     resetItem: resetRustRconGroupPolicy,
     toggleAllSuccessMessage: (enabled) =>
-      enabled ? '已为全部群组启用 Rust RCON' : '已为全部群组关闭 Rust RCON',
+      enabled ? '已为全部群组启用 Rust 远控' : '已为全部群组关闭 Rust 远控',
   })
 
   const policyEditable = groupListAvailable
@@ -102,7 +102,7 @@ export function RustRconGroupPolicyTab() {
       </div>
       {!groupListAvailable && groups.length > 0 && (
         <p className="text-sm text-amber-700 dark:text-amber-300">
-          群列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改 Rust RCON 开关；待连接恢复后再调整。
+          群列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改远控开关；待连接恢复后再调整。
         </p>
       )}
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
@@ -165,7 +165,7 @@ export function RustRconUserPolicyTab() {
       }),
     resetItem: resetRustRconUserPolicy,
     toggleAllSuccessMessage: (enabled) =>
-      enabled ? '已为全部好友启用 Rust RCON' : '已为全部好友关闭 Rust RCON',
+      enabled ? '已为全部好友启用 Rust 远控' : '已为全部好友关闭 Rust 远控',
   })
 
   const policyEditable = friendListAvailable
@@ -202,7 +202,7 @@ export function RustRconUserPolicyTab() {
       </div>
       {!friendListAvailable && users.length > 0 && (
         <p className="text-sm text-amber-700 dark:text-amber-300">
-          好友列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改 Rust RCON 开关；待连接恢复后再调整。
+          好友列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改远控开关；待连接恢复后再调整。
         </p>
       )}
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}

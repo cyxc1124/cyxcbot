@@ -18,6 +18,7 @@ const navItems = [
   { to: '/', label: '仪表盘' },
   { to: '/dynamic', label: '动态订阅' },
   { to: '/live', label: '直播订阅' },
+  { to: '/rust-rcon', label: 'Rust 群管' },
   { to: '/templates', label: '消息模板' },
   { to: '/groups', label: '群组' },
   { to: '/private', label: '好友' },
