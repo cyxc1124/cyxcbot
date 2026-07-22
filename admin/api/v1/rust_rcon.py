@@ -76,12 +76,14 @@ def _ensure_alias_available(
     alias: str,
     *,
     exclude_id: int | None = None,
+    require_command_clear: bool = True,
 ) -> None:
     svc = get_config_service()
     snap = svc.get_snapshot()
-    conflict = alias_command_conflict(alias, snap)
-    if conflict:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=conflict)
+    if require_command_clear:
+        conflict = alias_command_conflict(alias, snap)
+        if conflict:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=conflict)
 
     for binding in snap.rust_rcon_bindings:
         if binding.alias == alias and binding.id != exclude_id:
@@ -123,7 +125,7 @@ async def create_rust_rcon_binding(body: RustRconBindingCreate, _: AdminUser):
     if not host:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="主机地址不能为空")
 
-    _ensure_alias_available(alias)
+    _ensure_alias_available(alias, require_command_clear=body.enabled)
 
     session = get_session()
     async with session.begin():
@@ -172,6 +174,8 @@ async def update_rust_rcon_binding(
                 status_code=status.HTTP_404_NOT_FOUND, detail="RCON 绑定不存在"
             )
 
+        was_enabled = row.enabled
+
         decrypted = ""
         snap = get_config_service().get_snapshot()
         for item in snap.rust_rcon_bindings:
@@ -187,7 +191,11 @@ async def update_rust_rcon_binding(
                     status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
                 ) from exc
             if alias != row.alias:
-                _ensure_alias_available(alias, exclude_id=binding_id)
+                _ensure_alias_available(
+                    alias,
+                    exclude_id=binding_id,
+                    require_command_clear=(was_enabled or body.enabled is True),
+                )
                 row.alias = alias
 
         if body.host is not None:
@@ -212,6 +220,9 @@ async def update_rust_rcon_binding(
 
         if body.enabled is not None:
             row.enabled = body.enabled
+
+        if row.enabled and not was_enabled:
+            _ensure_alias_available(row.alias, exclude_id=binding_id)
 
         if body.name is not None:
             row.name = body.name.strip() or None
