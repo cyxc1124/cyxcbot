@@ -45,6 +45,8 @@ async def _rust_player_startup() -> None:
 
 @rust_player_cmd.handle()
 async def handle_rust_player(bot: Bot, event: GroupMessageEvent) -> None:
+    if not isinstance(event, GroupMessageEvent):
+        return
     if not event.is_tome():
         return
 
