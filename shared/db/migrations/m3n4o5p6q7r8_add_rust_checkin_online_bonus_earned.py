@@ -30,7 +30,6 @@ def upgrade(name: str = "") -> None:
             server_default="0",
             nullable=False,
         ),
-        info={"bind_key": "shared.db"},
     )
 
 
@@ -38,8 +37,4 @@ def downgrade(name: str = "") -> None:
     if name:
         return
 
-    op.drop_column(
-        "shared_db_rustcheckinrecord",
-        "online_bonus_earned",
-        info={"bind_key": "shared.db"},
-    )
+    op.drop_column("shared_db_rustcheckinrecord", "online_bonus_earned")
