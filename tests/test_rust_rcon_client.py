@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 
@@ -73,6 +74,38 @@ async def webrcon_auth_fail_server() -> AsyncIterator[tuple[str, int]]:
         await runner.cleanup()
 
 
+@pytest.fixture
+async def webrcon_spam_server() -> AsyncIterator[tuple[str, int]]:
+    async def _handler(request: web.Request) -> web.WebSocketResponse:
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        counter = 0
+        while True:
+            await ws.send_str(
+                json.dumps(
+                    {
+                        "Identifier": 0,
+                        "Message": f"log {counter}",
+                        "Type": "Generic",
+                    }
+                )
+            )
+            counter += 1
+            await asyncio.sleep(0.01)
+
+    app = web.Application()
+    app.router.add_get("/{password}", _handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    sock = site._server.sockets[0].getsockname()
+    try:
+        yield sock[0], sock[1]
+    finally:
+        await runner.cleanup()
+
+
 @pytest.mark.asyncio
 async def test_execute_rcon_command_success(webrcon_server) -> None:
     host, port = webrcon_server
@@ -90,6 +123,17 @@ async def test_build_command_packet_matches_webrcon_format() -> None:
         "Message": "status",
         "Name": "WebRcon",
     }
+
+
+@pytest.mark.asyncio
+async def test_execute_rcon_command_times_out_on_non_matching_spam(
+    webrcon_spam_server,
+) -> None:
+    from utils.rust_rcon.client import RCON_TIMEOUT, RconError
+
+    host, port = webrcon_spam_server
+    with pytest.raises(RconError, match=RCON_TIMEOUT):
+        await execute_rcon_command(host, port, "pass", "status", timeout=0.5)
 
 
 @pytest.mark.asyncio
