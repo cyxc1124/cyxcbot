@@ -26,24 +26,26 @@ class DynamicMonitorStateStore:
         if not uids:
             return
 
-        session = get_session()
-        async with session.begin():
-            rows = (
-                await session.scalars(
-                    select(DynamicMonitorState).where(DynamicMonitorState.uid.in_(uids))
-                )
-            ).all()
-            by_uid = {row.uid: row for row in rows}
+        async with get_session() as session:
+            async with session.begin():
+                rows = (
+                    await session.scalars(
+                        select(DynamicMonitorState).where(
+                            DynamicMonitorState.uid.in_(uids)
+                        )
+                    )
+                ).all()
+                by_uid = {row.uid: row for row in rows}
 
-            for uid in uids:
-                row = by_uid.get(uid)
-                if row:
-                    last_dynamic_ids[uid] = row.last_dynamic_id
-                    initialized_uids[uid] = row.initialized
-                    pinned_dynamic_ids[uid] = row.pinned_dynamic_id
-                else:
-                    last_dynamic_ids[uid] = 0
-                    initialized_uids[uid] = False
+                for uid in uids:
+                    row = by_uid.get(uid)
+                    if row:
+                        last_dynamic_ids[uid] = row.last_dynamic_id
+                        initialized_uids[uid] = row.initialized
+                        pinned_dynamic_ids[uid] = row.pinned_dynamic_id
+                    else:
+                        last_dynamic_ids[uid] = 0
+                        initialized_uids[uid] = False
 
     async def persist(
         self,
@@ -56,19 +58,19 @@ class DynamicMonitorStateStore:
     ) -> None:
         if check_still_valid is not None and not check_still_valid():
             return
-        session = get_session()
-        async with session.begin():
-            row = await session.get(DynamicMonitorState, uid)
-            if not row:
-                row = DynamicMonitorState(uid=uid)
-                session.add(row)
-            row.last_dynamic_id = last_dynamic_ids.get(uid, 0)
-            row.initialized = initialized_uids.get(uid, False)
-            row.pinned_dynamic_id = pinned_dynamic_ids.get(uid)
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(DynamicMonitorState, uid)
+                if not row:
+                    row = DynamicMonitorState(uid=uid)
+                    session.add(row)
+                row.last_dynamic_id = last_dynamic_ids.get(uid, 0)
+                row.initialized = initialized_uids.get(uid, False)
+                row.pinned_dynamic_id = pinned_dynamic_ids.get(uid)
 
     async def delete(self, uid: str) -> None:
-        session = get_session()
-        async with session.begin():
-            row = await session.get(DynamicMonitorState, uid)
-            if row:
-                await session.delete(row)
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(DynamicMonitorState, uid)
+                if row:
+                    await session.delete(row)

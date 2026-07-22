@@ -139,34 +139,36 @@ class ConfigService:
 
     async def load(self) -> AppConfigSnapshot:
         """Load full config snapshot from database."""
-        session = get_session()
-        async with session.begin():
-            settings = await self._load_settings(session)
-            (
-                dynamic_mapping,
-                dynamic_user_mapping,
-                dynamic_subscription_mapping,
-                dynamic_subscription_user_mapping,
-                dynamic_at_all,
-            ) = await self._load_dynamic_target_data(session)
-            (
-                live_mapping,
-                live_user_mapping,
-                live_at_all,
-            ) = await self._load_live_target_data(session)
-            link_parser_group_policies = await self._load_link_parser_group_policies(
-                session
-            )
-            link_parser_user_policies = await self._load_link_parser_user_policies(
-                session
-            )
-            rust_rcon_bindings = await self._load_rust_rcon_bindings(session)
-            rust_rcon_group_policies = await self._load_rust_rcon_group_policies(
-                session
-            )
-            rust_rcon_user_policies = await self._load_rust_rcon_user_policies(session)
-            await self._prune_dynamic_monitor_states(session, set(dynamic_mapping))
-            await self._prune_live_monitor_states(session, set(live_mapping))
+        async with get_session() as session:
+            async with session.begin():
+                settings = await self._load_settings(session)
+                (
+                    dynamic_mapping,
+                    dynamic_user_mapping,
+                    dynamic_subscription_mapping,
+                    dynamic_subscription_user_mapping,
+                    dynamic_at_all,
+                ) = await self._load_dynamic_target_data(session)
+                (
+                    live_mapping,
+                    live_user_mapping,
+                    live_at_all,
+                ) = await self._load_live_target_data(session)
+                link_parser_group_policies = (
+                    await self._load_link_parser_group_policies(session)
+                )
+                link_parser_user_policies = await self._load_link_parser_user_policies(
+                    session
+                )
+                rust_rcon_bindings = await self._load_rust_rcon_bindings(session)
+                rust_rcon_group_policies = await self._load_rust_rcon_group_policies(
+                    session
+                )
+                rust_rcon_user_policies = await self._load_rust_rcon_user_policies(
+                    session
+                )
+                await self._prune_dynamic_monitor_states(session, set(dynamic_mapping))
+                await self._prune_live_monitor_states(session, set(live_mapping))
 
         cookie_encrypted = settings.get("bilibili_cookie_encrypted", "")
         cookie = ""
@@ -281,20 +283,20 @@ class ConfigService:
         return snapshot
 
     async def get_setting(self, key: str) -> Optional[str]:
-        session = get_session()
-        async with session.begin():
-            row = await session.get(SystemSetting, key)
-            return row.value if row else None
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(SystemSetting, key)
+                return row.value if row else None
 
     async def set_settings(self, values: dict[str, str]) -> None:
-        session = get_session()
-        async with session.begin():
-            for key, value in values.items():
-                row = await session.get(SystemSetting, key)
-                if row:
-                    row.value = value
-                else:
-                    session.add(SystemSetting(key=key, value=value))
+        async with get_session() as session:
+            async with session.begin():
+                for key, value in values.items():
+                    row = await session.get(SystemSetting, key)
+                    if row:
+                        row.value = value
+                    else:
+                        session.add(SystemSetting(key=key, value=value))
 
     async def _load_settings(self, session) -> dict:
         result: dict = {}
@@ -534,21 +536,21 @@ class ConfigService:
         self, group_id: str, *, enabled: bool
     ) -> None:
         gid = str(group_id).strip()
-        session = get_session()
-        async with session.begin():
-            row = await session.get(RustRconGroupPolicy, gid)
-            if row:
-                row.enabled = enabled
-            else:
-                session.add(RustRconGroupPolicy(group_id=gid, enabled=enabled))
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(RustRconGroupPolicy, gid)
+                if row:
+                    row.enabled = enabled
+                else:
+                    session.add(RustRconGroupPolicy(group_id=gid, enabled=enabled))
 
     async def delete_rust_rcon_group_policy(self, group_id: str) -> None:
         gid = str(group_id).strip()
-        session = get_session()
-        async with session.begin():
-            row = await session.get(RustRconGroupPolicy, gid)
-            if row:
-                await session.delete(row)
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(RustRconGroupPolicy, gid)
+                if row:
+                    await session.delete(row)
 
     async def upsert_rust_rcon_user_policy(
         self,
@@ -558,22 +560,24 @@ class ConfigService:
         name: str | None = None,
     ) -> None:
         uid = str(user_id).strip()
-        session = get_session()
-        async with session.begin():
-            row = await session.get(RustRconUserPolicy, uid)
-            if row:
-                row.enabled = enabled
-                row.name = name
-            else:
-                session.add(RustRconUserPolicy(user_id=uid, enabled=enabled, name=name))
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(RustRconUserPolicy, uid)
+                if row:
+                    row.enabled = enabled
+                    row.name = name
+                else:
+                    session.add(
+                        RustRconUserPolicy(user_id=uid, enabled=enabled, name=name)
+                    )
 
     async def delete_rust_rcon_user_policy(self, user_id: str) -> None:
         uid = str(user_id).strip()
-        session = get_session()
-        async with session.begin():
-            row = await session.get(RustRconUserPolicy, uid)
-            if row:
-                await session.delete(row)
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(RustRconUserPolicy, uid)
+                if row:
+                    await session.delete(row)
 
     async def upsert_link_parser_group_policy(
         self,
@@ -584,30 +588,30 @@ class ConfigService:
         dynamic_enabled: bool,
     ) -> None:
         gid = str(group_id).strip()
-        session = get_session()
-        async with session.begin():
-            row = await session.get(LinkParserGroupPolicy, gid)
-            if row:
-                row.video_enabled = video_enabled
-                row.live_enabled = live_enabled
-                row.dynamic_enabled = dynamic_enabled
-            else:
-                session.add(
-                    LinkParserGroupPolicy(
-                        group_id=gid,
-                        video_enabled=video_enabled,
-                        live_enabled=live_enabled,
-                        dynamic_enabled=dynamic_enabled,
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(LinkParserGroupPolicy, gid)
+                if row:
+                    row.video_enabled = video_enabled
+                    row.live_enabled = live_enabled
+                    row.dynamic_enabled = dynamic_enabled
+                else:
+                    session.add(
+                        LinkParserGroupPolicy(
+                            group_id=gid,
+                            video_enabled=video_enabled,
+                            live_enabled=live_enabled,
+                            dynamic_enabled=dynamic_enabled,
+                        )
                     )
-                )
 
     async def delete_link_parser_group_policy(self, group_id: str) -> None:
         gid = str(group_id).strip()
-        session = get_session()
-        async with session.begin():
-            row = await session.get(LinkParserGroupPolicy, gid)
-            if row:
-                await session.delete(row)
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(LinkParserGroupPolicy, gid)
+                if row:
+                    await session.delete(row)
 
     async def upsert_link_parser_user_policy(
         self,
@@ -619,32 +623,32 @@ class ConfigService:
         name: str | None = None,
     ) -> None:
         uid = str(user_id).strip()
-        session = get_session()
-        async with session.begin():
-            row = await session.get(LinkParserUserPolicy, uid)
-            if row:
-                row.video_enabled = video_enabled
-                row.live_enabled = live_enabled
-                row.dynamic_enabled = dynamic_enabled
-                row.name = name
-            else:
-                session.add(
-                    LinkParserUserPolicy(
-                        user_id=uid,
-                        name=name,
-                        video_enabled=video_enabled,
-                        live_enabled=live_enabled,
-                        dynamic_enabled=dynamic_enabled,
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(LinkParserUserPolicy, uid)
+                if row:
+                    row.video_enabled = video_enabled
+                    row.live_enabled = live_enabled
+                    row.dynamic_enabled = dynamic_enabled
+                    row.name = name
+                else:
+                    session.add(
+                        LinkParserUserPolicy(
+                            user_id=uid,
+                            name=name,
+                            video_enabled=video_enabled,
+                            live_enabled=live_enabled,
+                            dynamic_enabled=dynamic_enabled,
+                        )
                     )
-                )
 
     async def delete_link_parser_user_policy(self, user_id: str) -> None:
         uid = str(user_id).strip()
-        session = get_session()
-        async with session.begin():
-            row = await session.get(LinkParserUserPolicy, uid)
-            if row:
-                await session.delete(row)
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(LinkParserUserPolicy, uid)
+                if row:
+                    await session.delete(row)
 
     def settings_for_api(self) -> dict:
         """Settings dict for API (cookie masked, never plaintext)."""

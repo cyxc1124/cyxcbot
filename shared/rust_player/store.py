@@ -36,23 +36,23 @@ async def _detach_binding(session, row: RustSteamBinding) -> RustSteamBinding:
 
 
 async def get_steam_binding(user_id: str) -> RustSteamBinding | None:
-    session = get_session()
-    async with session.begin():
-        row = await session.get(RustSteamBinding, str(user_id).strip())
-        if row is None:
-            return None
-        return await _detach_binding(session, row)
+    async with get_session() as session:
+        async with session.begin():
+            row = await session.get(RustSteamBinding, str(user_id).strip())
+            if row is None:
+                return None
+            return await _detach_binding(session, row)
 
 
 async def get_steam_binding_by_steam_id(steam_id: str) -> RustSteamBinding | None:
-    session = get_session()
-    async with session.begin():
-        row = await session.scalar(
-            select(RustSteamBinding).where(RustSteamBinding.steam_id == steam_id)
-        )
-        if row is None:
-            return None
-        return await _detach_binding(session, row)
+    async with get_session() as session:
+        async with session.begin():
+            row = await session.scalar(
+                select(RustSteamBinding).where(RustSteamBinding.steam_id == steam_id)
+            )
+            if row is None:
+                return None
+            return await _detach_binding(session, row)
 
 
 async def _ensure_steam_binding_available(session, user_id: str, steam_id: str) -> None:
@@ -69,56 +69,56 @@ async def _ensure_steam_binding_available(session, user_id: str, steam_id: str) 
 async def create_steam_binding(user_id: str, steam_id: str) -> None:
     user_id = str(user_id).strip()
     steam_id = str(steam_id).strip()
-    session = get_session()
-    async with session.begin():
-        await _ensure_steam_binding_available(session, user_id, steam_id)
-        try:
-            async with session.begin_nested():
-                session.add(RustSteamBinding(user_id=user_id, steam_id=steam_id))
-                await session.flush()
-        except IntegrityError:
+    async with get_session() as session:
+        async with session.begin():
             await _ensure_steam_binding_available(session, user_id, steam_id)
-            raise ValueError("绑定失败，请稍后重试") from None
+            try:
+                async with session.begin_nested():
+                    session.add(RustSteamBinding(user_id=user_id, steam_id=steam_id))
+                    await session.flush()
+            except IntegrityError:
+                await _ensure_steam_binding_available(session, user_id, steam_id)
+                raise ValueError("绑定失败，请稍后重试") from None
 
 
 async def delete_steam_binding(user_id: str) -> bool:
-    session = get_session()
-    async with session.begin():
-        row = await session.get(RustSteamBinding, str(user_id).strip())
-        if row is None:
-            return False
-        await session.delete(row)
-        return True
+    async with get_session() as session:
+        async with session.begin():
+            row = await session.get(RustSteamBinding, str(user_id).strip())
+            if row is None:
+                return False
+            await session.delete(row)
+            return True
 
 
 async def get_group_points(group_id: str, user_id: str) -> int:
-    session = get_session()
-    async with session.begin():
-        row = await session.get(
-            RustPlayerPoints,
-            {"group_id": str(group_id).strip(), "user_id": str(user_id).strip()},
-        )
-        return row.points if row is not None else 0
+    async with get_session() as session:
+        async with session.begin():
+            row = await session.get(
+                RustPlayerPoints,
+                {"group_id": str(group_id).strip(), "user_id": str(user_id).strip()},
+            )
+            return row.points if row is not None else 0
 
 
 async def set_group_points(group_id: str, user_id: str, points: int) -> int:
     points = normalize_player_points(points)
-    session = get_session()
-    async with session.begin():
-        row = await session.get(
-            RustPlayerPoints,
-            {"group_id": str(group_id).strip(), "user_id": str(user_id).strip()},
-        )
-        if row is None:
-            row = RustPlayerPoints(
-                group_id=str(group_id).strip(),
-                user_id=str(user_id).strip(),
-                points=points,
+    async with get_session() as session:
+        async with session.begin():
+            row = await session.get(
+                RustPlayerPoints,
+                {"group_id": str(group_id).strip(), "user_id": str(user_id).strip()},
             )
-            session.add(row)
-        else:
-            row.points = points
-        return points
+            if row is None:
+                row = RustPlayerPoints(
+                    group_id=str(group_id).strip(),
+                    user_id=str(user_id).strip(),
+                    points=points,
+                )
+                session.add(row)
+            else:
+                row.points = points
+            return points
 
 
 async def perform_check_in(
@@ -133,43 +133,45 @@ async def perform_check_in(
     check_in_date = today_check_in_date()
     points_earned = random.randint(min_points, max_points)
 
-    session = get_session()
-    async with session.begin():
-        existing = await session.get(
-            RustCheckInRecord,
-            {
-                "group_id": group_id,
-                "user_id": user_id,
-                "check_in_date": check_in_date,
-            },
-        )
-        if existing is not None:
-            total = await _get_points_in_session(session, group_id, user_id)
-            return CheckInResult(
-                ok=False,
-                total_points=total,
-                already_checked_in=True,
+    async with get_session() as session:
+        async with session.begin():
+            existing = await session.get(
+                RustCheckInRecord,
+                {
+                    "group_id": group_id,
+                    "user_id": user_id,
+                    "check_in_date": check_in_date,
+                },
             )
-
-        try:
-            async with session.begin_nested():
-                session.add(
-                    RustCheckInRecord(
-                        group_id=group_id,
-                        user_id=user_id,
-                        check_in_date=check_in_date,
-                        points_earned=points_earned,
-                    )
+            if existing is not None:
+                total = await _get_points_in_session(session, group_id, user_id)
+                return CheckInResult(
+                    ok=False,
+                    total_points=total,
+                    already_checked_in=True,
                 )
-                await session.flush()
-        except IntegrityError:
-            total = await _get_points_in_session(session, group_id, user_id)
-            return CheckInResult(
-                ok=False,
-                total_points=total,
-                already_checked_in=True,
+
+            try:
+                async with session.begin_nested():
+                    session.add(
+                        RustCheckInRecord(
+                            group_id=group_id,
+                            user_id=user_id,
+                            check_in_date=check_in_date,
+                            points_earned=points_earned,
+                        )
+                    )
+                    await session.flush()
+            except IntegrityError:
+                total = await _get_points_in_session(session, group_id, user_id)
+                return CheckInResult(
+                    ok=False,
+                    total_points=total,
+                    already_checked_in=True,
+                )
+            total = await _add_points_in_session(
+                session, group_id, user_id, points_earned
             )
-        total = await _add_points_in_session(session, group_id, user_id, points_earned)
 
     return CheckInResult(
         ok=True,
@@ -203,38 +205,38 @@ async def _add_points_in_session(
 
 
 async def list_player_overview() -> list[dict[str, object]]:
-    session = get_session()
-    async with session.begin():
-        points_rows = (
-            await session.scalars(
-                select(RustPlayerPoints).order_by(RustPlayerPoints.group_id)
-            )
-        ).all()
-        steam_rows = {
-            row.user_id: row.steam_id
-            for row in (await session.scalars(select(RustSteamBinding))).all()
-        }
-        items: list[dict[str, object]] = []
-        seen_users: set[str] = set()
-        for row in points_rows:
-            seen_users.add(row.user_id)
-            items.append(
-                {
-                    "group_id": row.group_id,
-                    "user_id": row.user_id,
-                    "points": row.points,
-                    "steam_id": steam_rows.get(row.user_id),
-                }
-            )
-        for user_id, steam_id in steam_rows.items():
-            if user_id in seen_users:
-                continue
-            items.append(
-                {
-                    "group_id": None,
-                    "user_id": user_id,
-                    "points": 0,
-                    "steam_id": steam_id,
-                }
-            )
-        return items
+    async with get_session() as session:
+        async with session.begin():
+            points_rows = (
+                await session.scalars(
+                    select(RustPlayerPoints).order_by(RustPlayerPoints.group_id)
+                )
+            ).all()
+            steam_rows = {
+                row.user_id: row.steam_id
+                for row in (await session.scalars(select(RustSteamBinding))).all()
+            }
+            items: list[dict[str, object]] = []
+            seen_users: set[str] = set()
+            for row in points_rows:
+                seen_users.add(row.user_id)
+                items.append(
+                    {
+                        "group_id": row.group_id,
+                        "user_id": row.user_id,
+                        "points": row.points,
+                        "steam_id": steam_rows.get(row.user_id),
+                    }
+                )
+            for user_id, steam_id in steam_rows.items():
+                if user_id in seen_users:
+                    continue
+                items.append(
+                    {
+                        "group_id": None,
+                        "user_id": user_id,
+                        "points": 0,
+                        "steam_id": steam_id,
+                    }
+                )
+            return items

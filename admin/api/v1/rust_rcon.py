@@ -95,15 +95,15 @@ def _ensure_alias_available(
 
 @router.get("", response_model=list[RustRconBindingResponse])
 async def list_rust_rcon_bindings(_: AdminUser):
-    session = get_session()
-    async with session.begin():
-        stmt = select(RustRconBinding).options(
-            selectinload(RustRconBinding.allowed_users)
-        )
-        rows = (await session.scalars(stmt)).all()
-        snap = get_config_service().get_snapshot()
-        by_id = {item.id: item.password for item in snap.rust_rcon_bindings}
-        return [_to_response(row, by_id.get(row.id, "")) for row in rows]
+    async with get_session() as session:
+        async with session.begin():
+            stmt = select(RustRconBinding).options(
+                selectinload(RustRconBinding.allowed_users)
+            )
+            rows = (await session.scalars(stmt)).all()
+            snap = get_config_service().get_snapshot()
+            by_id = {item.id: item.password for item in snap.rust_rcon_bindings}
+            return [_to_response(row, by_id.get(row.id, "")) for row in rows]
 
 
 @router.post(
@@ -129,32 +129,32 @@ async def create_rust_rcon_binding(body: RustRconBindingCreate, _: AdminUser):
 
     _ensure_alias_available(alias, require_command_clear=body.enabled)
 
-    session = get_session()
-    async with session.begin():
-        existing = await session.scalar(
-            select(RustRconBinding).where(RustRconBinding.alias == alias)
-        )
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"触发词「{alias}」已存在",
+    async with get_session() as session:
+        async with session.begin():
+            existing = await session.scalar(
+                select(RustRconBinding).where(RustRconBinding.alias == alias)
             )
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"触发词「{alias}」已存在",
+                )
 
-        row = RustRconBinding(
-            alias=alias,
-            host=host,
-            port=port,
-            password_encrypted=encrypt_value(body.password),
-            enabled=body.enabled,
-            name=(body.name.strip() if body.name else None) or None,
-        )
-        row.allowed_users = [
-            RustRconBindingAllowedUser(user_id=qq) for qq in allowed_qq_ids
-        ]
-        session.add(row)
-        await session.flush()
-        await session.refresh(row, ["allowed_users"])
-        response = _to_response(row, body.password)
+            row = RustRconBinding(
+                alias=alias,
+                host=host,
+                port=port,
+                password_encrypted=encrypt_value(body.password),
+                enabled=body.enabled,
+                name=(body.name.strip() if body.name else None) or None,
+            )
+            row.allowed_users = [
+                RustRconBindingAllowedUser(user_id=qq) for qq in allowed_qq_ids
+            ]
+            session.add(row)
+            await session.flush()
+            await session.refresh(row, ["allowed_users"])
+            response = _to_response(row, body.password)
 
     await get_config_service().reload()
     return response
@@ -164,82 +164,83 @@ async def create_rust_rcon_binding(body: RustRconBindingCreate, _: AdminUser):
 async def update_rust_rcon_binding(
     binding_id: int, body: RustRconBindingUpdate, _: AdminUser
 ):
-    session = get_session()
-    async with session.begin():
-        row = await session.scalar(
-            select(RustRconBinding)
-            .where(RustRconBinding.id == binding_id)
-            .options(selectinload(RustRconBinding.allowed_users))
-        )
-        if not row:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="RCON 绑定不存在"
+    async with get_session() as session:
+        async with session.begin():
+            row = await session.scalar(
+                select(RustRconBinding)
+                .where(RustRconBinding.id == binding_id)
+                .options(selectinload(RustRconBinding.allowed_users))
             )
-
-        was_enabled = row.enabled
-
-        decrypted = ""
-        snap = get_config_service().get_snapshot()
-        for item in snap.rust_rcon_bindings:
-            if item.id == binding_id:
-                decrypted = item.password
-                break
-
-        if body.alias is not None:
-            try:
-                alias = normalize_alias(body.alias)
-            except ValueError as exc:
+            if not row:
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-                ) from exc
-            if alias != row.alias:
-                _ensure_alias_available(
-                    alias,
-                    exclude_id=binding_id,
-                    require_command_clear=(was_enabled or body.enabled is True),
+                    status_code=status.HTTP_404_NOT_FOUND, detail="RCON 绑定不存在"
                 )
-                row.alias = alias
 
-        if body.host is not None:
-            host = body.host.strip()
-            if not host:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, detail="主机地址不能为空"
-                )
-            row.host = host
+            was_enabled = row.enabled
 
-        if body.port is not None:
-            try:
-                row.port = normalize_port(body.port)
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-                ) from exc
+            decrypted = ""
+            snap = get_config_service().get_snapshot()
+            for item in snap.rust_rcon_bindings:
+                if item.id == binding_id:
+                    decrypted = item.password
+                    break
 
-        if body.password is not None and body.password.strip():
-            decrypted = body.password
-            row.password_encrypted = encrypt_value(body.password)
+            if body.alias is not None:
+                try:
+                    alias = normalize_alias(body.alias)
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+                    ) from exc
+                if alias != row.alias:
+                    _ensure_alias_available(
+                        alias,
+                        exclude_id=binding_id,
+                        require_command_clear=(was_enabled or body.enabled is True),
+                    )
+                    row.alias = alias
 
-        if body.enabled is not None:
-            row.enabled = body.enabled
+            if body.host is not None:
+                host = body.host.strip()
+                if not host:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="主机地址不能为空",
+                    )
+                row.host = host
 
-        if row.enabled and not was_enabled:
-            _ensure_alias_available(row.alias, exclude_id=binding_id)
+            if body.port is not None:
+                try:
+                    row.port = normalize_port(body.port)
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+                    ) from exc
 
-        if "name" in body.model_fields_set:
-            row.name = (body.name or "").strip() or None
+            if body.password is not None and body.password.strip():
+                decrypted = body.password
+                row.password_encrypted = encrypt_value(body.password)
 
-        if body.allowed_qq_ids is not None:
-            try:
-                await _sync_allowed_users(session, row, body.allowed_qq_ids)
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-                ) from exc
+            if body.enabled is not None:
+                row.enabled = body.enabled
 
-        await session.flush()
-        await session.refresh(row, ["allowed_users"])
-        response = _to_response(row, decrypted)
+            if row.enabled and not was_enabled:
+                _ensure_alias_available(row.alias, exclude_id=binding_id)
+
+            if "name" in body.model_fields_set:
+                row.name = (body.name or "").strip() or None
+
+            if body.allowed_qq_ids is not None:
+                try:
+                    await _sync_allowed_users(session, row, body.allowed_qq_ids)
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+                    ) from exc
+
+            await session.flush()
+            await session.refresh(row, ["allowed_users"])
+            response = _to_response(row, decrypted)
 
     await get_config_service().reload()
     return response
@@ -247,13 +248,13 @@ async def update_rust_rcon_binding(
 
 @router.delete("/{binding_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_rust_rcon_binding(binding_id: int, _: AdminUser):
-    session = get_session()
-    async with session.begin():
-        row = await session.get(RustRconBinding, binding_id)
-        if not row:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="RCON 绑定不存在"
-            )
-        await session.delete(row)
+    async with get_session() as session:
+        async with session.begin():
+            row = await session.get(RustRconBinding, binding_id)
+            if not row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="RCON 绑定不存在"
+                )
+            await session.delete(row)
 
     await get_config_service().reload()

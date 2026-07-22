@@ -6,7 +6,7 @@ import importlib
 import os
 import sys
 import uuid
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import nonebot
 
@@ -17,6 +17,25 @@ _DB_MODULE_NAMES = (
     "shared.db.base",
     "nonebot_plugin_orm",
 )
+
+
+def mock_async_session() -> MagicMock:
+    """Session mock compatible with ``async with get_session() as session``."""
+    session = MagicMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+    session.begin = MagicMock(return_value=AsyncMock())
+    session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
+    session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+    return session
+
+
+def get_session_provider(session: MagicMock | None = None):
+    """Return a ``get_session`` callable for tests."""
+    session = session or mock_async_session()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+    return lambda: session
 
 
 def shared_sqlite_url() -> str:
