@@ -199,6 +199,7 @@ async def update_user_policy(
     svc = get_config_service()
     snap = svc.get_snapshot()
     _ensure_private_message_enabled(user_id, snap)
+    existing = snap.rust_rcon_user_policies.get(str(user_id).strip())
 
     if not body.enabled:
         await svc.delete_rust_rcon_user_policy(user_id)
@@ -206,7 +207,9 @@ async def update_user_policy(
         await svc.upsert_rust_rcon_user_policy(
             user_id,
             enabled=True,
-            name=body.name,
+            name=body.name
+            if body.name is not None
+            else (existing.name if existing else None),
         )
     await svc.reload()
 
