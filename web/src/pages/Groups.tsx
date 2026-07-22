@@ -6,6 +6,7 @@ import { getMessagePolicy, updateMessagePolicy } from '../api/client'
 import type { Group } from '../api/types'
 import { GroupSpecialTitlePolicyTab } from '../components/GroupSpecialTitlePolicyTab'
 import { LinkParserGroupPolicyTab } from '../components/LinkParserPolicyTabs'
+import { RustRconGroupPolicyTab } from '../components/RustRconPolicyTabs'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
 import { SubPageTabs } from '../components/SubPageTabs'
@@ -19,7 +20,7 @@ import {
   isItemEnabled,
 } from '../utils/restrictPolicy'
 
-type GroupsTab = 'message' | 'link-groups' | 'status' | 'special-title'
+type GroupsTab = 'message' | 'link-groups' | 'rcon-groups' | 'status' | 'special-title'
 
 export function GroupsPage() {
   const { showToast } = useToast()
@@ -55,6 +56,7 @@ export function GroupsPage() {
   const tabLabels: Record<GroupsTab, string> = {
     message: '群消息',
     'link-groups': '群链接解析',
+    'rcon-groups': '群 RCON',
     status: '状态查询',
     'special-title': '群头衔',
   }
@@ -137,7 +139,7 @@ export function GroupsPage() {
         <div>
           <h2 className="text-2xl font-bold text-foreground">群组</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            管理群消息响应范围、状态查询与群头衔权限，以及链接解析的群级开关
+            管理群消息响应范围、Rust RCON、状态查询与群头衔权限，以及链接解析的群级开关
           </p>
         </div>
         {tab === 'message' && groups.length > 0 && (
@@ -239,6 +241,12 @@ export function GroupsPage() {
       {tab === 'link-groups' && (
         <div className="card">
           <LinkParserGroupPolicyTab />
+        </div>
+      )}
+
+      {tab === 'rcon-groups' && (
+        <div className="card">
+          <RustRconGroupPolicyTab />
         </div>
       )}
 

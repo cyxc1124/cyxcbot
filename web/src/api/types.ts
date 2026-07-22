@@ -388,6 +388,7 @@ export interface RustRconBinding {
   password: RustRconPasswordStatus
   enabled: boolean
   name: string | null
+  allowed_qq_ids: string[]
   created_at: string
   updated_at: string
 }
@@ -399,6 +400,7 @@ export interface RustRconBindingCreate {
   password: string
   enabled?: boolean
   name?: string | null
+  allowed_qq_ids: string[]
 }
 
 export interface RustRconBindingUpdate {
@@ -408,4 +410,39 @@ export interface RustRconBindingUpdate {
   password?: string
   enabled?: boolean
   name?: string | null
+  allowed_qq_ids?: string[]
+}
+
+export interface RustRconGroupPolicyItem {
+  group_id: string
+  group_name: string | null
+  member_count: number | null
+  customized: boolean
+  enabled: boolean
+}
+
+export interface RustRconGroupPolicyList {
+  groups: RustRconGroupPolicyItem[]
+  group_list_available: boolean
+}
+
+export interface RustRconGroupPolicyMutation {
+  item: RustRconGroupPolicyItem
+}
+
+export interface RustRconUserPolicyItem {
+  user_id: string
+  nickname: string | null
+  name: string | null
+  customized: boolean
+  enabled: boolean
+}
+
+export interface RustRconUserPolicyList {
+  users: RustRconUserPolicyItem[]
+  friend_list_available: boolean
+}
+
+export interface RustRconUserPolicyMutation {
+  item: RustRconUserPolicyItem
 }

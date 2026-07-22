@@ -253,6 +253,54 @@ class RustRconBinding(Model):
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )
 
+    allowed_users: Mapped[list["RustRconBindingAllowedUser"]] = relationship(
+        back_populates="binding", cascade="all, delete-orphan"
+    )
+
+
+class RustRconBindingAllowedUser(Model):
+    """QQ users allowed to trigger a Rust RCON binding."""
+
+    __tablename__ = "shared_db_rustrconbindingalloweduser"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    binding_id: Mapped[int] = mapped_column(
+        ForeignKey("shared_db_rustrconbinding.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    binding: Mapped["RustRconBinding"] = relationship(back_populates="allowed_users")
+
+    __table_args__ = (
+        UniqueConstraint("binding_id", "user_id", name="uq_rust_rcon_binding_user"),
+    )
+
+
+class RustRconGroupPolicy(Model):
+    """Per-group override for Rust RCON commands."""
+
+    __tablename__ = "shared_db_rustrcongrouppolicy"
+
+    group_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+
+class RustRconUserPolicy(Model):
+    """Per-user override for Rust RCON commands."""
+
+    __tablename__ = "shared_db_rustrconuserpolicy"
+
+    user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
 
 class GroupSpecialTitleUsage(Model):
     """Daily usage counter for group special title self-service."""
