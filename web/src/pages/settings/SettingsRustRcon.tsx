@@ -44,7 +44,8 @@ export function SettingsRustRconPage() {
               （私聊无需 @）即可向对应服务器发送 RCON 指令。
             </p>
             <p className="mt-2 text-xs text-muted-foreground">
-              示例：<code className="font-mono">@机器人 rcon1 status</code>、
+              协议为 Rust WebRCON（WebSocket，默认端口 28016）。示例：
+              <code className="font-mono">@机器人 rcon1 status</code>、
               <code className="font-mono">@机器人 rcon2 say 大家好</code>
             </p>
           </div>

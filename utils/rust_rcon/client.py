@@ -1,15 +1,20 @@
-"""Minimal async Source RCON (TCP) client — stdlib only."""
+"""Async WebRCON (WebSocket) client for Rust game servers.
+
+Protocol reference: https://github.com/Facepunch/webrcon
+"""
 
 from __future__ import annotations
 
 import asyncio
-import struct
-from typing import Final
+import json
+from typing import Any, Final
+from urllib.parse import quote
 
-SERVERDATA_RESPONSE_VALUE: Final = 0
-SERVERDATA_AUTH_RESPONSE: Final = 2
-SERVERDATA_EXECCOMMAND: Final = 2
-SERVERDATA_AUTH: Final = 3
+import aiohttp
+
+# Facepunch webrcon uses identifiers > 1000 for request/response pairing.
+REQUEST_IDENTIFIER: Final = 1001
+WEBRCON_NAME: Final = "WebRcon"
 
 DEFAULT_TIMEOUT_SECONDS: Final = 10.0
 MAX_RESPONSE_CHARS: Final = 4000
@@ -23,35 +28,34 @@ class RconAuthError(RconError):
     """RCON password rejected."""
 
 
-def _pack_packet(request_id: int, packet_type: int, body: str) -> bytes:
-    payload = (
-        struct.pack("<ii", request_id, packet_type) + body.encode("utf-8") + b"\x00\x00"
-    )
-    return struct.pack("<i", len(payload)) + payload
-
-
-def _unpack_packet(data: bytes) -> tuple[int, int, str]:
-    if len(data) < 8:
-        raise RconError("RCON 响应包过短")
-    request_id, packet_type = struct.unpack_from("<ii", data, 0)
-    body_bytes = data[8:].rstrip(b"\x00")
-    body = body_bytes.decode("utf-8", errors="replace")
-    return request_id, packet_type, body
-
-
-async def _read_packet(reader: asyncio.StreamReader) -> tuple[int, int, str]:
-    size_bytes = await reader.readexactly(4)
-    (size,) = struct.unpack("<i", size_bytes)
-    if size < 8:
-        raise RconError("RCON 响应长度无效")
-    payload = await reader.readexactly(size)
-    return _unpack_packet(payload)
+def _build_websocket_url(host: str, port: int, password: str) -> str:
+    host = host.strip().strip("/")
+    return f"ws://{host}:{port}/{quote(password, safe='')}"
 
 
 def _truncate_response(text: str) -> str:
     if len(text) <= MAX_RESPONSE_CHARS:
         return text
     return text[: MAX_RESPONSE_CHARS - 20] + "\n…(输出已截断)"
+
+
+def _build_command_packet(command: str, identifier: int) -> str:
+    return json.dumps(
+        {
+            "Identifier": identifier,
+            "Message": command,
+            "Name": WEBRCON_NAME,
+        },
+        ensure_ascii=False,
+    )
+
+
+def _parse_response_message(data: dict[str, Any]) -> str:
+    message = data.get("Message", "")
+    if not isinstance(message, str):
+        message = str(message)
+    message = message.strip()
+    return _truncate_response(message if message else "(无输出)")
 
 
 async def execute_rcon_command(
@@ -62,45 +66,31 @@ async def execute_rcon_command(
     *,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> str:
-    """Send *command* via Source RCON and return the server response text."""
-    connect_coro = asyncio.open_connection(host, port)
-    reader, writer = await asyncio.wait_for(connect_coro, timeout=timeout)
+    """Send *command* via Rust WebRCON and return the server response text."""
+    url = _build_websocket_url(host, port, password)
+    client_timeout = aiohttp.ClientTimeout(total=timeout)
+
     try:
-        writer.write(_pack_packet(1, SERVERDATA_AUTH, password))
-        await writer.drain()
-
-        while True:
-            request_id, packet_type, _ = await asyncio.wait_for(
-                _read_packet(reader), timeout
-            )
-            if packet_type == SERVERDATA_AUTH_RESPONSE:
-                if request_id == -1:
-                    raise RconAuthError("RCON 认证失败")
-                break
-
-        writer.write(_pack_packet(2, SERVERDATA_EXECCOMMAND, command))
-        await writer.drain()
-
-        parts: list[str] = []
-        while True:
-            request_id, packet_type, body = await asyncio.wait_for(
-                _read_packet(reader), timeout
-            )
-            if packet_type != SERVERDATA_RESPONSE_VALUE or request_id != 2:
-                continue
-            if not body:
-                break
-            parts.append(body)
-
-        combined = "\n".join(parts).strip()
-        return _truncate_response(combined if combined else "(无输出)")
+        async with aiohttp.ClientSession(timeout=client_timeout) as session:
+            async with session.ws_connect(url) as ws:
+                await ws.send_str(_build_command_packet(command, REQUEST_IDENTIFIER))
+                while True:
+                    msg = await asyncio.wait_for(ws.receive(), timeout=timeout)
+                    if msg.type == aiohttp.WSMsgType.TEXT:
+                        data = json.loads(msg.data)
+                        if data.get("Identifier") == REQUEST_IDENTIFIER:
+                            return _parse_response_message(data)
+                        continue
+                    if msg.type in (
+                        aiohttp.WSMsgType.CLOSE,
+                        aiohttp.WSMsgType.CLOSED,
+                    ):
+                        raise RconError("RCON 连接意外关闭")
+                    if msg.type == aiohttp.WSMsgType.ERROR:
+                        raise RconError("RCON WebSocket 错误")
+    except aiohttp.WSServerHandshakeError as exc:
+        raise RconAuthError("RCON 认证失败") from exc
     except asyncio.TimeoutError as exc:
         raise RconError("RCON 连接或响应超时") from exc
-    except asyncio.IncompleteReadError as exc:
-        raise RconError("RCON 连接意外关闭") from exc
-    finally:
-        writer.close()
-        try:
-            await writer.wait_closed()
-        except Exception:
-            pass
+    except aiohttp.ClientError as exc:
+        raise RconError(f"RCON 连接失败：{exc}") from exc

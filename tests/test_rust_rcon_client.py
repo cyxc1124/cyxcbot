@@ -1,85 +1,99 @@
-"""Tests for Source RCON client."""
+"""Tests for Rust WebRCON client."""
 
 from __future__ import annotations
 
-import asyncio
-import struct
+import json
+from collections.abc import AsyncIterator
 
 import pytest
+from aiohttp import web
 
 from utils.rust_rcon.client import (
-    SERVERDATA_AUTH,
-    SERVERDATA_AUTH_RESPONSE,
-    SERVERDATA_EXECCOMMAND,
-    SERVERDATA_RESPONSE_VALUE,
+    REQUEST_IDENTIFIER,
     RconAuthError,
-    _pack_packet,
     execute_rcon_command,
 )
 
 
-async def _read_request(reader: asyncio.StreamReader) -> tuple[int, int, str]:
-    size_bytes = await reader.readexactly(4)
-    (size,) = struct.unpack("<i", size_bytes)
-    payload = await reader.readexactly(size)
-    request_id, packet_type = struct.unpack_from("<ii", payload, 0)
-    body_bytes = payload[8:].rstrip(b"\x00")
-    body = body_bytes.decode("utf-8")
-    return request_id, packet_type, body
+async def _websocket_handler(request: web.Request) -> web.WebSocketResponse:
+    password = request.match_info["password"]
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+
+    if password != "pass":
+        await ws.close()
+        return ws
+
+    async for msg in ws:
+        if msg.type == web.WSMsgType.TEXT:
+            data = json.loads(msg.data)
+            await ws.send_str(
+                json.dumps(
+                    {
+                        "Identifier": data["Identifier"],
+                        "Message": "ok",
+                        "Type": "Generic",
+                    }
+                )
+            )
+    return ws
 
 
-async def _handle_rcon_client(
-    reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-) -> None:
+async def _websocket_auth_fail(_request: web.Request) -> web.Response:
+    raise web.HTTPUnauthorized()
+
+
+@pytest.fixture
+async def webrcon_server() -> AsyncIterator[tuple[str, int]]:
+    app = web.Application()
+    app.router.add_get("/{password}", _websocket_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    sock = site._server.sockets[0].getsockname()
     try:
-        _, packet_type, body = await _read_request(reader)
-        assert packet_type == SERVERDATA_AUTH
-        assert body == "pass"
-
-        writer.write(_pack_packet(1, SERVERDATA_AUTH_RESPONSE, ""))
-        await writer.drain()
-
-        _, packet_type, body = await _read_request(reader)
-        assert packet_type == SERVERDATA_EXECCOMMAND
-        assert body == "status"
-
-        writer.write(_pack_packet(2, SERVERDATA_RESPONSE_VALUE, "ok"))
-        writer.write(_pack_packet(2, SERVERDATA_RESPONSE_VALUE, ""))
-        await writer.drain()
+        yield sock[0], sock[1]
     finally:
-        writer.close()
-        await writer.wait_closed()
+        await runner.cleanup()
 
 
-async def _handle_rcon_auth_fail(
-    reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-) -> None:
-    await _read_request(reader)
-    writer.write(_pack_packet(-1, SERVERDATA_AUTH_RESPONSE, ""))
-    await writer.drain()
-    writer.close()
-    await writer.wait_closed()
+@pytest.fixture
+async def webrcon_auth_fail_server() -> AsyncIterator[tuple[str, int]]:
+    app = web.Application()
+    app.router.add_get("/{password}", _websocket_auth_fail)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    sock = site._server.sockets[0].getsockname()
+    try:
+        yield sock[0], sock[1]
+    finally:
+        await runner.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_execute_rcon_command_success() -> None:
-    server = await asyncio.start_server(_handle_rcon_client, "127.0.0.1", 0)
-    host, port = server.sockets[0].getsockname()[:2]
-    try:
-        result = await execute_rcon_command(host, port, "pass", "status")
-        assert result == "ok"
-    finally:
-        server.close()
-        await server.wait_closed()
+async def test_execute_rcon_command_success(webrcon_server) -> None:
+    host, port = webrcon_server
+    result = await execute_rcon_command(host, port, "pass", "status")
+    assert result == "ok"
 
 
 @pytest.mark.asyncio
-async def test_execute_rcon_command_auth_fail() -> None:
-    server = await asyncio.start_server(_handle_rcon_auth_fail, "127.0.0.1", 0)
-    host, port = server.sockets[0].getsockname()[:2]
-    try:
-        with pytest.raises(RconAuthError):
-            await execute_rcon_command(host, port, "wrong", "status")
-    finally:
-        server.close()
-        await server.wait_closed()
+async def test_build_command_packet_matches_webrcon_format() -> None:
+    from utils.rust_rcon.client import _build_command_packet
+
+    payload = json.loads(_build_command_packet("status", REQUEST_IDENTIFIER))
+    assert payload == {
+        "Identifier": REQUEST_IDENTIFIER,
+        "Message": "status",
+        "Name": "WebRcon",
+    }
+
+
+@pytest.mark.asyncio
+async def test_execute_rcon_command_auth_fail(webrcon_auth_fail_server) -> None:
+    host, port = webrcon_auth_fail_server
+    with pytest.raises(RconAuthError):
+        await execute_rcon_command(host, port, "wrong", "status")
