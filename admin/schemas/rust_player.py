@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from shared.config.rust_player import normalize_player_points
 
 
 class RustPlayerOverviewItem(BaseModel):
@@ -21,7 +23,12 @@ class RustPlayerOverviewResponse(BaseModel):
 class RustPlayerPointsUpdateRequest(BaseModel):
     group_id: str = Field(min_length=1, max_length=32)
     user_id: str = Field(min_length=1, max_length=32)
-    points: int = Field(ge=0, le=1_000_000)
+    points: int
+
+    @field_validator("points")
+    @classmethod
+    def validate_points(cls, value: int) -> int:
+        return normalize_player_points(value)
 
 
 class RustPlayerPointsUpdateResponse(BaseModel):
@@ -36,5 +43,10 @@ class RustCheckInConfigResponse(BaseModel):
 
 
 class RustCheckInConfigUpdateRequest(BaseModel):
-    min_points: int = Field(ge=0, le=1_000_000)
-    max_points: int = Field(ge=0, le=1_000_000)
+    min_points: int
+    max_points: int
+
+    @field_validator("min_points", "max_points")
+    @classmethod
+    def validate_points(cls, value: int) -> int:
+        return normalize_player_points(value)

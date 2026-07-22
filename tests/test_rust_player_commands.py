@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 import shared.config.command_aliases as command_aliases_module
+from admin.schemas.rust_player import RustPlayerPointsUpdateRequest
 from shared.config.command_aliases import normalize_command_aliases
 from shared.config.rust_player import (
     is_bind_command,
     is_checkin_command,
     is_points_query_command,
     normalize_checkin_points_range,
+    normalize_player_points,
     normalize_steam_id,
     parse_bind_steam_id,
 )
@@ -81,6 +86,25 @@ def test_normalize_checkin_points_range() -> None:
         raise AssertionError("expected ValueError")
     except ValueError:
         pass
+    try:
+        normalize_checkin_points_range(0, 1_000_001)
+        raise AssertionError("expected ValueError")
+    except ValueError as exc:
+        assert "1000000" in str(exc)
+
+
+def test_normalize_player_points_rejects_overflow() -> None:
+    with pytest.raises(ValueError, match="1000000"):
+        normalize_player_points(1_000_001)
+
+
+def test_rust_player_points_schema_uses_chinese_limit_error() -> None:
+    with pytest.raises(ValidationError, match="积分不能超过 1000000"):
+        RustPlayerPointsUpdateRequest(
+            group_id="123456",
+            user_id="654321",
+            points=1_000_001,
+        )
 
 
 def test_rust_player_triggers_conflict_with_rcon_alias() -> None:

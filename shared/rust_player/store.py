@@ -11,6 +11,7 @@ from nonebot_plugin_orm import get_session
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from shared.config.rust_player import normalize_player_points
 from shared.db.models import RustCheckInRecord, RustPlayerPoints, RustSteamBinding
 
 _CHECKIN_TZ = ZoneInfo("Asia/Shanghai")
@@ -101,8 +102,7 @@ async def get_group_points(group_id: str, user_id: str) -> int:
 
 
 async def set_group_points(group_id: str, user_id: str, points: int) -> int:
-    if points < 0:
-        raise ValueError("积分不能为负数")
+    points = normalize_player_points(points)
     session = get_session()
     async with session.begin():
         row = await session.get(

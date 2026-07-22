@@ -49,6 +49,7 @@ export function RustPlayersTab() {
             <input
               type="number"
               min={0}
+              max={1000000}
               className="input w-28"
               value={configForm.min_points}
               disabled={savingConfig}
@@ -62,6 +63,7 @@ export function RustPlayersTab() {
             <input
               type="number"
               min={0}
+              max={1000000}
               className="input w-28"
               value={configForm.max_points}
               disabled={savingConfig}
@@ -134,6 +136,7 @@ export function RustPlayersTab() {
                           <input
                             type="number"
                             min={0}
+                            max={1000000}
                             className="input w-24 text-xs"
                             disabled={saving || !item.group_id}
                             value={draftPoints[key] ?? String(item.points)}
