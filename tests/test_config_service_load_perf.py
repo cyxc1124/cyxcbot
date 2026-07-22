@@ -265,8 +265,8 @@ async def test_config_load_uses_few_select_queries_with_many_targets(
     assert len(snapshot.dynamic_monitor_mapping) == enabled_count
     assert len(snapshot.live_monitor_mapping) == enabled_count
     # settings + dynamic (+ groups/users selectinload) + live enabled
-    # (+ groups/users selectinload) + link parser policies
-    assert counter["select"] <= 9
+    # (+ groups/users selectinload) + link parser + rust rcon policies
+    assert counter["select"] <= 12
 
 
 @pytest.mark.asyncio

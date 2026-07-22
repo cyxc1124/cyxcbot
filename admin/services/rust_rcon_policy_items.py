@@ -30,9 +30,7 @@ def build_group_policy_item(snap, group: dict) -> RustRconGroupPolicyItem:
     )
 
 
-def build_group_policy_items(
-    snap, groups: list[dict]
-) -> list[RustRconGroupPolicyItem]:
+def build_group_policy_items(snap, groups: list[dict]) -> list[RustRconGroupPolicyItem]:
     return [build_group_policy_item(snap, group) for group in groups]
 
 

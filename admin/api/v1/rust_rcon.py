@@ -67,9 +67,7 @@ async def _sync_allowed_users(
     for item in list(row.allowed_users):
         await session.delete(item)
     await session.flush()
-    row.allowed_users = [
-        RustRconBindingAllowedUser(user_id=qq) for qq in normalized
-    ]
+    row.allowed_users = [RustRconBindingAllowedUser(user_id=qq) for qq in normalized]
 
 
 def _ensure_alias_available(
@@ -83,7 +81,9 @@ def _ensure_alias_available(
     if require_command_clear:
         conflict = alias_command_conflict(alias, snap)
         if conflict:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=conflict)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=conflict
+            )
 
     for binding in snap.rust_rcon_bindings:
         if binding.alias == alias and binding.id != exclude_id:
@@ -123,7 +123,9 @@ async def create_rust_rcon_binding(body: RustRconBindingCreate, _: AdminUser):
 
     host = body.host.strip()
     if not host:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="主机地址不能为空")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="主机地址不能为空"
+        )
 
     _ensure_alias_available(alias, require_command_clear=body.enabled)
 

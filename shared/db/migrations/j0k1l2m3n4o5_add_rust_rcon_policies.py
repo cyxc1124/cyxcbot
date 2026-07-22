@@ -25,9 +25,7 @@ def upgrade(name: str = "") -> None:
     op.create_table(
         "shared_db_rustrcongrouppolicy",
         sa.Column("group_id", sa.String(length=32), nullable=False),
-        sa.Column(
-            "enabled", sa.Boolean(), nullable=False, server_default=sa.false()
-        ),
+        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("group_id"),
         info={"bind_key": "shared.db"},
@@ -36,9 +34,7 @@ def upgrade(name: str = "") -> None:
         "shared_db_rustrconuserpolicy",
         sa.Column("user_id", sa.String(length=32), nullable=False),
         sa.Column("name", sa.String(length=128), nullable=True),
-        sa.Column(
-            "enabled", sa.Boolean(), nullable=False, server_default=sa.false()
-        ),
+        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("user_id"),
         info={"bind_key": "shared.db"},

@@ -158,9 +158,7 @@ class ConfigService:
             rust_rcon_group_policies = await self._load_rust_rcon_group_policies(
                 session
             )
-            rust_rcon_user_policies = await self._load_rust_rcon_user_policies(
-                session
-            )
+            rust_rcon_user_policies = await self._load_rust_rcon_user_policies(session)
             await self._prune_dynamic_monitor_states(session, set(dynamic_mapping))
             await self._prune_live_monitor_states(session, set(live_mapping))
 
@@ -473,9 +471,7 @@ class ConfigService:
                 try:
                     password = decrypt_value(row.password_encrypted)
                 except ValueError as exc:
-                    logger.error(
-                        "Rust RCON 绑定 {} 密码解密失败: {}", row.alias, exc
-                    )
+                    logger.error("Rust RCON 绑定 {} 密码解密失败: {}", row.alias, exc)
             allowed_qq_ids = tuple(
                 sorted(
                     {str(item.user_id) for item in row.allowed_users},
@@ -556,9 +552,7 @@ class ConfigService:
                 row.enabled = enabled
                 row.name = name
             else:
-                session.add(
-                    RustRconUserPolicy(user_id=uid, enabled=enabled, name=name)
-                )
+                session.add(RustRconUserPolicy(user_id=uid, enabled=enabled, name=name))
 
     async def delete_rust_rcon_user_policy(self, user_id: str) -> None:
         uid = str(user_id).strip()

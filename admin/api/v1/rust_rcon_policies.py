@@ -165,9 +165,7 @@ async def update_group_policy(
     )
 
 
-@router.delete(
-    "/groups/{group_id}", response_model=RustRconGroupPolicyMutationResponse
-)
+@router.delete("/groups/{group_id}", response_model=RustRconGroupPolicyMutationResponse)
 async def reset_group_policy(group_id: str, _: AdminUser):
     await _ensure_group_list_complete_for_mutation()
     svc = get_config_service()

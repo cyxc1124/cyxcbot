@@ -29,9 +29,7 @@ def upgrade(name: str = "") -> None:
         sa.Column("host", sa.String(length=255), nullable=False),
         sa.Column("port", sa.Integer(), nullable=False, server_default="28016"),
         sa.Column("password_encrypted", sa.Text(), nullable=False, server_default=""),
-        sa.Column(
-            "enabled", sa.Boolean(), nullable=False, server_default=sa.true()
-        ),
+        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("name", sa.String(length=128), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
