@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from nonebot_plugin_orm import get_session
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from shared.db.models import RustCheckInRecord, RustPlayerPoints, RustSteamBinding
 
@@ -132,6 +133,16 @@ async def perform_check_in(
                 points_earned=points_earned,
             )
         )
+        try:
+            async with session.begin_nested():
+                await session.flush()
+        except IntegrityError:
+            total = await _get_points_in_session(session, group_id, user_id)
+            return CheckInResult(
+                ok=False,
+                total_points=total,
+                already_checked_in=True,
+            )
         total = await _add_points_in_session(session, group_id, user_id, points_earned)
 
     return CheckInResult(
