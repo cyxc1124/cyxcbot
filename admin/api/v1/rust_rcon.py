@@ -226,8 +226,8 @@ async def update_rust_rcon_binding(
         if row.enabled and not was_enabled:
             _ensure_alias_available(row.alias, exclude_id=binding_id)
 
-        if body.name is not None:
-            row.name = body.name.strip() or None
+        if "name" in body.model_fields_set:
+            row.name = (body.name or "").strip() or None
 
         if body.allowed_qq_ids is not None:
             try:
