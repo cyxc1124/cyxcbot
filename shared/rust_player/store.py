@@ -28,18 +28,30 @@ class CheckInResult:
     already_checked_in: bool = False
 
 
+async def _detach_binding(session, row: RustSteamBinding) -> RustSteamBinding:
+    await session.refresh(row)
+    session.expunge(row)
+    return row
+
+
 async def get_steam_binding(user_id: str) -> RustSteamBinding | None:
     session = get_session()
     async with session.begin():
-        return await session.get(RustSteamBinding, str(user_id).strip())
+        row = await session.get(RustSteamBinding, str(user_id).strip())
+        if row is None:
+            return None
+        return await _detach_binding(session, row)
 
 
 async def get_steam_binding_by_steam_id(steam_id: str) -> RustSteamBinding | None:
     session = get_session()
     async with session.begin():
-        return await session.scalar(
+        row = await session.scalar(
             select(RustSteamBinding).where(RustSteamBinding.steam_id == steam_id)
         )
+        if row is None:
+            return None
+        return await _detach_binding(session, row)
 
 
 async def _ensure_steam_binding_available(session, user_id: str, steam_id: str) -> None:
