@@ -52,7 +52,6 @@ export default function App() {
                   <Route path="bot" element={<SettingsBotPage />} />
                   <Route path="commands" element={<SettingsCommandsPage />} />
                 </Route>
-                <Route path="settings/rust-rcon" element={<Navigate to="/rust-rcon" replace />} />
                 <Route path="logs" element={<LogsPage />} />
                 <Route path="about" element={<AboutPage />} />
                 <Route path="mappings" element={<Navigate to="/dynamic" replace />} />
