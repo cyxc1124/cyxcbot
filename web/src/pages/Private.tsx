@@ -55,8 +55,8 @@ export function PrivatePage() {
   const tabLabels: Record<PrivateTab, string> = {
     message: '好友消息',
     'link-users': '好友链接解析',
-    'rcon-users': '好友 RCON',
     status: '状态查询',
+    'rcon-users': '好友 RCON',
   }
 
   const allUserIds = useMemo(() => users.map((u) => u.user_id), [users])
@@ -238,13 +238,13 @@ export function PrivatePage() {
         </div>
       )}
 
+      {tab === 'status' && <StatusCheckPolicyTab scope="friend" />}
+
       {tab === 'rcon-users' && (
         <div className="card">
           <RustRconUserPolicyTab />
         </div>
       )}
-
-      {tab === 'status' && <StatusCheckPolicyTab scope="friend" />}
     </div>
   )
 }

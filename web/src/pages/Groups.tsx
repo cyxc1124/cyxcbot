@@ -56,9 +56,9 @@ export function GroupsPage() {
   const tabLabels: Record<GroupsTab, string> = {
     message: '群消息',
     'link-groups': '群链接解析',
-    'rcon-groups': '群 RCON',
     status: '状态查询',
     'special-title': '群头衔',
+    'rcon-groups': '群 RCON',
   }
 
   const allGroupIds = useMemo(() => groups.map((g) => g.group_id), [groups])
@@ -244,15 +244,15 @@ export function GroupsPage() {
         </div>
       )}
 
+      {tab === 'status' && <StatusCheckPolicyTab scope="group" />}
+
+      {tab === 'special-title' && <GroupSpecialTitlePolicyTab />}
+
       {tab === 'rcon-groups' && (
         <div className="card">
           <RustRconGroupPolicyTab />
         </div>
       )}
-
-      {tab === 'status' && <StatusCheckPolicyTab scope="group" />}
-
-      {tab === 'special-title' && <GroupSpecialTitlePolicyTab />}
     </div>
   )
 }
