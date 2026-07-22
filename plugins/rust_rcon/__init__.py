@@ -97,9 +97,9 @@ async def handle_rust_rcon(
     except RconAuthError:
         logger.warning("Rust RCON 认证失败: binding={}", binding.id)
         await rust_rcon_cmd.finish("RCON 认证失败，请检查 Web Admin 中的密码配置")
-    except RconError as exc:
-        logger.warning("Rust RCON 失败: binding={} err={}", binding.id, exc)
-        await rust_rcon_cmd.finish(f"RCON 执行失败：{exc}")
+    except RconError:
+        logger.warning("Rust RCON 失败: binding={}", binding.id)
+        await rust_rcon_cmd.finish("RCON 执行失败，请检查绑定配置或稍后重试")
     except Exception:
         logger.opt(exception=True).error("Rust RCON 未预期错误: binding={}", binding.id)
         await rust_rcon_cmd.finish("RCON 执行失败，请稍后重试")

@@ -18,6 +18,10 @@ WEBRCON_NAME: Final = "WebRcon"
 
 DEFAULT_TIMEOUT_SECONDS: Final = 10.0
 MAX_RESPONSE_CHARS: Final = 4000
+RCON_CONNECTION_FAILED: Final = "RCON 连接失败，请检查服务器地址与端口配置"
+RCON_TIMEOUT: Final = "RCON 连接或响应超时"
+RCON_CLOSED: Final = "RCON 连接意外关闭"
+RCON_WEBSOCKET_ERROR: Final = "RCON WebSocket 错误"
 
 
 class RconError(Exception):
@@ -28,8 +32,17 @@ class RconAuthError(RconError):
     """RCON password rejected."""
 
 
-def _build_websocket_url(host: str, port: int, password: str) -> str:
+def _normalize_host(host: str) -> str:
     host = host.strip().strip("/")
+    for prefix in ("https://", "http://", "ws://", "wss://"):
+        if host.lower().startswith(prefix):
+            host = host[len(prefix) :]
+            break
+    return host.split("/")[0].split("?")[0]
+
+
+def _build_websocket_url(host: str, port: int, password: str) -> str:
+    host = _normalize_host(host)
     return f"ws://{host}:{port}/{quote(password, safe='')}"
 
 
@@ -96,12 +109,12 @@ async def execute_rcon_command(
                         aiohttp.WSMsgType.CLOSE,
                         aiohttp.WSMsgType.CLOSED,
                     ):
-                        raise RconError("RCON 连接意外关闭")
+                        raise RconError(RCON_CLOSED)
                     if msg.type == aiohttp.WSMsgType.ERROR:
-                        raise RconError("RCON WebSocket 错误")
+                        raise RconError(RCON_WEBSOCKET_ERROR)
     except aiohttp.WSServerHandshakeError as exc:
         raise RconAuthError("RCON 认证失败") from exc
     except asyncio.TimeoutError as exc:
-        raise RconError("RCON 连接或响应超时") from exc
+        raise RconError(RCON_TIMEOUT) from exc
     except aiohttp.ClientError as exc:
-        raise RconError(f"RCON 连接失败：{exc}") from exc
+        raise RconError(RCON_CONNECTION_FAILED) from exc
