@@ -36,6 +36,9 @@ COMMAND_DEFAULTS: Dict[str, List[str]] = {
     "video_query_latest": ["最新视频", "最新投稿"],
     "dynamic_extract": ["提取", "获取"],
     "group_special_title": ["头衔"],
+    "rust_player_bind": ["绑定"],
+    "rust_player_checkin": ["签到"],
+    "rust_player_points": ["我的积分", "积分"],
 }
 
 COMMAND_LABELS: Dict[str, str] = {
@@ -47,6 +50,9 @@ COMMAND_LABELS: Dict[str, str] = {
     "video_query_latest": "最新投稿查询",
     "dynamic_extract": "动态图片提取",
     "group_special_title": "群头衔设置",
+    "rust_player_bind": "Rust SteamID 绑定",
+    "rust_player_checkin": "Rust 群签到",
+    "rust_player_points": "Rust 积分查询",
 }
 
 

@@ -446,3 +446,26 @@ export interface RustRconUserPolicyList {
 export interface RustRconUserPolicyMutation {
   item: RustRconUserPolicyItem
 }
+
+// Rust player points / Steam bindings
+export interface RustPlayerOverviewItem {
+  group_id: string | null
+  user_id: string
+  points: number
+  steam_id: string | null
+}
+
+export interface RustPlayerOverviewResponse {
+  items: RustPlayerOverviewItem[]
+}
+
+export interface RustPlayerPointsUpdate {
+  group_id: string
+  user_id: string
+  points: number
+}
+
+export interface RustCheckInConfig {
+  min_points: number
+  max_points: number
+}

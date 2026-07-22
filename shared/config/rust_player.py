@@ -1,0 +1,64 @@
+"""Rust player command parsing and SteamID validation."""
+
+from __future__ import annotations
+
+import re
+from typing import Dict
+
+from shared.config.command_aliases import (
+    CommandAliasEntry,
+    match_command_arg,
+    match_plain,
+    resolve_entry,
+)
+
+STEAM_ID64_RE = re.compile(r"^7656119\d{10}$")
+
+
+def normalize_steam_id(raw: str) -> str | None:
+    steam_id = str(raw).strip()
+    if STEAM_ID64_RE.fullmatch(steam_id):
+        return steam_id
+    return None
+
+
+def bind_trigger_hint(command_aliases: Dict[str, CommandAliasEntry]) -> str:
+    entry = resolve_entry("rust_player_bind", command_aliases)
+    return entry.triggers[0] if entry.triggers else "绑定"
+
+
+def is_bind_command(text: str, command_aliases: Dict[str, CommandAliasEntry]) -> bool:
+    return match_command_arg(text, "rust_player_bind", command_aliases) is not None
+
+
+def parse_bind_steam_id(
+    text: str, command_aliases: Dict[str, CommandAliasEntry]
+) -> str | None:
+    arg = match_command_arg(text, "rust_player_bind", command_aliases)
+    if arg is None or not arg:
+        return None
+    return normalize_steam_id(arg)
+
+
+def is_checkin_command(
+    text: str, command_aliases: Dict[str, CommandAliasEntry]
+) -> bool:
+    return match_plain(text, "rust_player_checkin", command_aliases, is_tome=True)
+
+
+def is_points_query_command(
+    text: str, command_aliases: Dict[str, CommandAliasEntry]
+) -> bool:
+    return match_plain(text, "rust_player_points", command_aliases, is_tome=True)
+
+
+def normalize_checkin_points_range(min_points: int, max_points: int) -> tuple[int, int]:
+    min_val = int(min_points)
+    max_val = int(max_points)
+    if min_val < 0 or max_val < 0:
+        raise ValueError("积分不能为负数")
+    if min_val > max_val:
+        raise ValueError("最小积分不能大于最大积分")
+    if max_val > 1_000_000:
+        raise ValueError("积分上限过大")
+    return min_val, max_val

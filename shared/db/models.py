@@ -302,6 +302,48 @@ class RustRconUserPolicy(Model):
     )
 
 
+class RustSteamBinding(Model):
+    """QQ user to SteamID64 binding for Rust community features."""
+
+    __tablename__ = "shared_db_ruststeambinding"
+
+    user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    steam_id: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+
+class RustPlayerPoints(Model):
+    """Per-group points balance for a QQ user."""
+
+    __tablename__ = "shared_db_rustplayerpoints"
+
+    group_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+
+class RustCheckInRecord(Model):
+    """Daily group check-in record."""
+
+    __tablename__ = "shared_db_rustcheckinrecord"
+
+    group_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    check_in_date: Mapped[str] = mapped_column(String(10), primary_key=True)
+    points_earned: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+
 class GroupSpecialTitleUsage(Model):
     """Daily usage counter for group special title self-service."""
 

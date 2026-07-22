@@ -1,12 +1,12 @@
 import { useState, type FormEvent } from 'react'
 import { patchSettings } from '../../api/client'
 import type { Settings } from '../../api/types'
-import { ToggleSwitch } from '../../components/ToggleSwitch'
+import { CommandAliasCard } from '../../components/CommandAliasCard'
 import {
   COMMAND_FIELDS,
   DEFAULT_EXTRA_PREFIXES,
   type CommandField,
-  type CommandId,
+  type CoreCommandId,
 } from '../../constants/commandAliases'
 import { useToast } from '../../contexts/ToastContext'
 import { formatApiError } from '../../utils/apiError'
@@ -18,68 +18,6 @@ import {
   type CommandFormValue,
 } from './commandsForm'
 import { useSettingsForm } from './SettingsContext'
-
-function CommandCard({
-  field,
-  value,
-  disabled,
-  onToggle,
-  onTextChange,
-  onReset,
-}: {
-  field: CommandField
-  value: CommandFormValue
-  disabled: boolean
-  onToggle: (enabled: boolean) => void
-  onTextChange: (text: string) => void
-  onReset: () => void
-}) {
-  return (
-    <div className="card space-y-3">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h3 className="font-semibold text-foreground">{field.label}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">{field.description}</p>
-          {field.hint && <p className="mt-1 text-xs text-muted-foreground">{field.hint}</p>}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span
-            className={`text-xs ${
-              value.enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
-            }`}
-          >
-            {value.enabled ? '已启用' : '已关闭'}
-          </span>
-          <ToggleSwitch checked={value.enabled} disabled={disabled} onChange={onToggle} />
-        </div>
-      </div>
-
-      <div>
-        <div className="flex items-center justify-between">
-          <label className="label" htmlFor={`command-${field.id}`}>
-            触发词（每行一个）
-          </label>
-          <button
-            type="button"
-            className="text-xs text-primary hover:underline disabled:opacity-50"
-            disabled={disabled}
-            onClick={onReset}
-          >
-            恢复默认
-          </button>
-        </div>
-        <textarea
-          id={`command-${field.id}`}
-          className="input mt-1 min-h-24 font-mono text-sm"
-          placeholder={field.defaultTriggers.join('\n')}
-          value={value.text}
-          disabled={disabled}
-          onChange={(e) => onTextChange(e.target.value)}
-        />
-      </div>
-    </div>
-  )
-}
 
 function ExtraPrefixesCard({
   text,
@@ -144,12 +82,15 @@ export function SettingsCommandsPage() {
     setExtraPrefixesText(buildExtraPrefixesText(settings))
   }
 
-  const updateField = (id: CommandId, patch: Partial<CommandFormValue>) => {
-    setForm((current) => ({ ...current, [id]: { ...current[id], ...patch } }))
+  const updateField = (id: CoreCommandId, patch: Partial<CommandFormValue>) => {
+    setForm((current) => ({ ...current, [id]: { ...current[id]!, ...patch } }))
   }
 
   const handleReset = (field: CommandField) => {
-    updateField(field.id, { enabled: true, text: field.defaultTriggers.join('\n') })
+    updateField(field.id as CoreCommandId, {
+      enabled: true,
+      text: field.defaultTriggers.join('\n'),
+    })
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -158,6 +99,7 @@ export function SettingsCommandsPage() {
     const payload: Settings['command_aliases'] = {}
     for (const field of COMMAND_FIELDS) {
       const value = form[field.id]
+      if (!value) continue
       const triggers = parseLines(value.text)
       if (value.enabled && triggers.length === 0) {
         showToast('error', `「${field.label}」已启用但未填写触发词`)
@@ -188,7 +130,8 @@ export function SettingsCommandsPage() {
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <p className="text-sm text-muted-foreground">
-        自定义每条命令的触发词，保存后立即生效，无需重启。关闭后该命令不再响应；已填写的触发词会保留，方便随时重新启用。
+        自定义每条命令的触发词，保存后立即生效，无需重启。关闭后该命令不再响应；已填写的触发词会保留，方便随时重新启用。Rust
+        群管相关命令请在「Rust 远控 → 群管命令」中配置。
       </p>
 
       {settings && settings.command_prefixes.length > 0 && (
@@ -210,17 +153,21 @@ export function SettingsCommandsPage() {
         onReset={() => setExtraPrefixesText(DEFAULT_EXTRA_PREFIXES.join('\n'))}
       />
 
-      {COMMAND_FIELDS.map((field) => (
-        <CommandCard
-          key={field.id}
-          field={field}
-          value={form[field.id]}
-          disabled={formDisabled || saving}
-          onToggle={(enabled) => updateField(field.id, { enabled })}
-          onTextChange={(text) => updateField(field.id, { text })}
-          onReset={() => handleReset(field)}
-        />
-      ))}
+      {COMMAND_FIELDS.map((field) => {
+        const value = form[field.id]
+        if (!value) return null
+        return (
+          <CommandAliasCard
+            key={field.id}
+            field={field}
+            value={value}
+            disabled={formDisabled || saving}
+            onToggle={(enabled) => updateField(field.id as CoreCommandId, { enabled })}
+            onTextChange={(text) => updateField(field.id as CoreCommandId, { text })}
+            onReset={() => handleReset(field)}
+          />
+        )
+      })}
 
       <button type="submit" className="btn-primary" disabled={saving || formDisabled}>
         {saving ? '保存中…' : '保存设置'}

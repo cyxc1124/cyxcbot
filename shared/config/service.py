@@ -29,7 +29,10 @@ from shared.config.message_templates import (
     live_templates_from_settings,
 )
 from shared.config.nonebot_superusers import apply_nonebot_superusers
-from shared.config.rust_rcon import RustRconBindingRecord
+from shared.config.rust_rcon import (
+    RustRconBindingRecord,
+    warn_rust_rcon_command_alias_conflicts,
+)
 from shared.config.rust_rcon_policy import (
     RustRconGroupPolicyRecord,
     RustRconUserPolicyRecord,
@@ -81,6 +84,8 @@ SETTING_KEYS = {
         json.dumps(list(DEFAULT_EXTRA_PREFIXES), ensure_ascii=False),
         "json_prefix_list",
     ),
+    "rust_checkin_points_min": ("1", int),
+    "rust_checkin_points_max": ("10", int),
 }
 
 for key, default in MESSAGE_TEMPLATE_KEYS.items():
@@ -231,8 +236,13 @@ class ConfigService:
             rust_rcon_bindings=rust_rcon_bindings,
             rust_rcon_group_policies=rust_rcon_group_policies,
             rust_rcon_user_policies=rust_rcon_user_policies,
+            rust_checkin_points_min=settings.get("rust_checkin_points_min", 1),
+            rust_checkin_points_max=settings.get("rust_checkin_points_max", 10),
         )
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
+        warn_rust_rcon_command_alias_conflicts(
+            self._snapshot.command_aliases, self._snapshot.rust_rcon_bindings
+        )
         logger.info(
             "配置已从数据库加载: {} 个动态目标, {} 个直播目标",
             len(dynamic_mapping),
@@ -303,6 +313,8 @@ class ConfigService:
                     result[key] = max(10, min(3600, parsed))
                 elif key == "group_special_title_daily_limit":
                     result[key] = max(0, min(100, parsed))
+                elif key.startswith("rust_checkin_points"):
+                    result[key] = max(0, min(1_000_000, parsed))
                 else:
                     result[key] = max(30, min(3600, parsed))
             elif typ is bool:
