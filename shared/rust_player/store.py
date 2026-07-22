@@ -28,6 +28,8 @@ class CheckInResult:
     online_bonus: int = 0
     total_points: int = 0
     already_checked_in: bool = False
+    bonus_pending: bool = False
+    bonus_only: bool = False
 
     @property
     def points_earned(self) -> int:
@@ -127,17 +129,17 @@ async def set_group_points(group_id: str, user_id: str, points: int) -> int:
 
 
 async def has_checked_in_today(group_id: str, user_id: str) -> bool:
-    session = get_session()
-    async with session.begin():
-        row = await session.get(
-            RustCheckInRecord,
-            {
-                "group_id": str(group_id).strip(),
-                "user_id": str(user_id).strip(),
-                "check_in_date": today_check_in_date(),
-            },
-        )
-        return row is not None
+    async with get_session() as session:
+        async with session.begin():
+            row = await session.get(
+                RustCheckInRecord,
+                {
+                    "group_id": str(group_id).strip(),
+                    "user_id": str(user_id).strip(),
+                    "check_in_date": today_check_in_date(),
+                },
+            )
+            return row is not None
 
 
 async def perform_check_in(
@@ -146,14 +148,15 @@ async def perform_check_in(
     *,
     min_points: int,
     max_points: int,
-    online_bonus: int = 0,
+    configured_online_bonus: int = 0,
+    is_online: bool = False,
+    can_claim_online_bonus: bool = False,
 ) -> CheckInResult:
     group_id = str(group_id).strip()
     user_id = str(user_id).strip()
     check_in_date = today_check_in_date()
-    base_points = random.randint(min_points, max_points)
-    online_bonus = max(0, int(online_bonus))
-    points_earned = base_points + online_bonus
+    configured_online_bonus = max(0, int(configured_online_bonus))
+    bonus_eligible = can_claim_online_bonus and configured_online_bonus > 0
 
     async with get_session() as session:
         async with session.begin():
@@ -165,42 +168,67 @@ async def perform_check_in(
                     "check_in_date": check_in_date,
                 },
             )
-            if existing is not None:
-                total = await _get_points_in_session(session, group_id, user_id)
-                return CheckInResult(
-                    ok=False,
-                    total_points=total,
-                    already_checked_in=True,
+            if existing is None:
+                base_points = random.randint(min_points, max_points)
+                online_bonus = (
+                    configured_online_bonus if bonus_eligible and is_online else 0
                 )
-
-            try:
-                async with session.begin_nested():
-                    session.add(
-                        RustCheckInRecord(
-                            group_id=group_id,
-                            user_id=user_id,
-                            check_in_date=check_in_date,
-                            points_earned=points_earned,
+                points_earned = base_points + online_bonus
+                try:
+                    async with session.begin_nested():
+                        session.add(
+                            RustCheckInRecord(
+                                group_id=group_id,
+                                user_id=user_id,
+                                check_in_date=check_in_date,
+                                points_earned=points_earned,
+                                online_bonus_earned=online_bonus,
+                            )
                         )
+                        await session.flush()
+                except IntegrityError:
+                    total = await _get_points_in_session(session, group_id, user_id)
+                    return CheckInResult(
+                        ok=False,
+                        total_points=total,
+                        already_checked_in=True,
                     )
-                    await session.flush()
-            except IntegrityError:
-                total = await _get_points_in_session(session, group_id, user_id)
+                total = await _add_points_in_session(
+                    session, group_id, user_id, points_earned
+                )
+                return CheckInResult(
+                    ok=True,
+                    base_points=base_points,
+                    online_bonus=online_bonus,
+                    total_points=total,
+                )
+
+            total = await _get_points_in_session(session, group_id, user_id)
+            if existing.online_bonus_earned > 0 or not bonus_eligible:
                 return CheckInResult(
                     ok=False,
                     total_points=total,
                     already_checked_in=True,
                 )
-            total = await _add_points_in_session(
-                session, group_id, user_id, points_earned
-            )
+            if not is_online:
+                return CheckInResult(
+                    ok=False,
+                    total_points=total,
+                    bonus_pending=True,
+                )
 
-    return CheckInResult(
-        ok=True,
-        base_points=base_points,
-        online_bonus=online_bonus,
-        total_points=total,
-    )
+            online_bonus = configured_online_bonus
+            existing.online_bonus_earned = online_bonus
+            existing.points_earned += online_bonus
+            total = await _add_points_in_session(
+                session, group_id, user_id, online_bonus
+            )
+            return CheckInResult(
+                ok=True,
+                online_bonus=online_bonus,
+                total_points=total,
+                bonus_only=True,
+            )
 
 
 async def _get_points_in_session(session, group_id: str, user_id: str) -> int:

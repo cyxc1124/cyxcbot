@@ -339,6 +339,7 @@ class RustCheckInRecord(Model):
     user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     check_in_date: Mapped[str] = mapped_column(String(10), primary_key=True)
     points_earned: Mapped[int] = mapped_column(Integer, nullable=False)
+    online_bonus_earned: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )

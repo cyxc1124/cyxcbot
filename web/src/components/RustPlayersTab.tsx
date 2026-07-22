@@ -40,7 +40,7 @@ export function RustPlayersTab() {
           <h3 className="font-semibold text-foreground">签到积分范围</h3>
           <p className="mt-1 text-sm text-muted-foreground">
             群成员发送 <code className="font-mono text-xs">@机器人 签到</code>{' '}
-            时随机获得基础积分（每日一次）；已绑定 SteamID 且在游戏内在线时额外获得加成积分。
+            时随机获得基础积分（每日一次）；已绑定 SteamID 且在游戏内在线时可领取在线加成，离线签到后上线可再次签到补领。
           </p>
         </div>
 

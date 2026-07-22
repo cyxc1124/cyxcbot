@@ -24,7 +24,7 @@ __plugin_meta__ = PluginMetadata(
     usage="""
 群聊 @机器人（触发词可在 Web Admin → Rust 远控 → 群管命令 中自定义）：
 - 绑定 <SteamID64>：绑定 Steam 账号（不可自助换绑）
-- 签到：每日签到获取随机积分；游戏内在线可额外获得加成积分
+- 签到：每日签到获取随机积分；已绑定 SteamID 且在游戏内在线时可领取/补领在线加成
 - 我的积分 / 积分：查询本群积分
 """,
     type="application",
@@ -106,20 +106,17 @@ async def _handle_bind_or_checkin(
 
 
 async def _handle_checkin(group_id: str, user_id: str) -> None:
-    if await store.has_checked_in_today(group_id, user_id):
-        total = await store.get_group_points(group_id, user_id)
-        await rust_player_cmd.finish(f"你今天已经签到过了，当前积分：{total}")
-
     snap = get_config_service().get_snapshot()
-    online_bonus = 0
-    is_online = False
     binding = await store.get_steam_binding(user_id)
+    configured_bonus = snap.rust_checkin_online_bonus_points
+    can_claim_online_bonus = binding is not None
+    is_online = False
     rcon_binding = resolve_checkin_rcon_binding(
         snap.rust_rcon_bindings,
         snap.rust_checkin_rcon_binding_id,
     )
 
-    if binding is not None and rcon_binding is not None:
+    if can_claim_online_bonus and rcon_binding is not None:
         try:
             status_text = await execute_rcon_command(
                 rcon_binding.host,
@@ -128,8 +125,6 @@ async def _handle_checkin(group_id: str, user_id: str) -> None:
                 "status",
             )
             is_online = is_steam_id_online(status_text, binding.steam_id)
-            if is_online:
-                online_bonus = snap.rust_checkin_online_bonus_points
         except RconAuthError:
             logger.warning(
                 "Rust 签到 RCON 认证失败: binding={} user={}",
@@ -154,34 +149,48 @@ async def _handle_checkin(group_id: str, user_id: str) -> None:
         user_id,
         min_points=snap.rust_checkin_points_min,
         max_points=snap.rust_checkin_points_max,
-        online_bonus=online_bonus,
+        configured_online_bonus=configured_bonus,
+        is_online=is_online,
+        can_claim_online_bonus=can_claim_online_bonus,
     )
+
     if result.already_checked_in:
         await rust_player_cmd.finish(
             f"你今天已经签到过了，当前积分：{result.total_points}"
         )
+    if result.bonus_pending:
+        await rust_player_cmd.finish(
+            f"你已签到获得基础积分，当前积分：{result.total_points}。"
+            f"进入游戏后再次签到可领取在线加成 {configured_bonus} 积分"
+        )
 
     logger.info(
-        "Rust 签到: group={} user={} base={} bonus={} online={}",
+        "Rust 签到: group={} user={} base={} bonus={} online={} bonus_only={}",
         group_id,
         user_id,
         result.base_points,
         result.online_bonus,
         is_online,
+        result.bonus_only,
     )
+
+    if result.bonus_only:
+        await rust_player_cmd.finish(
+            f"在线加成补发成功，获得 {result.online_bonus} 积分，"
+            f"当前积分：{result.total_points}"
+        )
     if result.online_bonus > 0:
-        message = (
+        await rust_player_cmd.finish(
             f"签到成功，获得 {result.base_points} 积分"
             f" + 在线加成 {result.online_bonus} 积分，"
             f"当前积分：{result.total_points}"
         )
-    else:
-        message = (
-            f"签到成功，获得 {result.base_points} 积分，"
-            f"当前积分：{result.total_points}"
-        )
-        if binding is not None and snap.rust_checkin_online_bonus_points > 0:
-            message += "。你当前不在线，今日未获得在线加成"
+
+    message = (
+        f"签到成功，获得 {result.base_points} 积分，当前积分：{result.total_points}"
+    )
+    if can_claim_online_bonus and configured_bonus > 0:
+        message += f"。进入游戏后再次签到可领取在线加成 {configured_bonus} 积分"
     await rust_player_cmd.finish(message)
 
 
