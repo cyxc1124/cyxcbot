@@ -27,7 +27,7 @@ export function RustRconPolicyHint({ scope }: { scope: 'group' | 'user' }) {
     <div className="space-y-1">
       <p className="text-sm text-muted-foreground">
         在下方为每个{scope === 'group' ? '群' : '好友'}单独开启 Rust RCON 命令；默认关闭。
-        服务器连接与触发词在「系统设置 → Rust RCON」中配置。
+        服务器连接与触发词在「Rust RCON → 服务器绑定」中配置。
       </p>
       {scope === 'group' && (
         <p className="text-sm text-muted-foreground">
