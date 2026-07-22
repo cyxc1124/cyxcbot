@@ -32,17 +32,8 @@ class RconAuthError(RconError):
     """RCON password rejected."""
 
 
-def _normalize_host(host: str) -> str:
-    host = host.strip().strip("/")
-    for prefix in ("https://", "http://", "ws://", "wss://"):
-        if host.lower().startswith(prefix):
-            host = host[len(prefix) :]
-            break
-    return host.split("/")[0].split("?")[0]
-
-
 def _build_websocket_url(host: str, port: int, password: str) -> str:
-    host = _normalize_host(host)
+    host = host.strip().strip("/")
     return f"ws://{host}:{port}/{quote(password, safe='')}"
 
 

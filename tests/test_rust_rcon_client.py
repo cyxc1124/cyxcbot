@@ -111,23 +111,15 @@ def test_summarize_rcon_command_for_log_redacts_arguments() -> None:
 
 
 @pytest.mark.asyncio
-async def test_execute_rcon_command_malformed_host_hides_password() -> None:
+async def test_execute_rcon_command_connection_error_hides_password() -> None:
     from utils.rust_rcon.client import RCON_CONNECTION_FAILED, RconError
 
     with pytest.raises(RconError, match=RCON_CONNECTION_FAILED) as exc_info:
         await execute_rcon_command(
-            "http://127.0.0.1",
+            "127.0.0.1",
             1,
             "s3cr3t-pass",
             "status",
             timeout=0.5,
         )
     assert "s3cr3t" not in str(exc_info.value)
-
-
-def test_normalize_host_strips_scheme() -> None:
-    from utils.rust_rcon.client import _build_websocket_url
-
-    assert _build_websocket_url("http://example.com", 28016, "pass") == (
-        "ws://example.com:28016/pass"
-    )
