@@ -29,6 +29,7 @@ from shared.config.message_templates import (
     live_templates_from_settings,
 )
 from shared.config.nonebot_superusers import apply_nonebot_superusers
+from shared.config.rust_player import MAX_RUST_PLAYER_POINTS
 from shared.config.rust_rcon import (
     RustRconBindingRecord,
     warn_rust_rcon_command_alias_conflicts,
@@ -314,7 +315,7 @@ class ConfigService:
                 elif key == "group_special_title_daily_limit":
                     result[key] = max(0, min(100, parsed))
                 elif key.startswith("rust_checkin_points"):
-                    result[key] = max(0, min(1_000_000, parsed))
+                    result[key] = max(0, min(MAX_RUST_PLAYER_POINTS, parsed))
                 else:
                     result[key] = max(30, min(3600, parsed))
             elif typ is bool:

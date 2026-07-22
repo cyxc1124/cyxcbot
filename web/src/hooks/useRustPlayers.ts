@@ -12,6 +12,18 @@ import { formatApiError } from '../utils/apiError'
 import { createRetryHandler } from '../utils/retryLoad'
 import { useMountAsync } from './useMountAsync'
 
+const MAX_RUST_PLAYER_POINTS = 1_000_000
+
+function pointsValidationError(value: number): string | null {
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+    return '积分必须为非负整数'
+  }
+  if (value > MAX_RUST_PLAYER_POINTS) {
+    return `积分不能超过 ${MAX_RUST_PLAYER_POINTS}`
+  }
+  return null
+}
+
 function rowKey(item: RustPlayerOverviewItem): string {
   return `${item.group_id ?? ''}:${item.user_id}`
 }
@@ -60,13 +72,14 @@ export function useRustPlayers() {
   const handleSaveConfig = useCallback(async () => {
     const minPoints = Number.parseInt(configForm.min_points, 10)
     const maxPoints = Number.parseInt(configForm.max_points, 10)
-    if (
-      !Number.isFinite(minPoints) ||
-      !Number.isFinite(maxPoints) ||
-      minPoints < 0 ||
-      maxPoints < 0
-    ) {
-      showToast('error', '积分必须为非负整数')
+    const minError = pointsValidationError(minPoints)
+    if (minError) {
+      showToast('error', minError)
+      return
+    }
+    const maxError = pointsValidationError(maxPoints)
+    if (maxError) {
+      showToast('error', maxError)
       return
     }
     if (minPoints > maxPoints) {
@@ -97,8 +110,9 @@ export function useRustPlayers() {
       }
       const key = rowKey(item)
       const points = Number.parseInt(draftPoints[key] ?? String(item.points), 10)
-      if (!Number.isFinite(points) || points < 0) {
-        showToast('error', '积分必须为非负整数')
+      const pointsError = pointsValidationError(points)
+      if (pointsError) {
+        showToast('error', pointsError)
         return
       }
 

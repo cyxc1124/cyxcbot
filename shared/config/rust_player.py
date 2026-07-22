@@ -13,6 +13,7 @@ from shared.config.command_aliases import (
 )
 
 STEAM_ID64_RE = re.compile(r"^7656119\d{10}$")
+MAX_RUST_PLAYER_POINTS = 1_000_000
 
 
 def normalize_steam_id(raw: str) -> str | None:
@@ -52,13 +53,18 @@ def is_points_query_command(
     return match_plain(text, "rust_player_points", command_aliases, is_tome=True)
 
 
-def normalize_checkin_points_range(min_points: int, max_points: int) -> tuple[int, int]:
-    min_val = int(min_points)
-    max_val = int(max_points)
-    if min_val < 0 or max_val < 0:
+def normalize_player_points(points: int) -> int:
+    value = int(points)
+    if value < 0:
         raise ValueError("积分不能为负数")
+    if value > MAX_RUST_PLAYER_POINTS:
+        raise ValueError(f"积分不能超过 {MAX_RUST_PLAYER_POINTS}")
+    return value
+
+
+def normalize_checkin_points_range(min_points: int, max_points: int) -> tuple[int, int]:
+    min_val = normalize_player_points(min_points)
+    max_val = normalize_player_points(max_points)
     if min_val > max_val:
         raise ValueError("最小积分不能大于最大积分")
-    if max_val > 1_000_000:
-        raise ValueError("积分上限过大")
     return min_val, max_val
