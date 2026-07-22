@@ -142,20 +142,56 @@ def alias_command_conflict(alias: str, snapshot: AppConfigSnapshot) -> str | Non
     return None
 
 
+def rust_rcon_command_alias_conflicts(
+    config: Dict[str, CommandAliasEntry],
+    bindings: list[RustRconBindingRecord],
+) -> list[tuple[str, str]]:
+    """Return ``[(trigger, command_label), ...]`` for enabled collisions."""
+    enabled_aliases = {binding.alias for binding in bindings if binding.enabled}
+    if not enabled_aliases:
+        return []
+
+    conflicts: list[tuple[str, str]] = []
+    for command_id, entry in config.items():
+        if not entry.enabled:
+            continue
+        label = COMMAND_LABELS.get(command_id, command_id)
+        for trigger in entry.triggers:
+            if trigger in enabled_aliases:
+                conflicts.append((trigger, label))
+    return conflicts
+
+
+def warn_rust_rcon_command_alias_conflicts(
+    config: Dict[str, CommandAliasEntry],
+    bindings: list[RustRconBindingRecord],
+) -> None:
+    """Log warnings for legacy RCON bindings that collide with command triggers."""
+    from nonebot.log import logger
+
+    conflicts = rust_rcon_command_alias_conflicts(config, bindings)
+    if not conflicts:
+        return
+    parts = [
+        f"RCON 绑定触发词「{trigger}」与命令「{label}」冲突"
+        for trigger, label in conflicts
+    ]
+    logger.warning(
+        "检测到 {} 处 RCON 绑定与命令触发词冲突（{}）；"
+        "同一条 @机器人 消息可能同时触发 RCON 与群管命令，"
+        "请在 Web Admin 修改 RCON 绑定触发词或相应命令触发词",
+        len(conflicts),
+        "；".join(parts),
+    )
+
+
 def command_aliases_rust_rcon_conflict(
     config: Dict[str, CommandAliasEntry],
     bindings: list[RustRconBindingRecord],
 ) -> str | None:
     """Return error if an enabled command trigger collides with an enabled RCON alias."""
-    enabled_aliases = {binding.alias for binding in bindings if binding.enabled}
-    if not enabled_aliases:
+    conflicts = rust_rcon_command_alias_conflicts(config, bindings)
+    if not conflicts:
         return None
-
-    for command_id, entry in config.items():
-        if not entry.enabled:
-            continue
-        for trigger in entry.triggers:
-            if trigger in enabled_aliases:
-                label = COMMAND_LABELS.get(command_id, command_id)
-                return f"触发词「{trigger}」与 RCON 绑定冲突（命令「{label}」）"
-    return None
+    trigger, label = conflicts[0]
+    return f"触发词「{trigger}」与 RCON 绑定冲突（命令「{label}」）"

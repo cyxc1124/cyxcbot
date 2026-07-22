@@ -29,7 +29,10 @@ from shared.config.message_templates import (
     live_templates_from_settings,
 )
 from shared.config.nonebot_superusers import apply_nonebot_superusers
-from shared.config.rust_rcon import RustRconBindingRecord
+from shared.config.rust_rcon import (
+    RustRconBindingRecord,
+    warn_rust_rcon_command_alias_conflicts,
+)
 from shared.config.rust_rcon_policy import (
     RustRconGroupPolicyRecord,
     RustRconUserPolicyRecord,
@@ -237,6 +240,9 @@ class ConfigService:
             rust_checkin_points_max=settings.get("rust_checkin_points_max", 10),
         )
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
+        warn_rust_rcon_command_alias_conflicts(
+            self._snapshot.command_aliases, self._snapshot.rust_rcon_bindings
+        )
         logger.info(
             "配置已从数据库加载: {} 个动态目标, {} 个直播目标",
             len(dynamic_mapping),
