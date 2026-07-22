@@ -31,16 +31,16 @@ async def get_current_user(
         )
 
     username = str(payload["sub"])
-    session = get_session()
-    async with session.begin():
-        user = await session.scalar(select(User).where(User.username == username))
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
-            )
-        # Detach scalars before session closes
-        await session.refresh(user)
-        session.expunge(user)
+    async with get_session() as session:
+        async with session.begin():
+            user = await session.scalar(select(User).where(User.username == username))
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
+                )
+            # Detach scalars before session closes
+            await session.refresh(user)
+            session.expunge(user)
     request.state.user = user
     return user
 
@@ -56,9 +56,9 @@ async def get_admin_user(
 
 
 async def require_setup_complete() -> None:
-    session = get_session()
-    async with session.begin():
-        count = await session.scalar(select(func.count()).select_from(User))
+    async with get_session() as session:
+        async with session.begin():
+            count = await session.scalar(select(func.count()).select_from(User))
     if not count:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Setup required"

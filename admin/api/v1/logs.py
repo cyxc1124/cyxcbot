@@ -46,13 +46,13 @@ async def _user_from_token(token: str) -> User | None:
         return None
 
     username = str(payload["sub"])
-    session = get_session()
-    async with session.begin():
-        user = await session.scalar(select(User).where(User.username == username))
-        if user:
-            await session.refresh(user)
-            session.expunge(user)
-        return user
+    async with get_session() as session:
+        async with session.begin():
+            user = await session.scalar(select(User).where(User.username == username))
+            if user:
+                await session.refresh(user)
+                session.expunge(user)
+            return user
 
 
 def _serialize(entries: list[LogEntry]) -> list[LogEntryResponse]:

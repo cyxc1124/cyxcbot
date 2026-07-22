@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import nonebot
 import pytest
 
+from tests.db_test_helpers import get_session_provider, mock_async_session
+
 os.environ["SQLALCHEMY_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 try:
     nonebot.get_driver()
@@ -71,10 +73,7 @@ async def test_batch_resolve_missing_dynamic_names_uses_single_session():
         return f"name-{uid}"
 
     shared_session = MagicMock()
-    mock_db_session = MagicMock()
-    mock_db_session.begin = MagicMock(return_value=AsyncMock())
-    mock_db_session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
-    mock_db_session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+    mock_db_session = mock_async_session()
 
     target_a = MagicMock()
     target_a.name = None
@@ -100,7 +99,7 @@ async def test_batch_resolve_missing_dynamic_names_uses_single_session():
         patch.object(tm, "_resolve_up_name_with_session", side_effect=fake_resolve),
         patch(
             "nonebot_plugin_orm.get_session",
-            return_value=mock_db_session,
+            new=get_session_provider(mock_db_session),
         ),
     ):
         await tm.resolve_missing_dynamic_target_names([(1, "111"), (2, "222")])
@@ -113,10 +112,7 @@ async def test_batch_resolve_missing_dynamic_names_uses_single_session():
 @pytest.mark.asyncio
 async def test_batch_resolve_skips_stale_dynamic_uid():
     shared_session = MagicMock()
-    mock_db_session = MagicMock()
-    mock_db_session.begin = MagicMock(return_value=AsyncMock())
-    mock_db_session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
-    mock_db_session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+    mock_db_session = mock_async_session()
 
     target = MagicMock()
     target.name = None
@@ -140,7 +136,7 @@ async def test_batch_resolve_skips_stale_dynamic_uid():
         ),
         patch(
             "nonebot_plugin_orm.get_session",
-            return_value=mock_db_session,
+            new=get_session_provider(mock_db_session),
         ),
     ):
         await tm.resolve_missing_dynamic_target_names([(1, "111")])
@@ -151,10 +147,7 @@ async def test_batch_resolve_skips_stale_dynamic_uid():
 @pytest.mark.asyncio
 async def test_batch_resolve_skips_stale_live_room_id():
     shared_session = MagicMock()
-    mock_db_session = MagicMock()
-    mock_db_session.begin = MagicMock(return_value=AsyncMock())
-    mock_db_session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
-    mock_db_session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+    mock_db_session = mock_async_session()
 
     target = MagicMock()
     target.name = None
@@ -178,7 +171,7 @@ async def test_batch_resolve_skips_stale_live_room_id():
         ),
         patch(
             "nonebot_plugin_orm.get_session",
-            return_value=mock_db_session,
+            new=get_session_provider(mock_db_session),
         ),
     ):
         await tm.resolve_missing_live_target_names([(1, "111")])
@@ -208,10 +201,7 @@ async def test_list_endpoint_does_not_block_on_slow_bilibili(monkeypatch):
     target.at_all = False
     target.created_at = target.updated_at = MagicMock()
 
-    mock_session = MagicMock()
-    mock_session.begin = MagicMock(return_value=AsyncMock())
-    mock_session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
-    mock_session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+    mock_session = mock_async_session()
     mock_session.scalars = AsyncMock(
         return_value=MagicMock(all=MagicMock(return_value=[target]))
     )
@@ -223,7 +213,7 @@ async def test_list_endpoint_does_not_block_on_slow_bilibili(monkeypatch):
         spawned.append(task)
         return task
 
-    monkeypatch.setattr(targets_api, "get_session", lambda: mock_session)
+    monkeypatch.setattr(targets_api, "get_session", get_session_provider(mock_session))
     monkeypatch.setattr(
         targets_api, "resolve_missing_dynamic_target_names", slow_refresh
     )
@@ -249,14 +239,11 @@ async def test_create_dynamic_target_rejects_duplicate_before_bilibili(monkeypat
 
     body = DynamicTargetCreate(uid="123", group_ids=["1"], user_ids=[])
 
-    mock_session = MagicMock()
-    mock_session.begin = MagicMock(return_value=AsyncMock())
-    mock_session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
-    mock_session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+    mock_session = mock_async_session()
     mock_session.scalar = AsyncMock(return_value=MagicMock())
 
     resolve_mock = AsyncMock(return_value="昵称")
-    monkeypatch.setattr(targets_api, "get_session", lambda: mock_session)
+    monkeypatch.setattr(targets_api, "get_session", get_session_provider(mock_session))
     monkeypatch.setattr(targets_api, "resolve_dynamic_target_name", resolve_mock)
 
     with pytest.raises(HTTPException) as exc_info:
@@ -297,14 +284,11 @@ async def test_create_live_target_rejects_duplicate_before_bilibili(monkeypatch)
 
     body = LiveTargetCreate(room_id="123", group_ids=["1"], user_ids=[])
 
-    mock_session = MagicMock()
-    mock_session.begin = MagicMock(return_value=AsyncMock())
-    mock_session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
-    mock_session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+    mock_session = mock_async_session()
     mock_session.scalar = AsyncMock(return_value=MagicMock())
 
     resolve_mock = AsyncMock(return_value="主播")
-    monkeypatch.setattr(targets_api, "get_session", lambda: mock_session)
+    monkeypatch.setattr(targets_api, "get_session", get_session_provider(mock_session))
     monkeypatch.setattr(targets_api, "resolve_live_target_name", resolve_mock)
 
     with pytest.raises(HTTPException) as exc_info:
@@ -339,10 +323,7 @@ async def test_list_dynamic_targets_builds_missing_before_commit(monkeypatch):
             return None
 
     target = ExpiringNameTarget()
-    mock_session = MagicMock()
-    mock_session.begin = MagicMock(return_value=AsyncMock())
-    mock_session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
-    mock_session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+    mock_session = mock_async_session()
     mock_session.scalars = AsyncMock(
         return_value=MagicMock(all=MagicMock(return_value=[target]))
     )
@@ -353,7 +334,7 @@ async def test_list_dynamic_targets_builds_missing_before_commit(monkeypatch):
         captured.extend(items)
 
     tasks: list[asyncio.Task] = []
-    monkeypatch.setattr(targets_api, "get_session", lambda: mock_session)
+    monkeypatch.setattr(targets_api, "get_session", get_session_provider(mock_session))
     monkeypatch.setattr(
         targets_api, "resolve_missing_dynamic_target_names", capture_resolve
     )
@@ -390,14 +371,11 @@ async def test_update_dynamic_target_rejects_duplicate_uid_before_bilibili(
 
     conflict = MagicMock()
 
-    mock_session = MagicMock()
-    mock_session.begin = MagicMock(return_value=AsyncMock())
-    mock_session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
-    mock_session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+    mock_session = mock_async_session()
     mock_session.scalar = AsyncMock(side_effect=[target, conflict])
 
     resolve_mock = AsyncMock(return_value="昵称")
-    monkeypatch.setattr(targets_api, "get_session", lambda: mock_session)
+    monkeypatch.setattr(targets_api, "get_session", get_session_provider(mock_session))
     monkeypatch.setattr(targets_api, "resolve_up_name", resolve_mock)
 
     with pytest.raises(HTTPException) as exc_info:
@@ -424,14 +402,11 @@ async def test_update_live_target_rejects_duplicate_room_before_bilibili(monkeyp
 
     conflict = MagicMock()
 
-    mock_session = MagicMock()
-    mock_session.begin = MagicMock(return_value=AsyncMock())
-    mock_session.begin.return_value.__aenter__ = AsyncMock(return_value=None)
-    mock_session.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+    mock_session = mock_async_session()
     mock_session.scalar = AsyncMock(side_effect=[target, conflict])
 
     resolve_mock = AsyncMock(return_value="主播")
-    monkeypatch.setattr(targets_api, "get_session", lambda: mock_session)
+    monkeypatch.setattr(targets_api, "get_session", get_session_provider(mock_session))
     monkeypatch.setattr(targets_api, "resolve_live_streamer_name", resolve_mock)
 
     with pytest.raises(HTTPException) as exc_info:

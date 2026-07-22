@@ -137,15 +137,15 @@ async def _sync_users_live(session, target: LiveTarget, user_ids: list[str]) -> 
 
 @router.get("/dynamic-targets", response_model=list[DynamicTargetResponse])
 async def list_dynamic_targets(_: AdminUser):
-    session = get_session()
-    async with session.begin():
-        stmt = select(DynamicTarget).options(
-            selectinload(DynamicTarget.groups),
-            selectinload(DynamicTarget.users),
-        )
-        targets = (await session.scalars(stmt)).all()
-        response = [_dynamic_to_response(t) for t in targets]
-        missing = [(t.id, t.uid) for t in targets if not t.name]
+    async with get_session() as session:
+        async with session.begin():
+            stmt = select(DynamicTarget).options(
+                selectinload(DynamicTarget.groups),
+                selectinload(DynamicTarget.users),
+            )
+            targets = (await session.scalars(stmt)).all()
+            response = [_dynamic_to_response(t) for t in targets]
+            missing = [(t.id, t.uid) for t in targets if not t.name]
 
     if missing:
         spawn_background_task(
@@ -163,41 +163,44 @@ async def list_dynamic_targets(_: AdminUser):
 async def create_dynamic_target(body: DynamicTargetCreate, _: AdminUser):
     _ensure_recipients(body.group_ids, body.user_ids)
 
-    session = get_session()
-    async with session.begin():
-        existing = await session.scalar(
-            select(DynamicTarget).where(DynamicTarget.uid == body.uid)
-        )
-        if existing:
+    async with get_session() as session:
+        async with session.begin():
+            existing = await session.scalar(
+                select(DynamicTarget).where(DynamicTarget.uid == body.uid)
+            )
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail="UID already exists"
+                )
+
+        resolved_name = await resolve_dynamic_target_name(body.uid, body.name)
+        if not resolved_name:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail="UID already exists"
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="无法获取 UP 主信息，请检查 UID 是否正确，或手动填写显示名称",
             )
 
-    resolved_name = await resolve_dynamic_target_name(body.uid, body.name)
-    if not resolved_name:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="无法获取 UP 主信息，请检查 UID 是否正确，或手动填写显示名称",
-        )
-
-    async with session.begin():
-        existing = await session.scalar(
-            select(DynamicTarget).where(DynamicTarget.uid == body.uid)
-        )
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail="UID already exists"
+        async with session.begin():
+            existing = await session.scalar(
+                select(DynamicTarget).where(DynamicTarget.uid == body.uid)
             )
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail="UID already exists"
+                )
 
-        target = DynamicTarget(
-            uid=body.uid, name=resolved_name, enabled=body.enabled, at_all=body.at_all
-        )
-        await _sync_groups_dynamic(session, target, body.group_ids)
-        await _sync_users_dynamic(session, target, body.user_ids)
-        session.add(target)
-        await session.flush()
-        await session.refresh(target, ["groups", "users"])
-        response = _dynamic_to_response(target)
+            target = DynamicTarget(
+                uid=body.uid,
+                name=resolved_name,
+                enabled=body.enabled,
+                at_all=body.at_all,
+            )
+            await _sync_groups_dynamic(session, target, body.group_ids)
+            await _sync_users_dynamic(session, target, body.user_ids)
+            session.add(target)
+            await session.flush()
+            await session.refresh(target, ["groups", "users"])
+            response = _dynamic_to_response(target)
 
     await get_config_service().reload()
 
@@ -206,21 +209,21 @@ async def create_dynamic_target(body: DynamicTargetCreate, _: AdminUser):
 
 @router.get("/dynamic-targets/{target_id}", response_model=DynamicTargetResponse)
 async def get_dynamic_target(target_id: int, _: AdminUser):
-    session = get_session()
-    async with session.begin():
-        target = await session.scalar(
-            select(DynamicTarget)
-            .where(DynamicTarget.id == target_id)
-            .options(
-                selectinload(DynamicTarget.groups),
-                selectinload(DynamicTarget.users),
+    async with get_session() as session:
+        async with session.begin():
+            target = await session.scalar(
+                select(DynamicTarget)
+                .where(DynamicTarget.id == target_id)
+                .options(
+                    selectinload(DynamicTarget.groups),
+                    selectinload(DynamicTarget.users),
+                )
             )
-        )
-        if not target:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
-            )
-        response = _dynamic_to_response(target)
+            if not target:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+                )
+            response = _dynamic_to_response(target)
     return response
 
 
@@ -228,43 +231,43 @@ async def get_dynamic_target(target_id: int, _: AdminUser):
 async def update_dynamic_target(
     target_id: int, body: DynamicTargetUpdate, _: AdminUser
 ):
-    session = get_session()
-    async with session.begin():
-        target = await session.scalar(
-            select(DynamicTarget)
-            .where(DynamicTarget.id == target_id)
-            .options(
-                selectinload(DynamicTarget.groups),
-                selectinload(DynamicTarget.users),
+    async with get_session() as session:
+        async with session.begin():
+            target = await session.scalar(
+                select(DynamicTarget)
+                .where(DynamicTarget.id == target_id)
+                .options(
+                    selectinload(DynamicTarget.groups),
+                    selectinload(DynamicTarget.users),
+                )
             )
-        )
-        if not target:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
-            )
-        current_uid = target.uid
-        if body.uid is not None:
-            uid_for_name = body.uid.strip()
-            if not uid_for_name:
+            if not target:
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="UID 不能为空",
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
                 )
-            if uid_for_name != current_uid:
-                existing = await session.scalar(
-                    select(DynamicTarget).where(DynamicTarget.uid == uid_for_name)
-                )
-                if existing:
+            current_uid = target.uid
+            if body.uid is not None:
+                uid_for_name = body.uid.strip()
+                if not uid_for_name:
                     raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail="UID already exists",
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="UID 不能为空",
                     )
-        else:
-            uid_for_name = current_uid
-        if body.name is not None:
-            pending_name = body.name.strip() or None
-        else:
-            pending_name = target.name
+                if uid_for_name != current_uid:
+                    existing = await session.scalar(
+                        select(DynamicTarget).where(DynamicTarget.uid == uid_for_name)
+                    )
+                    if existing:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail="UID already exists",
+                        )
+            else:
+                uid_for_name = current_uid
+            if body.name is not None:
+                pending_name = body.name.strip() or None
+            else:
+                pending_name = target.name
 
     resolved_name: str | None = None
     if not pending_name:
@@ -331,14 +334,14 @@ async def update_dynamic_target(
 
 @router.delete("/dynamic-targets/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_dynamic_target(target_id: int, _: AdminUser):
-    session = get_session()
-    async with session.begin():
-        target = await session.get(DynamicTarget, target_id)
-        if not target:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
-            )
-        await session.delete(target)
+    async with get_session() as session:
+        async with session.begin():
+            target = await session.get(DynamicTarget, target_id)
+            if not target:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+                )
+            await session.delete(target)
 
     await get_config_service().reload()
 
@@ -348,15 +351,15 @@ async def delete_dynamic_target(target_id: int, _: AdminUser):
 
 @router.get("/live-targets", response_model=list[LiveTargetResponse])
 async def list_live_targets(_: AdminUser):
-    session = get_session()
-    async with session.begin():
-        stmt = select(LiveTarget).options(
-            selectinload(LiveTarget.groups),
-            selectinload(LiveTarget.users),
-        )
-        targets = (await session.scalars(stmt)).all()
-        response = [_live_to_response(t) for t in targets]
-        missing = [(t.id, t.room_id) for t in targets if not t.name]
+    async with get_session() as session:
+        async with session.begin():
+            stmt = select(LiveTarget).options(
+                selectinload(LiveTarget.groups),
+                selectinload(LiveTarget.users),
+            )
+            targets = (await session.scalars(stmt)).all()
+            response = [_live_to_response(t) for t in targets]
+            missing = [(t.id, t.room_id) for t in targets if not t.name]
 
     if missing:
         spawn_background_task(
@@ -374,44 +377,44 @@ async def list_live_targets(_: AdminUser):
 async def create_live_target(body: LiveTargetCreate, _: AdminUser):
     _ensure_recipients(body.group_ids, body.user_ids)
 
-    session = get_session()
-    async with session.begin():
-        existing = await session.scalar(
-            select(LiveTarget).where(LiveTarget.room_id == body.room_id)
-        )
-        if existing:
+    async with get_session() as session:
+        async with session.begin():
+            existing = await session.scalar(
+                select(LiveTarget).where(LiveTarget.room_id == body.room_id)
+            )
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail="Room already exists"
+                )
+
+        resolved_name = await resolve_live_target_name(body.room_id, body.name)
+        if not resolved_name:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail="Room already exists"
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="无法获取直播间信息，请检查房间号是否正确，或手动填写显示名称",
             )
 
-    resolved_name = await resolve_live_target_name(body.room_id, body.name)
-    if not resolved_name:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="无法获取直播间信息，请检查房间号是否正确，或手动填写显示名称",
-        )
-
-    async with session.begin():
-        existing = await session.scalar(
-            select(LiveTarget).where(LiveTarget.room_id == body.room_id)
-        )
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail="Room already exists"
+        async with session.begin():
+            existing = await session.scalar(
+                select(LiveTarget).where(LiveTarget.room_id == body.room_id)
             )
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail="Room already exists"
+                )
 
-        target = LiveTarget(
-            room_id=body.room_id,
-            name=resolved_name,
-            enabled=body.enabled,
-            at_all=body.at_all,
-        )
-        await _sync_groups_live(session, target, body.group_ids)
-        await _sync_users_live(session, target, body.user_ids)
-        session.add(target)
-        await session.flush()
-        await session.refresh(target, ["groups", "users"])
-        response = _live_to_response(target)
+            target = LiveTarget(
+                room_id=body.room_id,
+                name=resolved_name,
+                enabled=body.enabled,
+                at_all=body.at_all,
+            )
+            await _sync_groups_live(session, target, body.group_ids)
+            await _sync_users_live(session, target, body.user_ids)
+            session.add(target)
+            await session.flush()
+            await session.refresh(target, ["groups", "users"])
+            response = _live_to_response(target)
 
     await get_config_service().reload()
 
@@ -420,63 +423,63 @@ async def create_live_target(body: LiveTargetCreate, _: AdminUser):
 
 @router.get("/live-targets/{target_id}", response_model=LiveTargetResponse)
 async def get_live_target(target_id: int, _: AdminUser):
-    session = get_session()
-    async with session.begin():
-        target = await session.scalar(
-            select(LiveTarget)
-            .where(LiveTarget.id == target_id)
-            .options(
-                selectinload(LiveTarget.groups),
-                selectinload(LiveTarget.users),
+    async with get_session() as session:
+        async with session.begin():
+            target = await session.scalar(
+                select(LiveTarget)
+                .where(LiveTarget.id == target_id)
+                .options(
+                    selectinload(LiveTarget.groups),
+                    selectinload(LiveTarget.users),
+                )
             )
-        )
-        if not target:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
-            )
-        response = _live_to_response(target)
+            if not target:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+                )
+            response = _live_to_response(target)
     return response
 
 
 @router.patch("/live-targets/{target_id}", response_model=LiveTargetResponse)
 async def update_live_target(target_id: int, body: LiveTargetUpdate, _: AdminUser):
-    session = get_session()
-    async with session.begin():
-        target = await session.scalar(
-            select(LiveTarget)
-            .where(LiveTarget.id == target_id)
-            .options(
-                selectinload(LiveTarget.groups),
-                selectinload(LiveTarget.users),
+    async with get_session() as session:
+        async with session.begin():
+            target = await session.scalar(
+                select(LiveTarget)
+                .where(LiveTarget.id == target_id)
+                .options(
+                    selectinload(LiveTarget.groups),
+                    selectinload(LiveTarget.users),
+                )
             )
-        )
-        if not target:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
-            )
-        current_room_id = target.room_id
-        if body.room_id is not None:
-            room_id_for_name = body.room_id.strip()
-            if not room_id_for_name:
+            if not target:
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="房间号不能为空",
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
                 )
-            if room_id_for_name != current_room_id:
-                existing = await session.scalar(
-                    select(LiveTarget).where(LiveTarget.room_id == room_id_for_name)
-                )
-                if existing:
+            current_room_id = target.room_id
+            if body.room_id is not None:
+                room_id_for_name = body.room_id.strip()
+                if not room_id_for_name:
                     raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail="Room already exists",
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="房间号不能为空",
                     )
-        else:
-            room_id_for_name = current_room_id
-        if body.name is not None:
-            pending_name = body.name.strip() or None
-        else:
-            pending_name = target.name
+                if room_id_for_name != current_room_id:
+                    existing = await session.scalar(
+                        select(LiveTarget).where(LiveTarget.room_id == room_id_for_name)
+                    )
+                    if existing:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail="Room already exists",
+                        )
+            else:
+                room_id_for_name = current_room_id
+            if body.name is not None:
+                pending_name = body.name.strip() or None
+            else:
+                pending_name = target.name
 
     resolved_name: str | None = None
     if not pending_name:
@@ -543,13 +546,13 @@ async def update_live_target(target_id: int, body: LiveTargetUpdate, _: AdminUse
 
 @router.delete("/live-targets/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_live_target(target_id: int, _: AdminUser):
-    session = get_session()
-    async with session.begin():
-        target = await session.get(LiveTarget, target_id)
-        if not target:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
-            )
-        await session.delete(target)
+    async with get_session() as session:
+        async with session.begin():
+            target = await session.get(LiveTarget, target_id)
+            if not target:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+                )
+            await session.delete(target)
 
     await get_config_service().reload()

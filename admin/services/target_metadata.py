@@ -109,12 +109,12 @@ async def resolve_missing_dynamic_target_names(
         return
     from nonebot_plugin_orm import get_session
 
-    db = get_session()
-    async with db.begin():
-        for target_id, uid, name in resolved:
-            target = await db.get(DynamicTarget, target_id)
-            if target is not None and not target.name and target.uid == uid:
-                target.name = name
+    async with get_session() as db:
+        async with db.begin():
+            for target_id, uid, name in resolved:
+                target = await db.get(DynamicTarget, target_id)
+                if target is not None and not target.name and target.uid == uid:
+                    target.name = name
 
 
 async def resolve_missing_live_target_names(
@@ -139,9 +139,9 @@ async def resolve_missing_live_target_names(
         return
     from nonebot_plugin_orm import get_session
 
-    db = get_session()
-    async with db.begin():
-        for target_id, room_id, name in resolved:
-            target = await db.get(LiveTarget, target_id)
-            if target is not None and not target.name and target.room_id == room_id:
-                target.name = name
+    async with get_session() as db:
+        async with db.begin():
+            for target_id, room_id, name in resolved:
+                target = await db.get(LiveTarget, target_id)
+                if target is not None and not target.name and target.room_id == room_id:
+                    target.name = name

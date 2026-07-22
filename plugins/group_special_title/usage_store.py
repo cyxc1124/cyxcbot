@@ -134,40 +134,40 @@ async def try_consume_daily_quota(
         return True
 
     usage_date = today_usage_date()
-    session = get_session()
-    async with session.begin():
-        upsert_stmt = _upsert_consume_stmt(
-            session.bind.dialect.name,
-            group_id=group_id,
-            user_id=user_id,
-            usage_date=usage_date,
-            daily_limit=daily_limit,
-        )
-        if upsert_stmt is not None:
-            result = await session.execute(upsert_stmt)
-            return result.rowcount == 1
+    async with get_session() as session:
+        async with session.begin():
+            upsert_stmt = _upsert_consume_stmt(
+                session.bind.dialect.name,
+                group_id=group_id,
+                user_id=user_id,
+                usage_date=usage_date,
+                daily_limit=daily_limit,
+            )
+            if upsert_stmt is not None:
+                result = await session.execute(upsert_stmt)
+                return result.rowcount == 1
 
-        return await _consume_with_locked_increment(
-            session,
-            group_id=group_id,
-            user_id=user_id,
-            usage_date=usage_date,
-            daily_limit=daily_limit,
-        )
+            return await _consume_with_locked_increment(
+                session,
+                group_id=group_id,
+                user_id=user_id,
+                usage_date=usage_date,
+                daily_limit=daily_limit,
+            )
 
 
 async def release_daily_quota(group_id: str, user_id: str) -> None:
     """Return one reserved slot when the title API call fails."""
     usage_date = today_usage_date()
-    session = get_session()
-    async with session.begin():
-        await session.execute(
-            update(GroupSpecialTitleUsage)
-            .where(
-                GroupSpecialTitleUsage.group_id == group_id,
-                GroupSpecialTitleUsage.user_id == user_id,
-                GroupSpecialTitleUsage.usage_date == usage_date,
-                GroupSpecialTitleUsage.count > 0,
+    async with get_session() as session:
+        async with session.begin():
+            await session.execute(
+                update(GroupSpecialTitleUsage)
+                .where(
+                    GroupSpecialTitleUsage.group_id == group_id,
+                    GroupSpecialTitleUsage.user_id == user_id,
+                    GroupSpecialTitleUsage.usage_date == usage_date,
+                    GroupSpecialTitleUsage.count > 0,
+                )
+                .values(count=GroupSpecialTitleUsage.count - 1)
             )
-            .values(count=GroupSpecialTitleUsage.count - 1)
-        )
