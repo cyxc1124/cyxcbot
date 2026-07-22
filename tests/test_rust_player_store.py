@@ -204,3 +204,5 @@ async def test_perform_check_in_without_bonus_eligibility(
         can_claim_online_bonus=False,
     )
     assert second.already_checked_in is True
+    assert second.bonus_pending is False
+    assert second.bonus_pending is False

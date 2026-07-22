@@ -109,14 +109,14 @@ async def _handle_checkin(group_id: str, user_id: str) -> None:
     snap = get_config_service().get_snapshot()
     binding = await store.get_steam_binding(user_id)
     configured_bonus = snap.rust_checkin_online_bonus_points
-    can_claim_online_bonus = binding is not None
     is_online = False
     rcon_binding = resolve_checkin_rcon_binding(
         snap.rust_rcon_bindings,
         snap.rust_checkin_rcon_binding_id,
     )
+    can_claim_online_bonus = binding is not None and rcon_binding is not None
 
-    if can_claim_online_bonus and rcon_binding is not None:
+    if can_claim_online_bonus:
         try:
             status_text = await execute_rcon_command(
                 rcon_binding.host,
