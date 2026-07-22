@@ -17,7 +17,7 @@ function parseQqInput(raw: string): string[] {
   return [
     ...new Set(
       raw
-        .split(/[\s,，;；]+/)
+        .split('\n')
         .map((item) => item.trim())
         .filter((item) => item.length > 0),
     ),

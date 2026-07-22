@@ -100,9 +100,9 @@ export function SettingsRustRconPage() {
                           ? binding.password.preview ?? '已配置'
                           : '未配置'}
                       </td>
-                      <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">
+                      <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground whitespace-pre-line">
                         {binding.allowed_qq_ids.length > 0
-                          ? binding.allowed_qq_ids.join(', ')
+                          ? binding.allowed_qq_ids.join('\n')
                           : '—'}
                       </td>
                       <td className="py-3.5 pr-4">
@@ -238,7 +238,7 @@ export function SettingsRustRconPage() {
                 }
               />
               <p className="mt-1 text-xs text-muted-foreground">
-                仅列表中的 QQ 号可触发此绑定的 RCON 命令；也支持逗号、分号分隔。
+                仅列表中的 QQ 号可触发此绑定的 RCON 命令；每行填写一个 QQ 号。
               </p>
             </div>
 
