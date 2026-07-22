@@ -40,19 +40,30 @@ async def get_steam_binding_by_steam_id(steam_id: str) -> RustSteamBinding | Non
     )
 
 
+async def _ensure_steam_binding_available(session, user_id: str, steam_id: str) -> None:
+    existing_user = await session.get(RustSteamBinding, user_id)
+    if existing_user is not None:
+        raise ValueError("你已绑定 SteamID，如需更换请联系管理员")
+    existing_steam = await session.scalar(
+        select(RustSteamBinding).where(RustSteamBinding.steam_id == steam_id)
+    )
+    if existing_steam is not None:
+        raise ValueError("该 SteamID 已被其他 QQ 号绑定")
+
+
 async def create_steam_binding(user_id: str, steam_id: str) -> None:
     user_id = str(user_id).strip()
+    steam_id = str(steam_id).strip()
     session = get_session()
     async with session.begin():
-        existing_user = await session.get(RustSteamBinding, user_id)
-        if existing_user is not None:
-            raise ValueError("你已绑定 SteamID，如需更换请联系管理员")
-        existing_steam = await session.scalar(
-            select(RustSteamBinding).where(RustSteamBinding.steam_id == steam_id)
-        )
-        if existing_steam is not None:
-            raise ValueError("该 SteamID 已被其他 QQ 号绑定")
+        await _ensure_steam_binding_available(session, user_id, steam_id)
         session.add(RustSteamBinding(user_id=user_id, steam_id=steam_id))
+        try:
+            async with session.begin_nested():
+                await session.flush()
+        except IntegrityError:
+            await _ensure_steam_binding_available(session, user_id, steam_id)
+            raise ValueError("绑定失败，请稍后重试") from None
 
 
 async def delete_steam_binding(user_id: str) -> bool:
