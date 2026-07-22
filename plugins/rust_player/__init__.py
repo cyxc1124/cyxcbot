@@ -19,7 +19,7 @@ __plugin_meta__ = PluginMetadata(
     name="Rust 群积分",
     description="群内签到、积分查询与 SteamID 绑定",
     usage="""
-群聊 @机器人（触发词可在 Web Admin → 设置 → 命令 中自定义）：
+群聊 @机器人（触发词可在 Web Admin → Rust 远控 → 群管命令 中自定义）：
 - 绑定 <SteamID64>：绑定 Steam 账号（不可自助换绑）
 - 签到：每日签到获取随机积分
 - 我的积分 / 积分：查询本群积分

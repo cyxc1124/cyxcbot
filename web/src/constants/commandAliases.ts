@@ -1,7 +1,7 @@
 /** 出厂默认的“习惯性”前缀，需与 shared/config/command_aliases.py 的 DEFAULT_EXTRA_PREFIXES 保持一致 */
 export const DEFAULT_EXTRA_PREFIXES = ['!', '。', '.', '#']
 
-export type CommandId =
+export type CoreCommandId =
   | 'status'
   | 'live_status'
   | 'live_monitor_list'
@@ -10,9 +10,13 @@ export type CommandId =
   | 'video_query_latest'
   | 'dynamic_extract'
   | 'group_special_title'
+
+export type RustPlayerCommandId =
   | 'rust_player_bind'
   | 'rust_player_checkin'
   | 'rust_player_points'
+
+export type CommandId = CoreCommandId | RustPlayerCommandId
 
 export type CommandField = {
   id: CommandId
@@ -74,22 +78,25 @@ export const COMMAND_FIELDS: CommandField[] = [
     defaultTriggers: ['头衔'],
     hint: '需带前缀，格式为“前缀+触发词 头衔内容”，例如“/头衔 我的头衔”',
   },
+]
+
+export const RUST_PLAYER_COMMAND_FIELDS: CommandField[] = [
   {
     id: 'rust_player_bind',
-    label: 'Rust SteamID 绑定',
+    label: 'SteamID 绑定',
     description: '群成员绑定 SteamID64（仅群聊，不可自助换绑）。',
     defaultTriggers: ['绑定'],
     hint: '发送时需在触发词后加 SteamID64，例如“绑定 76561198000000000”',
   },
   {
     id: 'rust_player_checkin',
-    label: 'Rust 群签到',
+    label: '群签到',
     description: '群成员每日签到获取随机积分（仅群聊，每日一次）。',
     defaultTriggers: ['签到'],
   },
   {
     id: 'rust_player_points',
-    label: 'Rust 积分查询',
+    label: '积分查询',
     description: '查询本群积分与 SteamID 绑定状态（仅群聊）。',
     defaultTriggers: ['我的积分', '积分'],
   },

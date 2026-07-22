@@ -2,11 +2,12 @@ import type { Settings } from '../../api/types'
 import {
   COMMAND_FIELDS,
   DEFAULT_EXTRA_PREFIXES,
+  type CommandField,
   type CommandId,
 } from '../../constants/commandAliases'
 
 export type CommandFormValue = { enabled: boolean; text: string }
-export type CommandForm = Record<CommandId, CommandFormValue>
+export type CommandForm = Partial<Record<CommandId, CommandFormValue>>
 
 export function parseLines(text: string): string[] {
   return text
@@ -15,12 +16,13 @@ export function parseLines(text: string): string[] {
     .filter((line) => line.length > 0)
 }
 
-export function buildForm(settings: Settings | null): CommandForm {
-  const result = {} as CommandForm
-  for (const field of COMMAND_FIELDS) {
+export function buildForm(
+  settings: Settings | null,
+  fields: readonly CommandField[] = COMMAND_FIELDS,
+): CommandForm {
+  const result: CommandForm = {}
+  for (const field of fields) {
     const entry = settings?.command_aliases?.[field.id]
-    // entry 存在时用其 triggers（可能是管理员故意清空的 []，需保留，不能回退成
-    // 默认值），只有 entry 整条缺失时才用出厂默认值填充
     const triggers = entry ? entry.triggers : field.defaultTriggers
     result[field.id] = {
       enabled: entry?.enabled ?? true,

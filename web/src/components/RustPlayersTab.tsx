@@ -39,7 +39,7 @@ export function RustPlayersTab() {
           <h3 className="font-semibold text-foreground">签到积分范围</h3>
           <p className="mt-1 text-sm text-muted-foreground">
             群成员发送 <code className="font-mono text-xs">@机器人 签到</code>{' '}
-            时，每次随机获得该范围内的积分（每日一次）。触发词可在「设置 → 命令」中自定义。
+            时，每次随机获得该范围内的积分（每日一次）。
           </p>
         </div>
 
@@ -94,7 +94,7 @@ export function RustPlayersTab() {
             绑定账号（不可自助换绑）；查询积分：
             <code className="font-mono text-xs">@机器人 我的积分</code> 或{' '}
             <code className="font-mono text-xs">@机器人 积分</code>。
-            触发词可在「设置 → 命令」中自定义。
+            触发词在「群管命令」Tab 中配置。
           </p>
         </div>
 

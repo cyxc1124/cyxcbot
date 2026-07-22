@@ -36,8 +36,8 @@ describe('buildForm', () => {
   it('falls back to factory defaults only when the entry is entirely missing', () => {
     const form = buildForm(baseSettings({}))
     for (const field of COMMAND_FIELDS) {
-      expect(form[field.id].text).toBe(field.defaultTriggers.join('\n'))
-      expect(form[field.id].enabled).toBe(true)
+      expect(form[field.id]?.text).toBe(field.defaultTriggers.join('\n'))
+      expect(form[field.id]?.enabled).toBe(true)
     }
   })
 
