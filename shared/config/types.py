@@ -15,6 +15,7 @@ from shared.config.message_templates import (
     LinkMessageTemplates,
     LiveMessageTemplates,
 )
+from shared.config.rust_rcon import RustRconBindingRecord
 
 
 @dataclass
@@ -74,3 +75,4 @@ class AppConfigSnapshot:
     command_extra_prefixes: List[str] = field(
         default_factory=lambda: list(DEFAULT_EXTRA_PREFIXES)
     )
+    rust_rcon_bindings: List[RustRconBindingRecord] = field(default_factory=list)

@@ -30,6 +30,9 @@ import type {
   MonitorActionResult,
   MonitorStatus,
   RecentLogsResponse,
+  RustRconBinding,
+  RustRconBindingCreate,
+  RustRconBindingUpdate,
   Settings,
   SettingsUpdate,
   SetupRequest,
@@ -268,6 +271,25 @@ export const updateLiveTarget = (id: number, data: LiveTargetUpdate) =>
 
 export const deleteLiveTarget = (id: number) =>
   request<void>(`/live-targets/${id}`, { method: 'DELETE' })
+
+// Rust RCON bindings
+export const getRustRconBindings = () =>
+  request<RustRconBinding[]>('/rust-rcon/bindings')
+
+export const createRustRconBinding = (data: RustRconBindingCreate) =>
+  request<RustRconBinding>('/rust-rcon/bindings', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const updateRustRconBinding = (id: number, data: RustRconBindingUpdate) =>
+  request<RustRconBinding>(`/rust-rcon/bindings/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+
+export const deleteRustRconBinding = (id: number) =>
+  request<void>(`/rust-rcon/bindings/${id}`, { method: 'DELETE' })
 
 // Groups
 export const getGroups = async (): Promise<Group[]> => {

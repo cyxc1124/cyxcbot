@@ -12,6 +12,7 @@ from admin.api.v1 import (
     logs,
     monitors,
     private,
+    rust_rcon,
     settings,
     setup,
     targets,
@@ -30,4 +31,5 @@ api_router.include_router(connections.router)
 api_router.include_router(groups.router)
 api_router.include_router(private.router)
 api_router.include_router(link_parser.router)
+api_router.include_router(rust_rcon.router)
 api_router.include_router(logs.router)

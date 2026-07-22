@@ -29,6 +29,7 @@ from shared.config.message_templates import (
     live_templates_from_settings,
 )
 from shared.config.nonebot_superusers import apply_nonebot_superusers
+from shared.config.rust_rcon import RustRconBindingRecord
 from shared.config.types import AppConfigSnapshot
 from shared.db.models import (
     DynamicMonitorState,
@@ -37,6 +38,7 @@ from shared.db.models import (
     LinkParserUserPolicy,
     LiveMonitorState,
     LiveTarget,
+    RustRconBinding,
     SystemSetting,
 )
 from shared.security.crypto import decrypt_value
@@ -146,6 +148,7 @@ class ConfigService:
             link_parser_user_policies = await self._load_link_parser_user_policies(
                 session
             )
+            rust_rcon_bindings = await self._load_rust_rcon_bindings(session)
             await self._prune_dynamic_monitor_states(session, set(dynamic_mapping))
             await self._prune_live_monitor_states(session, set(live_mapping))
 
@@ -215,6 +218,7 @@ class ConfigService:
             command_extra_prefixes=settings.get(
                 "command_extra_prefixes", list(DEFAULT_EXTRA_PREFIXES)
             ),
+            rust_rcon_bindings=rust_rcon_bindings,
         )
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
         logger.info(
@@ -442,6 +446,31 @@ class ConfigService:
             )
             for row in rows
         }
+
+    async def _load_rust_rcon_bindings(self, session) -> list[RustRconBindingRecord]:
+        rows = (await session.scalars(select(RustRconBinding))).all()
+        bindings: list[RustRconBindingRecord] = []
+        for row in rows:
+            password = ""
+            if row.password_encrypted:
+                try:
+                    password = decrypt_value(row.password_encrypted)
+                except ValueError as exc:
+                    logger.error(
+                        "Rust RCON 绑定 {} 密码解密失败: {}", row.alias, exc
+                    )
+            bindings.append(
+                RustRconBindingRecord(
+                    id=row.id,
+                    alias=row.alias,
+                    host=row.host,
+                    port=row.port,
+                    password=password,
+                    enabled=row.enabled,
+                    name=row.name,
+                )
+            )
+        return bindings
 
     async def upsert_link_parser_group_policy(
         self,

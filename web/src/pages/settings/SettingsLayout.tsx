@@ -9,6 +9,7 @@ const settingsNavItems = [
   { to: '/settings/account', label: 'B 站账号', description: '扫码登录与 Cookie 管理' },
   { to: '/settings/bot', label: '机器人', description: 'QQ 命令权限与状态查询' },
   { to: '/settings/commands', label: '命令', description: '自定义命令触发词与开关' },
+  { to: '/settings/rust-rcon', label: 'Rust RCON', description: 'Rust 服务器 RCON 绑定与触发词' },
 ]
 
 function SettingsLayoutContent() {

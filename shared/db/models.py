@@ -234,6 +234,26 @@ class LinkParserUserPolicy(Model):
     )
 
 
+class RustRconBinding(Model):
+    """Rust game server RCON endpoint bound to a chat trigger alias."""
+
+    __tablename__ = "shared_db_rustrconbinding"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    alias: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    host: Mapped[str] = mapped_column(String(255), nullable=False)
+    port: Mapped[int] = mapped_column(Integer, nullable=False, default=28016)
+    password_encrypted: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+
 class GroupSpecialTitleUsage(Model):
     """Daily usage counter for group special title self-service."""
 
