@@ -73,3 +73,45 @@ def test_is_qq_allowed_for_binding() -> None:
     )
     assert is_qq_allowed_for_binding(binding, "123")
     assert not is_qq_allowed_for_binding(binding, "999")
+
+
+def test_command_aliases_rust_rcon_conflict() -> None:
+    from shared.config.command_aliases import (
+        normalize_command_aliases,
+    )
+    from shared.config.rust_rcon import (
+        RustRconBindingRecord,
+        command_aliases_rust_rcon_conflict,
+    )
+
+    config = normalize_command_aliases(
+        {"status": {"enabled": True, "triggers": ["status", "rcon1"]}}
+    )
+    bindings = [
+        RustRconBindingRecord(
+            id=1,
+            alias="rcon1",
+            host="127.0.0.1",
+            port=28016,
+            password="x",
+            enabled=True,
+        )
+    ]
+    assert command_aliases_rust_rcon_conflict(config, bindings) is not None
+    assert command_aliases_rust_rcon_conflict(config, []) is None
+    assert (
+        command_aliases_rust_rcon_conflict(
+            config,
+            [
+                RustRconBindingRecord(
+                    id=1,
+                    alias="rcon1",
+                    host="127.0.0.1",
+                    port=28016,
+                    password="x",
+                    enabled=False,
+                )
+            ],
+        )
+        is None
+    )

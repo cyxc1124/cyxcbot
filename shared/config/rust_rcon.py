@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict
 
-from shared.config.command_aliases import COMMAND_LABELS, resolve_entry
+from shared.config.command_aliases import (
+    COMMAND_LABELS,
+    CommandAliasEntry,
+    resolve_entry,
+)
 
 if TYPE_CHECKING:
     from shared.config.types import AppConfigSnapshot
@@ -83,4 +87,23 @@ def alias_command_conflict(alias: str, snapshot: AppConfigSnapshot) -> str | Non
         if entry.enabled and alias in entry.triggers:
             label = COMMAND_LABELS[command_id]
             return f"触发词「{alias}」与命令「{label}」冲突"
+    return None
+
+
+def command_aliases_rust_rcon_conflict(
+    config: Dict[str, CommandAliasEntry],
+    bindings: list[RustRconBindingRecord],
+) -> str | None:
+    """Return error if an enabled command trigger collides with an enabled RCON alias."""
+    enabled_aliases = {binding.alias for binding in bindings if binding.enabled}
+    if not enabled_aliases:
+        return None
+
+    for command_id, entry in config.items():
+        if not entry.enabled:
+            continue
+        for trigger in entry.triggers:
+            if trigger in enabled_aliases:
+                label = COMMAND_LABELS.get(command_id, command_id)
+                return f"触发词「{trigger}」与 RCON 绑定冲突（命令「{label}」）"
     return None
