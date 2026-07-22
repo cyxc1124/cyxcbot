@@ -38,12 +38,12 @@ export function SettingsRustRconPage({ embedded = false }: { embedded?: boolean 
           <div>
             {!embedded && (
               <>
-                <h3 className="font-semibold text-foreground">Rust RCON</h3>
+                <h3 className="font-semibold text-foreground">Rust 远控</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  配置 Rust 服务器 RCON 连接，并为每个服务器定义触发词。在已开启 RCON
+                  配置 Rust 服务器远控连接，并为每个服务器定义触发词。在已开启远控
                   的群/好友中发送{' '}
                   <code className="font-mono text-xs">@机器人 触发词 命令</code>{' '}
-                  （私聊无需 @）即可向对应服务器发送 RCON 指令。
+                  （私聊无需 @）即可向对应服务器发送远控指令。
                 </p>
                 <p className="mt-2 text-xs text-muted-foreground">
                   协议为 Rust WebRCON（WebSocket，默认端口 28016）。示例：
@@ -69,7 +69,7 @@ export function SettingsRustRconPage({ embedded = false }: { embedded?: boolean 
         {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
         {!showForm && bindings.length === 0 && !error && (
-          <p className="text-sm text-muted-foreground">尚未配置任何 RCON 绑定。</p>
+          <p className="text-sm text-muted-foreground">尚未配置任何远控绑定。</p>
         )}
 
         {!showForm && bindings.length > 0 && (
@@ -166,7 +166,7 @@ export function SettingsRustRconPage({ embedded = false }: { embedded?: boolean 
         <form className="card space-y-4" onSubmit={(e) => void handleSubmit(e)}>
           <div className="flex items-center justify-between gap-3">
             <h3 className="font-semibold text-foreground">
-              {editingId ? '编辑 RCON 绑定' : '添加 RCON 绑定'}
+              {editingId ? '编辑远控绑定' : '添加远控绑定'}
             </h3>
             <button type="button" className="btn-secondary text-sm" onClick={resetForm}>
               取消
@@ -250,13 +250,13 @@ export function SettingsRustRconPage({ embedded = false }: { embedded?: boolean 
                 }
               />
               <p className="mt-1 text-xs text-muted-foreground">
-                仅列表中的 QQ 号可触发此绑定的 RCON 命令；每行填写一个 QQ 号。
+                仅列表中的 QQ 号可触发此绑定的远控命令；每行填写一个 QQ 号。
               </p>
             </div>
 
             <div className="sm:col-span-2">
               <label className="label" htmlFor="rcon-password">
-                RCON 密码
+                远控密码
               </label>
               <input
                 id="rcon-password"
@@ -290,12 +290,12 @@ export function SettingsRustRconPage({ embedded = false }: { embedded?: boolean 
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title="删除 RCON 绑定"
+        title="删除远控绑定"
         message={
           deleteTarget ? (
             <>
               确定删除触发词「<span className="font-mono">{deleteTarget.alias}</span>
-              」的 RCON 绑定？此操作不可撤销。
+              」的远控绑定？此操作不可撤销。
             </>
           ) : (
             ''

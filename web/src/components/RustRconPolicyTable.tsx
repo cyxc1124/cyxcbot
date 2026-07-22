@@ -26,17 +26,17 @@ export function RustRconPolicyHint({ scope }: { scope: 'group' | 'user' }) {
   return (
     <div className="space-y-1">
       <p className="text-sm text-muted-foreground">
-        在下方为每个{scope === 'group' ? '群' : '好友'}单独开启 Rust RCON 命令；默认关闭。
-        服务器连接与触发词在「Rust RCON → 服务器绑定」中配置。
+        在下方为每个{scope === 'group' ? '群' : '好友'}单独开启 Rust 远控命令；默认关闭。
+        服务器连接与触发词在「Rust 远控 → 服务器绑定」中配置。
       </p>
       {scope === 'group' && (
         <p className="text-sm text-muted-foreground">
-          仅显示已启用「群消息」的群；关闭群消息的群不会响应任何消息，也无法配置 RCON。
+          仅显示已启用「群消息」的群；关闭群消息的群不会响应任何消息，也无法配置远控。
         </p>
       )}
       {scope === 'user' && (
         <p className="text-sm text-muted-foreground">
-          仅显示已启用「好友消息」的好友；关闭好友消息的用户不会响应任何指令，也无法配置 RCON。
+          仅显示已启用「好友消息」的好友；关闭好友消息的用户不会响应任何指令，也无法配置远控。
         </p>
       )}
     </div>
@@ -75,7 +75,7 @@ export function RustRconPolicyTable<T extends RustRconPolicyRow>({
           <tr className="border-b border-border text-muted-foreground">
             <th className="pb-3 pr-4 font-medium">{nameColumnLabel}</th>
             <th className="pb-3 pr-4 font-medium">{idColumnLabel}</th>
-            <th className="pb-3 pr-4 font-medium">Rust RCON</th>
+            <th className="pb-3 pr-4 font-medium">Rust 远控</th>
             <th className="pb-3 font-medium text-right">操作</th>
           </tr>
         </thead>

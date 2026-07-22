@@ -17,12 +17,12 @@ export function RustRconPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Rust RCON</h2>
+        <h2 className="text-2xl font-bold text-foreground">Rust 远控管理</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          配置 Rust 服务器连接与触发词，并管理群/好友的 RCON 命令权限。在已开启 RCON
+          配置 Rust 服务器连接与触发词，并管理群/好友的远控命令权限。在已开启远控
           的群/好友中发送{' '}
           <code className="font-mono text-xs">@机器人 触发词 命令</code>{' '}
-          （私聊无需 @）即可向对应服务器发送 RCON 指令。
+          （私聊无需 @）即可向对应服务器发送远控指令。
         </p>
         <p className="mt-2 text-xs text-muted-foreground">
           协议为 Rust WebRCON（WebSocket，默认端口 28016）。
