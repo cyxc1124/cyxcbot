@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import importlib
-import os
 import sys
-import uuid
 from unittest.mock import AsyncMock, MagicMock
 
-import nonebot
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from tests.db_test_helpers import ensure_real_db_modules, shared_sqlite_url
 
 if "nonebot_plugin_orm" not in sys.modules:
     sys.modules["nonebot_plugin_orm"] = MagicMock(get_session=MagicMock())
@@ -18,66 +17,45 @@ if "nonebot_plugin_orm" not in sys.modules:
 from shared.rust_player.store import _ensure_steam_binding_available
 
 _VALID_STEAM = "76561198000000000"
+_TEST_USER = "123456"
 
 
-def _shared_sqlite_url() -> str:
-    db_id = uuid.uuid4().hex
-    return f"sqlite+aiosqlite:///file:{db_id}?mode=memory&cache=shared&uri=true"
+async def _seed_steam_binding(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    user_id: str,
+    steam_id: str,
+) -> None:
+    from shared.db.models import RustSteamBinding
 
-
-@pytest.fixture
-def rust_player_store_modules():
-    for name in ("shared.rust_player.store", "shared.db.models", "shared.db.base"):
-        module = sys.modules.get(name)
-        if module is not None and isinstance(module, MagicMock):
-            del sys.modules[name]
-
-    db_url = _shared_sqlite_url()
-    os.environ["SQLALCHEMY_DATABASE_URL"] = db_url
-    try:
-        nonebot.get_driver()
-    except ValueError:
-        nonebot.init(
-            sqlalchemy_database_url=db_url,
-            alembic_startup_check=False,
-        )
-
-    if "nonebot_plugin_orm" not in sys.modules or isinstance(
-        sys.modules["nonebot_plugin_orm"], MagicMock
-    ):
-        sys.modules.pop("nonebot_plugin_orm", None)
-        nonebot.load_plugin("nonebot_plugin_orm")
-
-    import shared.db.base
-    import shared.db.models
-
-    importlib.reload(shared.db.base)
-    importlib.reload(shared.db.models)
-
-    import shared.rust_player.store as store
-
-    importlib.reload(store)
-    return store, db_url
+    async with factory() as session:
+        async with session.begin():
+            session.add(RustSteamBinding(user_id=user_id, steam_id=steam_id))
 
 
 @pytest.fixture
-async def rust_player_session_factory(rust_player_store_modules):
+async def rust_player_store():
+    ensure_real_db_modules()
+    import nonebot_plugin_orm
+
     from shared.db.base import Model
 
-    _, db_url = rust_player_store_modules
-    engine = create_async_engine(db_url)
+    engine = create_async_engine(shared_sqlite_url())
     async with engine.begin() as conn:
         await conn.run_sync(Model.metadata.create_all)
 
     factory = async_sessionmaker(engine, expire_on_commit=True)
-    import nonebot_plugin_orm
-
-    original = nonebot_plugin_orm.get_session
+    original_get_session = nonebot_plugin_orm.get_session
     nonebot_plugin_orm.get_session = lambda: factory()
+
+    import shared.rust_player.store as store
+
+    importlib.reload(store)
     try:
-        yield factory
+        yield store, factory
     finally:
-        nonebot_plugin_orm.get_session = original
+        nonebot_plugin_orm.get_session = original_get_session
+        importlib.reload(store)
         await engine.dispose()
 
 
@@ -92,19 +70,24 @@ async def test_ensure_steam_binding_available_rejects_bound_user() -> None:
 
 @pytest.mark.asyncio
 async def test_get_steam_binding_returns_usable_row_after_session_close(
-    rust_player_store_modules,
-    rust_player_session_factory,
+    rust_player_store,
 ) -> None:
-    from shared.db.models import RustSteamBinding
+    store, factory = rust_player_store
+    await _seed_steam_binding(factory, user_id=_TEST_USER, steam_id=_VALID_STEAM)
 
-    store, _ = rust_player_store_modules
-    factory = rust_player_session_factory
-    async with factory() as session:
-        async with session.begin():
-            session.add(
-                RustSteamBinding(user_id="123456", steam_id=_VALID_STEAM)
-            )
-
-    binding = await store.get_steam_binding("123456")
+    binding = await store.get_steam_binding(_TEST_USER)
     assert binding is not None
+    assert binding.steam_id == _VALID_STEAM
+
+
+@pytest.mark.asyncio
+async def test_get_steam_binding_by_steam_id_returns_usable_row_after_session_close(
+    rust_player_store,
+) -> None:
+    store, factory = rust_player_store
+    await _seed_steam_binding(factory, user_id=_TEST_USER, steam_id=_VALID_STEAM)
+
+    binding = await store.get_steam_binding_by_steam_id(_VALID_STEAM)
+    assert binding is not None
+    assert binding.user_id == _TEST_USER
     assert binding.steam_id == _VALID_STEAM
