@@ -81,6 +81,8 @@ SETTING_KEYS = {
         json.dumps(list(DEFAULT_EXTRA_PREFIXES), ensure_ascii=False),
         "json_prefix_list",
     ),
+    "rust_checkin_points_min": ("1", int),
+    "rust_checkin_points_max": ("10", int),
 }
 
 for key, default in MESSAGE_TEMPLATE_KEYS.items():
@@ -231,6 +233,8 @@ class ConfigService:
             rust_rcon_bindings=rust_rcon_bindings,
             rust_rcon_group_policies=rust_rcon_group_policies,
             rust_rcon_user_policies=rust_rcon_user_policies,
+            rust_checkin_points_min=settings.get("rust_checkin_points_min", 1),
+            rust_checkin_points_max=settings.get("rust_checkin_points_max", 10),
         )
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
         logger.info(

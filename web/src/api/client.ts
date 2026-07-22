@@ -37,6 +37,9 @@ import type {
   RustRconGroupPolicyMutation,
   RustRconUserPolicyList,
   RustRconUserPolicyMutation,
+  RustPlayerOverviewItem,
+  RustCheckInConfig,
+  RustPlayerPointsUpdate,
   Settings,
   SettingsUpdate,
   SetupRequest,
@@ -327,6 +330,30 @@ export const resetRustRconUserPolicy = (userId: string) =>
     `/rust-rcon/policies/users/${encodeURIComponent(userId)}`,
     { method: 'DELETE' },
   )
+
+// Rust player points / Steam bindings
+export const getRustPlayerOverview = () =>
+  request<{ items: RustPlayerOverviewItem[] }>('/rust-players/overview')
+
+export const updateRustPlayerPoints = (data: RustPlayerPointsUpdate) =>
+  request<RustPlayerPointsUpdate>('/rust-players/points', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+
+export const deleteRustSteamBinding = (userId: string) =>
+  request<void>(`/rust-players/steam-bindings/${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+  })
+
+export const getRustCheckInConfig = () =>
+  request<RustCheckInConfig>('/rust-players/checkin-config')
+
+export const updateRustCheckInConfig = (data: RustCheckInConfig) =>
+  request<RustCheckInConfig>('/rust-players/checkin-config', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
 
 // Groups
 export const getGroups = async (): Promise<Group[]> => {

@@ -86,3 +86,5 @@ class AppConfigSnapshot:
     rust_rcon_user_policies: Dict[str, RustRconUserPolicyRecord] = field(
         default_factory=dict
     )
+    rust_checkin_points_min: int = 1
+    rust_checkin_points_max: int = 10
