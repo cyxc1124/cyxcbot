@@ -3,42 +3,16 @@
 from __future__ import annotations
 
 import re
+from typing import Dict
+
+from shared.config.command_aliases import (
+    CommandAliasEntry,
+    match_command_arg,
+    match_plain,
+    resolve_entry,
+)
 
 STEAM_ID64_RE = re.compile(r"^7656119\d{10}$")
-BIND_TRIGGER = "绑定"
-CHECKIN_TRIGGER = "签到"
-POINTS_TRIGGERS = ("我的积分", "积分")
-
-
-def _strip_command_prefix(text: str) -> str | None:
-    prefixes: set[str] = {"/"}
-    try:
-        from nonebot import get_driver
-
-        starts = {str(s) for s in get_driver().config.command_start if s}
-        if starts:
-            prefixes = starts
-    except Exception:
-        pass
-    try:
-        from shared.config.service import get_config_service
-
-        prefixes |= set(get_config_service().get_snapshot().command_extra_prefixes)
-    except Exception:
-        pass
-    for prefix in sorted(prefixes, key=len, reverse=True):
-        if text.startswith(prefix):
-            return text[len(prefix) :]
-    return None
-
-
-def _message_candidates(text: str) -> list[str]:
-    text = text.strip()
-    candidates = [text]
-    stripped = _strip_command_prefix(text)
-    if stripped is not None:
-        candidates.append(stripped.strip())
-    return candidates
 
 
 def normalize_steam_id(raw: str) -> str | None:
@@ -48,43 +22,34 @@ def normalize_steam_id(raw: str) -> str | None:
     return None
 
 
-def is_bind_command(text: str) -> bool:
-    for candidate in _message_candidates(text):
-        if candidate == BIND_TRIGGER:
-            return True
-        if candidate.startswith(BIND_TRIGGER) and len(candidate) > len(BIND_TRIGGER):
-            if candidate[len(BIND_TRIGGER)].isspace():
-                return True
-    return False
+def bind_trigger_hint(command_aliases: Dict[str, CommandAliasEntry]) -> str:
+    entry = resolve_entry("rust_player_bind", command_aliases)
+    return entry.triggers[0] if entry.triggers else "绑定"
 
 
-def parse_bind_steam_id(text: str) -> str | None:
-    """Match ``绑定 <steamid64>``; return steam id or None."""
-    for candidate in _message_candidates(text):
-        if not candidate.startswith(BIND_TRIGGER):
-            continue
-        if len(candidate) <= len(BIND_TRIGGER):
-            continue
-        if not candidate[len(BIND_TRIGGER)].isspace():
-            continue
-        steam_id = normalize_steam_id(candidate[len(BIND_TRIGGER) :].strip())
-        if steam_id is not None:
-            return steam_id
-    return None
+def is_bind_command(text: str, command_aliases: Dict[str, CommandAliasEntry]) -> bool:
+    return match_command_arg(text, "rust_player_bind", command_aliases) is not None
 
 
-def is_checkin_command(text: str) -> bool:
-    for candidate in _message_candidates(text):
-        if candidate == CHECKIN_TRIGGER:
-            return True
-    return False
+def parse_bind_steam_id(
+    text: str, command_aliases: Dict[str, CommandAliasEntry]
+) -> str | None:
+    arg = match_command_arg(text, "rust_player_bind", command_aliases)
+    if arg is None or not arg:
+        return None
+    return normalize_steam_id(arg)
 
 
-def is_points_query_command(text: str) -> bool:
-    for candidate in _message_candidates(text):
-        if candidate in POINTS_TRIGGERS:
-            return True
-    return False
+def is_checkin_command(
+    text: str, command_aliases: Dict[str, CommandAliasEntry]
+) -> bool:
+    return match_plain(text, "rust_player_checkin", command_aliases, is_tome=True)
+
+
+def is_points_query_command(
+    text: str, command_aliases: Dict[str, CommandAliasEntry]
+) -> bool:
+    return match_plain(text, "rust_player_points", command_aliases, is_tome=True)
 
 
 def normalize_checkin_points_range(min_points: int, max_points: int) -> tuple[int, int]:

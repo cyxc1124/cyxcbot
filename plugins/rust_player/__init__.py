@@ -6,6 +6,7 @@ from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
 from shared.config.rust_player import (
+    bind_trigger_hint,
     is_bind_command,
     is_checkin_command,
     is_points_query_command,
@@ -18,7 +19,7 @@ __plugin_meta__ = PluginMetadata(
     name="Rust 群积分",
     description="群内签到、积分查询与 SteamID 绑定",
     usage="""
-群聊 @机器人：
+群聊 @机器人（触发词可在 Web Admin → 设置 → 命令 中自定义）：
 - 绑定 <SteamID64>：绑定 Steam 账号（不可自助换绑）
 - 签到：每日签到获取随机积分
 - 我的积分 / 积分：查询本群积分
@@ -47,19 +48,23 @@ async def handle_rust_player(bot: Bot, event: GroupMessageEvent) -> None:
     if not event.is_tome():
         return
 
+    snap = get_config_service().get_snapshot()
+    command_aliases = snap.command_aliases
     text = event.get_plaintext().strip()
     group_id = str(event.group_id)
     user_id = str(event.user_id)
 
     if (
-        is_bind_command(text)
-        or parse_bind_steam_id(text) is not None
-        or is_checkin_command(text)
+        is_bind_command(text, command_aliases)
+        or parse_bind_steam_id(text, command_aliases) is not None
+        or is_checkin_command(text, command_aliases)
     ):
-        await _handle_bind_or_checkin(bot, event, text, group_id, user_id)
+        await _handle_bind_or_checkin(
+            bot, event, text, group_id, user_id, command_aliases
+        )
         return
 
-    if is_points_query_command(text):
+    if is_points_query_command(text, command_aliases):
         await _handle_points_query(group_id, user_id)
 
 
@@ -69,12 +74,14 @@ async def _handle_bind_or_checkin(
     text: str,
     group_id: str,
     user_id: str,
+    command_aliases,
 ) -> None:
-    steam_id = parse_bind_steam_id(text)
-    if is_bind_command(text):
+    steam_id = parse_bind_steam_id(text, command_aliases)
+    if is_bind_command(text, command_aliases):
         if steam_id is None:
+            trigger = bind_trigger_hint(command_aliases)
             await rust_player_cmd.finish(
-                "SteamID 格式无效，请发送：绑定 7656119xxxxxxxxxx"
+                f"SteamID 格式无效，请发送：{trigger} 7656119xxxxxxxxxx"
             )
         try:
             await store.create_steam_binding(user_id, steam_id)
@@ -87,7 +94,7 @@ async def _handle_bind_or_checkin(
     if steam_id is not None:
         return
 
-    if is_checkin_command(text):
+    if is_checkin_command(text, command_aliases):
         snap = get_config_service().get_snapshot()
         result = await store.perform_check_in(
             group_id,
