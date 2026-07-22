@@ -123,3 +123,22 @@ async def test_execute_rcon_command_connection_error_hides_password() -> None:
             timeout=0.5,
         )
     assert "s3cr3t" not in str(exc_info.value)
+
+
+def test_build_websocket_url_brackets_ipv6_literals() -> None:
+    from utils.rust_rcon.client import _build_websocket_url
+
+    assert _build_websocket_url("::1", 28016, "pass") == "ws://[::1]:28016/pass"
+    assert (
+        _build_websocket_url("2001:db8::1", 28016, "pass")
+        == "ws://[2001:db8::1]:28016/pass"
+    )
+    assert _build_websocket_url("[::1]", 28016, "pass") == "ws://[::1]:28016/pass"
+    assert (
+        _build_websocket_url("example.com", 28016, "pass")
+        == "ws://example.com:28016/pass"
+    )
+    assert (
+        _build_websocket_url("192.168.1.1", 28016, "pass")
+        == "ws://192.168.1.1:28016/pass"
+    )

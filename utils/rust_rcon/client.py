@@ -6,9 +6,10 @@ Protocol reference: https://github.com/Facepunch/webrcon
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 from typing import Any, Final
-from urllib.parse import quote
+from urllib.parse import quote, urlunparse
 
 import aiohttp
 
@@ -32,9 +33,23 @@ class RconAuthError(RconError):
     """RCON password rejected."""
 
 
-def _build_websocket_url(host: str, port: int, password: str) -> str:
+def _format_host_for_netloc(host: str) -> str:
     host = host.strip().strip("/")
-    return f"ws://{host}:{port}/{quote(password, safe='')}"
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return host
+    if isinstance(ip, ipaddress.IPv6Address):
+        return f"[{ip}]"
+    return str(ip)
+
+
+def _build_websocket_url(host: str, port: int, password: str) -> str:
+    netloc = f"{_format_host_for_netloc(host)}:{port}"
+    path = f"/{quote(password, safe='')}"
+    return urlunparse(("ws", netloc, path, "", "", ""))
 
 
 def _truncate_response(text: str) -> str:
