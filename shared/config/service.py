@@ -29,6 +29,11 @@ from shared.config.message_templates import (
     live_templates_from_settings,
 )
 from shared.config.nonebot_superusers import apply_nonebot_superusers
+from shared.config.rust_rcon import RustRconBindingRecord
+from shared.config.rust_rcon_policy import (
+    RustRconGroupPolicyRecord,
+    RustRconUserPolicyRecord,
+)
 from shared.config.types import AppConfigSnapshot
 from shared.db.models import (
     DynamicMonitorState,
@@ -37,6 +42,9 @@ from shared.db.models import (
     LinkParserUserPolicy,
     LiveMonitorState,
     LiveTarget,
+    RustRconBinding,
+    RustRconGroupPolicy,
+    RustRconUserPolicy,
     SystemSetting,
 )
 from shared.security.crypto import decrypt_value
@@ -146,6 +154,11 @@ class ConfigService:
             link_parser_user_policies = await self._load_link_parser_user_policies(
                 session
             )
+            rust_rcon_bindings = await self._load_rust_rcon_bindings(session)
+            rust_rcon_group_policies = await self._load_rust_rcon_group_policies(
+                session
+            )
+            rust_rcon_user_policies = await self._load_rust_rcon_user_policies(session)
             await self._prune_dynamic_monitor_states(session, set(dynamic_mapping))
             await self._prune_live_monitor_states(session, set(live_mapping))
 
@@ -215,6 +228,9 @@ class ConfigService:
             command_extra_prefixes=settings.get(
                 "command_extra_prefixes", list(DEFAULT_EXTRA_PREFIXES)
             ),
+            rust_rcon_bindings=rust_rcon_bindings,
+            rust_rcon_group_policies=rust_rcon_group_policies,
+            rust_rcon_user_policies=rust_rcon_user_policies,
         )
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
         logger.info(
@@ -442,6 +458,109 @@ class ConfigService:
             )
             for row in rows
         }
+
+    async def _load_rust_rcon_bindings(self, session) -> list[RustRconBindingRecord]:
+        stmt = select(RustRconBinding).options(
+            selectinload(RustRconBinding.allowed_users)
+        )
+        rows = (await session.scalars(stmt)).all()
+        bindings: list[RustRconBindingRecord] = []
+        for row in rows:
+            password = ""
+            if row.password_encrypted:
+                try:
+                    password = decrypt_value(row.password_encrypted)
+                except ValueError as exc:
+                    logger.error("Rust RCON 绑定 {} 密码解密失败: {}", row.alias, exc)
+            allowed_qq_ids = tuple(
+                sorted(
+                    {str(item.user_id) for item in row.allowed_users},
+                    key=lambda value: (not value.isdigit(), value),
+                )
+            )
+            bindings.append(
+                RustRconBindingRecord(
+                    id=row.id,
+                    alias=row.alias,
+                    host=row.host,
+                    port=row.port,
+                    password=password,
+                    enabled=row.enabled,
+                    name=row.name,
+                    allowed_qq_ids=allowed_qq_ids,
+                )
+            )
+        return bindings
+
+    async def _load_rust_rcon_group_policies(
+        self, session
+    ) -> dict[str, RustRconGroupPolicyRecord]:
+        rows = (await session.scalars(select(RustRconGroupPolicy))).all()
+        return {
+            row.group_id: RustRconGroupPolicyRecord(
+                group_id=row.group_id,
+                enabled=row.enabled,
+            )
+            for row in rows
+        }
+
+    async def _load_rust_rcon_user_policies(
+        self, session
+    ) -> dict[str, RustRconUserPolicyRecord]:
+        rows = (await session.scalars(select(RustRconUserPolicy))).all()
+        return {
+            row.user_id: RustRconUserPolicyRecord(
+                user_id=row.user_id,
+                enabled=row.enabled,
+                name=row.name,
+            )
+            for row in rows
+        }
+
+    async def upsert_rust_rcon_group_policy(
+        self, group_id: str, *, enabled: bool
+    ) -> None:
+        gid = str(group_id).strip()
+        session = get_session()
+        async with session.begin():
+            row = await session.get(RustRconGroupPolicy, gid)
+            if row:
+                row.enabled = enabled
+            else:
+                session.add(RustRconGroupPolicy(group_id=gid, enabled=enabled))
+
+    async def delete_rust_rcon_group_policy(self, group_id: str) -> None:
+        gid = str(group_id).strip()
+        session = get_session()
+        async with session.begin():
+            row = await session.get(RustRconGroupPolicy, gid)
+            if row:
+                await session.delete(row)
+
+    async def upsert_rust_rcon_user_policy(
+        self,
+        user_id: str,
+        *,
+        enabled: bool,
+        name: str | None = None,
+    ) -> None:
+        uid = str(user_id).strip()
+        session = get_session()
+        async with session.begin():
+            row = await session.get(RustRconUserPolicy, uid)
+            if row:
+                row.enabled = enabled
+                row.name = name
+            else:
+                session.add(RustRconUserPolicy(user_id=uid, enabled=enabled, name=name))
+
+    async def delete_rust_rcon_user_policy(self, user_id: str) -> None:
+        uid = str(user_id).strip()
+        session = get_session()
+        async with session.begin():
+            row = await session.get(RustRconUserPolicy, uid)
+            if row:
+                await session.delete(row)
 
     async def upsert_link_parser_group_policy(
         self,

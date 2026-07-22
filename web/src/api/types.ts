@@ -373,3 +373,76 @@ export interface RecentLogsResponse {
 export interface ApiError {
   detail: string
 }
+
+// Rust RCON
+export interface RustRconPasswordStatus {
+  configured: boolean
+  preview: string | null
+}
+
+export interface RustRconBinding {
+  id: number
+  alias: string
+  host: string
+  port: number
+  password: RustRconPasswordStatus
+  enabled: boolean
+  name: string | null
+  allowed_qq_ids: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface RustRconBindingCreate {
+  alias: string
+  host: string
+  port: number
+  password: string
+  enabled?: boolean
+  name?: string | null
+  allowed_qq_ids: string[]
+}
+
+export interface RustRconBindingUpdate {
+  alias?: string
+  host?: string
+  port?: number
+  password?: string
+  enabled?: boolean
+  name?: string | null
+  allowed_qq_ids?: string[]
+}
+
+export interface RustRconGroupPolicyItem {
+  group_id: string
+  group_name: string | null
+  member_count: number | null
+  customized: boolean
+  enabled: boolean
+}
+
+export interface RustRconGroupPolicyList {
+  groups: RustRconGroupPolicyItem[]
+  group_list_available: boolean
+}
+
+export interface RustRconGroupPolicyMutation {
+  item: RustRconGroupPolicyItem
+}
+
+export interface RustRconUserPolicyItem {
+  user_id: string
+  nickname: string | null
+  name: string | null
+  customized: boolean
+  enabled: boolean
+}
+
+export interface RustRconUserPolicyList {
+  users: RustRconUserPolicyItem[]
+  friend_list_available: boolean
+}
+
+export interface RustRconUserPolicyMutation {
+  item: RustRconUserPolicyItem
+}

@@ -18,6 +18,7 @@ import { SettingsAccountPage } from './pages/settings/SettingsAccount'
 import { SettingsBotPage } from './pages/settings/SettingsBot'
 import { SettingsCommandsPage } from './pages/settings/SettingsCommands'
 import { SettingsMonitorPage } from './pages/settings/SettingsMonitor'
+import { SettingsRustRconPage } from './pages/settings/SettingsRustRcon'
 import { SetupPage } from './pages/Setup'
 import { AuthGuard, PublicGuard, SetupGuard } from './routes/Guards'
 
@@ -49,6 +50,7 @@ export default function App() {
                   <Route path="account" element={<SettingsAccountPage />} />
                   <Route path="bot" element={<SettingsBotPage />} />
                   <Route path="commands" element={<SettingsCommandsPage />} />
+                  <Route path="rust-rcon" element={<SettingsRustRconPage />} />
                 </Route>
                 <Route path="logs" element={<LogsPage />} />
                 <Route path="about" element={<AboutPage />} />

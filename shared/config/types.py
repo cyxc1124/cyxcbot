@@ -15,6 +15,11 @@ from shared.config.message_templates import (
     LinkMessageTemplates,
     LiveMessageTemplates,
 )
+from shared.config.rust_rcon import RustRconBindingRecord
+from shared.config.rust_rcon_policy import (
+    RustRconGroupPolicyRecord,
+    RustRconUserPolicyRecord,
+)
 
 
 @dataclass
@@ -73,4 +78,11 @@ class AppConfigSnapshot:
     command_aliases: Dict[str, CommandAliasEntry] = field(default_factory=dict)
     command_extra_prefixes: List[str] = field(
         default_factory=lambda: list(DEFAULT_EXTRA_PREFIXES)
+    )
+    rust_rcon_bindings: List[RustRconBindingRecord] = field(default_factory=list)
+    rust_rcon_group_policies: Dict[str, RustRconGroupPolicyRecord] = field(
+        default_factory=dict
+    )
+    rust_rcon_user_policies: Dict[str, RustRconUserPolicyRecord] = field(
+        default_factory=dict
     )

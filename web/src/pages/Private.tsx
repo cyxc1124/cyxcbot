@@ -5,6 +5,7 @@ import { createRetryHandler } from '../utils/retryLoad'
 import { getPrivateMessagePolicy, updatePrivateMessagePolicy } from '../api/client'
 import type { Friend } from '../api/types'
 import { LinkParserUserPolicyTab } from '../components/LinkParserPolicyTabs'
+import { RustRconUserPolicyTab } from '../components/RustRconPolicyTabs'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
 import { SubPageTabs } from '../components/SubPageTabs'
@@ -18,7 +19,7 @@ import {
   isItemEnabled,
 } from '../utils/restrictPolicy'
 
-type PrivateTab = 'message' | 'link-users' | 'status'
+type PrivateTab = 'message' | 'link-users' | 'rcon-users' | 'status'
 
 export function PrivatePage() {
   const { showToast } = useToast()
@@ -55,6 +56,7 @@ export function PrivatePage() {
     message: '好友消息',
     'link-users': '好友链接解析',
     status: '状态查询',
+    'rcon-users': '好友 RCON',
   }
 
   const allUserIds = useMemo(() => users.map((u) => u.user_id), [users])
@@ -135,7 +137,7 @@ export function PrivatePage() {
         <div>
           <h2 className="text-2xl font-bold text-foreground">好友</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            管理好友消息响应范围、状态查询权限，以及链接解析的用户级开关
+            管理好友消息响应范围、Rust RCON、状态查询权限，以及链接解析的用户级开关
           </p>
         </div>
         {tab === 'message' && users.length > 0 && (
@@ -237,6 +239,12 @@ export function PrivatePage() {
       )}
 
       {tab === 'status' && <StatusCheckPolicyTab scope="friend" />}
+
+      {tab === 'rcon-users' && (
+        <div className="card">
+          <RustRconUserPolicyTab />
+        </div>
+      )}
     </div>
   )
 }

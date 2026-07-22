@@ -97,6 +97,12 @@ def infer_alembic_revision(probe: SchemaProbe) -> str:
     （例如 h8 的 dynamic_enabled 列）。因此新增会改表结构的 migration 时，仍需
     在此登记其可唯一识别的表/列特征，否则 upgrade 会因重复建表/加列而启动失败。
     """
+    if probe.table_exists("shared_db_rustrconbindingalloweduser"):
+        return "k1l2m3n4o5p6"
+    if probe.table_exists("shared_db_rustrcongrouppolicy"):
+        return "j0k1l2m3n4o5"
+    if probe.table_exists("shared_db_rustrconbinding"):
+        return "i9j0k1l2m3n4"
     if probe.column_exists("shared_db_linkparsergrouppolicy", "dynamic_enabled"):
         return "h8i9j0k1l2m3"
     if probe.table_exists("shared_db_groupspecialtitleusage"):

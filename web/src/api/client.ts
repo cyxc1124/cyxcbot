@@ -30,6 +30,13 @@ import type {
   MonitorActionResult,
   MonitorStatus,
   RecentLogsResponse,
+  RustRconBinding,
+  RustRconBindingCreate,
+  RustRconBindingUpdate,
+  RustRconGroupPolicyList,
+  RustRconGroupPolicyMutation,
+  RustRconUserPolicyList,
+  RustRconUserPolicyMutation,
   Settings,
   SettingsUpdate,
   SetupRequest,
@@ -268,6 +275,58 @@ export const updateLiveTarget = (id: number, data: LiveTargetUpdate) =>
 
 export const deleteLiveTarget = (id: number) =>
   request<void>(`/live-targets/${id}`, { method: 'DELETE' })
+
+// Rust RCON bindings
+export const getRustRconBindings = () =>
+  request<RustRconBinding[]>('/rust-rcon/bindings')
+
+export const createRustRconBinding = (data: RustRconBindingCreate) =>
+  request<RustRconBinding>('/rust-rcon/bindings', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const updateRustRconBinding = (id: number, data: RustRconBindingUpdate) =>
+  request<RustRconBinding>(`/rust-rcon/bindings/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+
+export const deleteRustRconBinding = (id: number) =>
+  request<void>(`/rust-rcon/bindings/${id}`, { method: 'DELETE' })
+
+export const getRustRconGroupPolicies = () =>
+  request<RustRconGroupPolicyList>('/rust-rcon/policies/groups')
+
+export const updateRustRconGroupPolicy = (groupId: string, enabled: boolean) =>
+  request<RustRconGroupPolicyMutation>(
+    `/rust-rcon/policies/groups/${encodeURIComponent(groupId)}`,
+    { method: 'PUT', body: JSON.stringify({ enabled }) },
+  )
+
+export const resetRustRconGroupPolicy = (groupId: string) =>
+  request<RustRconGroupPolicyMutation>(
+    `/rust-rcon/policies/groups/${encodeURIComponent(groupId)}`,
+    { method: 'DELETE' },
+  )
+
+export const getRustRconUserPolicies = () =>
+  request<RustRconUserPolicyList>('/rust-rcon/policies/users')
+
+export const updateRustRconUserPolicy = (
+  userId: string,
+  payload: { enabled: boolean; name?: string | null },
+) =>
+  request<RustRconUserPolicyMutation>(
+    `/rust-rcon/policies/users/${encodeURIComponent(userId)}`,
+    { method: 'PUT', body: JSON.stringify(payload) },
+  )
+
+export const resetRustRconUserPolicy = (userId: string) =>
+  request<RustRconUserPolicyMutation>(
+    `/rust-rcon/policies/users/${encodeURIComponent(userId)}`,
+    { method: 'DELETE' },
+  )
 
 // Groups
 export const getGroups = async (): Promise<Group[]> => {
