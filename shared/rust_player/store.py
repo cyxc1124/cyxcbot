@@ -57,9 +57,9 @@ async def create_steam_binding(user_id: str, steam_id: str) -> None:
     session = get_session()
     async with session.begin():
         await _ensure_steam_binding_available(session, user_id, steam_id)
-        session.add(RustSteamBinding(user_id=user_id, steam_id=steam_id))
         try:
             async with session.begin_nested():
+                session.add(RustSteamBinding(user_id=user_id, steam_id=steam_id))
                 await session.flush()
         except IntegrityError:
             await _ensure_steam_binding_available(session, user_id, steam_id)
@@ -136,16 +136,16 @@ async def perform_check_in(
                 already_checked_in=True,
             )
 
-        session.add(
-            RustCheckInRecord(
-                group_id=group_id,
-                user_id=user_id,
-                check_in_date=check_in_date,
-                points_earned=points_earned,
-            )
-        )
         try:
             async with session.begin_nested():
+                session.add(
+                    RustCheckInRecord(
+                        group_id=group_id,
+                        user_id=user_id,
+                        check_in_date=check_in_date,
+                        points_earned=points_earned,
+                    )
+                )
                 await session.flush()
         except IntegrityError:
             total = await _get_points_in_session(session, group_id, user_id)
