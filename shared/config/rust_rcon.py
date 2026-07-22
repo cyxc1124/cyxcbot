@@ -80,6 +80,58 @@ def is_qq_allowed_for_binding(binding: RustRconBindingRecord, user_id: str) -> b
     return qq in binding.allowed_qq_ids
 
 
+def _strip_command_prefix(text: str) -> str | None:
+    prefixes: set[str] = {"/"}
+    try:
+        from nonebot import get_driver
+
+        starts = {str(s) for s in get_driver().config.command_start if s}
+        if starts:
+            prefixes = starts
+    except Exception:
+        pass
+    try:
+        from shared.config.service import get_config_service
+
+        prefixes |= set(get_config_service().get_snapshot().command_extra_prefixes)
+    except Exception:
+        pass
+    for prefix in sorted(prefixes, key=len, reverse=True):
+        if text.startswith(prefix):
+            return text[len(prefix) :]
+    return None
+
+
+def match_rust_rcon_binding(
+    text: str,
+    bindings: list[RustRconBindingRecord],
+) -> tuple[RustRconBindingRecord, str] | None:
+    """Match ``[prefix]alias command``; return (binding, command) or None."""
+    enabled = [binding for binding in bindings if binding.enabled]
+    if not enabled:
+        return None
+
+    text = text.strip()
+    candidates = [text]
+    stripped = _strip_command_prefix(text)
+    if stripped is not None:
+        candidates.append(stripped.strip())
+
+    by_alias_len = sorted(enabled, key=lambda binding: len(binding.alias), reverse=True)
+    for candidate in candidates:
+        for binding in by_alias_len:
+            alias = binding.alias
+            if candidate == alias:
+                return binding, ""
+            if (
+                candidate.startswith(alias)
+                and len(candidate) > len(alias)
+                and candidate[len(alias)].isspace()
+            ):
+                return binding, candidate[len(alias) :].strip()
+    return None
+
+
 def alias_command_conflict(alias: str, snapshot: AppConfigSnapshot) -> str | None:
     """Return error if *alias* matches an enabled built-in command trigger."""
     for command_id in COMMAND_LABELS:

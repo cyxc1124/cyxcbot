@@ -38,12 +38,14 @@ export function SettingsRustRconPage() {
           <div>
             <h3 className="font-semibold text-foreground">Rust RCON</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              配置 Rust 服务器 RCON 连接，并为每个服务器定义群内触发词。在群内发送{' '}
+              配置 Rust 服务器 RCON 连接，并为每个服务器定义触发词。在已开启 RCON
+              的群/好友中发送{' '}
               <code className="font-mono text-xs">@机器人 触发词 命令</code>{' '}
-              即可向对应服务器发送 RCON 指令（插件逻辑后续接入）。
+              （私聊无需 @）即可向对应服务器发送 RCON 指令。
             </p>
             <p className="mt-2 text-xs text-muted-foreground">
-              示例：<code className="font-mono">@机器人 rcon1 status</code>、
+              协议为 Rust WebRCON（WebSocket，默认端口 28016）。示例：
+              <code className="font-mono">@机器人 rcon1 status</code>、
               <code className="font-mono">@机器人 rcon2 say 大家好</code>
             </p>
           </div>
