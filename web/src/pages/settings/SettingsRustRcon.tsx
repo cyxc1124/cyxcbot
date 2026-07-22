@@ -70,6 +70,7 @@ export function SettingsRustRconPage() {
                   <th className="pb-3 pr-4 font-medium">地址</th>
                   <th className="pb-3 pr-4 font-medium">端口</th>
                   <th className="pb-3 pr-4 font-medium">密码</th>
+                  <th className="pb-3 pr-4 font-medium">允许 QQ</th>
                   <th className="pb-3 pr-4 font-medium">启用</th>
                   <th className="pb-3 font-medium text-right">操作</th>
                 </tr>
@@ -98,6 +99,11 @@ export function SettingsRustRconPage() {
                         {binding.password.configured
                           ? binding.password.preview ?? '已配置'
                           : '未配置'}
+                      </td>
+                      <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">
+                        {binding.allowed_qq_ids.length > 0
+                          ? binding.allowed_qq_ids.join(', ')
+                          : '—'}
                       </td>
                       <td className="py-3.5 pr-4">
                         <div className="inline-flex items-center gap-2">
@@ -215,6 +221,25 @@ export function SettingsRustRconPage() {
                 disabled={saving}
                 onChange={(e) => setForm((prev) => ({ ...prev, port: e.target.value }))}
               />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="label" htmlFor="rcon-allowed-qq">
+                允许执行的 QQ 号
+              </label>
+              <textarea
+                id="rcon-allowed-qq"
+                className="input mt-1 min-h-24 font-mono text-sm"
+                placeholder="每行一个 QQ 号"
+                value={form.allowedQqText}
+                disabled={saving}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, allowedQqText: e.target.value }))
+                }
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                仅列表中的 QQ 号可触发此绑定的 RCON 命令；也支持逗号、分号分隔。
+              </p>
             </div>
 
             <div className="sm:col-span-2">

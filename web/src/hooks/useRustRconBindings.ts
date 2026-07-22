@@ -13,12 +13,35 @@ import { useMountAsync } from './useMountAsync'
 
 const DEFAULT_PORT = 28016
 
+function parseQqInput(raw: string): string[] {
+  return [
+    ...new Set(
+      raw
+        .split(/[\s,，;；]+/)
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0),
+    ),
+  ]
+}
+
+function formatQqInput(qqList: string[]): string {
+  return qqList.join('\n')
+}
+
+function validateQqList(list: string[]): string | null {
+  if (list.length === 0) return '请至少填写一个允许执行的 QQ 号'
+  const invalid = list.filter((qq) => !/^\d+$/.test(qq))
+  if (invalid.length > 0) return `QQ 号格式无效: ${invalid.join(', ')}`
+  return null
+}
+
 export interface RustRconFormState {
   alias: string
   name: string
   host: string
   port: string
   password: string
+  allowedQqText: string
   enabled: boolean
 }
 
@@ -29,6 +52,7 @@ export function emptyRustRconForm(): RustRconFormState {
     host: '',
     port: String(DEFAULT_PORT),
     password: '',
+    allowedQqText: '',
     enabled: true,
   }
 }
@@ -40,6 +64,7 @@ function formFromBinding(binding: RustRconBinding): RustRconFormState {
     host: binding.host,
     port: String(binding.port),
     password: '',
+    allowedQqText: formatQqInput(binding.allowed_qq_ids),
     enabled: binding.enabled,
   }
 }
@@ -116,6 +141,13 @@ export function useRustRconBindings() {
         return
       }
 
+      const allowedQqIds = parseQqInput(form.allowedQqText)
+      const qqError = validateQqList(allowedQqIds)
+      if (qqError) {
+        showToast('error', qqError)
+        return
+      }
+
       setSaving(true)
       try {
         if (editingId) {
@@ -125,6 +157,7 @@ export function useRustRconBindings() {
             port,
             enabled: form.enabled,
             name: name || null,
+            allowed_qq_ids: allowedQqIds,
             ...(form.password.trim() ? { password: form.password } : {}),
           }
           await updateRustRconBinding(editingId, payload)
@@ -137,6 +170,7 @@ export function useRustRconBindings() {
             password: form.password,
             enabled: form.enabled,
             name: name || null,
+            allowed_qq_ids: allowedQqIds,
           })
           showToast('success', 'RCON 绑定已创建')
         }

@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 from nonebot_plugin_orm import get_session
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from admin.deps import AdminUser, RequireSetup
 from admin.schemas.rust_rcon import (
@@ -16,10 +17,11 @@ from admin.schemas.rust_rcon import (
 from shared.config.rust_rcon import (
     alias_command_conflict,
     normalize_alias,
+    normalize_allowed_qq_ids,
     normalize_port,
 )
 from shared.config.service import get_config_service
-from shared.db.models import RustRconBinding
+from shared.db.models import RustRconBinding, RustRconBindingAllowedUser
 from shared.security.crypto import encrypt_value, mask_secret
 
 router = APIRouter(
@@ -36,6 +38,13 @@ def _password_status(encrypted: str, decrypted: str = "") -> RustRconPasswordSta
     return RustRconPasswordStatus(configured=True, preview=preview or "****")
 
 
+def _allowed_qq_ids(row: RustRconBinding) -> list[str]:
+    return sorted(
+        {str(item.user_id) for item in row.allowed_users},
+        key=lambda value: (not value.isdigit(), value),
+    )
+
+
 def _to_response(row: RustRconBinding, decrypted: str = "") -> RustRconBindingResponse:
     return RustRconBindingResponse(
         id=row.id,
@@ -45,9 +54,22 @@ def _to_response(row: RustRconBinding, decrypted: str = "") -> RustRconBindingRe
         password=_password_status(row.password_encrypted, decrypted),
         enabled=row.enabled,
         name=row.name,
+        allowed_qq_ids=_allowed_qq_ids(row),
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
+
+
+async def _sync_allowed_users(
+    session, row: RustRconBinding, allowed_qq_ids: list[str]
+) -> None:
+    normalized = normalize_allowed_qq_ids(allowed_qq_ids)
+    for item in list(row.allowed_users):
+        await session.delete(item)
+    await session.flush()
+    row.allowed_users = [
+        RustRconBindingAllowedUser(user_id=qq) for qq in normalized
+    ]
 
 
 def _ensure_alias_available(
@@ -73,7 +95,10 @@ def _ensure_alias_available(
 async def list_rust_rcon_bindings(_: AdminUser):
     session = get_session()
     async with session.begin():
-        rows = (await session.scalars(select(RustRconBinding))).all()
+        stmt = select(RustRconBinding).options(
+            selectinload(RustRconBinding.allowed_users)
+        )
+        rows = (await session.scalars(stmt)).all()
         snap = get_config_service().get_snapshot()
         by_id = {item.id: item.password for item in snap.rust_rcon_bindings}
         return [_to_response(row, by_id.get(row.id, "")) for row in rows]
@@ -88,6 +113,7 @@ async def create_rust_rcon_binding(body: RustRconBindingCreate, _: AdminUser):
     try:
         alias = normalize_alias(body.alias)
         port = normalize_port(body.port)
+        allowed_qq_ids = normalize_allowed_qq_ids(body.allowed_qq_ids)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
@@ -118,9 +144,12 @@ async def create_rust_rcon_binding(body: RustRconBindingCreate, _: AdminUser):
             enabled=body.enabled,
             name=(body.name.strip() if body.name else None) or None,
         )
+        row.allowed_users = [
+            RustRconBindingAllowedUser(user_id=qq) for qq in allowed_qq_ids
+        ]
         session.add(row)
         await session.flush()
-        await session.refresh(row)
+        await session.refresh(row, ["allowed_users"])
         response = _to_response(row, body.password)
 
     await get_config_service().reload()
@@ -133,7 +162,11 @@ async def update_rust_rcon_binding(
 ):
     session = get_session()
     async with session.begin():
-        row = await session.get(RustRconBinding, binding_id)
+        row = await session.scalar(
+            select(RustRconBinding)
+            .where(RustRconBinding.id == binding_id)
+            .options(selectinload(RustRconBinding.allowed_users))
+        )
         if not row:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="RCON 绑定不存在"
@@ -183,8 +216,16 @@ async def update_rust_rcon_binding(
         if body.name is not None:
             row.name = body.name.strip() or None
 
+        if body.allowed_qq_ids is not None:
+            try:
+                await _sync_allowed_users(session, row, body.allowed_qq_ids)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+                ) from exc
+
         await session.flush()
-        await session.refresh(row)
+        await session.refresh(row, ["allowed_users"])
         response = _to_response(row, decrypted)
 
     await get_config_service().reload()
