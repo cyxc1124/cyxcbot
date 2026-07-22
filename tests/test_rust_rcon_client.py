@@ -97,3 +97,14 @@ async def test_execute_rcon_command_auth_fail(webrcon_auth_fail_server) -> None:
     host, port = webrcon_auth_fail_server
     with pytest.raises(RconAuthError):
         await execute_rcon_command(host, port, "wrong", "status")
+
+
+def test_summarize_rcon_command_for_log_redacts_arguments() -> None:
+    from utils.rust_rcon.client import summarize_rcon_command_for_log
+
+    assert summarize_rcon_command_for_log("status") == "status"
+    assert (
+        summarize_rcon_command_for_log("rcon.password s3cr3t")
+        == "rcon.password <6 chars>"
+    )
+    assert summarize_rcon_command_for_log("  say hello  ") == "say <5 chars>"

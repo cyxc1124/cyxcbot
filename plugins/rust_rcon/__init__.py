@@ -8,7 +8,12 @@ from nonebot.plugin import PluginMetadata
 from shared.config.rust_rcon import is_qq_allowed_for_binding, match_rust_rcon_binding
 from shared.config.rust_rcon_policy import is_rust_rcon_enabled
 from shared.config.service import get_config_service
-from utils.rust_rcon.client import RconAuthError, RconError, execute_rcon_command
+from utils.rust_rcon.client import (
+    RconAuthError,
+    RconError,
+    execute_rcon_command,
+    summarize_rcon_command_for_log,
+)
 
 __plugin_meta__ = PluginMetadata(
     name="Rust RCON",
@@ -77,12 +82,12 @@ async def handle_rust_rcon(
         else f"user={event.user_id}"
     )
     logger.info(
-        "Rust RCON 请求: {} user={} binding={} alias={} command={!r}",
+        "Rust RCON 请求: {} user={} binding={} alias={} command={}",
         context,
         user_id,
         binding.id,
         binding.alias,
-        command,
+        summarize_rcon_command_for_log(command),
     )
 
     try:

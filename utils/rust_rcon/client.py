@@ -58,6 +58,17 @@ def _parse_response_message(data: dict[str, Any]) -> str:
     return _truncate_response(message if message else "(无输出)")
 
 
+def summarize_rcon_command_for_log(command: str) -> str:
+    """Audit-safe command summary; never log argument values."""
+    stripped = command.strip()
+    if not stripped:
+        return "(empty)"
+    name, _, rest = stripped.partition(" ")
+    if not rest:
+        return name
+    return f"{name} <{len(rest)} chars>"
+
+
 async def execute_rcon_command(
     host: str,
     port: int,
