@@ -30,14 +30,16 @@ class CheckInResult:
 
 async def get_steam_binding(user_id: str) -> RustSteamBinding | None:
     session = get_session()
-    return await session.get(RustSteamBinding, str(user_id).strip())
+    async with session.begin():
+        return await session.get(RustSteamBinding, str(user_id).strip())
 
 
 async def get_steam_binding_by_steam_id(steam_id: str) -> RustSteamBinding | None:
     session = get_session()
-    return await session.scalar(
-        select(RustSteamBinding).where(RustSteamBinding.steam_id == steam_id)
-    )
+    async with session.begin():
+        return await session.scalar(
+            select(RustSteamBinding).where(RustSteamBinding.steam_id == steam_id)
+        )
 
 
 async def _ensure_steam_binding_available(session, user_id: str, steam_id: str) -> None:
@@ -78,11 +80,12 @@ async def delete_steam_binding(user_id: str) -> bool:
 
 async def get_group_points(group_id: str, user_id: str) -> int:
     session = get_session()
-    row = await session.get(
-        RustPlayerPoints,
-        {"group_id": str(group_id).strip(), "user_id": str(user_id).strip()},
-    )
-    return row.points if row is not None else 0
+    async with session.begin():
+        row = await session.get(
+            RustPlayerPoints,
+            {"group_id": str(group_id).strip(), "user_id": str(user_id).strip()},
+        )
+        return row.points if row is not None else 0
 
 
 async def set_group_points(group_id: str, user_id: str, points: int) -> int:
@@ -189,36 +192,37 @@ async def _add_points_in_session(
 
 async def list_player_overview() -> list[dict[str, object]]:
     session = get_session()
-    points_rows = (
-        await session.scalars(
-            select(RustPlayerPoints).order_by(RustPlayerPoints.group_id)
-        )
-    ).all()
-    steam_rows = {
-        row.user_id: row.steam_id
-        for row in (await session.scalars(select(RustSteamBinding))).all()
-    }
-    items: list[dict[str, object]] = []
-    seen_users: set[str] = set()
-    for row in points_rows:
-        seen_users.add(row.user_id)
-        items.append(
-            {
-                "group_id": row.group_id,
-                "user_id": row.user_id,
-                "points": row.points,
-                "steam_id": steam_rows.get(row.user_id),
-            }
-        )
-    for user_id, steam_id in steam_rows.items():
-        if user_id in seen_users:
-            continue
-        items.append(
-            {
-                "group_id": None,
-                "user_id": user_id,
-                "points": 0,
-                "steam_id": steam_id,
-            }
-        )
-    return items
+    async with session.begin():
+        points_rows = (
+            await session.scalars(
+                select(RustPlayerPoints).order_by(RustPlayerPoints.group_id)
+            )
+        ).all()
+        steam_rows = {
+            row.user_id: row.steam_id
+            for row in (await session.scalars(select(RustSteamBinding))).all()
+        }
+        items: list[dict[str, object]] = []
+        seen_users: set[str] = set()
+        for row in points_rows:
+            seen_users.add(row.user_id)
+            items.append(
+                {
+                    "group_id": row.group_id,
+                    "user_id": row.user_id,
+                    "points": row.points,
+                    "steam_id": steam_rows.get(row.user_id),
+                }
+            )
+        for user_id, steam_id in steam_rows.items():
+            if user_id in seen_users:
+                continue
+            items.append(
+                {
+                    "group_id": None,
+                    "user_id": user_id,
+                    "points": 0,
+                    "steam_id": steam_id,
+                }
+            )
+        return items
