@@ -7,8 +7,8 @@ import pytest
 from shared.config.rust_player import (
     normalize_shop_item_id,
     normalize_shop_item_name,
-    normalize_shop_quantity,
     normalize_shop_points_cost,
+    normalize_shop_quantity,
 )
 
 
