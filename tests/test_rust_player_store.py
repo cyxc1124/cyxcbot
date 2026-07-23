@@ -14,7 +14,11 @@ from tests.db_test_helpers import ensure_real_db_modules, shared_sqlite_url
 if "nonebot_plugin_orm" not in sys.modules:
     sys.modules["nonebot_plugin_orm"] = MagicMock(get_session=MagicMock())
 
-from shared.rust_player.store import _ensure_steam_binding_available
+from shared.rust_player.store import (
+    TodayCheckInState,
+    _ensure_steam_binding_available,
+    needs_rcon_online_check,
+)
 
 _VALID_STEAM = "76561198000000000"
 _TEST_USER = "123456"
@@ -205,4 +209,33 @@ async def test_perform_check_in_without_bonus_eligibility(
     )
     assert second.already_checked_in is True
     assert second.bonus_pending is False
-    assert second.bonus_pending is False
+
+
+def test_needs_rcon_online_check() -> None:
+    assert (
+        needs_rcon_online_check(
+            TodayCheckInState(checked_in=False), bonus_eligible=True
+        )
+        is True
+    )
+    assert (
+        needs_rcon_online_check(
+            TodayCheckInState(checked_in=True, online_bonus_earned=0),
+            bonus_eligible=True,
+        )
+        is True
+    )
+    assert (
+        needs_rcon_online_check(
+            TodayCheckInState(checked_in=True, online_bonus_earned=50),
+            bonus_eligible=True,
+        )
+        is False
+    )
+    assert (
+        needs_rcon_online_check(
+            TodayCheckInState(checked_in=True, online_bonus_earned=0),
+            bonus_eligible=False,
+        )
+        is False
+    )

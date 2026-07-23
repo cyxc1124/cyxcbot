@@ -115,8 +115,11 @@ async def _handle_checkin(group_id: str, user_id: str) -> None:
         snap.rust_checkin_rcon_binding_id,
     )
     can_claim_online_bonus = binding is not None and rcon_binding is not None
+    bonus_eligible = can_claim_online_bonus and configured_bonus > 0
+    check_in_state = await store.get_today_check_in_state(group_id, user_id)
+    is_online = False
 
-    if can_claim_online_bonus:
+    if store.needs_rcon_online_check(check_in_state, bonus_eligible=bonus_eligible):
         try:
             status_text = await execute_rcon_command(
                 rcon_binding.host,

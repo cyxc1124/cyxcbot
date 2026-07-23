@@ -36,6 +36,21 @@ class CheckInResult:
         return self.base_points + self.online_bonus
 
 
+@dataclass(frozen=True)
+class TodayCheckInState:
+    checked_in: bool
+    online_bonus_earned: int = 0
+
+
+def needs_rcon_online_check(state: TodayCheckInState, *, bonus_eligible: bool) -> bool:
+    """Whether check-in should query RCON ``status`` for online bonus."""
+    if not bonus_eligible:
+        return False
+    if not state.checked_in:
+        return True
+    return state.online_bonus_earned == 0
+
+
 async def _detach_binding(session, row: RustSteamBinding) -> RustSteamBinding:
     await session.refresh(row)
     session.expunge(row)
@@ -128,7 +143,7 @@ async def set_group_points(group_id: str, user_id: str, points: int) -> int:
             return points
 
 
-async def has_checked_in_today(group_id: str, user_id: str) -> bool:
+async def get_today_check_in_state(group_id: str, user_id: str) -> TodayCheckInState:
     async with get_session() as session:
         async with session.begin():
             row = await session.get(
@@ -139,7 +154,12 @@ async def has_checked_in_today(group_id: str, user_id: str) -> bool:
                     "check_in_date": today_check_in_date(),
                 },
             )
-            return row is not None
+            if row is None:
+                return TodayCheckInState(checked_in=False)
+            return TodayCheckInState(
+                checked_in=True,
+                online_bonus_earned=row.online_bonus_earned,
+            )
 
 
 async def perform_check_in(
