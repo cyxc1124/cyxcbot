@@ -6,14 +6,14 @@ import math
 from dataclasses import dataclass
 
 from nonebot_plugin_orm import get_session
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from shared.config.rust_player import (
     normalize_shop_item_id,
     normalize_shop_item_name,
-    normalize_shop_quantity,
     normalize_shop_points_cost,
+    normalize_shop_quantity,
 )
 from shared.db.models import RustPlayerPoints, RustShopItem
 
@@ -95,15 +95,31 @@ async def find_shop_item_by_identifier(identifier: str) -> RustShopItem | None:
             )
             if by_item_id is not None:
                 return await _detach_shop_item(session, by_item_id)
-            by_name = await session.scalar(
-                select(RustShopItem).where(
-                    RustShopItem.name == key,
-                    RustShopItem.enabled.is_(True),
+            by_name_rows = (
+                await session.scalars(
+                    select(RustShopItem).where(
+                        RustShopItem.name == key,
+                        RustShopItem.enabled.is_(True),
+                    )
                 )
-            )
-            if by_name is not None:
-                return await _detach_shop_item(session, by_name)
+            ).all()
+            if len(by_name_rows) > 1:
+                raise ValueError("存在多个同名商品，请使用物品 ID 兑换")
+            if len(by_name_rows) == 1:
+                return await _detach_shop_item(session, by_name_rows[0])
             return None
+
+
+async def _enabled_name_taken(
+    session, name: str, *, exclude_id: int | None = None
+) -> bool:
+    stmt = select(RustShopItem.id).where(
+        RustShopItem.name == name,
+        RustShopItem.enabled.is_(True),
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(RustShopItem.id != exclude_id)
+    return (await session.scalar(stmt.limit(1))) is not None
 
 
 async def create_shop_item(
@@ -120,6 +136,8 @@ async def create_shop_item(
     sort_order = int(sort_order)
     async with get_session() as session:
         async with session.begin():
+            if enabled and await _enabled_name_taken(session, name):
+                raise ValueError("已存在同名的启用商品")
             row = RustShopItem(
                 name=name,
                 item_id=item_id,
@@ -149,8 +167,14 @@ async def update_shop_item(
             row = await session.get(RustShopItem, int(shop_id))
             if row is None:
                 raise ValueError("商品不存在")
+            next_name = normalize_shop_item_name(name) if name is not None else row.name
+            next_enabled = bool(enabled) if enabled is not None else row.enabled
+            if next_enabled and await _enabled_name_taken(
+                session, next_name, exclude_id=row.id
+            ):
+                raise ValueError("已存在同名的启用商品")
             if name is not None:
-                row.name = normalize_shop_item_name(name)
+                row.name = next_name
             if item_id is not None:
                 row.item_id = normalize_shop_item_id(item_id)
             if points_cost is not None:
@@ -177,7 +201,7 @@ async def delete_shop_item(shop_id: int) -> bool:
 
 
 async def deduct_group_points(group_id: str, user_id: str, amount: int) -> int:
-    """Deduct points atomically. Returns remaining balance."""
+    """Deduct points with a conditional UPDATE. Returns remaining balance."""
     amount = int(amount)
     if amount <= 0:
         raise ValueError("扣除积分必须为正数")
@@ -185,20 +209,32 @@ async def deduct_group_points(group_id: str, user_id: str, amount: int) -> int:
     user_id = str(user_id).strip()
     async with get_session() as session:
         async with session.begin():
+            result = await session.execute(
+                update(RustPlayerPoints)
+                .where(
+                    RustPlayerPoints.group_id == group_id,
+                    RustPlayerPoints.user_id == user_id,
+                    RustPlayerPoints.points >= amount,
+                )
+                .values(points=RustPlayerPoints.points - amount)
+            )
+            if result.rowcount == 1:
+                row = await session.get(
+                    RustPlayerPoints,
+                    {"group_id": group_id, "user_id": user_id},
+                )
+                assert row is not None
+                return row.points
             row = await session.get(
                 RustPlayerPoints,
                 {"group_id": group_id, "user_id": user_id},
             )
             current = row.points if row is not None else 0
-            if current < amount:
-                raise ValueError(f"积分不足，需要 {amount} 积分，当前 {current} 积分")
-            row.points = current - amount
-            await session.flush()
-            return row.points
+            raise ValueError(f"积分不足，需要 {amount} 积分，当前 {current} 积分")
 
 
 async def add_group_points(group_id: str, user_id: str, amount: int) -> int:
-    """Add points (e.g. refund after failed RCON). Returns new balance."""
+    """Add points with a conditional UPDATE. Returns new balance."""
     amount = int(amount)
     if amount <= 0:
         raise ValueError("增加积分必须为正数")
@@ -206,17 +242,23 @@ async def add_group_points(group_id: str, user_id: str, amount: int) -> int:
     user_id = str(user_id).strip()
     async with get_session() as session:
         async with session.begin():
-            row = await session.get(
-                RustPlayerPoints,
-                {"group_id": group_id, "user_id": user_id},
-            )
-            if row is None:
-                row = RustPlayerPoints(
-                    group_id=group_id, user_id=user_id, points=amount
+            result = await session.execute(
+                update(RustPlayerPoints)
+                .where(
+                    RustPlayerPoints.group_id == group_id,
+                    RustPlayerPoints.user_id == user_id,
                 )
-                session.add(row)
-            else:
-                row.points += amount
+                .values(points=RustPlayerPoints.points + amount)
+            )
+            if result.rowcount == 1:
+                row = await session.get(
+                    RustPlayerPoints,
+                    {"group_id": group_id, "user_id": user_id},
+                )
+                assert row is not None
+                return row.points
+            row = RustPlayerPoints(group_id=group_id, user_id=user_id, points=amount)
+            session.add(row)
             await session.flush()
             return row.points
 

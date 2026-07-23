@@ -357,22 +357,28 @@ async def _handle_shop_redeem(
         await rust_player_cmd.finish("游戏服务器认证失败，积分已退回，请稍后重试。")
     except RconError:
         logger.warning(
-            "Rust 兑换 RCON 失败: binding={} user={} item={}",
+            "Rust 兑换 RCON 结果未知: binding={} user={} item={} qty={}",
             rcon_binding.id,
             user_id,
             result.item.item_id,
+            result.quantity,
         )
-        await shop_store.add_group_points(group_id, user_id, result.total_cost)
-        await rust_player_cmd.finish("连接游戏服务器失败，积分已退回，请稍后重试。")
+        await rust_player_cmd.finish(
+            "无法确认物品是否发放成功（连接或响应异常），积分未退回。"
+            "如未收到物品请联系管理员核实。"
+        )
     except Exception:
         logger.opt(exception=True).error(
-            "Rust 兑换 RCON 未预期错误: binding={} user={} item={}",
+            "Rust 兑换 RCON 未预期错误: binding={} user={} item={} qty={}",
             rcon_binding.id,
             user_id,
             result.item.item_id,
+            result.quantity,
         )
-        await shop_store.add_group_points(group_id, user_id, result.total_cost)
-        await rust_player_cmd.finish("发放物品时发生错误，积分已退回，请稍后重试。")
+        await rust_player_cmd.finish(
+            "发放物品时发生错误，无法确认是否成功，积分未退回。"
+            "如未收到物品请联系管理员核实。"
+        )
 
     logger.info(
         "Rust 商品兑换: group={} user={} item={} qty={} cost={} remaining={}",
