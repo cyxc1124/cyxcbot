@@ -10,7 +10,6 @@ from admin.schemas.rust_player import RustPlayerPointsUpdateRequest
 from shared.config.command_aliases import normalize_command_aliases
 from shared.config.rust_player import (
     is_bind_command,
-    is_bind_confirm_command,
     is_checkin_command,
     is_points_query_command,
     normalize_checkin_online_bonus,
@@ -67,13 +66,6 @@ def test_is_bind_command(monkeypatch) -> None:
     assert is_bind_command("绑定", DEFAULT_ALIASES)
     assert is_bind_command(f"绑定 {_VALID_STEAM}", DEFAULT_ALIASES)
     assert not is_bind_command("绑定x", DEFAULT_ALIASES)
-
-
-def test_is_bind_confirm_command(monkeypatch) -> None:
-    _patch_prefixes(monkeypatch)
-    assert is_bind_confirm_command("确认绑定", DEFAULT_ALIASES)
-    assert is_bind_confirm_command("/确认绑定", DEFAULT_ALIASES)
-    assert not is_bind_confirm_command("绑定", DEFAULT_ALIASES)
 
 
 def test_is_checkin_command(monkeypatch) -> None:
@@ -189,5 +181,4 @@ def test_rust_player_triggers_conflict_with_rcon_alias() -> None:
     snap = AppConfigSnapshot(command_aliases=DEFAULT_ALIASES)
     assert alias_command_conflict("签到", snap) is not None
     assert alias_command_conflict("绑定", snap) is not None
-    assert alias_command_conflict("确认绑定", snap) is not None
     assert alias_command_conflict("积分", snap) is not None

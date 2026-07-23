@@ -29,19 +29,8 @@ def bind_trigger_hint(command_aliases: Dict[str, CommandAliasEntry]) -> str:
     return entry.triggers[0] if entry.triggers else "绑定"
 
 
-def bind_confirm_trigger_hint(command_aliases: Dict[str, CommandAliasEntry]) -> str:
-    entry = resolve_entry("rust_player_bind_confirm", command_aliases)
-    return entry.triggers[0] if entry.triggers else "确认绑定"
-
-
 def is_bind_command(text: str, command_aliases: Dict[str, CommandAliasEntry]) -> bool:
     return match_command_arg(text, "rust_player_bind", command_aliases) is not None
-
-
-def is_bind_confirm_command(
-    text: str, command_aliases: Dict[str, CommandAliasEntry]
-) -> bool:
-    return match_plain(text, "rust_player_bind_confirm", command_aliases, is_tome=True)
 
 
 def parse_bind_steam_id(

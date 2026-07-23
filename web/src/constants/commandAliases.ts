@@ -13,7 +13,6 @@ export type CoreCommandId =
 
 export type RustPlayerCommandId =
   | 'rust_player_bind'
-  | 'rust_player_bind_confirm'
   | 'rust_player_checkin'
   | 'rust_player_points'
 
@@ -85,15 +84,9 @@ export const RUST_PLAYER_COMMAND_FIELDS: CommandField[] = [
   {
     id: 'rust_player_bind',
     label: 'SteamID 绑定',
-    description: '群成员绑定 SteamID64（仅群聊，不可自助换绑）。已配置 RCON 时需游戏内昵称验证码。',
+    description: '群成员绑定 SteamID64（仅群聊，不可自助换绑）。',
     defaultTriggers: ['绑定'],
-    hint: '发送时需在触发词后加 SteamID64，例如“绑定 76561198000000000”；随后按提示完成「确认绑定」',
-  },
-  {
-    id: 'rust_player_bind_confirm',
-    label: 'SteamID 绑定确认',
-    description: '完成游戏内昵称验证码校验后确认 SteamID 绑定（仅群聊）。',
-    defaultTriggers: ['确认绑定'],
+    hint: '发送时需在触发词后加 SteamID64，例如“绑定 76561198000000000”',
   },
   {
     id: 'rust_player_checkin',

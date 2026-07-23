@@ -6,30 +6,24 @@ from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
 from shared.config.rust_player import (
-    bind_confirm_trigger_hint,
     bind_trigger_hint,
     is_bind_command,
-    is_bind_confirm_command,
     is_checkin_command,
     is_points_query_command,
     parse_bind_steam_id,
     resolve_checkin_rcon_binding,
 )
 from shared.config.service import get_config_service
-from shared.rust_player import bind_pending, rcon_online_cache, store
+from shared.rust_player import rcon_online_cache, store
 from utils.rust_rcon.client import RconAuthError, RconError, execute_rcon_command
-from utils.rust_rcon.status import (
-    is_steam_id_online,
-    player_display_name_contains_code,
-)
+from utils.rust_rcon.status import is_steam_id_online
 
 __plugin_meta__ = PluginMetadata(
     name="Rust 群积分",
     description="群内签到、积分查询与 SteamID 绑定",
     usage="""
 群聊 @机器人（触发词可在 Web Admin → Rust 远控 → 群管命令 中自定义）：
-- 绑定 <SteamID64>：绑定 Steam 账号（已配置 RCON 时需游戏内昵称验证码 + 确认绑定）
-- 确认绑定：完成 RCON 验证后确认 SteamID 绑定
+- 绑定 <SteamID64>：绑定 Steam 账号（不可自助换绑）
 - 签到：每日签到获取随机积分；已绑定 SteamID 且在游戏内在线时可领取/补领在线加成
 - 我的积分 / 积分：查询本群积分
 """,
@@ -65,10 +59,6 @@ async def handle_rust_player(bot: Bot, event: GroupMessageEvent) -> None:
     text = event.get_plaintext().strip()
     group_id = str(event.group_id)
     user_id = str(event.user_id)
-
-    if is_bind_confirm_command(text, command_aliases):
-        await _handle_bind_confirm(group_id, user_id, command_aliases)
-        return
 
     if (
         is_bind_command(text, command_aliases)
@@ -153,29 +143,6 @@ async def _handle_bind_or_checkin(
             await rust_player_cmd.finish(
                 f"SteamID 格式无效，请发送：{trigger} 7656119xxxxxxxxxx"
             )
-        await _handle_bind_start(group_id, user_id, steam_id, command_aliases)
-        return
-
-    if steam_id is not None:
-        return
-
-    if is_checkin_command(text, command_aliases):
-        await _handle_checkin(group_id, user_id)
-        return
-
-
-async def _handle_bind_start(
-    group_id: str,
-    user_id: str,
-    steam_id: str,
-    command_aliases,
-) -> None:
-    snap = get_config_service().get_snapshot()
-    rcon_binding = resolve_checkin_rcon_binding(
-        snap.rust_rcon_bindings,
-        snap.rust_checkin_rcon_binding_id,
-    )
-    if rcon_binding is None:
         try:
             await store.create_steam_binding(user_id, steam_id)
         except ValueError as exc:
@@ -184,91 +151,12 @@ async def _handle_bind_start(
         await rust_player_cmd.finish(f"SteamID 绑定成功：{steam_id}")
         return
 
-    existing = await store.get_steam_binding(user_id)
-    if existing is not None:
-        await rust_player_cmd.finish("你已绑定 SteamID，如需更换请联系管理员")
+    if steam_id is not None:
+        return
 
-    existing_steam = await store.get_steam_binding_by_steam_id(steam_id)
-    if existing_steam is not None:
-        await rust_player_cmd.finish("该 SteamID 已被其他 QQ 号绑定")
-
-    verify_code = bind_pending.create_pending_bind(user_id, steam_id)
-    confirm_trigger = bind_confirm_trigger_hint(command_aliases)
-    await rust_player_cmd.finish(
-        f"请在游戏内将昵称改为包含验证码 {verify_code}，保持该 SteamID 在线后发送："
-        f"{confirm_trigger}"
-    )
-
-
-async def _handle_bind_confirm(
-    group_id: str,
-    user_id: str,
-    command_aliases,
-) -> None:
-    pending = bind_pending.consume_pending_bind(user_id)
-    if pending is None:
-        bind_trigger = bind_trigger_hint(command_aliases)
-        await rust_player_cmd.finish(
-            f"没有待确认的绑定，请先发送：{bind_trigger} <SteamID64>"
-        )
-
-    snap = get_config_service().get_snapshot()
-    rcon_binding = resolve_checkin_rcon_binding(
-        snap.rust_rcon_bindings,
-        snap.rust_checkin_rcon_binding_id,
-    )
-    if rcon_binding is None:
-        await rust_player_cmd.finish("当前未配置可用的 RCON 绑定，无法完成验证")
-
-    try:
-        status_text = await _fetch_status_text(rcon_binding)
-    except RconAuthError:
-        logger.warning(
-            "Rust 绑定确认 RCON 认证失败: binding={} user={}",
-            rcon_binding.id,
-            user_id,
-        )
-        bind_pending.restore_pending_bind(user_id, pending)
-        await rust_player_cmd.finish("无法连接游戏服务器验证，请稍后重试")
-    except RconError:
-        logger.warning(
-            "Rust 绑定确认 RCON 失败: binding={} user={}",
-            rcon_binding.id,
-            user_id,
-        )
-        bind_pending.restore_pending_bind(user_id, pending)
-        await rust_player_cmd.finish("无法连接游戏服务器验证，请稍后重试")
-    except Exception:
-        logger.opt(exception=True).error(
-            "Rust 绑定确认 RCON 未预期错误: binding={} user={}",
-            rcon_binding.id,
-            user_id,
-        )
-        bind_pending.restore_pending_bind(user_id, pending)
-        await rust_player_cmd.finish("无法连接游戏服务器验证，请稍后重试")
-
-    if not is_steam_id_online(status_text, pending.steam_id):
-        bind_pending.restore_pending_bind(user_id, pending)
-        await rust_player_cmd.finish(
-            f"未检测到 SteamID {pending.steam_id} 在线，请进入游戏并保持昵称包含验证码 "
-            f"{pending.verify_code} 后重试"
-        )
-
-    if not player_display_name_contains_code(
-        status_text, pending.steam_id, pending.verify_code
-    ):
-        bind_pending.restore_pending_bind(user_id, pending)
-        await rust_player_cmd.finish(
-            f"游戏内昵称未包含验证码 {pending.verify_code}，请修改昵称后重试"
-        )
-
-    try:
-        await store.create_steam_binding(user_id, pending.steam_id)
-    except ValueError as exc:
-        await rust_player_cmd.finish(str(exc))
-
-    logger.info("Rust Steam 绑定: group={} user={}", group_id, user_id)
-    await rust_player_cmd.finish(f"SteamID 绑定成功：{pending.steam_id}")
+    if is_checkin_command(text, command_aliases):
+        await _handle_checkin(group_id, user_id)
+        return
 
 
 async def _handle_checkin(group_id: str, user_id: str) -> None:
