@@ -8,6 +8,7 @@ import re
 _GIVE_FAILURE_PATTERNS: tuple[tuple[str, str], ...] = (
     ("couldn't find player", "玩家不在线"),
     ("invalid item", "物品 ID 无效"),
+    ("inventory full", "背包已满"),
 )
 
 _QUANTITY_TOKEN_RE = re.compile(r"^\d+$")

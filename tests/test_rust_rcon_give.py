@@ -19,6 +19,12 @@ def test_parse_give_rejection_invalid_item() -> None:
     assert parse_give_rejection("Invalid Item!") == "物品 ID 无效"
 
 
+def test_parse_give_rejection_inventory_full() -> None:
+    assert (
+        parse_give_rejection("Couldn't give item (inventory full?)") == "背包已满"
+    )
+
+
 def test_parse_give_rejection_success() -> None:
     assert parse_give_rejection("giving wood x5") is None
     assert parse_give_rejection("") is None
