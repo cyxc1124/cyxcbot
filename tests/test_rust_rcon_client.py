@@ -279,6 +279,36 @@ async def test_execute_rcon_command_timeout_is_end_to_end(
 
 
 @pytest.mark.asyncio
+async def test_execute_rcon_command_timeout_applies_to_send(
+    webrcon_server,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import aiohttp
+
+    from utils.rust_rcon.client import RCON_TIMEOUT, RconError
+
+    host, port = webrcon_server
+    original_send = aiohttp.ClientWebSocketResponse.send_str
+
+    async def stalled_send(
+        self: aiohttp.ClientWebSocketResponse,
+        data: str,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        await asyncio.Event().wait()
+        await original_send(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(aiohttp.ClientWebSocketResponse, "send_str", stalled_send)
+
+    started = asyncio.get_running_loop().time()
+    with pytest.raises(RconError, match=RCON_TIMEOUT):
+        await execute_rcon_command(host, port, "pass", "status", timeout=0.5)
+    elapsed = asyncio.get_running_loop().time() - started
+    assert elapsed < 0.75
+
+
+@pytest.mark.asyncio
 async def test_execute_rcon_command_auth_fail(webrcon_auth_fail_server) -> None:
     host, port = webrcon_auth_fail_server
     with pytest.raises(RconAuthError):

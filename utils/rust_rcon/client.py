@@ -132,7 +132,13 @@ async def _exchange_rcon_command(
             )
         except asyncio.TimeoutError as exc:
             raise RconError(RCON_TIMEOUT) from exc
-        await ws.send_str(_build_command_packet(command, REQUEST_IDENTIFIER))
+        try:
+            await asyncio.wait_for(
+                ws.send_str(_build_command_packet(command, REQUEST_IDENTIFIER)),
+                timeout=_remaining(),
+            )
+        except asyncio.TimeoutError as exc:
+            raise RconError(RCON_TIMEOUT) from exc
         while True:
             try:
                 msg = await asyncio.wait_for(ws.receive(), timeout=_remaining())
