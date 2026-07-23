@@ -90,14 +90,16 @@ async def _resolve_checkin_online(
     steam_id: str,
     rcon_binding,
     needs_rcon: bool,
+    allow_cache: bool = True,
 ) -> tuple[bool, bool]:
     """Return ``(is_online, verification_available)``."""
     if not needs_rcon:
         return False, True
 
-    cached = rcon_online_cache.get_cached_checkin_online(user_id)
-    if cached is not None:
-        return cached, True
+    if allow_cache:
+        cached = rcon_online_cache.get_cached_checkin_online(user_id)
+        if cached is not None:
+            return cached, True
 
     try:
         status_text = await _fetch_status_text(rcon_binding)
@@ -124,7 +126,8 @@ async def _resolve_checkin_online(
         return False, False
 
     is_online = is_steam_id_online(status_text, steam_id)
-    rcon_online_cache.set_cached_checkin_online(user_id, is_online)
+    if allow_cache:
+        rcon_online_cache.set_cached_checkin_online(user_id, is_online)
     return is_online, True
 
 
@@ -182,6 +185,9 @@ async def _handle_checkin(group_id: str, user_id: str) -> None:
             steam_id=binding.steam_id,
             rcon_binding=rcon_binding,
             needs_rcon=True,
+            allow_cache=rcon_online_cache.should_cache_checkin_online_result(
+                already_checked_in=check_in_state.checked_in
+            ),
         )
 
     if (
