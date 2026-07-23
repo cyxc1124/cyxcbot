@@ -215,9 +215,7 @@ async def _handle_checkin(group_id: str, user_id: str) -> None:
     if bonus_eligible and not online_verification_available:
         message += "。当前无法验证游戏在线状态，请稍后重试领取在线加成"
     elif bonus_eligible and not is_online:
-        message += (
-            f"。进入游戏后再次签到可领取在线加成 {configured_bonus} 积分"
-        )
+        message += f"。进入游戏后再次签到可领取在线加成 {configured_bonus} 积分"
     await rust_player_cmd.finish(message)
 
 
