@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Probe Rust RCON plugin chain without QQ messages.
 
+可在生产 bot 主机上使用（排查绑定、策略、商城 giveto 等）；推荐 ``run`` 子命令，
+凭据来自数据库，无需在命令行传 RCON 密码。
+
 Mirrors ``plugins/rust_rcon/__init__.py``: policy → alias match → QQ whitelist
 → ``execute_rcon_command``.
 
