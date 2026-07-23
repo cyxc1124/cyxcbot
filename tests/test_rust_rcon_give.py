@@ -25,6 +25,10 @@ def test_parse_give_rejection_inventory_full() -> None:
     )
 
 
+def test_parse_give_rejection_give_item_other_reason() -> None:
+    assert parse_give_rejection("Couldn't give item (unknown reason)") == "物品发放失败"
+
+
 def test_parse_give_rejection_success() -> None:
     assert parse_give_rejection("giving wood x5") is None
     assert parse_give_rejection("") is None
