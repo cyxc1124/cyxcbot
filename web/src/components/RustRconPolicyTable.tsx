@@ -26,7 +26,8 @@ export function RustRconPolicyHint({ scope }: { scope: 'group' | 'user' }) {
   return (
     <div className="space-y-1">
       <p className="text-sm text-muted-foreground">
-        在下方为每个{scope === 'group' ? '群' : '好友'}单独开启 Rust 远控命令；默认关闭。
+        在下方为每个{scope === 'group' ? '群' : '好友'}单独开启 Rust RCON 总开关；默认关闭。
+        开启后可使用远控命令、签到、积分查询、商城与 SteamID 绑定等群管功能；关闭后相关指令将被静默忽略。
         服务器连接与触发词在「Rust 远控 → 服务器绑定」中配置。
       </p>
       {scope === 'group' && (

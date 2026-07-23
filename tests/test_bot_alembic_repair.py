@@ -250,3 +250,59 @@ def test_repair_creates_alembic_version_table_when_missing(tmp_path: Path) -> No
         revision = conn.execute(text("SELECT version_num FROM alembic_version")).first()
     verify.dispose()
     assert revision == ("b2c3d4e5f6a7",)
+
+
+def _create_rust_shop_table(conn) -> None:
+    conn.execute(
+        text(
+            "CREATE TABLE shared_db_rustshopitem ("
+            "id INTEGER PRIMARY KEY, name TEXT NOT NULL, item_id TEXT NOT NULL, "
+            "points_cost INTEGER NOT NULL, enabled BOOLEAN NOT NULL DEFAULT 1, "
+            "sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT, updated_at TEXT)"
+        )
+    )
+
+
+def test_infer_revision_detects_o5_enabled_name_index() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        _create_rust_shop_table(conn)
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX uq_rust_shop_enabled_name "
+                "ON shared_db_rustshopitem (name) WHERE enabled = 1"
+            )
+        )
+    assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "o5p6q7r8s9t0"
+    engine.dispose()
+
+
+def test_infer_revision_rust_shop_table_without_index_is_n4() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        _create_rust_shop_table(conn)
+    assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "n4o5p6q7r8s9"
+    engine.dispose()
+
+
+def test_repair_stamps_o5_when_enabled_name_index_exists(tmp_path: Path) -> None:
+    db_path = tmp_path / "o5-schema.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        _create_base_schema(conn)
+        _create_rust_shop_table(conn)
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX uq_rust_shop_enabled_name "
+                "ON shared_db_rustshopitem (name) WHERE enabled = 1"
+            )
+        )
+    engine.dispose()
+
+    repair_alembic_version_if_needed(f"sqlite+aiosqlite:///{db_path}")
+
+    verify = create_engine(f"sqlite:///{db_path}")
+    with verify.connect() as conn:
+        revision = conn.execute(text("SELECT version_num FROM alembic_version")).first()
+    verify.dispose()
+    assert revision == ("o5p6q7r8s9t0",)

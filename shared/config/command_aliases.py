@@ -39,6 +39,8 @@ COMMAND_DEFAULTS: Dict[str, List[str]] = {
     "rust_player_bind": ["绑定"],
     "rust_player_checkin": ["签到"],
     "rust_player_points": ["我的积分", "积分"],
+    "rust_player_shop_list": ["商品列表"],
+    "rust_player_shop_redeem": ["兑换商品"],
 }
 
 COMMAND_LABELS: Dict[str, str] = {
@@ -53,6 +55,8 @@ COMMAND_LABELS: Dict[str, str] = {
     "rust_player_bind": "Rust SteamID 绑定",
     "rust_player_checkin": "Rust 群签到",
     "rust_player_points": "Rust 积分查询",
+    "rust_player_shop_list": "Rust 商品列表",
+    "rust_player_shop_redeem": "Rust 商品兑换",
 }
 
 

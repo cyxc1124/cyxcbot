@@ -41,6 +41,7 @@ export function RustPlayersTab() {
           <p className="mt-1 text-sm text-muted-foreground">
             群成员发送 <code className="font-mono text-xs">@机器人 签到</code>{' '}
             时随机获得基础积分（每日一次）；已绑定 SteamID 且在游戏内在线时可领取在线加成，离线签到后上线可再次签到补领。
+            签到、绑定、查积分、商城等 Rust 群管指令均需本群开启 Rust RCON，未开启时会被静默忽略。
           </p>
         </div>
 

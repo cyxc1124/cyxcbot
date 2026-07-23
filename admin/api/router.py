@@ -15,6 +15,7 @@ from admin.api.v1 import (
     rust_players,
     rust_rcon,
     rust_rcon_policies,
+    rust_shop,
     settings,
     setup,
     targets,
@@ -36,4 +37,5 @@ api_router.include_router(link_parser.router)
 api_router.include_router(rust_rcon.router)
 api_router.include_router(rust_rcon_policies.router)
 api_router.include_router(rust_players.router)
+api_router.include_router(rust_shop.router)
 api_router.include_router(logs.router)
