@@ -5,10 +5,13 @@ from __future__ import annotations
 import pytest
 
 from shared.config.rust_player import (
+    MAX_SQL_INTEGER,
+    MIN_SQL_INTEGER,
     normalize_shop_item_id,
     normalize_shop_item_name,
     normalize_shop_points_cost,
     normalize_shop_quantity,
+    normalize_shop_sort_order,
     shop_item_integrity_error_message,
 )
 
@@ -33,6 +36,16 @@ def test_normalize_shop_points_cost() -> None:
     assert normalize_shop_points_cost(10) == 10
     with pytest.raises(ValueError, match="必须大于 0"):
         normalize_shop_points_cost(0)
+
+
+def test_normalize_shop_sort_order() -> None:
+    assert normalize_shop_sort_order(0) == 0
+    assert normalize_shop_sort_order(MAX_SQL_INTEGER) == MAX_SQL_INTEGER
+    assert normalize_shop_sort_order(MIN_SQL_INTEGER) == MIN_SQL_INTEGER
+    with pytest.raises(ValueError, match="排序值"):
+        normalize_shop_sort_order(MAX_SQL_INTEGER + 1)
+    with pytest.raises(ValueError, match="排序值"):
+        normalize_shop_sort_order(MIN_SQL_INTEGER - 1)
 
 
 def test_normalize_shop_quantity() -> None:

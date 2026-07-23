@@ -14,6 +14,7 @@ from shared.config.rust_player import (
     normalize_shop_item_name,
     normalize_shop_points_cost,
     normalize_shop_quantity,
+    normalize_shop_sort_order,
     shop_item_integrity_error_message,
 )
 from shared.db.models import RustPlayerPoints, RustShopItem
@@ -138,7 +139,7 @@ async def create_shop_item(
     name = normalize_shop_item_name(name)
     item_id = normalize_shop_item_id(item_id)
     points_cost = normalize_shop_points_cost(points_cost)
-    sort_order = int(sort_order)
+    sort_order = normalize_shop_sort_order(sort_order)
     async with get_session() as session:
         async with session.begin():
             if enabled and await _enabled_name_taken(session, name):
@@ -187,7 +188,7 @@ async def update_shop_item(
             if enabled is not None:
                 row.enabled = bool(enabled)
             if sort_order is not None:
-                row.sort_order = int(sort_order)
+                row.sort_order = normalize_shop_sort_order(sort_order)
             try:
                 await session.flush()
             except IntegrityError as exc:

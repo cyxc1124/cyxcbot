@@ -16,6 +16,8 @@ from shared.config.rust_rcon import RustRconBindingRecord
 STEAM_ID64_RE = re.compile(r"^7656119\d{10}$")
 MAX_RUST_PLAYER_POINTS = 1_000_000
 MAX_SHOP_REDEEM_QUANTITY = 1000
+MIN_SQL_INTEGER = -(2**31)
+MAX_SQL_INTEGER = 2**31 - 1
 
 
 def normalize_steam_id(raw: str) -> str | None:
@@ -179,6 +181,13 @@ def normalize_shop_points_cost(points_cost: int) -> int:
     value = normalize_player_points(points_cost)
     if value <= 0:
         raise ValueError("所需积分必须大于 0")
+    return value
+
+
+def normalize_shop_sort_order(sort_order: int) -> int:
+    value = int(sort_order)
+    if value < MIN_SQL_INTEGER or value > MAX_SQL_INTEGER:
+        raise ValueError(f"排序值必须在 {MIN_SQL_INTEGER} 到 {MAX_SQL_INTEGER} 之间")
     return value
 
 

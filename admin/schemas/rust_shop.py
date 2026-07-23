@@ -11,6 +11,7 @@ from shared.config.rust_player import (
     normalize_shop_item_id,
     normalize_shop_item_name,
     normalize_shop_points_cost,
+    normalize_shop_sort_order,
 )
 
 
@@ -51,6 +52,11 @@ class RustShopItemCreateRequest(BaseModel):
     def validate_points_cost(cls, value: int) -> int:
         return normalize_shop_points_cost(value)
 
+    @field_validator("sort_order")
+    @classmethod
+    def validate_sort_order(cls, value: int) -> int:
+        return normalize_shop_sort_order(value)
+
 
 class RustShopItemUpdateRequest(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=128)
@@ -79,3 +85,10 @@ class RustShopItemUpdateRequest(BaseModel):
         if value is None:
             return None
         return normalize_shop_points_cost(value)
+
+    @field_validator("sort_order")
+    @classmethod
+    def validate_sort_order(cls, value: Optional[int]) -> Optional[int]:
+        if value is None:
+            return None
+        return normalize_shop_sort_order(value)
