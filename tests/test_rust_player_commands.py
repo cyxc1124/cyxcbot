@@ -12,12 +12,15 @@ from shared.config.rust_player import (
     is_bind_command,
     is_checkin_command,
     is_points_query_command,
+    normalize_checkin_online_bonus,
     normalize_checkin_points_range,
+    normalize_checkin_rcon_binding_id,
     normalize_player_points,
     normalize_steam_id,
     parse_bind_steam_id,
+    resolve_checkin_rcon_binding,
 )
-from shared.config.rust_rcon import alias_command_conflict
+from shared.config.rust_rcon import RustRconBindingRecord, alias_command_conflict
 from shared.config.types import AppConfigSnapshot
 
 _VALID_STEAM = "76561198000000000"
@@ -105,6 +108,73 @@ def test_rust_player_points_schema_uses_chinese_limit_error() -> None:
             user_id="654321",
             points=1_000_001,
         )
+
+
+def test_normalize_checkin_online_bonus() -> None:
+    assert normalize_checkin_online_bonus(50) == 50
+    with pytest.raises(ValueError, match="1000000"):
+        normalize_checkin_online_bonus(1_000_001)
+
+
+def test_resolve_checkin_rcon_binding() -> None:
+    bindings = [
+        RustRconBindingRecord(
+            id=1,
+            alias="a",
+            host="1.1.1.1",
+            port=28016,
+            password="x",
+            enabled=False,
+        ),
+        RustRconBindingRecord(
+            id=2,
+            alias="b",
+            host="2.2.2.2",
+            port=28016,
+            password="x",
+            enabled=True,
+        ),
+        RustRconBindingRecord(
+            id=3,
+            alias="c",
+            host="3.3.3.3",
+            port=28016,
+            password="x",
+            enabled=True,
+        ),
+    ]
+    assert resolve_checkin_rcon_binding(bindings, 0).id == 2
+    assert resolve_checkin_rcon_binding(bindings, 3).id == 3
+    assert resolve_checkin_rcon_binding(bindings, 99) is None
+    assert resolve_checkin_rcon_binding([], 0) is None
+
+
+def test_resolve_checkin_rcon_binding_picks_lowest_id_when_unsorted() -> None:
+    bindings = [
+        RustRconBindingRecord(
+            id=3,
+            alias="c",
+            host="3.3.3.3",
+            port=28016,
+            password="x",
+            enabled=True,
+        ),
+        RustRconBindingRecord(
+            id=2,
+            alias="b",
+            host="2.2.2.2",
+            port=28016,
+            password="x",
+            enabled=True,
+        ),
+    ]
+    assert resolve_checkin_rcon_binding(bindings, 0).id == 2
+
+
+def test_normalize_checkin_rcon_binding_id() -> None:
+    assert normalize_checkin_rcon_binding_id(0) == 0
+    with pytest.raises(ValueError):
+        normalize_checkin_rcon_binding_id(-1)
 
 
 def test_rust_player_triggers_conflict_with_rcon_alias() -> None:

@@ -3,10 +3,15 @@ import {
   deleteRustSteamBinding,
   getRustCheckInConfig,
   getRustPlayerOverview,
+  getRustRconBindings,
   updateRustCheckInConfig,
   updateRustPlayerPoints,
 } from '../api/client'
-import type { RustCheckInConfig, RustPlayerOverviewItem } from '../api/types'
+import type {
+  RustCheckInConfig,
+  RustPlayerOverviewItem,
+  RustRconBinding,
+} from '../api/types'
 import { useToast } from '../contexts/ToastContext'
 import { formatApiError } from '../utils/apiError'
 import { createRetryHandler } from '../utils/retryLoad'
@@ -32,9 +37,15 @@ export function useRustPlayers() {
   const { showToast } = useToast()
   const [items, setItems] = useState<RustPlayerOverviewItem[]>([])
   const [checkInConfig, setCheckInConfig] = useState<RustCheckInConfig | null>(null)
+  const [rconBindings, setRconBindings] = useState<RustRconBinding[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [configForm, setConfigForm] = useState({ min_points: '1', max_points: '10' })
+  const [configForm, setConfigForm] = useState({
+    min_points: '1',
+    max_points: '10',
+    online_bonus_points: '50',
+    rcon_binding_id: '0',
+  })
   const [savingConfig, setSavingConfig] = useState(false)
   const [savingRowKeys, setSavingRowKeys] = useState<Set<string>>(new Set())
   const [unbindingUserIds, setUnbindingUserIds] = useState<Set<string>>(new Set())
@@ -42,15 +53,19 @@ export function useRustPlayers() {
 
   const load = useCallback(async () => {
     try {
-      const [overview, config] = await Promise.all([
+      const [overview, config, bindings] = await Promise.all([
         getRustPlayerOverview(),
         getRustCheckInConfig(),
+        getRustRconBindings(),
       ])
       setItems(overview.items)
       setCheckInConfig(config)
+      setRconBindings(bindings)
       setConfigForm({
         min_points: String(config.min_points),
         max_points: String(config.max_points),
+        online_bonus_points: String(config.online_bonus_points),
+        rcon_binding_id: String(config.rcon_binding_id),
       })
       setDraftPoints(
         Object.fromEntries(
@@ -72,6 +87,8 @@ export function useRustPlayers() {
   const handleSaveConfig = useCallback(async () => {
     const minPoints = Number.parseInt(configForm.min_points, 10)
     const maxPoints = Number.parseInt(configForm.max_points, 10)
+    const onlineBonusPoints = Number.parseInt(configForm.online_bonus_points, 10)
+    const rconBindingId = Number.parseInt(configForm.rcon_binding_id, 10)
     const minError = pointsValidationError(minPoints)
     if (minError) {
       showToast('error', minError)
@@ -82,8 +99,17 @@ export function useRustPlayers() {
       showToast('error', maxError)
       return
     }
+    const bonusError = pointsValidationError(onlineBonusPoints)
+    if (bonusError) {
+      showToast('error', bonusError)
+      return
+    }
     if (minPoints > maxPoints) {
       showToast('error', '最小积分不能大于最大积分')
+      return
+    }
+    if (!Number.isFinite(rconBindingId) || !Number.isInteger(rconBindingId) || rconBindingId < 0) {
+      showToast('error', 'RCON 绑定 ID 必须为非负整数')
       return
     }
 
@@ -92,6 +118,8 @@ export function useRustPlayers() {
       const config = await updateRustCheckInConfig({
         min_points: minPoints,
         max_points: maxPoints,
+        online_bonus_points: onlineBonusPoints,
+        rcon_binding_id: rconBindingId,
       })
       setCheckInConfig(config)
       showToast('success', '签到积分范围已保存')
@@ -167,6 +195,7 @@ export function useRustPlayers() {
   return {
     items,
     checkInConfig,
+    rconBindings,
     loading,
     error,
     retryLoad,

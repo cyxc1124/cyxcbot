@@ -87,6 +87,8 @@ SETTING_KEYS = {
     ),
     "rust_checkin_points_min": ("1", int),
     "rust_checkin_points_max": ("10", int),
+    "rust_checkin_online_bonus_points": ("50", int),
+    "rust_checkin_rcon_binding_id": ("0", int),
 }
 
 for key, default in MESSAGE_TEMPLATE_KEYS.items():
@@ -241,6 +243,12 @@ class ConfigService:
             rust_rcon_user_policies=rust_rcon_user_policies,
             rust_checkin_points_min=settings.get("rust_checkin_points_min", 1),
             rust_checkin_points_max=settings.get("rust_checkin_points_max", 10),
+            rust_checkin_online_bonus_points=settings.get(
+                "rust_checkin_online_bonus_points", 50
+            ),
+            rust_checkin_rcon_binding_id=settings.get(
+                "rust_checkin_rcon_binding_id", 0
+            ),
         )
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
         warn_rust_rcon_command_alias_conflicts(
@@ -316,8 +324,12 @@ class ConfigService:
                     result[key] = max(10, min(3600, parsed))
                 elif key == "group_special_title_daily_limit":
                     result[key] = max(0, min(100, parsed))
-                elif key.startswith("rust_checkin_points"):
+                elif key.startswith("rust_checkin_points") or key.startswith(
+                    "rust_checkin_online_bonus"
+                ):
                     result[key] = max(0, min(MAX_RUST_PLAYER_POINTS, parsed))
+                elif key == "rust_checkin_rcon_binding_id":
+                    result[key] = max(0, parsed)
                 else:
                     result[key] = max(30, min(3600, parsed))
             elif typ is bool:
@@ -475,8 +487,10 @@ class ConfigService:
         }
 
     async def _load_rust_rcon_bindings(self, session) -> list[RustRconBindingRecord]:
-        stmt = select(RustRconBinding).options(
-            selectinload(RustRconBinding.allowed_users)
+        stmt = (
+            select(RustRconBinding)
+            .options(selectinload(RustRconBinding.allowed_users))
+            .order_by(RustRconBinding.id)
         )
         rows = (await session.scalars(stmt)).all()
         bindings: list[RustRconBindingRecord] = []

@@ -40,13 +40,24 @@ class RustPlayerPointsUpdateResponse(BaseModel):
 class RustCheckInConfigResponse(BaseModel):
     min_points: int
     max_points: int
+    online_bonus_points: int
+    rcon_binding_id: int
 
 
 class RustCheckInConfigUpdateRequest(BaseModel):
     min_points: int
     max_points: int
+    online_bonus_points: int
+    rcon_binding_id: int
 
-    @field_validator("min_points", "max_points")
+    @field_validator("min_points", "max_points", "online_bonus_points")
     @classmethod
     def validate_points(cls, value: int) -> int:
         return normalize_player_points(value)
+
+    @field_validator("rcon_binding_id")
+    @classmethod
+    def validate_rcon_binding_id(cls, value: int) -> int:
+        from shared.config.rust_player import normalize_checkin_rcon_binding_id
+
+        return normalize_checkin_rcon_binding_id(value)
