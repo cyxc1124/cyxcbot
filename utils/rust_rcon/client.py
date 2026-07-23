@@ -110,23 +110,32 @@ async def _exchange_rcon_command(
     url: str,
     command: str,
     *,
-    connect_timeout: float,
-    read_timeout: float,
+    timeout: float,
     truncate: bool,
 ) -> str:
-    client_timeout = aiohttp.ClientTimeout(connect=connect_timeout)
-    session = aiohttp.ClientSession(timeout=client_timeout)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+
+    def _remaining() -> float:
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            raise RconError(RCON_TIMEOUT)
+        return remaining
+
+    session = aiohttp.ClientSession()
     ws: aiohttp.ClientWebSocketResponse | None = None
     try:
-        ws = await session.ws_connect(url)
+        try:
+            ws = await asyncio.wait_for(
+                session.ws_connect(url),
+                timeout=_remaining(),
+            )
+        except asyncio.TimeoutError as exc:
+            raise RconError(RCON_TIMEOUT) from exc
         await ws.send_str(_build_command_packet(command, REQUEST_IDENTIFIER))
-        deadline = asyncio.get_running_loop().time() + read_timeout
         while True:
-            remaining = deadline - asyncio.get_running_loop().time()
-            if remaining <= 0:
-                raise RconError(RCON_TIMEOUT)
             try:
-                msg = await asyncio.wait_for(ws.receive(), timeout=remaining)
+                msg = await asyncio.wait_for(ws.receive(), timeout=_remaining())
             except asyncio.TimeoutError as exc:
                 raise RconError(RCON_TIMEOUT) from exc
             if msg.type == aiohttp.WSMsgType.TEXT:
@@ -163,8 +172,7 @@ async def execute_rcon_command(
         return await _exchange_rcon_command(
             url,
             command,
-            connect_timeout=timeout,
-            read_timeout=timeout,
+            timeout=timeout,
             truncate=truncate_response,
         )
     except aiohttp.WSServerHandshakeError as exc:
