@@ -160,6 +160,24 @@ def _policy_ok(snap, *, group_id: str | None, user_id: str, private: bool) -> bo
     return ok
 
 
+def _is_giveto_command(command: str) -> bool:
+    token = command.strip().split(maxsplit=1)[0].lower() if command.strip() else ""
+    return token == "giveto"
+
+
+def _finish_rcon_success(command: str, response: str) -> int:
+    """Return probe exit code after a successful RCON round-trip."""
+    if not _is_giveto_command(command):
+        return 0
+    from utils.rust_rcon.give import parse_give_rejection
+
+    rejection = parse_give_rejection(response)
+    if rejection is not None:
+        print(f"[GIVE REJECTED] {rejection}")
+        return 1
+    return 0
+
+
 async def _run_plugin_chain(args: argparse.Namespace) -> int:
     snap = await _load_snapshot()
 
@@ -234,13 +252,7 @@ async def _run_plugin_chain(args: argparse.Namespace) -> int:
     label = binding.name or binding.alias
     print(f"[RESPONSE] [{label}]")
     print(result)
-    from utils.rust_rcon.give import parse_give_rejection
-
-    rejection = parse_give_rejection(result)
-    if rejection is not None:
-        print(f"[GIVE REJECTED] {rejection}")
-        return 1
-    return 0
+    return _finish_rcon_success(command, result)
 
 
 async def _run_direct(args: argparse.Namespace) -> int:
@@ -273,13 +285,7 @@ async def _run_direct(args: argparse.Namespace) -> int:
 
     print("[RESPONSE]")
     print(result)
-    from utils.rust_rcon.give import parse_give_rejection
-
-    rejection = parse_give_rejection(result)
-    if rejection is not None:
-        print(f"[GIVE REJECTED] {rejection}")
-        return 1
-    return 0
+    return _finish_rcon_success(command, result)
 
 
 def _build_parser() -> argparse.ArgumentParser:

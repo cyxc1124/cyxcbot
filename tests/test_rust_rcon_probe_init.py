@@ -28,3 +28,17 @@ def test_init_orm_sync_rejects_running_event_loop() -> None:
             probe._init_orm_sync()
 
     asyncio.run(_inside_loop())
+
+
+def test_is_giveto_command() -> None:
+    probe = _load_probe_module()
+    assert probe._is_giveto_command("giveto 76561198000000000 wood 1")
+    assert probe._is_giveto_command("  GIVETO x y z")
+    assert not probe._is_giveto_command("status")
+    assert not probe._is_giveto_command("inventory.giveto player item 1")
+
+
+def test_finish_rcon_success_skips_give_rejection_for_non_giveto() -> None:
+    probe = _load_probe_module()
+    assert probe._finish_rcon_success("status", "Couldn't find player") == 0
+    assert probe._finish_rcon_success("giveto x y z", "Couldn't find player") == 1
