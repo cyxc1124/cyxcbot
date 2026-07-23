@@ -20,9 +20,7 @@ def test_parse_give_rejection_invalid_item() -> None:
 
 
 def test_parse_give_rejection_inventory_full() -> None:
-    assert (
-        parse_give_rejection("Couldn't give item (inventory full?)") == "背包已满"
-    )
+    assert parse_give_rejection("Couldn't give item (inventory full?)") == "背包已满"
 
 
 def test_parse_give_rejection_give_item_other_reason() -> None:
