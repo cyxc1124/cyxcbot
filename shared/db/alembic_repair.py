@@ -40,6 +40,8 @@ class SchemaProbe(Protocol):
 
     def column_exists(self, table: str, column: str) -> bool: ...
 
+    def index_exists(self, table: str, index_name: str) -> bool: ...
+
 
 class _InspectorProbe:
     def __init__(self, inspector: Inspector) -> None:
@@ -52,6 +54,13 @@ class _InspectorProbe:
         if not self.table_exists(table):
             return False
         return column in {col["name"] for col in self._inspector.get_columns(table)}
+
+    def index_exists(self, table: str, index_name: str) -> bool:
+        if not self.table_exists(table):
+            return False
+        return index_name in {
+            index["name"] for index in self._inspector.get_indexes(table)
+        }
 
 
 def sync_database_url(url: str) -> str:
@@ -98,6 +107,10 @@ def infer_alembic_revision(probe: SchemaProbe) -> str:
     在此登记其可唯一识别的表/列特征，否则 upgrade 会因重复建表/加列而启动失败。
     """
     if probe.table_exists("shared_db_rustshopitem"):
+        if probe.index_exists(
+            "shared_db_rustshopitem", "uq_rust_shop_enabled_name"
+        ):
+            return "o5p6q7r8s9t0"
         return "n4o5p6q7r8s9"
     if probe.column_exists("shared_db_rustcheckinrecord", "online_bonus_earned"):
         return "m3n4o5p6q7r8"
