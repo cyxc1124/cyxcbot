@@ -126,6 +126,7 @@ async def _handle_checkin(group_id: str, user_id: str) -> None:
                 rcon_binding.port,
                 rcon_binding.password,
                 "status",
+                truncate_response=False,
             )
             is_online = is_steam_id_online(status_text, binding.steam_id)
         except RconAuthError:

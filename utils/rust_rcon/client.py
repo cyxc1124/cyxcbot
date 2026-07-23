@@ -69,12 +69,19 @@ def _build_command_packet(command: str, identifier: int) -> str:
     )
 
 
-def _parse_response_message(data: dict[str, Any]) -> str:
+def _extract_response_message(data: dict[str, Any]) -> str:
     message = data.get("Message", "")
     if not isinstance(message, str):
         message = str(message)
     message = message.strip()
-    return _truncate_response(message if message else "(无输出)")
+    return message if message else "(无输出)"
+
+
+def _parse_response_message(data: dict[str, Any], *, truncate: bool) -> str:
+    message = _extract_response_message(data)
+    if truncate:
+        return _truncate_response(message)
+    return message
 
 
 def summarize_rcon_command_for_log(command: str) -> str:
@@ -89,7 +96,7 @@ def summarize_rcon_command_for_log(command: str) -> str:
 
 
 async def _exchange_rcon_command(
-    url: str, command: str, *, connect_timeout: float
+    url: str, command: str, *, connect_timeout: float, truncate: bool
 ) -> str:
     client_timeout = aiohttp.ClientTimeout(connect=connect_timeout)
     async with aiohttp.ClientSession(timeout=client_timeout) as session:
@@ -100,7 +107,7 @@ async def _exchange_rcon_command(
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     data = json.loads(msg.data)
                     if data.get("Identifier") == REQUEST_IDENTIFIER:
-                        return _parse_response_message(data)
+                        return _parse_response_message(data, truncate=truncate)
                     continue
                 if msg.type in (
                     aiohttp.WSMsgType.CLOSE,
@@ -118,13 +125,16 @@ async def execute_rcon_command(
     command: str,
     *,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    truncate_response: bool = True,
 ) -> str:
     """Send *command* via Rust WebRCON and return the server response text."""
     url = _build_websocket_url(host, port, password)
 
     try:
         return await asyncio.wait_for(
-            _exchange_rcon_command(url, command, connect_timeout=timeout),
+            _exchange_rcon_command(
+                url, command, connect_timeout=timeout, truncate=truncate_response
+            ),
             timeout=timeout,
         )
     except aiohttp.WSServerHandshakeError as exc:
