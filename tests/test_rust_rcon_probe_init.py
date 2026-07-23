@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -102,8 +103,7 @@ def test_policy_ok_blocks_disabled_private_message() -> None:
 
 def test_orm_lifespan_startup_shutdown(monkeypatch) -> None:
     probe = _load_probe_module()
-    probe._setup_runtime()
-    probe._init_orm_sync()
+    probe._ORM_SYNC_INITIALIZED = True
 
     calls = {"startup": 0, "shutdown": 0}
 
@@ -116,7 +116,11 @@ def test_orm_lifespan_startup_shutdown(monkeypatch) -> None:
 
     import nonebot
 
-    monkeypatch.setattr(nonebot.get_driver(), "_lifespan", _FakeLifespan())
+    monkeypatch.setattr(
+        nonebot,
+        "get_driver",
+        lambda: SimpleNamespace(_lifespan=_FakeLifespan()),
+    )
 
     async def _run() -> None:
         await probe._start_orm_lifespan()
