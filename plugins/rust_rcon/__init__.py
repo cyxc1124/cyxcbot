@@ -68,6 +68,7 @@ async def handle_rust_rcon(
 
     binding, command = matched
     user_id = str(event.user_id)
+    # 绑定级 QQ 白名单仅约束此处任意 RCON 命令；积分商城 giveto 见 rust_player._handle_shop_redeem。
     if not is_qq_allowed_for_binding(binding, user_id):
         return
 

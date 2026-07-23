@@ -332,6 +332,7 @@ async def _handle_shop_redeem(
             f"兑换前请先绑定 SteamID，发送：{trigger} 7656119xxxxxxxxxx"
         )
 
+    # allowed_qq_ids 仅限制 rust_rcon 插件的任意 RCON 命令；商城兑换走群管流程，不受该白名单约束。
     rcon_binding = resolve_checkin_rcon_binding(
         snap.rust_rcon_bindings,
         snap.rust_checkin_rcon_binding_id,
