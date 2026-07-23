@@ -31,7 +31,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-_ORM_INITIALIZED = False
+_ORM_SYNC_INITIALIZED = False
+_CONFIG_LOADED = False
 
 
 def _ensure_sqlite_parent_dir(url: str) -> None:
@@ -75,13 +76,17 @@ def _setup_runtime() -> None:
         os.environ["SQLALCHEMY_DATABASE_URL"] = "sqlite+aiosqlite:///data/cyxcbot.db"
 
 
-async def _load_snapshot():
-    global _ORM_INITIALIZED
-    _setup_runtime()
-    if _ORM_INITIALIZED:
-        from shared.config.service import get_config_service
-
-        return get_config_service().get_snapshot()
+def _init_orm_sync() -> None:
+    """Sync ORM/Alembic setup; must run before ``asyncio.run()`` (see ``bot.py``)."""
+    global _ORM_SYNC_INITIALIZED
+    if _ORM_SYNC_INITIALIZED:
+        return
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        raise RuntimeError("_init_orm_sync() must run before asyncio.run()")
 
     import nonebot
 
@@ -100,10 +105,20 @@ async def _load_snapshot():
     )
     nonebot.load_plugin("nonebot_plugin_orm")
     import shared.db.models  # noqa: F401
+
+    _ORM_SYNC_INITIALIZED = True
+
+
+async def _load_snapshot():
+    global _CONFIG_LOADED
+    if not _ORM_SYNC_INITIALIZED:
+        raise RuntimeError("call _init_orm_sync() before asyncio.run()")
+
     from shared.config.service import get_config_service
 
-    await get_config_service().load()
-    _ORM_INITIALIZED = True
+    if not _CONFIG_LOADED:
+        await get_config_service().load()
+        _CONFIG_LOADED = True
     return get_config_service().get_snapshot()
 
 
@@ -308,31 +323,38 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-async def _async_main(argv: list[str] | None = None) -> int:
-    _setup_runtime()
-    parser = _build_parser()
-    args = parser.parse_args(argv)
+def _validate_run_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    if not args.private and not args.group_id:
+        parser.error("run requires --group-id unless --private is set")
+    if args.binding_id is None and not args.text:
+        parser.error("run requires --text or --binding-id")
+    if args.binding_id is not None and not args.command:
+        parser.error("run with --binding-id requires --command")
 
+
+async def _async_main(args: argparse.Namespace) -> int:
     if args.cmd == "list":
         snap = await _load_snapshot()
         _print_bindings(snap)
         return 0
     if args.cmd == "run":
-        if not args.private and not args.group_id:
-            parser.error("run requires --group-id unless --private is set")
-        if args.binding_id is None and not args.text:
-            parser.error("run requires --text or --binding-id")
-        if args.binding_id is not None and not args.command:
-            parser.error("run with --binding-id requires --command")
         return await _run_plugin_chain(args)
     if args.cmd == "direct":
         return await _run_direct(args)
-    parser.error(f"unknown command: {args.cmd}")
-    return 2
+    raise RuntimeError(f"unknown command: {args.cmd}")
 
 
 def main() -> None:
-    raise SystemExit(asyncio.run(_async_main()))
+    _setup_runtime()
+    parser = _build_parser()
+    args = parser.parse_args()
+
+    if args.cmd == "run":
+        _validate_run_args(args, parser)
+    if args.cmd in {"list", "run"}:
+        _init_orm_sync()
+
+    raise SystemExit(asyncio.run(_async_main(args)))
 
 
 if __name__ == "__main__":
