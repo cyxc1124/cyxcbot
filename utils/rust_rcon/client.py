@@ -95,27 +95,71 @@ def summarize_rcon_command_for_log(command: str) -> str:
     return f"{name} <{len(rest)} chars>"
 
 
+def _abort_websocket(ws: aiohttp.ClientWebSocketResponse) -> None:
+    """Drop the WebSocket without waiting for Rust's slow close handshake."""
+    if ws.closed:
+        return
+    writer = ws._writer
+    if writer is not None:
+        # ponytail: WebRCON servers often stall WS close for ~10s; abort avoids
+        # blocking callers on ``async with ws_connect`` __aexit__.
+        writer.transport.abort()
+
+
 async def _exchange_rcon_command(
-    url: str, command: str, *, connect_timeout: float, truncate: bool
+    url: str,
+    command: str,
+    *,
+    timeout: float,
+    truncate: bool,
 ) -> str:
-    client_timeout = aiohttp.ClientTimeout(connect=connect_timeout)
-    async with aiohttp.ClientSession(timeout=client_timeout) as session:
-        async with session.ws_connect(url) as ws:
-            await ws.send_str(_build_command_packet(command, REQUEST_IDENTIFIER))
-            while True:
-                msg = await ws.receive()
-                if msg.type == aiohttp.WSMsgType.TEXT:
-                    data = json.loads(msg.data)
-                    if data.get("Identifier") == REQUEST_IDENTIFIER:
-                        return _parse_response_message(data, truncate=truncate)
-                    continue
-                if msg.type in (
-                    aiohttp.WSMsgType.CLOSE,
-                    aiohttp.WSMsgType.CLOSED,
-                ):
-                    raise RconError(RCON_CLOSED)
-                if msg.type == aiohttp.WSMsgType.ERROR:
-                    raise RconError(RCON_WEBSOCKET_ERROR)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+
+    def _remaining() -> float:
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            raise RconError(RCON_TIMEOUT)
+        return remaining
+
+    session = aiohttp.ClientSession()
+    ws: aiohttp.ClientWebSocketResponse | None = None
+    try:
+        try:
+            ws = await asyncio.wait_for(
+                session.ws_connect(url),
+                timeout=_remaining(),
+            )
+        except asyncio.TimeoutError as exc:
+            raise RconError(RCON_TIMEOUT) from exc
+        try:
+            await asyncio.wait_for(
+                ws.send_str(_build_command_packet(command, REQUEST_IDENTIFIER)),
+                timeout=_remaining(),
+            )
+        except asyncio.TimeoutError as exc:
+            raise RconError(RCON_TIMEOUT) from exc
+        while True:
+            try:
+                msg = await asyncio.wait_for(ws.receive(), timeout=_remaining())
+            except asyncio.TimeoutError as exc:
+                raise RconError(RCON_TIMEOUT) from exc
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                data = json.loads(msg.data)
+                if data.get("Identifier") == REQUEST_IDENTIFIER:
+                    return _parse_response_message(data, truncate=truncate)
+                continue
+            if msg.type in (
+                aiohttp.WSMsgType.CLOSE,
+                aiohttp.WSMsgType.CLOSED,
+            ):
+                raise RconError(RCON_CLOSED)
+            if msg.type == aiohttp.WSMsgType.ERROR:
+                raise RconError(RCON_WEBSOCKET_ERROR)
+    finally:
+        if ws is not None:
+            _abort_websocket(ws)
+        await session.close()
 
 
 async def execute_rcon_command(
@@ -131,15 +175,13 @@ async def execute_rcon_command(
     url = _build_websocket_url(host, port, password)
 
     try:
-        return await asyncio.wait_for(
-            _exchange_rcon_command(
-                url, command, connect_timeout=timeout, truncate=truncate_response
-            ),
+        return await _exchange_rcon_command(
+            url,
+            command,
             timeout=timeout,
+            truncate=truncate_response,
         )
     except aiohttp.WSServerHandshakeError as exc:
         raise RconAuthError("RCON 认证失败") from exc
-    except asyncio.TimeoutError as exc:
-        raise RconError(RCON_TIMEOUT) from exc
     except aiohttp.ClientError as exc:
         raise RconError(RCON_CONNECTION_FAILED) from exc
