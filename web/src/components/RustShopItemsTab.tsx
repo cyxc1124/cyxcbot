@@ -45,7 +45,8 @@ export function RustShopItemsTab() {
               或{' '}
               <code className="font-mono text-xs">@机器人 兑换商品 商品中文名 数量</code>{' '}
               兑换。兑换成功后将通过 RCON 执行{' '}
-              <code className="font-mono text-xs">give SteamID 物品ID 数量</code>。
+              <code className="font-mono text-xs">give SteamID 物品ID 数量</code>
+              （需该群已在「群权限」中开启 Rust RCON）。
             </p>
           </div>
           {!showForm && (

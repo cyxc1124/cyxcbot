@@ -25,8 +25,8 @@ export function RustRconPage() {
       <div>
         <h2 className="text-2xl font-bold text-foreground">Rust 远控管理</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          配置 Rust 服务器连接与触发词，管理群/好友远控权限，以及群内签到积分与
-          SteamID 绑定。远控在已开启权限的群/好友中发送{' '}
+          配置 Rust 服务器连接与触发词，管理群/好友 RCON 总开关，以及群内签到积分与
+          SteamID 绑定。RCON 开关控制远控命令、签到在线验证与商城发货；在已开启权限的群/好友中发送{' '}
           <code className="font-mono text-xs">@机器人 触发词 命令</code>{' '}
           （私聊无需 @）；群管命令触发词在「群管命令」Tab 中配置。
         </p>
