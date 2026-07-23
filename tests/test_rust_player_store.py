@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import sys
 from unittest.mock import AsyncMock, MagicMock
@@ -209,6 +210,47 @@ async def test_perform_check_in_without_bonus_eligibility(
     )
     assert second.already_checked_in is True
     assert second.bonus_pending is False
+
+
+@pytest.mark.asyncio
+async def test_concurrent_bonus_claim_is_atomic(rust_player_store, monkeypatch) -> None:
+    store, _factory = rust_player_store
+    monkeypatch.setattr(store.random, "randint", lambda _min, _max: 5)
+
+    await store.perform_check_in(
+        "10001",
+        _TEST_USER,
+        min_points=1,
+        max_points=10,
+        configured_online_bonus=50,
+        is_online=False,
+        can_claim_online_bonus=True,
+    )
+
+    results = await asyncio.gather(
+        store.perform_check_in(
+            "10001",
+            _TEST_USER,
+            min_points=1,
+            max_points=10,
+            configured_online_bonus=50,
+            is_online=True,
+            can_claim_online_bonus=True,
+        ),
+        store.perform_check_in(
+            "10001",
+            _TEST_USER,
+            min_points=1,
+            max_points=10,
+            configured_online_bonus=50,
+            is_online=True,
+            can_claim_online_bonus=True,
+        ),
+    )
+
+    bonus_claims = [result for result in results if result.ok and result.bonus_only]
+    assert len(bonus_claims) == 1
+    assert await store.get_group_points("10001", _TEST_USER) == 55
 
 
 def test_needs_rcon_online_check() -> None:

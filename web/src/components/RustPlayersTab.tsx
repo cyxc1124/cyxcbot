@@ -132,7 +132,8 @@ export function RustPlayersTab() {
           <h3 className="font-semibold text-foreground">积分与 SteamID 绑定</h3>
           <p className="mt-1 text-sm text-muted-foreground">
             用户通过 <code className="font-mono text-xs">@机器人 绑定 SteamID64</code>{' '}
-            绑定账号（不可自助换绑）；查询积分：
+            发起绑定；已配置 RCON 时需在游戏内昵称加入验证码后发送{' '}
+            <code className="font-mono text-xs">确认绑定</code>。不可自助换绑；查询积分：
             <code className="font-mono text-xs">@机器人 我的积分</code> 或{' '}
             <code className="font-mono text-xs">@机器人 积分</code>。
             触发词在「群管命令」Tab 中配置。

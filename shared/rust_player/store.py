@@ -8,7 +8,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from nonebot_plugin_orm import get_session
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from shared.config.rust_player import normalize_player_points
@@ -224,7 +224,9 @@ async def perform_check_in(
                 )
 
             total = await _get_points_in_session(session, group_id, user_id)
-            if existing.online_bonus_earned > 0 or not bonus_eligible:
+            online_bonus_earned = existing.online_bonus_earned
+            session.expunge(existing)
+            if online_bonus_earned > 0 or not bonus_eligible:
                 return CheckInResult(
                     ok=False,
                     total_points=total,
@@ -238,11 +240,45 @@ async def perform_check_in(
                 )
 
             online_bonus = configured_online_bonus
-            existing.online_bonus_earned = online_bonus
-            existing.points_earned += online_bonus
-            total = await _add_points_in_session(
-                session, group_id, user_id, online_bonus
+            update_result = await session.execute(
+                update(RustCheckInRecord)
+                .where(
+                    RustCheckInRecord.group_id == group_id,
+                    RustCheckInRecord.user_id == user_id,
+                    RustCheckInRecord.check_in_date == check_in_date,
+                    RustCheckInRecord.online_bonus_earned == 0,
+                )
+                .values(
+                    online_bonus_earned=online_bonus,
+                    points_earned=RustCheckInRecord.points_earned + online_bonus,
+                )
             )
+            if update_result.rowcount != 1:
+                total = await _get_points_in_session(session, group_id, user_id)
+                return CheckInResult(
+                    ok=False,
+                    total_points=total,
+                    already_checked_in=True,
+                )
+            session.expire_all()
+            points_result = await session.execute(
+                update(RustPlayerPoints)
+                .where(
+                    RustPlayerPoints.group_id == group_id,
+                    RustPlayerPoints.user_id == user_id,
+                )
+                .values(points=RustPlayerPoints.points + online_bonus)
+            )
+            if points_result.rowcount != 1:
+                session.add(
+                    RustPlayerPoints(
+                        group_id=group_id,
+                        user_id=user_id,
+                        points=online_bonus,
+                    )
+                )
+                await session.flush()
+            total = await _get_points_in_session(session, group_id, user_id)
             return CheckInResult(
                 ok=True,
                 online_bonus=online_bonus,
