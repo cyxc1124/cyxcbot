@@ -40,6 +40,10 @@ import type {
   RustPlayerOverviewItem,
   RustCheckInConfig,
   RustPlayerPointsUpdate,
+  RustShopItem,
+  RustShopItemCreate,
+  RustShopItemListResponse,
+  RustShopItemUpdate,
   Settings,
   SettingsUpdate,
   SetupRequest,
@@ -354,6 +358,25 @@ export const updateRustCheckInConfig = (data: RustCheckInConfig) =>
     method: 'PATCH',
     body: JSON.stringify(data),
   })
+
+// Rust shop items
+export const getRustShopItems = () =>
+  request<RustShopItemListResponse>('/rust-shop/items')
+
+export const createRustShopItem = (data: RustShopItemCreate) =>
+  request<RustShopItem>('/rust-shop/items', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const updateRustShopItem = (id: number, data: RustShopItemUpdate) =>
+  request<RustShopItem>(`/rust-shop/items/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+
+export const deleteRustShopItem = (id: number) =>
+  request<void>(`/rust-shop/items/${id}`, { method: 'DELETE' })
 
 // Groups
 export const getGroups = async (): Promise<Group[]> => {

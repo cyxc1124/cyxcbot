@@ -471,3 +471,34 @@ export interface RustCheckInConfig {
   online_bonus_points: number
   rcon_binding_id: number
 }
+
+export interface RustShopItem {
+  id: number
+  name: string
+  item_id: string
+  points_cost: number
+  enabled: boolean
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface RustShopItemListResponse {
+  items: RustShopItem[]
+}
+
+export interface RustShopItemCreate {
+  name: string
+  item_id: string
+  points_cost: number
+  enabled?: boolean
+  sort_order?: number
+}
+
+export interface RustShopItemUpdate {
+  name?: string
+  item_id?: string
+  points_cost?: number
+  enabled?: boolean
+  sort_order?: number
+}

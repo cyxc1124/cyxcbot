@@ -11,10 +11,13 @@ from shared.config.rust_player import (
     is_checkin_command,
     is_points_query_command,
     parse_bind_steam_id,
+    parse_shop_list_page,
+    parse_shop_redeem_args,
     resolve_checkin_rcon_binding,
+    shop_list_trigger_hint,
 )
 from shared.config.service import get_config_service
-from shared.rust_player import rcon_online_cache, store
+from shared.rust_player import rcon_online_cache, shop_store, store
 from utils.rust_rcon.client import RconAuthError, RconError, execute_rcon_command
 from utils.rust_rcon.status import is_steam_id_online
 
@@ -26,6 +29,8 @@ __plugin_meta__ = PluginMetadata(
 - 绑定 <SteamID64>：绑定 Steam 账号（不可自助换绑）
 - 签到：每日签到获取随机积分；已绑定 SteamID 且在游戏内在线时可领取/补领在线加成
 - 我的积分 / 积分：查询本群积分
+- 商品列表 / 商品列表2：查看积分商城商品（每页最多 20 条）
+- 兑换商品 <物品ID 或 商品中文名> [数量]：消耗积分兑换游戏内物品
 """,
     type="application",
     homepage="https://github.com/cyxc1124/cyxcbot",
@@ -72,6 +77,18 @@ async def handle_rust_player(bot: Bot, event: GroupMessageEvent) -> None:
 
     if is_points_query_command(text, command_aliases):
         await _handle_points_query(group_id, user_id)
+        return
+
+    shop_page = parse_shop_list_page(text, command_aliases)
+    if shop_page is not None:
+        await _handle_shop_list(group_id, shop_page, command_aliases)
+        return
+
+    redeem_args = parse_shop_redeem_args(text, command_aliases)
+    if redeem_args is not None:
+        identifier, quantity = redeem_args
+        await _handle_shop_redeem(group_id, user_id, identifier, quantity, snap)
+        return
 
 
 async def _fetch_status_text(rcon_binding) -> str:
@@ -256,3 +273,117 @@ async def _handle_points_query(group_id: str, user_id: str) -> None:
     if binding is None:
         await rust_player_cmd.finish(f"当前积分：{points}\n尚未绑定 SteamID")
     await rust_player_cmd.finish(f"当前积分：{points}\nSteamID：{binding.steam_id}")
+
+
+async def _handle_shop_list(
+    group_id: str,
+    page: int,
+    command_aliases,
+) -> None:
+    del group_id
+    page_data = await shop_store.get_shop_list_page(page, enabled_only=True)
+    trigger = shop_list_trigger_hint(command_aliases)
+    if page_data.total_items == 0:
+        await rust_player_cmd.finish("当前没有可兑换的商品。")
+
+    lines = [
+        f"商品列表（第 {page_data.page}/{page_data.total_pages} 页，"
+        f"共 {page_data.total_items} 个商品）",
+        "",
+    ]
+    start_index = (page_data.page - 1) * page_data.page_size + 1
+    for offset, item in enumerate(page_data.items):
+        index = start_index + offset
+        lines.append(
+            f"{index}. {item.name} — {item.points_cost} 积分（物品 ID：{item.item_id}）"
+        )
+
+    if page_data.total_pages > 1:
+        if page_data.page < page_data.total_pages:
+            next_page = page_data.page + 1
+            lines.append("")
+            lines.append(f"发送 @机器人 {trigger}{next_page} 查看第 {next_page} 页")
+        else:
+            lines.append("")
+            lines.append(f"发送 @机器人 {trigger}1 查看第 1 页")
+
+    await rust_player_cmd.finish("\n".join(lines))
+
+
+async def _handle_shop_redeem(
+    group_id: str,
+    user_id: str,
+    identifier: str,
+    quantity: int,
+    snap,
+) -> None:
+    binding = await store.get_steam_binding(user_id)
+    if binding is None:
+        trigger = bind_trigger_hint(snap.command_aliases)
+        await rust_player_cmd.finish(
+            f"兑换前请先绑定 SteamID，发送：{trigger} 7656119xxxxxxxxxx"
+        )
+
+    rcon_binding = resolve_checkin_rcon_binding(
+        snap.rust_rcon_bindings,
+        snap.rust_checkin_rcon_binding_id,
+    )
+    if rcon_binding is None:
+        await rust_player_cmd.finish("当前未配置可用的 RCON 服务器，无法发放物品。")
+
+    try:
+        result = await shop_store.redeem_shop_item(
+            group_id, user_id, identifier, quantity
+        )
+    except ValueError as exc:
+        await rust_player_cmd.finish(str(exc))
+
+    give_command = f"give {binding.steam_id} {result.item.item_id} {result.quantity}"
+    try:
+        await execute_rcon_command(
+            rcon_binding.host,
+            rcon_binding.port,
+            rcon_binding.password,
+            give_command,
+        )
+    except RconAuthError:
+        logger.warning(
+            "Rust 兑换 RCON 认证失败: binding={} user={} item={}",
+            rcon_binding.id,
+            user_id,
+            result.item.item_id,
+        )
+        await shop_store.add_group_points(group_id, user_id, result.total_cost)
+        await rust_player_cmd.finish("游戏服务器认证失败，积分已退回，请稍后重试。")
+    except RconError:
+        logger.warning(
+            "Rust 兑换 RCON 失败: binding={} user={} item={}",
+            rcon_binding.id,
+            user_id,
+            result.item.item_id,
+        )
+        await shop_store.add_group_points(group_id, user_id, result.total_cost)
+        await rust_player_cmd.finish("连接游戏服务器失败，积分已退回，请稍后重试。")
+    except Exception:
+        logger.opt(exception=True).error(
+            "Rust 兑换 RCON 未预期错误: binding={} user={} item={}",
+            rcon_binding.id,
+            user_id,
+            result.item.item_id,
+        )
+        await shop_store.add_group_points(group_id, user_id, result.total_cost)
+        await rust_player_cmd.finish("发放物品时发生错误，积分已退回，请稍后重试。")
+
+    logger.info(
+        "Rust 商品兑换: group={} user={} item={} qty={} cost={} remaining={}",
+        group_id,
+        user_id,
+        result.item.item_id,
+        result.quantity,
+        result.total_cost,
+        result.remaining_points,
+    )
+    await rust_player_cmd.finish(
+        f"兑换成功：{result.item.name} x{result.quantity}，"
+        f"消耗 {result.total_cost} 积分，剩余 {result.remaining_points} 积分"
+    )

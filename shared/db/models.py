@@ -330,6 +330,25 @@ class RustPlayerPoints(Model):
     )
 
 
+class RustShopItem(Model):
+    """Redeemable shop item for Rust player points."""
+
+    __tablename__ = "shared_db_rustshopitem"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    item_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    points_cost: Mapped[int] = mapped_column(Integer, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+
 class RustCheckInRecord(Model):
     """Daily group check-in record."""
 

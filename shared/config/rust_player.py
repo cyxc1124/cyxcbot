@@ -15,6 +15,7 @@ from shared.config.rust_rcon import RustRconBindingRecord
 
 STEAM_ID64_RE = re.compile(r"^7656119\d{10}$")
 MAX_RUST_PLAYER_POINTS = 1_000_000
+MAX_SHOP_REDEEM_QUANTITY = 1000
 
 
 def normalize_steam_id(raw: str) -> str | None:
@@ -52,6 +53,101 @@ def is_points_query_command(
     text: str, command_aliases: Dict[str, CommandAliasEntry]
 ) -> bool:
     return match_plain(text, "rust_player_points", command_aliases, is_tome=True)
+
+
+def shop_list_trigger_hint(command_aliases: Dict[str, CommandAliasEntry]) -> str:
+    entry = resolve_entry("rust_player_shop_list", command_aliases)
+    return entry.triggers[0] if entry.triggers else "商品列表"
+
+
+def parse_shop_list_page(
+    text: str, command_aliases: Dict[str, CommandAliasEntry]
+) -> int | None:
+    """Match shop list command; return 1-based page number or None."""
+    entry = resolve_entry("rust_player_shop_list", command_aliases)
+    if not entry.enabled or not entry.triggers:
+        return None
+    text = text.strip()
+    candidates = [text]
+    from shared.config.command_aliases import _strip_command_prefix
+
+    stripped = _strip_command_prefix(text)
+    if stripped is not None:
+        candidates.append(stripped.strip())
+    for candidate in candidates:
+        for trigger in sorted(entry.triggers, key=len, reverse=True):
+            if candidate == trigger:
+                return 1
+            if candidate.startswith(trigger):
+                suffix = candidate[len(trigger) :]
+                if not suffix:
+                    return 1
+                if suffix.isdigit():
+                    page = int(suffix)
+                    return page if page >= 1 else None
+    return None
+
+
+def shop_redeem_trigger_hint(command_aliases: Dict[str, CommandAliasEntry]) -> str:
+    entry = resolve_entry("rust_player_shop_redeem", command_aliases)
+    return entry.triggers[0] if entry.triggers else "兑换商品"
+
+
+def parse_shop_redeem_args(
+    text: str, command_aliases: Dict[str, CommandAliasEntry]
+) -> tuple[str, int] | None:
+    """Return ``(identifier, quantity)`` when redeem command matches."""
+    arg = match_command_arg(text, "rust_player_shop_redeem", command_aliases)
+    if arg is None or not arg.strip():
+        return None
+    parts = arg.split()
+    if len(parts) == 1:
+        return parts[0], 1
+    if parts[-1].isdigit():
+        quantity = int(parts[-1])
+        identifier = " ".join(parts[:-1]).strip()
+        if not identifier:
+            return None
+        try:
+            quantity = normalize_shop_quantity(quantity)
+        except ValueError:
+            return None
+        return identifier, quantity
+    return " ".join(parts), 1
+
+
+def normalize_shop_quantity(quantity: int) -> int:
+    value = int(quantity)
+    if value < 1:
+        raise ValueError("兑换数量至少为 1")
+    if value > MAX_SHOP_REDEEM_QUANTITY:
+        raise ValueError(f"单次兑换数量不能超过 {MAX_SHOP_REDEEM_QUANTITY}")
+    return value
+
+
+def normalize_shop_item_name(name: str) -> str:
+    value = str(name).strip()
+    if not value:
+        raise ValueError("商品中文名不能为空")
+    if len(value) > 128:
+        raise ValueError("商品中文名不能超过 128 个字符")
+    return value
+
+
+def normalize_shop_item_id(item_id: str) -> str:
+    value = str(item_id).strip()
+    if not value:
+        raise ValueError("物品 ID 不能为空")
+    if len(value) > 128:
+        raise ValueError("物品 ID 不能超过 128 个字符")
+    return value
+
+
+def normalize_shop_points_cost(points_cost: int) -> int:
+    value = normalize_player_points(points_cost)
+    if value <= 0:
+        raise ValueError("所需积分必须大于 0")
+    return value
 
 
 def normalize_player_points(points: int) -> int:

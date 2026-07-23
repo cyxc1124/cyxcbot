@@ -15,6 +15,8 @@ export type RustPlayerCommandId =
   | 'rust_player_bind'
   | 'rust_player_checkin'
   | 'rust_player_points'
+  | 'rust_player_shop_list'
+  | 'rust_player_shop_redeem'
 
 export type CommandId = CoreCommandId | RustPlayerCommandId
 
@@ -99,5 +101,19 @@ export const RUST_PLAYER_COMMAND_FIELDS: CommandField[] = [
     label: '积分查询',
     description: '查询本群积分与 SteamID 绑定状态（仅群聊）。',
     defaultTriggers: ['我的积分', '积分'],
+  },
+  {
+    id: 'rust_player_shop_list',
+    label: '商品列表',
+    description: '查看积分商城商品列表（仅群聊，每页最多 20 条）。',
+    defaultTriggers: ['商品列表'],
+    hint: '翻页示例：@机器人 商品列表2',
+  },
+  {
+    id: 'rust_player_shop_redeem',
+    label: '商品兑换',
+    description: '消耗积分兑换游戏内物品（仅群聊，需已绑定 SteamID）。',
+    defaultTriggers: ['兑换商品'],
+    hint: '示例：@机器人 兑换商品 wood 5 或 @机器人 兑换商品 木头',
   },
 ]
