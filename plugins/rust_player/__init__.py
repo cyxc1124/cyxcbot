@@ -10,6 +10,7 @@ from shared.config.rust_player import (
     is_bind_command,
     is_checkin_command,
     is_points_query_command,
+    is_rust_player_command,
     parse_bind_steam_id,
     parse_shop_list_page,
     parse_shop_redeem_args,
@@ -65,6 +66,11 @@ async def handle_rust_player(bot: Bot, event: GroupMessageEvent) -> None:
     text = event.get_plaintext().strip()
     group_id = str(event.group_id)
     user_id = str(event.user_id)
+
+    if not is_rust_player_command(text, command_aliases):
+        return
+    if not is_rust_rcon_enabled(snap, group_id=group_id):
+        return
 
     if (
         is_bind_command(text, command_aliases)
@@ -185,10 +191,7 @@ async def _handle_checkin(group_id: str, user_id: str) -> None:
         snap.rust_rcon_bindings,
         snap.rust_checkin_rcon_binding_id,
     )
-    rcon_enabled = is_rust_rcon_enabled(snap, group_id=group_id)
-    can_claim_online_bonus = (
-        binding is not None and rcon_binding is not None and rcon_enabled
-    )
+    can_claim_online_bonus = binding is not None and rcon_binding is not None
     bonus_eligible = can_claim_online_bonus and configured_bonus > 0
     check_in_state = await store.get_today_check_in_state(group_id, user_id)
     needs_rcon = store.needs_rcon_online_check(
@@ -321,9 +324,6 @@ async def _handle_shop_redeem(
     quantity: int,
     snap,
 ) -> None:
-    if not is_rust_rcon_enabled(snap, group_id=group_id):
-        await rust_player_cmd.finish("本群未开启 Rust RCON，无法兑换商品。")
-
     binding = await store.get_steam_binding(user_id)
     if binding is None:
         trigger = bind_trigger_hint(snap.command_aliases)

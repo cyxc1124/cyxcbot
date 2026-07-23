@@ -12,6 +12,7 @@ from shared.config.rust_player import (
     is_bind_command,
     is_checkin_command,
     is_points_query_command,
+    is_rust_player_command,
     normalize_checkin_online_bonus,
     normalize_checkin_points_range,
     normalize_checkin_rcon_binding_id,
@@ -80,6 +81,14 @@ def test_is_points_query_command(monkeypatch) -> None:
     assert is_points_query_command("积分", DEFAULT_ALIASES)
     assert is_points_query_command("我的积分", DEFAULT_ALIASES)
     assert is_points_query_command("查积分", DEFAULT_ALIASES)
+
+
+def test_is_rust_player_command(monkeypatch) -> None:
+    _patch_prefixes(monkeypatch)
+    assert is_rust_player_command("签到", DEFAULT_ALIASES)
+    assert is_rust_player_command("商品列表2", DEFAULT_ALIASES)
+    assert is_rust_player_command("兑换商品 wood", DEFAULT_ALIASES)
+    assert not is_rust_player_command("hello", DEFAULT_ALIASES)
 
 
 def test_normalize_checkin_points_range() -> None:

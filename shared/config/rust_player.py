@@ -55,6 +55,20 @@ def is_points_query_command(
     return match_plain(text, "rust_player_points", command_aliases, is_tome=True)
 
 
+def is_rust_player_command(
+    text: str, command_aliases: Dict[str, CommandAliasEntry]
+) -> bool:
+    """Whether *text* matches any Rust 群管 command trigger."""
+    return (
+        is_bind_command(text, command_aliases)
+        or parse_bind_steam_id(text, command_aliases) is not None
+        or is_checkin_command(text, command_aliases)
+        or is_points_query_command(text, command_aliases)
+        or parse_shop_list_page(text, command_aliases) is not None
+        or parse_shop_redeem_args(text, command_aliases) is not None
+    )
+
+
 def shop_list_trigger_hint(command_aliases: Dict[str, CommandAliasEntry]) -> str:
     entry = resolve_entry("rust_player_shop_list", command_aliases)
     return entry.triggers[0] if entry.triggers else "商品列表"
