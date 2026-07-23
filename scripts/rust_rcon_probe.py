@@ -4,8 +4,8 @@
 可在生产 bot 主机上使用（排查绑定、策略、商城 giveto 等）；推荐 ``run`` 子命令，
 凭据来自数据库，无需在命令行传 RCON 密码。
 
-Mirrors ``plugins/rust_rcon/__init__.py``: policy → alias match → QQ whitelist
-→ ``execute_rcon_command``.
+Mirrors ``group_guard`` / ``private_guard`` + ``plugins/rust_rcon/__init__.py``:
+message policy → RCON policy → alias match → QQ whitelist → ``execute_rcon_command``.
 
 Examples::
 
@@ -146,18 +146,38 @@ def _find_binding(snap, binding_id: int):
 
 def _policy_ok(snap, *, group_id: str | None, user_id: str, private: bool) -> bool:
     from shared.config.rust_rcon_policy import is_rust_rcon_enabled
+    from shared.group_policy import is_group_message_enabled_from_snapshot
+    from shared.private_policy import is_private_message_enabled_from_snapshot
 
     if private:
-        ok = is_rust_rcon_enabled(snap, user_id=user_id, is_private=True)
-        scope = f"user={user_id}"
-    else:
-        ok = is_rust_rcon_enabled(snap, group_id=group_id or "")
-        scope = f"group={group_id}"
-    if ok:
-        print(f"[OK] RCON policy: {scope}")
-    else:
-        print(f"[BLOCK] RCON policy: {scope} (bot would silently ignore)")
-    return ok
+        if not is_private_message_enabled_from_snapshot(user_id, snap):
+            print(
+                f"[BLOCK] private message policy: user={user_id} "
+                "(bot would ignore at private_guard)"
+            )
+            return False
+        print(f"[OK] private message policy: user={user_id}")
+        if not is_rust_rcon_enabled(snap, user_id=user_id, is_private=True):
+            print(
+                f"[BLOCK] RCON policy: user={user_id} (bot would silently ignore)"
+            )
+            return False
+        print(f"[OK] RCON policy: user={user_id}")
+        return True
+
+    gid = group_id or ""
+    if not is_group_message_enabled_from_snapshot(gid, snap):
+        print(
+            f"[BLOCK] group message policy: group={gid} "
+            "(bot would ignore at group_guard)"
+        )
+        return False
+    print(f"[OK] group message policy: group={gid}")
+    if not is_rust_rcon_enabled(snap, group_id=gid):
+        print(f"[BLOCK] RCON policy: group={gid} (bot would silently ignore)")
+        return False
+    print(f"[OK] RCON policy: group={gid}")
+    return True
 
 
 def _is_giveto_command(command: str) -> bool:

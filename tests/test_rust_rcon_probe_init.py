@@ -42,3 +42,59 @@ def test_finish_rcon_success_skips_give_rejection_for_non_giveto() -> None:
     probe = _load_probe_module()
     assert probe._finish_rcon_success("status", "Couldn't find player") == 0
     assert probe._finish_rcon_success("giveto x y z", "Couldn't find player") == 1
+
+
+def test_policy_ok_blocks_disabled_group_message() -> None:
+    from shared.config.rust_rcon_policy import RustRconGroupPolicyRecord
+    from shared.config.types import AppConfigSnapshot
+
+    probe = _load_probe_module()
+    snap = AppConfigSnapshot(
+        message_group_restrict=True,
+        message_enabled_group_ids=["999"],
+        rust_rcon_group_policies={
+            "123": RustRconGroupPolicyRecord(group_id="123", enabled=True),
+        },
+    )
+    assert not probe._policy_ok(snap, group_id="123", user_id="1", private=False)
+
+
+def test_policy_ok_requires_rust_rcon_when_group_message_enabled() -> None:
+    from shared.config.types import AppConfigSnapshot
+
+    probe = _load_probe_module()
+    snap = AppConfigSnapshot(
+        message_group_restrict=True,
+        message_enabled_group_ids=["123"],
+    )
+    assert not probe._policy_ok(snap, group_id="123", user_id="1", private=False)
+
+
+def test_policy_ok_allows_group_when_both_policies_enabled() -> None:
+    from shared.config.rust_rcon_policy import RustRconGroupPolicyRecord
+    from shared.config.types import AppConfigSnapshot
+
+    probe = _load_probe_module()
+    snap = AppConfigSnapshot(
+        message_group_restrict=True,
+        message_enabled_group_ids=["123"],
+        rust_rcon_group_policies={
+            "123": RustRconGroupPolicyRecord(group_id="123", enabled=True),
+        },
+    )
+    assert probe._policy_ok(snap, group_id="123", user_id="1", private=False)
+
+
+def test_policy_ok_blocks_disabled_private_message() -> None:
+    from shared.config.rust_rcon_policy import RustRconUserPolicyRecord
+    from shared.config.types import AppConfigSnapshot
+
+    probe = _load_probe_module()
+    snap = AppConfigSnapshot(
+        message_private_restrict=True,
+        message_enabled_user_ids=["999"],
+        rust_rcon_user_policies={
+            "456": RustRconUserPolicyRecord(user_id="456", enabled=True),
+        },
+    )
+    assert not probe._policy_ok(snap, group_id=None, user_id="456", private=True)
