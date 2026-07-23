@@ -28,6 +28,32 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+_ORM_INITIALIZED = False
+
+
+def _ensure_sqlite_parent_dir(url: str) -> None:
+    if not url.lower().startswith("sqlite") or "///" not in url:
+        return
+    db_part = url.split("///", 1)[1].split("?", 1)[0]
+    if not db_part or db_part == ":memory:":
+        return
+    db_path = Path(db_part)
+    if not db_path.is_absolute():
+        db_path = Path.cwd() / db_path
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _configure_alembic_auto_upgrade() -> None:
+    import click
+
+    _confirm = click.confirm
+
+    def _auto_confirm(message: str, *args, **kwargs) -> bool:
+        if "迁移" in message:
+            return True
+        return _confirm(message, *args, **kwargs)
+
+    click.confirm = _auto_confirm  # type: ignore[method-assign]
 
 
 def _setup_runtime() -> None:
@@ -47,14 +73,26 @@ def _setup_runtime() -> None:
 
 
 async def _load_snapshot():
+    global _ORM_INITIALIZED
     _setup_runtime()
+    if _ORM_INITIALIZED:
+        from shared.config.service import get_config_service
+
+        return get_config_service().get_snapshot()
+
     import nonebot
 
+    from shared.db.alembic_repair import repair_alembic_version_if_needed
+
     url = os.getenv("SQLALCHEMY_DATABASE_URL", "sqlite+aiosqlite:///data/cyxcbot.db")
+    _ensure_sqlite_parent_dir(url)
+    repair_alembic_version_if_needed(url)
+    _configure_alembic_auto_upgrade()
     migrations = ROOT / "shared" / "db" / "migrations"
+    # 与 bot.py 一致：Alembic upgrade，勿用 sync 模式（可能清空 alembic_version / 删表重建）。
     nonebot.init(
         sqlalchemy_database_url=url,
-        alembic_startup_check=False,
+        alembic_startup_check=True,
         alembic_version_locations=migrations,
     )
     nonebot.load_plugin("nonebot_plugin_orm")
@@ -62,6 +100,7 @@ async def _load_snapshot():
     from shared.config.service import get_config_service
 
     await get_config_service().load()
+    _ORM_INITIALIZED = True
     return get_config_service().get_snapshot()
 
 
