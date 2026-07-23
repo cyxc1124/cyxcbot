@@ -32,6 +32,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 _ORM_SYNC_INITIALIZED = False
+_ORM_LIFESPAN_ACTIVE = False
 _CONFIG_LOADED = False
 
 
@@ -109,10 +110,38 @@ def _init_orm_sync() -> None:
     _ORM_SYNC_INITIALIZED = True
 
 
+async def _start_orm_lifespan() -> None:
+    """Run NoneBot driver startup hooks (ORM Alembic check runs in init_orm)."""
+    global _ORM_LIFESPAN_ACTIVE
+    if _ORM_LIFESPAN_ACTIVE:
+        return
+    if not _ORM_SYNC_INITIALIZED:
+        raise RuntimeError("call _init_orm_sync() before _start_orm_lifespan()")
+
+    import nonebot
+
+    # ponytail: bot.run() triggers the same private lifespan; probe has no long-lived driver.
+    await nonebot.get_driver()._lifespan.startup()
+    _ORM_LIFESPAN_ACTIVE = True
+
+
+async def _stop_orm_lifespan() -> None:
+    global _ORM_LIFESPAN_ACTIVE
+    if not _ORM_LIFESPAN_ACTIVE:
+        return
+
+    import nonebot
+
+    await nonebot.get_driver()._lifespan.shutdown()
+    _ORM_LIFESPAN_ACTIVE = False
+
+
 async def _load_snapshot():
     global _CONFIG_LOADED
     if not _ORM_SYNC_INITIALIZED:
         raise RuntimeError("call _init_orm_sync() before asyncio.run()")
+    if not _ORM_LIFESPAN_ACTIVE:
+        raise RuntimeError("call _start_orm_lifespan() before _load_snapshot()")
 
     from shared.config.service import get_config_service
 
@@ -359,15 +388,22 @@ def _validate_run_args(args: argparse.Namespace, parser: argparse.ArgumentParser
 
 
 async def _async_main(args: argparse.Namespace) -> int:
-    if args.cmd == "list":
-        snap = await _load_snapshot()
-        _print_bindings(snap)
-        return 0
-    if args.cmd == "run":
-        return await _run_plugin_chain(args)
-    if args.cmd == "direct":
-        return await _run_direct(args)
-    raise RuntimeError(f"unknown command: {args.cmd}")
+    needs_orm = args.cmd in {"list", "run"}
+    if needs_orm:
+        await _start_orm_lifespan()
+    try:
+        if args.cmd == "list":
+            snap = await _load_snapshot()
+            _print_bindings(snap)
+            return 0
+        if args.cmd == "run":
+            return await _run_plugin_chain(args)
+        if args.cmd == "direct":
+            return await _run_direct(args)
+        raise RuntimeError(f"unknown command: {args.cmd}")
+    finally:
+        if needs_orm:
+            await _stop_orm_lifespan()
 
 
 def main() -> None:

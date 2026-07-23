@@ -98,3 +98,32 @@ def test_policy_ok_blocks_disabled_private_message() -> None:
         },
     )
     assert not probe._policy_ok(snap, group_id=None, user_id="456", private=True)
+
+
+def test_orm_lifespan_startup_shutdown(monkeypatch) -> None:
+    probe = _load_probe_module()
+    probe._setup_runtime()
+    probe._init_orm_sync()
+
+    calls = {"startup": 0, "shutdown": 0}
+
+    class _FakeLifespan:
+        async def startup(self) -> None:
+            calls["startup"] += 1
+
+        async def shutdown(self, **_kwargs) -> None:
+            calls["shutdown"] += 1
+
+    import nonebot
+
+    monkeypatch.setattr(nonebot.get_driver(), "_lifespan", _FakeLifespan())
+
+    async def _run() -> None:
+        await probe._start_orm_lifespan()
+        assert calls["startup"] == 1
+        assert probe._ORM_LIFESPAN_ACTIVE
+        await probe._stop_orm_lifespan()
+        assert calls["shutdown"] == 1
+        assert not probe._ORM_LIFESPAN_ACTIVE
+
+    asyncio.run(_run())
