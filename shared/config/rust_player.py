@@ -152,7 +152,18 @@ def normalize_shop_item_name(name: str) -> str:
         raise ValueError("商品中文名不能为空")
     if len(value) > 128:
         raise ValueError("商品中文名不能超过 128 个字符")
+    if _shop_name_has_trailing_quantity_suffix(value):
+        raise ValueError("商品中文名不能以空格加数字结尾，以免与兑换数量混淆")
     return value
+
+
+def _shop_name_has_trailing_quantity_suffix(name: str) -> bool:
+    parts = name.split()
+    if len(parts) < 2:
+        return False
+    from utils.rust_rcon.give import parse_quantity_token
+
+    return parse_quantity_token(parts[-1]) is not None
 
 
 def normalize_shop_item_id(item_id: str) -> str:
@@ -197,6 +208,15 @@ def normalize_checkin_rcon_binding_id(binding_id: int) -> int:
     if value < 0:
         raise ValueError("RCON 绑定 ID 不能为负数")
     return value
+
+
+def shop_item_integrity_error_message(exc: BaseException) -> str:
+    detail = str(getattr(exc, "orig", exc)).lower()
+    if "uq_rust_shop_item_id" in detail or "rustshopitem.item_id" in detail:
+        return "物品 ID 已存在"
+    if "uq_rust_shop_enabled_name" in detail or "rustshopitem.name" in detail:
+        return "已存在同名的启用商品"
+    return "商品数据冲突，请检查名称或物品 ID"
 
 
 def resolve_checkin_rcon_binding(

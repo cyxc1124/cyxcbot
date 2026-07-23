@@ -58,6 +58,8 @@ def test_parse_shop_redeem_by_name(monkeypatch) -> None:
     _patch_prefixes(monkeypatch)
     assert parse_shop_redeem_args("兑换商品 木头 5", DEFAULT_ALIASES) == ("木头", 5)
     assert parse_shop_redeem_args("兑换商品 AK步枪", DEFAULT_ALIASES) == ("AK步枪", 1)
+    # 商品名禁止以「空格+数字」结尾；此处按 identifier + quantity 解析
+    assert parse_shop_redeem_args("兑换商品 AK 47", DEFAULT_ALIASES) == ("AK", 47)
 
 
 def test_parse_shop_redeem_invalid(monkeypatch) -> None:

@@ -9,13 +9,18 @@ from shared.config.rust_player import (
     normalize_shop_item_name,
     normalize_shop_points_cost,
     normalize_shop_quantity,
+    shop_item_integrity_error_message,
 )
 
 
 def test_normalize_shop_item_name() -> None:
     assert normalize_shop_item_name("  木头  ") == "木头"
+    assert normalize_shop_item_name("AK47") == "AK47"
+    assert normalize_shop_item_name("AK 步枪") == "AK 步枪"
     with pytest.raises(ValueError, match="不能为空"):
         normalize_shop_item_name("   ")
+    with pytest.raises(ValueError, match="空格加数字"):
+        normalize_shop_item_name("AK 47")
 
 
 def test_normalize_shop_item_id() -> None:
@@ -36,3 +41,16 @@ def test_normalize_shop_quantity() -> None:
         normalize_shop_quantity(0)
     with pytest.raises(ValueError, match="1000"):
         normalize_shop_quantity(1001)
+
+
+def test_shop_item_integrity_error_message() -> None:
+    assert (
+        shop_item_integrity_error_message(Exception("uq_rust_shop_enabled_name"))
+        == "已存在同名的启用商品"
+    )
+    assert (
+        shop_item_integrity_error_message(
+            Exception("UNIQUE constraint failed: shared_db_rustshopitem.item_id")
+        )
+        == "物品 ID 已存在"
+    )

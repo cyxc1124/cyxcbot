@@ -14,6 +14,7 @@ from shared.config.rust_player import (
     normalize_shop_item_name,
     normalize_shop_points_cost,
     normalize_shop_quantity,
+    shop_item_integrity_error_message,
 )
 from shared.db.models import RustPlayerPoints, RustShopItem
 
@@ -122,6 +123,10 @@ async def _enabled_name_taken(
     return (await session.scalar(stmt.limit(1))) is not None
 
 
+def _raise_shop_item_integrity_error(exc: IntegrityError) -> None:
+    raise ValueError(shop_item_integrity_error_message(exc)) from exc
+
+
 async def create_shop_item(
     *,
     name: str,
@@ -149,7 +154,7 @@ async def create_shop_item(
             try:
                 await session.flush()
             except IntegrityError as exc:
-                raise ValueError("物品 ID 已存在") from exc
+                _raise_shop_item_integrity_error(exc)
             return await _detach_shop_item(session, row)
 
 
@@ -186,7 +191,7 @@ async def update_shop_item(
             try:
                 await session.flush()
             except IntegrityError as exc:
-                raise ValueError("物品 ID 已存在") from exc
+                _raise_shop_item_integrity_error(exc)
             return await _detach_shop_item(session, row)
 
 

@@ -9,10 +9,12 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -334,6 +336,15 @@ class RustShopItem(Model):
     """Redeemable shop item for Rust player points."""
 
     __tablename__ = "shared_db_rustshopitem"
+    __table_args__ = (
+        Index(
+            "uq_rust_shop_enabled_name",
+            "name",
+            unique=True,
+            postgresql_where=text("enabled IS TRUE"),
+            sqlite_where=text("enabled = 1"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
