@@ -118,7 +118,7 @@ async def _exchange_rcon_command(
     session = aiohttp.ClientSession(timeout=client_timeout)
     ws: aiohttp.ClientWebSocketResponse | None = None
     try:
-        ws = await session.ws_connect(url, autoping=False, heartbeat=None)
+        ws = await session.ws_connect(url)
         await ws.send_str(_build_command_packet(command, REQUEST_IDENTIFIER))
         deadline = asyncio.get_running_loop().time() + read_timeout
         while True:

@@ -138,6 +138,48 @@ async def webrcon_long_response_server() -> AsyncIterator[tuple[str, int]]:
         await runner.cleanup()
 
 
+@pytest.fixture
+async def webrcon_ping_before_response_server() -> AsyncIterator[tuple[str, int]]:
+    async def _handler(request: web.Request) -> web.WebSocketResponse:
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        async for msg in ws:
+            if msg.type == web.WSMsgType.TEXT:
+                await ws.ping()
+                data = json.loads(msg.data)
+                await ws.send_str(
+                    json.dumps(
+                        {
+                            "Identifier": data["Identifier"],
+                            "Message": "ok",
+                            "Type": "Generic",
+                        }
+                    )
+                )
+        return ws
+
+    app = web.Application()
+    app.router.add_get("/{password}", _handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    sock = site._server.sockets[0].getsockname()
+    try:
+        yield sock[0], sock[1]
+    finally:
+        await runner.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_execute_rcon_command_survives_server_ping(
+    webrcon_ping_before_response_server,
+) -> None:
+    host, port = webrcon_ping_before_response_server
+    result = await execute_rcon_command(host, port, "pass", "status", timeout=2)
+    assert result == "ok"
+
+
 @pytest.mark.asyncio
 async def test_execute_rcon_command_success(webrcon_server) -> None:
     host, port = webrcon_server
