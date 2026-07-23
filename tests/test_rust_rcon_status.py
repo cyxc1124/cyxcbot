@@ -27,6 +27,14 @@ def test_is_steam_id_online() -> None:
     assert is_steam_id_online(_STATUS_SAMPLE, "invalid") is False
 
 
-def test_parse_online_steam_ids_from_playerlist_json() -> None:
-    text = f'[{{"SteamID":"{_STEAM_A}","DisplayName":"Alice"}}]'
-    assert parse_online_steam_ids(text) == {_STEAM_A}
+def test_parse_online_steam_ids_ignores_nickname_embedded_steam_id() -> None:
+    """Nickname must not count as the player id column."""
+    text = f'{_STEAM_B} "{_STEAM_A}" 28 300.99s 127.0.0.1:12345 0 0.0 0'
+    assert parse_online_steam_ids(text) == {_STEAM_B}
+    assert is_steam_id_online(text, _STEAM_A) is False
+    assert is_steam_id_online(text, _STEAM_B) is True
+
+
+def test_parse_online_steam_ids_ignores_non_player_lines() -> None:
+    text = f'players : 1 (100 max)\nSteamID in json: "{_STEAM_A}"'
+    assert parse_online_steam_ids(text) == set()
