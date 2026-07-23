@@ -187,9 +187,7 @@ def _policy_ok(snap, *, group_id: str | None, user_id: str, private: bool) -> bo
             return False
         print(f"[OK] private message policy: user={user_id}")
         if not is_rust_rcon_enabled(snap, user_id=user_id, is_private=True):
-            print(
-                f"[BLOCK] RCON policy: user={user_id} (bot would silently ignore)"
-            )
+            print(f"[BLOCK] RCON policy: user={user_id} (bot would silently ignore)")
             return False
         print(f"[OK] RCON policy: user={user_id}")
         return True
@@ -354,7 +352,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Use this binding and --command (skip alias parsing)",
     )
     run.add_argument("--command", help="RCON command to send")
-    run.add_argument("--group-id", help="Simulated group_id (required unless --private)")
+    run.add_argument(
+        "--group-id", help="Simulated group_id (required unless --private)"
+    )
     run.add_argument("--user-id", required=True, help="Simulated QQ user_id")
     run.add_argument(
         "--private",
@@ -378,7 +378,9 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _validate_run_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+def _validate_run_args(
+    args: argparse.Namespace, parser: argparse.ArgumentParser
+) -> None:
     if not args.private and not args.group_id:
         parser.error("run requires --group-id unless --private is set")
     if args.binding_id is None and not args.text:
