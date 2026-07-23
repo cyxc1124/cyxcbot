@@ -111,27 +111,34 @@ def parse_shop_redeem_args(
     text: str, command_aliases: Dict[str, CommandAliasEntry]
 ) -> tuple[str, int] | None:
     """Return ``(identifier, quantity)`` when redeem command matches."""
+    from utils.rust_rcon.give import parse_quantity_token
+
     arg = match_command_arg(text, "rust_player_shop_redeem", command_aliases)
     if arg is None or not arg.strip():
         return None
     parts = arg.split()
     if len(parts) == 1:
         return parts[0], 1
-    if parts[-1].isdigit():
-        quantity = int(parts[-1])
+    last = parts[-1]
+    quantity_token = parse_quantity_token(last)
+    if quantity_token is not None:
         identifier = " ".join(parts[:-1]).strip()
         if not identifier:
             return None
         try:
-            quantity = normalize_shop_quantity(quantity)
+            quantity = normalize_shop_quantity(quantity_token)
         except ValueError:
             return None
         return identifier, quantity
+    if any(ch.isdigit() for ch in last):
+        return None
     return " ".join(parts), 1
 
 
 def normalize_shop_quantity(quantity: int) -> int:
-    value = int(quantity)
+    from utils.rust_rcon.give import normalize_give_quantity
+
+    value = normalize_give_quantity(quantity)
     if value < 1:
         raise ValueError("兑换数量至少为 1")
     if value > MAX_SHOP_REDEEM_QUANTITY:

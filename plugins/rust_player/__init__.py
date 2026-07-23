@@ -21,6 +21,7 @@ from shared.config.rust_rcon_policy import is_rust_rcon_enabled
 from shared.config.service import get_config_service
 from shared.rust_player import rcon_online_cache, shop_store, store
 from utils.rust_rcon.client import RconAuthError, RconError, execute_rcon_command
+from utils.rust_rcon.give import normalize_give_quantity, parse_give_rejection
 from utils.rust_rcon.status import is_steam_id_online
 
 __plugin_meta__ = PluginMetadata(
@@ -345,13 +346,15 @@ async def _handle_shop_redeem(
     except ValueError as exc:
         await rust_player_cmd.finish(str(exc))
 
-    give_command = f"give {binding.steam_id} {result.item.item_id} {result.quantity}"
+    give_quantity = normalize_give_quantity(result.quantity)
+    give_command = f"giveto {binding.steam_id} {result.item.item_id} {give_quantity}"
     try:
-        await execute_rcon_command(
+        response = await execute_rcon_command(
             rcon_binding.host,
             rcon_binding.port,
             rcon_binding.password,
             give_command,
+            truncate_response=False,
         )
     except RconAuthError:
         logger.warning(
@@ -386,6 +389,19 @@ async def _handle_shop_redeem(
             "发放物品时发生错误，无法确认是否成功，积分未退回。"
             "如未收到物品请联系管理员核实。"
         )
+
+    rejection = parse_give_rejection(response)
+    if rejection is not None:
+        logger.warning(
+            "Rust 兑换 giveto 被拒绝: binding={} user={} item={} qty={} reason={}",
+            rcon_binding.id,
+            user_id,
+            result.item.item_id,
+            give_quantity,
+            rejection,
+        )
+        await shop_store.add_group_points(group_id, user_id, result.total_cost)
+        await rust_player_cmd.finish(f"发放失败：{rejection}，积分已退回。")
 
     logger.info(
         "Rust 商品兑换: group={} user={} item={} qty={} cost={} remaining={}",

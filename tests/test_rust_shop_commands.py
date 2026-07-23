@@ -64,3 +64,4 @@ def test_parse_shop_redeem_invalid(monkeypatch) -> None:
     _patch_prefixes(monkeypatch)
     assert parse_shop_redeem_args("兑换商品", DEFAULT_ALIASES) is None
     assert parse_shop_redeem_args("兑换商品 木头 0", DEFAULT_ALIASES) is None
+    assert parse_shop_redeem_args("兑换商品 wood 2.5", DEFAULT_ALIASES) is None
