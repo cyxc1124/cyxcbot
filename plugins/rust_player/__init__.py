@@ -109,7 +109,6 @@ async def _handle_checkin(group_id: str, user_id: str) -> None:
     snap = get_config_service().get_snapshot()
     binding = await store.get_steam_binding(user_id)
     configured_bonus = snap.rust_checkin_online_bonus_points
-    is_online = False
     rcon_binding = resolve_checkin_rcon_binding(
         snap.rust_rcon_bindings,
         snap.rust_checkin_rcon_binding_id,
@@ -117,9 +116,14 @@ async def _handle_checkin(group_id: str, user_id: str) -> None:
     can_claim_online_bonus = binding is not None and rcon_binding is not None
     bonus_eligible = can_claim_online_bonus and configured_bonus > 0
     check_in_state = await store.get_today_check_in_state(group_id, user_id)
+    needs_rcon = store.needs_rcon_online_check(
+        check_in_state, bonus_eligible=bonus_eligible
+    )
     is_online = False
+    online_verification_available = not needs_rcon
 
-    if store.needs_rcon_online_check(check_in_state, bonus_eligible=bonus_eligible):
+    if needs_rcon:
+        online_verification_available = False
         try:
             status_text = await execute_rcon_command(
                 rcon_binding.host,
@@ -129,6 +133,7 @@ async def _handle_checkin(group_id: str, user_id: str) -> None:
                 truncate_response=False,
             )
             is_online = is_steam_id_online(status_text, binding.steam_id)
+            online_verification_available = True
         except RconAuthError:
             logger.warning(
                 "Rust 签到 RCON 认证失败: binding={} user={}",
@@ -147,6 +152,18 @@ async def _handle_checkin(group_id: str, user_id: str) -> None:
                 rcon_binding.id,
                 user_id,
             )
+
+    if (
+        needs_rcon
+        and not online_verification_available
+        and check_in_state.checked_in
+        and check_in_state.online_bonus_earned == 0
+    ):
+        total = await store.get_group_points(group_id, user_id)
+        await rust_player_cmd.finish(
+            f"无法连接游戏服务器验证在线状态，请稍后重试领取在线加成 "
+            f"{configured_bonus} 积分。当前积分：{total}"
+        )
 
     result = await store.perform_check_in(
         group_id,
@@ -169,13 +186,15 @@ async def _handle_checkin(group_id: str, user_id: str) -> None:
         )
 
     logger.info(
-        "Rust 签到: group={} user={} base={} bonus={} online={} bonus_only={}",
+        "Rust 签到: group={} user={} base={} bonus={} online={} bonus_only={} "
+        "verified={}",
         group_id,
         user_id,
         result.base_points,
         result.online_bonus,
         is_online,
         result.bonus_only,
+        online_verification_available,
     )
 
     if result.bonus_only:
@@ -193,8 +212,12 @@ async def _handle_checkin(group_id: str, user_id: str) -> None:
     message = (
         f"签到成功，获得 {result.base_points} 积分，当前积分：{result.total_points}"
     )
-    if can_claim_online_bonus and configured_bonus > 0:
-        message += f"。进入游戏后再次签到可领取在线加成 {configured_bonus} 积分"
+    if bonus_eligible and not online_verification_available:
+        message += "。当前无法验证游戏在线状态，请稍后重试领取在线加成"
+    elif bonus_eligible and not is_online:
+        message += (
+            f"。进入游戏后再次签到可领取在线加成 {configured_bonus} 积分"
+        )
     await rust_player_cmd.finish(message)
 
 

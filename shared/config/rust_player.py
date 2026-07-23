@@ -86,8 +86,11 @@ def resolve_checkin_rcon_binding(
     bindings: list[RustRconBindingRecord],
     binding_id: int,
 ) -> RustRconBindingRecord | None:
-    """Return enabled binding for check-in; 0 picks the first enabled binding."""
-    enabled = [binding for binding in bindings if binding.enabled]
+    """Return enabled binding for check-in; 0 picks the lowest-id enabled binding."""
+    enabled = sorted(
+        (binding for binding in bindings if binding.enabled),
+        key=lambda binding: binding.id,
+    )
     if not enabled:
         return None
     if binding_id == 0:

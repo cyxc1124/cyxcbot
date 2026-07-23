@@ -487,8 +487,10 @@ class ConfigService:
         }
 
     async def _load_rust_rcon_bindings(self, session) -> list[RustRconBindingRecord]:
-        stmt = select(RustRconBinding).options(
-            selectinload(RustRconBinding.allowed_users)
+        stmt = (
+            select(RustRconBinding)
+            .options(selectinload(RustRconBinding.allowed_users))
+            .order_by(RustRconBinding.id)
         )
         rows = (await session.scalars(stmt)).all()
         bindings: list[RustRconBindingRecord] = []

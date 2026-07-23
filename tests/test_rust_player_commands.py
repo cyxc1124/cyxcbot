@@ -149,6 +149,28 @@ def test_resolve_checkin_rcon_binding() -> None:
     assert resolve_checkin_rcon_binding([], 0) is None
 
 
+def test_resolve_checkin_rcon_binding_picks_lowest_id_when_unsorted() -> None:
+    bindings = [
+        RustRconBindingRecord(
+            id=3,
+            alias="c",
+            host="3.3.3.3",
+            port=28016,
+            password="x",
+            enabled=True,
+        ),
+        RustRconBindingRecord(
+            id=2,
+            alias="b",
+            host="2.2.2.2",
+            port=28016,
+            password="x",
+            enabled=True,
+        ),
+    ]
+    assert resolve_checkin_rcon_binding(bindings, 0).id == 2
+
+
 def test_normalize_checkin_rcon_binding_id() -> None:
     assert normalize_checkin_rcon_binding_id(0) == 0
     with pytest.raises(ValueError):
