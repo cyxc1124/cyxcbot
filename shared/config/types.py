@@ -89,4 +89,5 @@ class AppConfigSnapshot:
     rust_checkin_points_min: int = 1
     rust_checkin_points_max: int = 10
     rust_checkin_online_bonus_points: int = 50
+    rust_steam_bind_bonus_points: int = 200
     rust_checkin_rcon_binding_id: int = 0

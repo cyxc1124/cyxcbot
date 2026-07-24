@@ -125,6 +125,14 @@ def test_normalize_checkin_online_bonus() -> None:
         normalize_checkin_online_bonus(1_000_001)
 
 
+def test_normalize_steam_bind_bonus() -> None:
+    from shared.config.rust_player import normalize_steam_bind_bonus
+
+    assert normalize_steam_bind_bonus(200) == 200
+    with pytest.raises(ValueError, match="1000000"):
+        normalize_steam_bind_bonus(1_000_001)
+
+
 def test_resolve_checkin_rcon_binding() -> None:
     bindings = [
         RustRconBindingRecord(

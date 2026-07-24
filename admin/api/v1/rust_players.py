@@ -17,6 +17,7 @@ from shared.config.rust_player import (
     normalize_checkin_online_bonus,
     normalize_checkin_points_range,
     normalize_checkin_rcon_binding_id,
+    normalize_steam_bind_bonus,
     resolve_checkin_rcon_binding,
 )
 from shared.config.service import get_config_service
@@ -67,6 +68,7 @@ async def get_rust_checkin_config(_: AdminUser) -> RustCheckInConfigResponse:
         min_points=snap.rust_checkin_points_min,
         max_points=snap.rust_checkin_points_max,
         online_bonus_points=snap.rust_checkin_online_bonus_points,
+        steam_bind_bonus_points=snap.rust_steam_bind_bonus_points,
         rcon_binding_id=snap.rust_checkin_rcon_binding_id,
     )
 
@@ -81,6 +83,9 @@ async def update_rust_checkin_config(
             body.min_points, body.max_points
         )
         online_bonus_points = normalize_checkin_online_bonus(body.online_bonus_points)
+        steam_bind_bonus_points = normalize_steam_bind_bonus(
+            body.steam_bind_bonus_points
+        )
         rcon_binding_id = normalize_checkin_rcon_binding_id(body.rcon_binding_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -99,6 +104,7 @@ async def update_rust_checkin_config(
             "rust_checkin_points_min": str(min_points),
             "rust_checkin_points_max": str(max_points),
             "rust_checkin_online_bonus_points": str(online_bonus_points),
+            "rust_steam_bind_bonus_points": str(steam_bind_bonus_points),
             "rust_checkin_rcon_binding_id": str(rcon_binding_id),
         }
     )
@@ -107,5 +113,6 @@ async def update_rust_checkin_config(
         min_points=min_points,
         max_points=max_points,
         online_bonus_points=online_bonus_points,
+        steam_bind_bonus_points=steam_bind_bonus_points,
         rcon_binding_id=rcon_binding_id,
     )

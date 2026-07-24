@@ -44,6 +44,7 @@ export function useRustPlayers() {
     min_points: '1',
     max_points: '10',
     online_bonus_points: '50',
+    steam_bind_bonus_points: '200',
     rcon_binding_id: '0',
   })
   const [savingConfig, setSavingConfig] = useState(false)
@@ -65,6 +66,7 @@ export function useRustPlayers() {
         min_points: String(config.min_points),
         max_points: String(config.max_points),
         online_bonus_points: String(config.online_bonus_points),
+        steam_bind_bonus_points: String(config.steam_bind_bonus_points),
         rcon_binding_id: String(config.rcon_binding_id),
       })
       setDraftPoints(
@@ -88,6 +90,7 @@ export function useRustPlayers() {
     const minPoints = Number.parseInt(configForm.min_points, 10)
     const maxPoints = Number.parseInt(configForm.max_points, 10)
     const onlineBonusPoints = Number.parseInt(configForm.online_bonus_points, 10)
+    const steamBindBonusPoints = Number.parseInt(configForm.steam_bind_bonus_points, 10)
     const rconBindingId = Number.parseInt(configForm.rcon_binding_id, 10)
     const minError = pointsValidationError(minPoints)
     if (minError) {
@@ -102,6 +105,11 @@ export function useRustPlayers() {
     const bonusError = pointsValidationError(onlineBonusPoints)
     if (bonusError) {
       showToast('error', bonusError)
+      return
+    }
+    const bindBonusError = pointsValidationError(steamBindBonusPoints)
+    if (bindBonusError) {
+      showToast('error', bindBonusError)
       return
     }
     if (minPoints > maxPoints) {
@@ -119,6 +127,7 @@ export function useRustPlayers() {
         min_points: minPoints,
         max_points: maxPoints,
         online_bonus_points: onlineBonusPoints,
+        steam_bind_bonus_points: steamBindBonusPoints,
         rcon_binding_id: rconBindingId,
       })
       setCheckInConfig(config)

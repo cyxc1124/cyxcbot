@@ -29,7 +29,7 @@ __plugin_meta__ = PluginMetadata(
     description="群内签到、积分查询与 SteamID 绑定",
     usage="""
 群聊 @机器人（触发词可在 Web Admin → Rust 远控 → 群管命令 中自定义）：
-- 绑定 <SteamID64>：绑定 Steam 账号（不可自助换绑）
+- 绑定 <SteamID64>：绑定 Steam 账号（不可自助换绑）；首次绑定可获奖励积分
 - 签到：每日签到获取随机积分；已绑定 SteamID 且在游戏内在线时可领取/补领在线加成
 - 我的积分 / 积分：查询本群积分
 - 商品列表 / 商品列表2：查看积分商城商品（每页最多 20 条）
@@ -48,10 +48,11 @@ rust_player_cmd = on_message(priority=10, block=False)
 async def _rust_player_startup() -> None:
     snap = get_config_service().get_snapshot()
     logger.info(
-        "Rust 群积分插件已就绪: 签到积分 {}–{}，在线加成 {}",
+        "Rust 群积分插件已就绪: 签到积分 {}–{}，在线加成 {}，首次绑定奖励 {}",
         snap.rust_checkin_points_min,
         snap.rust_checkin_points_max,
         snap.rust_checkin_online_bonus_points,
+        snap.rust_steam_bind_bonus_points,
     )
 
 
@@ -169,11 +170,28 @@ async def _handle_bind_or_checkin(
                 f"SteamID 格式无效，请发送：{trigger} 7656119xxxxxxxxxx"
             )
         try:
-            await store.create_steam_binding(user_id, steam_id)
+            snap = get_config_service().get_snapshot()
+            result = await store.create_steam_binding(
+                user_id,
+                steam_id,
+                group_id=group_id,
+                bind_bonus_points=snap.rust_steam_bind_bonus_points,
+            )
         except ValueError as exc:
             await rust_player_cmd.finish(str(exc))
-        logger.info("Rust Steam 绑定: group={} user={}", group_id, user_id)
-        await rust_player_cmd.finish(f"SteamID 绑定成功：{steam_id}")
+        logger.info(
+            "Rust Steam 绑定: group={} user={} bonus={}",
+            group_id,
+            user_id,
+            result.bind_bonus_points,
+        )
+        message = f"SteamID 绑定成功：{steam_id}"
+        if result.bind_bonus_points > 0:
+            message += (
+                f"，首次绑定奖励 {result.bind_bonus_points} 积分，"
+                f"当前积分：{result.total_points}"
+            )
+        await rust_player_cmd.finish(message)
         return
 
     if steam_id is not None:

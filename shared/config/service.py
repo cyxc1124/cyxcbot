@@ -88,6 +88,7 @@ SETTING_KEYS = {
     "rust_checkin_points_min": ("1", int),
     "rust_checkin_points_max": ("10", int),
     "rust_checkin_online_bonus_points": ("50", int),
+    "rust_steam_bind_bonus_points": ("200", int),
     "rust_checkin_rcon_binding_id": ("0", int),
 }
 
@@ -246,6 +247,9 @@ class ConfigService:
             rust_checkin_online_bonus_points=settings.get(
                 "rust_checkin_online_bonus_points", 50
             ),
+            rust_steam_bind_bonus_points=settings.get(
+                "rust_steam_bind_bonus_points", 200
+            ),
             rust_checkin_rcon_binding_id=settings.get(
                 "rust_checkin_rcon_binding_id", 0
             ),
@@ -324,8 +328,10 @@ class ConfigService:
                     result[key] = max(10, min(3600, parsed))
                 elif key == "group_special_title_daily_limit":
                     result[key] = max(0, min(100, parsed))
-                elif key.startswith("rust_checkin_points") or key.startswith(
-                    "rust_checkin_online_bonus"
+                elif (
+                    key.startswith("rust_checkin_points")
+                    or key.startswith("rust_checkin_online_bonus")
+                    or key == "rust_steam_bind_bonus_points"
                 ):
                     result[key] = max(0, min(MAX_RUST_PLAYER_POINTS, parsed))
                 elif key == "rust_checkin_rcon_binding_id":

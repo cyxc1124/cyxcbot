@@ -253,6 +253,96 @@ async def test_concurrent_bonus_claim_is_atomic(rust_player_store, monkeypatch) 
     assert await store.get_group_points("10001", _TEST_USER) == 55
 
 
+@pytest.mark.asyncio
+async def test_create_steam_binding_awards_first_bind_bonus(rust_player_store) -> None:
+    store, _factory = rust_player_store
+
+    result = await store.create_steam_binding(
+        _TEST_USER,
+        _VALID_STEAM,
+        group_id="10001",
+        bind_bonus_points=200,
+    )
+    assert result.steam_id == _VALID_STEAM
+    assert result.bind_bonus_points == 200
+    assert result.total_points == 200
+    assert await store.get_group_points("10001", _TEST_USER) == 200
+
+
+@pytest.mark.asyncio
+async def test_create_steam_binding_skips_bonus_after_rebind(rust_player_store) -> None:
+    store, _factory = rust_player_store
+
+    first = await store.create_steam_binding(
+        _TEST_USER,
+        _VALID_STEAM,
+        group_id="10001",
+        bind_bonus_points=200,
+    )
+    assert first.bind_bonus_points == 200
+
+    await store.delete_steam_binding(_TEST_USER)
+    rebound = await store.create_steam_binding(
+        _TEST_USER,
+        "76561198000000001",
+        group_id="10001",
+        bind_bonus_points=200,
+    )
+    assert rebound.bind_bonus_points == 0
+    assert await store.get_group_points("10001", _TEST_USER) == 200
+
+
+@pytest.mark.asyncio
+async def test_create_steam_binding_skips_bonus_when_steam_id_already_awarded(
+    rust_player_store,
+) -> None:
+    store, _factory = rust_player_store
+    other_user = "654321"
+    other_steam = "76561198000000001"
+
+    first = await store.create_steam_binding(
+        _TEST_USER,
+        _VALID_STEAM,
+        group_id="10001",
+        bind_bonus_points=200,
+    )
+    assert first.bind_bonus_points == 200
+
+    await store.delete_steam_binding(_TEST_USER)
+    second = await store.create_steam_binding(
+        other_user,
+        _VALID_STEAM,
+        group_id="10001",
+        bind_bonus_points=200,
+    )
+    assert second.bind_bonus_points == 0
+    assert await store.get_group_points("10001", other_user) == 0
+
+    await store.delete_steam_binding(other_user)
+    third = await store.create_steam_binding(
+        other_user,
+        other_steam,
+        group_id="10001",
+        bind_bonus_points=200,
+    )
+    assert third.bind_bonus_points == 200
+    assert await store.get_group_points("10001", other_user) == 200
+
+
+@pytest.mark.asyncio
+async def test_create_steam_binding_zero_bonus(rust_player_store) -> None:
+    store, _factory = rust_player_store
+
+    result = await store.create_steam_binding(
+        _TEST_USER,
+        _VALID_STEAM,
+        group_id="10001",
+        bind_bonus_points=0,
+    )
+    assert result.bind_bonus_points == 0
+    assert result.total_points == 0
+
+
 def test_needs_rcon_online_check() -> None:
     assert (
         needs_rcon_online_check(
