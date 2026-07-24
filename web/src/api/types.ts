@@ -469,6 +469,7 @@ export interface RustCheckInConfig {
   min_points: number
   max_points: number
   online_bonus_points: number
+  steam_bind_bonus_points: number
   rcon_binding_id: number
 }
 

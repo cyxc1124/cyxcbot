@@ -41,6 +41,7 @@ class RustCheckInConfigResponse(BaseModel):
     min_points: int
     max_points: int
     online_bonus_points: int
+    steam_bind_bonus_points: int
     rcon_binding_id: int
 
 
@@ -48,9 +49,15 @@ class RustCheckInConfigUpdateRequest(BaseModel):
     min_points: int
     max_points: int
     online_bonus_points: int
+    steam_bind_bonus_points: int
     rcon_binding_id: int
 
-    @field_validator("min_points", "max_points", "online_bonus_points")
+    @field_validator(
+        "min_points",
+        "max_points",
+        "online_bonus_points",
+        "steam_bind_bonus_points",
+    )
     @classmethod
     def validate_points(cls, value: int) -> int:
         return normalize_player_points(value)

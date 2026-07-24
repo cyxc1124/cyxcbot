@@ -212,6 +212,10 @@ def normalize_checkin_online_bonus(points: int) -> int:
     return normalize_player_points(points)
 
 
+def normalize_steam_bind_bonus(points: int) -> int:
+    return normalize_player_points(points)
+
+
 def normalize_checkin_rcon_binding_id(binding_id: int) -> int:
     value = int(binding_id)
     if value < 0:

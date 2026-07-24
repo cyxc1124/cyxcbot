@@ -41,7 +41,7 @@ export function RustPlayersTab() {
           <p className="mt-1 text-sm text-muted-foreground">
             群成员发送 <code className="font-mono text-xs">@机器人 签到</code>{' '}
             时随机获得基础积分（每日一次）；已绑定 SteamID 且在游戏内在线时可领取在线加成，离线签到后上线可再次签到补领。
-            签到、绑定、查积分、商城等 Rust 群管指令均需本群开启 Rust RCON，未开启时会被静默忽略。
+            首次绑定 SteamID 可获一次性奖励积分。签到、绑定、查积分、商城等 Rust 群管指令均需本群开启 Rust RCON，未开启时会被静默忽略。
           </p>
         </div>
 
@@ -92,6 +92,23 @@ export function RustPlayersTab() {
             />
           </label>
           <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">首次绑定奖励</span>
+            <input
+              type="number"
+              min={0}
+              max={1000000}
+              className="input w-28"
+              value={configForm.steam_bind_bonus_points}
+              disabled={savingConfig}
+              onChange={(e) =>
+                setConfigForm((prev) => ({
+                  ...prev,
+                  steam_bind_bonus_points: e.target.value,
+                }))
+              }
+            />
+          </label>
+          <label className="space-y-1">
             <span className="text-xs text-muted-foreground">RCON 服务器</span>
             <select
               className="input min-w-40"
@@ -122,7 +139,8 @@ export function RustPlayersTab() {
           {checkInConfig && (
             <span className="text-xs text-muted-foreground">
               当前生效：基础 {checkInConfig.min_points}–{checkInConfig.max_points}，
-              在线加成 {checkInConfig.online_bonus_points}
+              在线加成 {checkInConfig.online_bonus_points}，首次绑定{' '}
+              {checkInConfig.steam_bind_bonus_points}
             </span>
           )}
         </div>
@@ -133,7 +151,7 @@ export function RustPlayersTab() {
           <h3 className="font-semibold text-foreground">积分与 SteamID 绑定</h3>
           <p className="mt-1 text-sm text-muted-foreground">
             用户通过 <code className="font-mono text-xs">@机器人 绑定 SteamID64</code>{' '}
-            绑定账号（不可自助换绑）；查询积分：
+            绑定账号（不可自助换绑，首次绑定可获奖励积分）；查询积分：
             <code className="font-mono text-xs">@机器人 我的积分</code> 或{' '}
             <code className="font-mono text-xs">@机器人 积分</code>。
             触发词在「群管命令」Tab 中配置。

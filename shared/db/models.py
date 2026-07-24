@@ -360,6 +360,23 @@ class RustShopItem(Model):
     )
 
 
+class RustSteamBindBonusAwarded(Model):
+    """One-time Steam bind bonus per QQ user and per SteamID (survives unbind)."""
+
+    __tablename__ = "shared_db_ruststeambindbonusawarded"
+    __table_args__ = (
+        UniqueConstraint("steam_id", name="uq_rust_steam_bind_bonus_steam_id"),
+    )
+
+    user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    steam_id: Mapped[str] = mapped_column(String(20), nullable=False)
+    group_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    points: Mapped[int] = mapped_column(Integer, nullable=False)
+    awarded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+
 class RustCheckInRecord(Model):
     """Daily group check-in record."""
 

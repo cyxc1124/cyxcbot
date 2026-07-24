@@ -12,7 +12,12 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from shared.config.rust_player import normalize_player_points
-from shared.db.models import RustCheckInRecord, RustPlayerPoints, RustSteamBinding
+from shared.db.models import (
+    RustCheckInRecord,
+    RustPlayerPoints,
+    RustSteamBindBonusAwarded,
+    RustSteamBinding,
+)
 
 _CHECKIN_TZ = ZoneInfo("Asia/Shanghai")
 
@@ -40,6 +45,13 @@ class CheckInResult:
 class TodayCheckInState:
     checked_in: bool
     online_bonus_earned: int = 0
+
+
+@dataclass(frozen=True)
+class SteamBindResult:
+    steam_id: str
+    bind_bonus_points: int = 0
+    total_points: int = 0
 
 
 def needs_rcon_online_check(state: TodayCheckInState, *, bonus_eligible: bool) -> bool:
@@ -88,9 +100,16 @@ async def _ensure_steam_binding_available(session, user_id: str, steam_id: str) 
         raise ValueError("该 SteamID 已被其他 QQ 号绑定")
 
 
-async def create_steam_binding(user_id: str, steam_id: str) -> None:
+async def create_steam_binding(
+    user_id: str,
+    steam_id: str,
+    *,
+    group_id: str | None = None,
+    bind_bonus_points: int = 0,
+) -> SteamBindResult:
     user_id = str(user_id).strip()
     steam_id = str(steam_id).strip()
+    bind_bonus_points = max(0, int(bind_bonus_points))
     async with get_session() as session:
         async with session.begin():
             await _ensure_steam_binding_available(session, user_id, steam_id)
@@ -101,6 +120,44 @@ async def create_steam_binding(user_id: str, steam_id: str) -> None:
             except IntegrityError:
                 await _ensure_steam_binding_available(session, user_id, steam_id)
                 raise ValueError("绑定失败，请稍后重试") from None
+
+            awarded_bonus = 0
+            total_points = 0
+            if bind_bonus_points > 0 and group_id:
+                group_id = str(group_id).strip()
+                existing_by_user = await session.get(
+                    RustSteamBindBonusAwarded, user_id
+                )
+                existing_by_steam = await session.scalar(
+                    select(RustSteamBindBonusAwarded).where(
+                        RustSteamBindBonusAwarded.steam_id == steam_id
+                    )
+                )
+                if existing_by_user is None and existing_by_steam is None:
+                    try:
+                        async with session.begin_nested():
+                            session.add(
+                                RustSteamBindBonusAwarded(
+                                    user_id=user_id,
+                                    steam_id=steam_id,
+                                    group_id=group_id,
+                                    points=bind_bonus_points,
+                                )
+                            )
+                            await session.flush()
+                    except IntegrityError:
+                        pass
+                    else:
+                        total_points = await _add_points_in_session(
+                            session, group_id, user_id, bind_bonus_points
+                        )
+                        awarded_bonus = bind_bonus_points
+
+            return SteamBindResult(
+                steam_id=steam_id,
+                bind_bonus_points=awarded_bonus,
+                total_points=total_points,
+            )
 
 
 async def delete_steam_binding(user_id: str) -> bool:
