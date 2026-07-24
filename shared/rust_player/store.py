@@ -125,9 +125,7 @@ async def create_steam_binding(
             total_points = 0
             if bind_bonus_points > 0 and group_id:
                 group_id = str(group_id).strip()
-                existing_by_user = await session.get(
-                    RustSteamBindBonusAwarded, user_id
-                )
+                existing_by_user = await session.get(RustSteamBindBonusAwarded, user_id)
                 existing_by_steam = await session.scalar(
                     select(RustSteamBindBonusAwarded).where(
                         RustSteamBindBonusAwarded.steam_id == steam_id

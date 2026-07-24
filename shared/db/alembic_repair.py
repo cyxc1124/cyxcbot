@@ -108,9 +108,7 @@ def infer_alembic_revision(probe: SchemaProbe) -> str:
     """
     if probe.table_exists("shared_db_rustshopitem"):
         if probe.table_exists("shared_db_ruststeambindbonusawarded"):
-            if probe.column_exists(
-                "shared_db_ruststeambindbonusawarded", "steam_id"
-            ):
+            if probe.column_exists("shared_db_ruststeambindbonusawarded", "steam_id"):
                 return "q7r8s9t0u1v2"
             return "p6q7r8s9t0u1"
         if probe.index_exists("shared_db_rustshopitem", "uq_rust_shop_enabled_name"):

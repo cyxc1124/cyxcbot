@@ -83,7 +83,9 @@ async def update_rust_checkin_config(
             body.min_points, body.max_points
         )
         online_bonus_points = normalize_checkin_online_bonus(body.online_bonus_points)
-        steam_bind_bonus_points = normalize_steam_bind_bonus(body.steam_bind_bonus_points)
+        steam_bind_bonus_points = normalize_steam_bind_bonus(
+            body.steam_bind_bonus_points
+        )
         rcon_binding_id = normalize_checkin_rcon_binding_id(body.rcon_binding_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
