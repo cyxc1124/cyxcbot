@@ -110,13 +110,28 @@ maintainer's call; never tag or push unless explicitly asked.
 
 ### 3. Bump deploy defaults
 
-Check out / sync to `<release-base>` **before** editing (do not edit
-ambient `HEAD` if it differs):
+Work on a **named branch** whose tip is `<release-base>` before editing.
+Do **not** use `git switch --detach` — a detached bump has no branch tip
+to push, so step 7 cannot publish it.
 
 ```bash
-git switch <release-branch>   # or: git switch --detach <release-base>
+# Preferred: release from the branch tip (usually main)
+git switch <release-branch>
 test "$(git rev-parse HEAD)" = "$(git rev-parse <release-base>)"
 ```
+
+If `<release-base>` is not the current tip of `<release-branch>`, stop
+and confirm with the maintainer. Options:
+
+1. Merge/rebase so the intended code is the branch tip, then re-record
+   `<release-base>`, or
+2. Create a publishable branch at that base (then use it as
+   `<release-branch>` for the rest of the flow):
+   ```bash
+   git switch -c release/vX.Y.Z <release-base>
+   ```
+
+Never edit ambient `HEAD` that differs from `<release-base>`.
 
 Edit only:
 
@@ -186,11 +201,11 @@ chore(deploy): 将默认镜像版本更新为 vX.Y.Z
 ```
 
 Do **not** include unrelated dirty files. After commit, set
-`<release-commit>` to that new SHA and verify it is built on the
-recorded base:
+`<release-commit>` to that new SHA and verify ancestry + branch tip:
 
 ```bash
 test "$(git rev-parse <release-commit>^)" = "$(git rev-parse <release-base>)"
+test "$(git rev-parse <release-branch>)" = "$(git rev-parse <release-commit>)"
 ```
 
 Step 7 **must not** run until this bump commit exists and
@@ -227,21 +242,17 @@ EOF
 )"
 ```
 
-**Push** — do not push the tag if the branch push fails (otherwise CI
-publishes while the bump is missing from the intended branch).
-
-If `<release-branch>` tip **equals** `<release-commit>`, push both
-atomically:
+**Push** — `<release-commit>` must be the tip of `<release-branch>`
+(guaranteed if step 3 stayed on a named branch). Push branch + tag
+atomically so a rejected branch update never leaves a published tag:
 
 ```bash
 test "$(git rev-parse <release-branch>)" = "$(git rev-parse <release-commit>)"
 git push --atomic origin <release-branch> vX.Y.Z
 ```
 
-If tip ≠ `<release-commit>`, omit the branch push and push only
-`vX.Y.Z` after ensuring `<release-commit>` is already reachable on the
-remote. Do **not** hard-code `git push origin main`. Do **not** run a
-separate `git push origin vX.Y.Z` after a failed branch push.
+Do **not** hard-code `main`. Do **not** push the tag alone after a
+failed branch push. Do **not** leave the bump on a detached HEAD.
 
 Pushing `vX.Y.Z` triggers:
 
