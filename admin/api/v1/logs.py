@@ -196,7 +196,7 @@ async def stream_logs(
             min_level=min_level,
         )
 
-        queue = hub.subscribe()
+        queue = hub.subscribe(min_level=min_level)
         try:
             await _handoff_to_live(
                 websocket,
