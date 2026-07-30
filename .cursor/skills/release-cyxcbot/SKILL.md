@@ -51,10 +51,13 @@ maintainer's call; never tag or push unless explicitly asked.
   destructive tag sync if the maintainer explicitly asks. If the clone is
   shallow and history around the last release is missing, deepen or
   unshallow before relying on `git log` ranges.
-- Last **published** release name — from origin only:
+- Last **published** stable release name — from origin only, filter to
+  `vX.Y.Z` (reject `v2.4.0-rc1`, `vtest`, etc.; workflows accept any `v*`
+  but this skill only cuts stable SemVer):
   ```bash
   LAST_TAG=$(git ls-remote --tags --refs origin 'refs/tags/v*' \
-    | awk '{print $2}' | sed 's|refs/tags/||' | sort -V | tail -1)
+    | awk '{print $2}' | sed 's|refs/tags/||' \
+    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
   echo "$LAST_TAG"
   ```
   If empty, stop — do not invent a version from deploy defaults alone.
@@ -94,9 +97,10 @@ maintainer's call; never tag or push unless explicitly asked.
 - Prefer cutting from **`main`** after the intended commits are merged
   (historical tags point at `main`; `develop` is the integration branch).
 - If `develop` is ahead of `main`, confirm with the user whether to merge
-  first or tag a specific commit. Record the chosen
-  `<release-branch>` and `<release-commit>` (full SHA); later steps must
-  use these, not an ambient `HEAD` that may differ.
+  first or tag a specific commit. Record `<release-branch>` and the
+  pre-bump base SHA. The SHA that step 7 tags is **only** the step-6
+  deploy-bump commit — do not reuse the step-2 base as `<release-commit>`
+  for tagging.
 - Lint/format/test CI jobs run only on **pull_request** (see
   `build-and-push.yml`); push to `main`/`develop` builds images but does
   not re-run that gate. Confirm the last merged PR checks were green
@@ -175,15 +179,25 @@ chore(deploy): 将默认镜像版本更新为 vX.Y.Z
 ```
 
 Do **not** include unrelated dirty files. After commit, set
-`<release-commit>` to that new SHA (it is what step 7 tags).
+`<release-commit>` to that new SHA. Step 7 **must not** run until this
+bump commit exists and `<release-commit>` points at it (the step-2 SHA
+is the pre-bump base only).
 
 ### 7. Tag (only when asked)
 
-Tag the **explicit** `<release-commit>` from steps 2/6 — never assume
-ambient `HEAD` matches it:
+**Preflight** — stop if any fail:
+
+1. Step 6 bump is committed (working tree clean for the four deploy
+   files; they show `vX.Y.Z` / `appVersion: "X.Y.Z"` at
+   `<release-commit>`).
+2. `<release-commit>` is the bump commit SHA from step 6 — not the
+   pre-bump SHA from step 2.
+3. Tag the **explicit** `<release-commit>` — never assume ambient `HEAD`:
 
 ```bash
 git rev-parse --verify <release-commit>
+git show <release-commit>:deploy/compose/docker-compose.yml \
+  | grep -F "cyxcbot:vX.Y.Z"
 git tag -a vX.Y.Z <release-commit> -m "$(cat <<'EOF'
 vX.Y.Z
 
@@ -194,14 +208,21 @@ vX.Y.Z
 升级说明：...
 EOF
 )"
-git push origin <release-branch>   # branch that contains <release-commit>
+```
+
+**Branch push** — only if `<release-branch>` tip **equals**
+`<release-commit>` (pushing the branch otherwise publishes later
+unreviewed commits):
+
+```bash
+test "$(git rev-parse <release-branch>)" = "$(git rev-parse <release-commit>)"
+git push origin <release-branch>
 git push origin vX.Y.Z
 ```
 
-Do **not** hard-code `git push origin main`. If step 2 selected another
-branch, push that branch (after ensuring `<release-commit>` is on it).
-If only the tag should be published and `<release-commit>` is already on
-the remote tip, omit the branch push and push just `vX.Y.Z`.
+If tip ≠ `<release-commit>`, omit the branch push and push only
+`vX.Y.Z` (after ensuring that commit is reachable on the remote, e.g.
+already pushed). Do **not** hard-code `git push origin main`.
 
 Pushing `vX.Y.Z` triggers:
 
