@@ -133,6 +133,10 @@ class LogBroadcastHub:
         with self._lock:
             self._subscribers.pop(queue, None)
 
+    def is_subscribed(self, queue: asyncio.Queue[LogEntry | None]) -> bool:
+        with self._lock:
+            return queue in self._subscribers
+
     @property
     def history_size(self) -> int:
         with self._lock:

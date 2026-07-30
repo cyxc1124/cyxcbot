@@ -139,7 +139,7 @@ def test_subscribe_filters_by_min_level_before_enqueue() -> None:
 
         assert queue.qsize() == 1
         assert queue.get_nowait().message == "keep-me"
-        assert queue in hub._subscribers
+        assert hub.is_subscribed(queue)
     finally:
         hub.unsubscribe(queue)
 
@@ -152,11 +152,11 @@ def test_queue_full_signals_disconnect_sentinel() -> None:
         for index in range(SUBSCRIBER_QUEUE_SIZE):
             hub.publish(_entry(f"fill-{index}"))
         assert queue.qsize() == SUBSCRIBER_QUEUE_SIZE
-        assert queue in hub._subscribers
+        assert hub.is_subscribed(queue)
 
         hub.publish(_entry("overflow"))
 
-        assert queue not in hub._subscribers
+        assert not hub.is_subscribed(queue)
         assert queue.qsize() == 1
         assert queue.get_nowait() is None
     finally:

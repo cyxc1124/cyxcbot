@@ -140,6 +140,10 @@ async def _handoff_to_live(
         for entry in catch_up:
             if entry.entry_id in sent:
                 continue
+            # Overflow may drop this subscriber during a slow send; don't flush
+            # the rest of catch-up before noticing the disconnect sentinel.
+            if not hub.is_subscribed(queue):
+                raise _SubscriberOverloaded
             await websocket.send_json(entry.to_dict())
             sent.add(entry.entry_id)
             progressed = True
