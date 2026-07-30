@@ -17,6 +17,12 @@ class _OnlineCheckCache:
     is_online: bool
 
 
+def should_cache_checkin_online_result(*, already_checked_in: bool) -> bool:
+    """Whether an RCON online probe may reuse/store the per-user TTL cache."""
+    # Bonus retries must re-query: offline results are cached during first check-in.
+    return not already_checked_in
+
+
 def get_cached_checkin_online(user_id: str) -> bool | None:
     entry = _cache.get(str(user_id).strip())
     if entry is None:
