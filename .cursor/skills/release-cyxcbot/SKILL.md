@@ -50,15 +50,22 @@ maintainer's call; never tag or push unless explicitly asked.
   Only use destructive tag sync if the maintainer explicitly asks.
   If the clone is shallow and history around the last release is missing,
   deepen or unshallow before relying on `git log <last-tag>..HEAD`.
-- Last release: `git tag --list 'v*' --sort=-v:refname | head -1`
-  If this is empty after fetch, stop — do not invent a version from deploy
-  defaults alone.
-- Current deploy default (should equal last release):
+- Last **published** release — derive from origin, not local tags (an
+  unpushed local `v*` would otherwise look like the latest release):
+  ```bash
+  git ls-remote --tags --refs origin 'refs/tags/v*' \
+    | awk '{print $2}' | sed 's|refs/tags/||' | sort -V | tail -1
+  ```
+  If this is empty, stop — do not invent a version from deploy defaults
+  alone. If a newer local-only `v*` exists, warn the maintainer before
+  proposing the next version (do not treat it as published).
+- Current deploy default (should equal last published release):
   ```bash
   awk -F: '/image:.*cyxcbot:/{print $NF; exit}' deploy/compose/docker-compose.yml
   ```
-- Review changes since last tag: `git log --no-merges <last-tag>..HEAD`
-- Also list schema-touching migrations since last tag:
+- Review changes since last published tag:
+  `git log --no-merges <last-tag>..HEAD`
+- Also list schema-touching migrations since last published tag:
   ```bash
   git log --oneline <last-tag>..HEAD -- shared/db/migrations/
   ```
