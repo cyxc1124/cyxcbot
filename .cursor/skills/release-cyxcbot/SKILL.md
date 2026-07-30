@@ -40,7 +40,17 @@ maintainer's call; never tag or push unless explicitly asked.
 
 ### 1. Pick the next version
 
+- Refresh remote refs first. Shallow, `--no-tags`, or stale checkouts can
+  omit / outdated local tags; using them as `<last-tag>` inspects the wrong
+  range (or fails) and risks a duplicate/incorrect bump:
+  ```bash
+  git fetch origin --tags --prune --prune-tags
+  ```
+  If the clone is shallow and history around the last release is missing,
+  deepen or unshallow before relying on `git log <last-tag>..HEAD`.
 - Last release: `git tag --list 'v*' --sort=-v:refname | head -1`
+  If this is empty after fetch, stop — do not invent a version from deploy
+  defaults alone.
 - Current deploy default (should equal last release):
   ```bash
   awk -F: '/image:.*cyxcbot:/{print $NF; exit}' deploy/compose/docker-compose.yml
