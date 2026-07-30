@@ -30,6 +30,10 @@ router = APIRouter(
 _WS_AUTH_PROTOCOL = "access_token"
 
 
+class _SubscriberOverloaded(Exception):
+    """Hub dropped this subscriber after queue overflow; close WS to force reconnect."""
+
+
 def _token_from_subprotocol(header: str | None) -> str | None:
     if not header:
         return None
@@ -107,7 +111,7 @@ async def _drain_subscriber_backlog(
         except asyncio.QueueEmpty:
             return delivered
         if entry is None:
-            continue
+            raise _SubscriberOverloaded
         if not _level_gte(entry.level, threshold):
             continue
         if entry.entry_id in sent:
@@ -214,12 +218,20 @@ async def stream_logs(
             while True:
                 entry = await queue.get()
                 if entry is None:
-                    continue
+                    raise _SubscriberOverloaded
                 if not _level_gte(entry.level, threshold):
                     continue
                 await websocket.send_json(entry.to_dict())
         finally:
             hub.unsubscribe(queue)
+    except _SubscriberOverloaded:
+        try:
+            await websocket.close(
+                code=status.WS_1013_TRY_AGAIN_LATER,
+                reason="log backlog overflow",
+            )
+        except Exception:
+            pass
     except WebSocketDisconnect:
         pass
     except asyncio.CancelledError:

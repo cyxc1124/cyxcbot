@@ -100,6 +100,16 @@ class LogBroadcastHub:
                     dead.append(queue)
             for queue in dead:
                 self._subscribers.pop(queue, None)
+                # Wake the consumer with None so WS can close and the client reconnect.
+                # Queue is full, so drop one slot first; ring buffer still has history.
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                try:
+                    queue.put_nowait(None)
+                except asyncio.QueueFull:
+                    pass
 
     def recent(self, *, limit: int = 500, min_level: str = "DEBUG") -> list[LogEntry]:
         threshold = _level_rank(min_level)
