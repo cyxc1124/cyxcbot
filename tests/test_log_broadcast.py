@@ -8,6 +8,7 @@ from nonebot.log import LoguruHandler
 from uvicorn.config import LOGGING_CONFIG
 
 from shared.logging.broadcast import (
+    SUBSCRIBER_QUEUE_SIZE,
     LogBroadcastHub,
     LogEntry,
     bridge_uvicorn_loggers,
@@ -138,7 +139,26 @@ def test_subscribe_filters_by_min_level_before_enqueue() -> None:
 
         assert queue.qsize() == 1
         assert queue.get_nowait().message == "keep-me"
-        assert queue in hub._subscribers
+        assert hub.is_subscribed(queue)
+    finally:
+        hub.unsubscribe(queue)
+
+
+def test_queue_full_signals_disconnect_sentinel() -> None:
+    """Slow clients must get None so WS can close and reconnect."""
+    hub = LogBroadcastHub(max_history=10)
+    queue = hub.subscribe(min_level="DEBUG")
+    try:
+        for index in range(SUBSCRIBER_QUEUE_SIZE):
+            hub.publish(_entry(f"fill-{index}"))
+        assert queue.qsize() == SUBSCRIBER_QUEUE_SIZE
+        assert hub.is_subscribed(queue)
+
+        hub.publish(_entry("overflow"))
+
+        assert not hub.is_subscribed(queue)
+        assert queue.qsize() == 1
+        assert queue.get_nowait() is None
     finally:
         hub.unsubscribe(queue)
 

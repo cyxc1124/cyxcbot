@@ -100,6 +100,17 @@ class LogBroadcastHub:
                     dead.append(queue)
             for queue in dead:
                 self._subscribers.pop(queue, None)
+                # Drop backlog so None is next; otherwise a slow send_json loop
+                # may never reach the sentinel. Ring buffer still has history.
+                while True:
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+                try:
+                    queue.put_nowait(None)
+                except asyncio.QueueFull:
+                    pass
 
     def recent(self, *, limit: int = 500, min_level: str = "DEBUG") -> list[LogEntry]:
         threshold = _level_rank(min_level)
@@ -121,6 +132,10 @@ class LogBroadcastHub:
     def unsubscribe(self, queue: asyncio.Queue[LogEntry | None]) -> None:
         with self._lock:
             self._subscribers.pop(queue, None)
+
+    def is_subscribed(self, queue: asyncio.Queue[LogEntry | None]) -> bool:
+        with self._lock:
+            return queue in self._subscribers
 
     @property
     def history_size(self) -> int:
