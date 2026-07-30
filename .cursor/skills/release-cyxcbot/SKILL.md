@@ -44,8 +44,10 @@ maintainer's call; never tag or push unless explicitly asked.
   omit / outdated local tags; using them as `<last-tag>` inspects the wrong
   range (or fails) and risks a duplicate/incorrect bump:
   ```bash
-  git fetch origin --tags --prune --prune-tags
+  git fetch origin --tags --prune
   ```
+  Do **not** pass `--prune-tags` here (it also clobbers changed local tags).
+  Only use destructive tag sync if the maintainer explicitly asks.
   If the clone is shallow and history around the last release is missing,
   deepen or unshallow before relying on `git log <last-tag>..HEAD`.
 - Last release: `git tag --list 'v*' --sort=-v:refname | head -1`
