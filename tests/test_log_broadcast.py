@@ -144,6 +144,30 @@ def test_subscribe_filters_by_min_level_before_enqueue() -> None:
         hub.unsubscribe(queue)
 
 
+def test_debug_flood_does_not_starve_info_history() -> None:
+    """Default INFO view must keep its own ring after long DEBUG polling."""
+    hub = LogBroadcastHub(max_history=10)
+    for index in range(10):
+        hub.publish(_entry(f"info-{index}", level="INFO"))
+    for index in range(100):
+        hub.publish(_entry(f"debug-{index}", level="DEBUG"))
+
+    recent = hub.recent(limit=10, min_level="INFO")
+    assert len(recent) == 10
+    assert [entry.message for entry in recent] == [f"info-{i}" for i in range(10)]
+    assert hub.history_size == 20
+
+
+def test_debug_recent_merges_tiers_in_entry_id_order() -> None:
+    hub = LogBroadcastHub(max_history=5)
+    hub.publish(_entry("i1", level="INFO"))
+    hub.publish(_entry("d1", level="DEBUG"))
+    hub.publish(_entry("i2", level="INFO"))
+
+    recent = hub.recent(limit=10, min_level="DEBUG")
+    assert [entry.message for entry in recent] == ["i1", "d1", "i2"]
+
+
 def test_queue_full_signals_disconnect_sentinel() -> None:
     """Slow clients must get None so WS can close and reconnect."""
     hub = LogBroadcastHub(max_history=10)

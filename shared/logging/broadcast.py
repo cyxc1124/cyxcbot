@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import heapq
 import logging
 import threading
 import uuid
@@ -13,7 +14,8 @@ from typing import Any
 
 from nonebot.log import logger as nb_logger
 
-# Ring buffer capacity for recent history (≈ last ~30–60 min at typical volume)
+# Per-tier ring capacity. INFO+ and DEBUG are stored separately so monitor
+# DEBUG floods cannot starve the default Web /logs INFO view.
 MAX_HISTORY = 2000
 
 # Per-subscriber queue size; slow clients drop instead of blocking producers
@@ -32,6 +34,7 @@ LEVEL_RANK = {
     "ERROR": 40,
     "CRITICAL": 50,
 }
+_INFO_RANK = LEVEL_RANK["INFO"]
 
 
 @dataclass(frozen=True)
@@ -72,7 +75,9 @@ class LogBroadcastHub:
 
     def __init__(self, max_history: int = MAX_HISTORY) -> None:
         self._max_history = max_history
-        self._history: deque[LogEntry] = deque(maxlen=max_history)
+        # Split tiers: default Web view is INFO; DEBUG must not evict it.
+        self._info_history: deque[LogEntry] = deque(maxlen=max_history)
+        self._debug_history: deque[LogEntry] = deque(maxlen=max_history)
         # queue -> min level rank; filter before enqueue so DEBUG flood cannot
         # fill INFO subscribers' 256-slot queues.
         self._subscribers: dict[asyncio.Queue[LogEntry | None], int] = {}
@@ -88,8 +93,11 @@ class LogBroadcastHub:
         with self._lock:
             self._seq += 1
             entry = replace(entry, session_id=self._session_id, entry_id=self._seq)
-            self._history.append(entry)
             entry_rank = _level_rank(entry.level)
+            if entry_rank >= _INFO_RANK:
+                self._info_history.append(entry)
+            else:
+                self._debug_history.append(entry)
             dead: list[asyncio.Queue[LogEntry | None]] = []
             for queue, threshold in self._subscribers.items():
                 if entry_rank < threshold:
@@ -115,11 +123,25 @@ class LogBroadcastHub:
     def recent(self, *, limit: int = 500, min_level: str = "DEBUG") -> list[LogEntry]:
         threshold = _level_rank(min_level)
         with self._lock:
-            items = list(self._history)
-        filtered = [item for item in items if _level_rank(item.level) >= threshold]
+            if threshold >= _INFO_RANK:
+                items = [
+                    item
+                    for item in self._info_history
+                    if _level_rank(item.level) >= threshold
+                ]
+            else:
+                # Both deques are append-ordered by monotonic entry_id.
+                items = list(
+                    heapq.merge(
+                        self._debug_history,
+                        self._info_history,
+                        key=lambda item: item.entry_id,
+                    )
+                )
+                items = [item for item in items if _level_rank(item.level) >= threshold]
         if limit <= 0:
-            return filtered
-        return filtered[-limit:]
+            return items
+        return items[-limit:]
 
     def subscribe(self, *, min_level: str = "DEBUG") -> asyncio.Queue[LogEntry | None]:
         queue: asyncio.Queue[LogEntry | None] = asyncio.Queue(
@@ -140,7 +162,7 @@ class LogBroadcastHub:
     @property
     def history_size(self) -> int:
         with self._lock:
-            return len(self._history)
+            return len(self._info_history) + len(self._debug_history)
 
 
 _hub: LogBroadcastHub | None = None
