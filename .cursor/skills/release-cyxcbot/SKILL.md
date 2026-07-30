@@ -157,8 +157,8 @@ Do **not** include unrelated dirty files.
 
 ### 7. Tag (only when asked)
 
-Tag the **release commit** (the deploy-bump commit on the branch you intend
-to ship, typically `main`):
+Tag the **release commit** (the deploy-bump commit on the branch / commit
+chosen in step 2; prefer `main` when that is what you are shipping):
 
 ```bash
 git tag -a vX.Y.Z -m "$(cat <<'EOF'
@@ -171,9 +171,14 @@ vX.Y.Z
 升级说明：...
 EOF
 )"
-git push origin main
+git push origin <release-branch>   # the branch that contains the release commit
 git push origin vX.Y.Z
 ```
+
+Do **not** hard-code `git push origin main`. If step 2 selected another
+branch or a specific commit, push that branch (after ensuring the release
+commit is on it). If only the tag should be published and the commit is
+already on the remote tip, omit the branch push and push just `vX.Y.Z`.
 
 Pushing `vX.Y.Z` triggers:
 
