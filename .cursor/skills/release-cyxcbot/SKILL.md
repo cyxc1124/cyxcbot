@@ -16,9 +16,11 @@ maintainer's call; never tag or push unless explicitly asked.
 
 ## Source of truth
 
-- **Version**: git tags `vX.Y.Z` (matches `.github/workflows/build-and-push.yml`
-  and `build-windows.yml` `tags: ['v*']`). There is **no** project version in
-  `pyproject.toml`. Do **not** invent prefixes like `cyxcbot-v*`.
+- **Version**: published git tags `vX.Y.Z` on **origin** (matches
+  `.github/workflows/build-and-push.yml` and `build-windows.yml`
+  `tags: ['v*']`). There is **no** project version in `pyproject.toml`.
+  Do **not** invent prefixes like `cyxcbot-v*`. Local `refs/tags/v*` is
+  not authoritative when it disagrees with origin.
 - **Deploy cosmetic sync** (must match the release being tagged):
   - `deploy/compose/docker-compose.yml` → `image: ...:vX.Y.Z`
   - `deploy/helm/values.yaml` → `image.tag: "vX.Y.Z"`
@@ -40,34 +42,47 @@ maintainer's call; never tag or push unless explicitly asked.
 
 ### 1. Pick the next version
 
-- Refresh remote refs first. Shallow, `--no-tags`, or stale checkouts can
-  omit / outdated local tags; using them as `<last-tag>` inspects the wrong
-  range (or fails) and risks a duplicate/incorrect bump:
+- Refresh remote branch tips + tags first (shallow / `--no-tags` / stale
+  checkouts otherwise omit or lag tags):
   ```bash
   git fetch origin --tags --prune
   ```
-  Do **not** pass `--prune-tags` here (it also clobbers changed local tags).
-  Only use destructive tag sync if the maintainer explicitly asks.
-  If the clone is shallow and history around the last release is missing,
-  deepen or unshallow before relying on `git log <last-tag>..HEAD`.
-- Last **published** release — derive from origin, not local tags (an
-  unpushed local `v*` would otherwise look like the latest release):
+  Do **not** pass `--prune-tags` (clobbers changed local tags). Only use
+  destructive tag sync if the maintainer explicitly asks. If the clone is
+  shallow and history around the last release is missing, deepen or
+  unshallow before relying on `git log` ranges.
+- Last **published** release name — from origin only:
   ```bash
-  git ls-remote --tags --refs origin 'refs/tags/v*' \
-    | awk '{print $2}' | sed 's|refs/tags/||' | sort -V | tail -1
+  LAST_TAG=$(git ls-remote --tags --refs origin 'refs/tags/v*' \
+    | awk '{print $2}' | sed 's|refs/tags/||' | sort -V | tail -1)
+  echo "$LAST_TAG"
   ```
-  If this is empty, stop — do not invent a version from deploy defaults
-  alone. If a newer local-only `v*` exists, warn the maintainer before
-  proposing the next version (do not treat it as published).
-- Current deploy default (should equal last published release):
+  If empty, stop — do not invent a version from deploy defaults alone.
+- Resolve that published tag via a **remote-only** ref (do not trust
+  `refs/tags/$LAST_TAG` for ranges — a same-named local tag may point
+  elsewhere, and non-destructive fetch will not overwrite it):
+  ```bash
+  git fetch origin "+refs/tags/${LAST_TAG}:refs/release-check/${LAST_TAG}"
+  if LOCAL_OID=$(git rev-parse -q --verify "refs/tags/${LAST_TAG}"); then
+    REMOTE_OID=$(git rev-parse "refs/release-check/${LAST_TAG}")
+    if [ "$LOCAL_OID" != "$REMOTE_OID" ]; then
+      echo "local refs/tags/${LAST_TAG} != origin; stop and reconcile" >&2
+      exit 1
+    fi
+  fi
+  ```
+  If a newer local-only `v*` exists, warn before proposing the next
+  version (do not treat it as published).
+- Current deploy default (should equal last published release **before**
+  the bump in step 3):
   ```bash
   awk -F: '/image:.*cyxcbot:/{print $NF; exit}' deploy/compose/docker-compose.yml
   ```
-- Review changes since last published tag:
-  `git log --no-merges <last-tag>..HEAD`
-- Also list schema-touching migrations since last published tag:
+- Choose `<release-tip>` (branch tip or commit from step 2; default
+  `HEAD` only if that is what you will ship). Review:
   ```bash
-  git log --oneline <last-tag>..HEAD -- shared/db/migrations/
+  git log --no-merges "refs/release-check/${LAST_TAG}"..<release-tip>
+  git log --oneline "refs/release-check/${LAST_TAG}"..<release-tip> -- shared/db/migrations/
   ```
 - Semver: fixes/reliability/dependency bumps only → **patch**; new
   user-facing feature → **minor**; breaking change or upgrade needing
@@ -79,15 +94,20 @@ maintainer's call; never tag or push unless explicitly asked.
 - Prefer cutting from **`main`** after the intended commits are merged
   (historical tags point at `main`; `develop` is the integration branch).
 - If `develop` is ahead of `main`, confirm with the user whether to merge
-  first or tag a specific commit.
-- Confirm recent CI is green on the tip you will bump from (PR checks:
-  Python ruff/pytest + Web lint/test/build).
+  first or tag a specific commit. Record the chosen
+  `<release-branch>` and `<release-commit>` (full SHA); later steps must
+  use these, not an ambient `HEAD` that may differ.
+- Lint/format/test CI jobs run only on **pull_request** (see
+  `build-and-push.yml`); push to `main`/`develop` builds images but does
+  not re-run that gate. Confirm the last merged PR checks were green
+  and/or rely on step 4 local verify.
 - Spot-check deploy paths still match expectations (`deploy/README.md`,
   `deploy/compose/`, `deploy/helm/`).
 
 ### 3. Bump deploy defaults
 
-Edit only:
+Edit only (on top of `<release-commit>` / its branch — the bump commit
+becomes the commit that will be tagged):
 
 1. `deploy/compose/docker-compose.yml` → `ghcr.io/cyxc1124/cyxcbot:vX.Y.Z`
 2. `deploy/helm/values.yaml` → `tag: "vX.Y.Z"`
@@ -96,7 +116,7 @@ Edit only:
 
 No lockfile refresh. No `web/package.json` sync.
 
-### 4. Verify locally (same bar as CI)
+### 4. Verify locally (same bar as PR CI)
 
 Use repo `.venv` and Python 3.14 (see `AGENTS.md`):
 
@@ -133,8 +153,9 @@ vX.Y.Z
 有 migration 则点名影响与是否依赖启动时 Alembic upgrade>
 ```
 
-Summarize from `git log` — prefer product impact over commit titles. Call out
-Python/runtime, env, or deploy behavior changes explicitly.
+Summarize from the `refs/release-check/${LAST_TAG}..<release-tip>` log —
+prefer product impact over commit titles. Call out Python/runtime, env,
+or deploy behavior changes explicitly.
 
 ### 6. Commit (only when asked)
 
@@ -153,15 +174,17 @@ chore(deploy): 将默认镜像版本更新为 vX.Y.Z
 同步 Docker Compose、Helm values 与 Chart appVersion，与最新 release 对齐。
 ```
 
-Do **not** include unrelated dirty files.
+Do **not** include unrelated dirty files. After commit, set
+`<release-commit>` to that new SHA (it is what step 7 tags).
 
 ### 7. Tag (only when asked)
 
-Tag the **release commit** (the deploy-bump commit on the branch / commit
-chosen in step 2; prefer `main` when that is what you are shipping):
+Tag the **explicit** `<release-commit>` from steps 2/6 — never assume
+ambient `HEAD` matches it:
 
 ```bash
-git tag -a vX.Y.Z -m "$(cat <<'EOF'
+git rev-parse --verify <release-commit>
+git tag -a vX.Y.Z <release-commit> -m "$(cat <<'EOF'
 vX.Y.Z
 
 相对 vPREV 的主要变化：
@@ -171,14 +194,14 @@ vX.Y.Z
 升级说明：...
 EOF
 )"
-git push origin <release-branch>   # the branch that contains the release commit
+git push origin <release-branch>   # branch that contains <release-commit>
 git push origin vX.Y.Z
 ```
 
 Do **not** hard-code `git push origin main`. If step 2 selected another
-branch or a specific commit, push that branch (after ensuring the release
-commit is on it). If only the tag should be published and the commit is
-already on the remote tip, omit the branch push and push just `vX.Y.Z`.
+branch, push that branch (after ensuring `<release-commit>` is on it).
+If only the tag should be published and `<release-commit>` is already on
+the remote tip, omit the branch push and push just `vX.Y.Z`.
 
 Pushing `vX.Y.Z` triggers:
 
