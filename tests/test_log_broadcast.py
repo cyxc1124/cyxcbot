@@ -127,6 +127,22 @@ def test_burst_during_replay_does_not_register_subscriber() -> None:
         hub.unsubscribe(queue)
 
 
+def test_subscribe_filters_by_min_level_before_enqueue() -> None:
+    """DEBUG flood must not fill an INFO subscriber's bounded queue."""
+    hub = LogBroadcastHub(max_history=10)
+    queue = hub.subscribe(min_level="INFO")
+    try:
+        for index in range(300):
+            hub.publish(_entry(f"debug-{index}", level="DEBUG"))
+        hub.publish(_entry("keep-me", level="INFO"))
+
+        assert queue.qsize() == 1
+        assert queue.get_nowait().message == "keep-me"
+        assert queue in hub._subscribers
+    finally:
+        hub.unsubscribe(queue)
+
+
 def test_install_log_broadcast_does_not_attach_uvicorn_handlers() -> None:
     """Web /logs should not use dedicated uvicorn stdlib handlers."""
     install_log_broadcast()

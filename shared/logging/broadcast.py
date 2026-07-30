@@ -73,7 +73,9 @@ class LogBroadcastHub:
     def __init__(self, max_history: int = MAX_HISTORY) -> None:
         self._max_history = max_history
         self._history: deque[LogEntry] = deque(maxlen=max_history)
-        self._subscribers: set[asyncio.Queue[LogEntry | None]] = set()
+        # queue -> min level rank; filter before enqueue so DEBUG flood cannot
+        # fill INFO subscribers' 256-slot queues.
+        self._subscribers: dict[asyncio.Queue[LogEntry | None], int] = {}
         self._lock = threading.Lock()
         self._seq = 0
         self._session_id = uuid.uuid4().hex
@@ -87,14 +89,17 @@ class LogBroadcastHub:
             self._seq += 1
             entry = replace(entry, session_id=self._session_id, entry_id=self._seq)
             self._history.append(entry)
+            entry_rank = _level_rank(entry.level)
             dead: list[asyncio.Queue[LogEntry | None]] = []
-            for queue in self._subscribers:
+            for queue, threshold in self._subscribers.items():
+                if entry_rank < threshold:
+                    continue
                 try:
                     queue.put_nowait(entry)
                 except asyncio.QueueFull:
                     dead.append(queue)
             for queue in dead:
-                self._subscribers.discard(queue)
+                self._subscribers.pop(queue, None)
 
     def recent(self, *, limit: int = 500, min_level: str = "DEBUG") -> list[LogEntry]:
         threshold = _level_rank(min_level)
@@ -105,17 +110,17 @@ class LogBroadcastHub:
             return filtered
         return filtered[-limit:]
 
-    def subscribe(self) -> asyncio.Queue[LogEntry | None]:
+    def subscribe(self, *, min_level: str = "DEBUG") -> asyncio.Queue[LogEntry | None]:
         queue: asyncio.Queue[LogEntry | None] = asyncio.Queue(
             maxsize=SUBSCRIBER_QUEUE_SIZE
         )
         with self._lock:
-            self._subscribers.add(queue)
+            self._subscribers[queue] = _level_rank(min_level)
         return queue
 
     def unsubscribe(self, queue: asyncio.Queue[LogEntry | None]) -> None:
         with self._lock:
-            self._subscribers.discard(queue)
+            self._subscribers.pop(queue, None)
 
     @property
     def history_size(self) -> int:
