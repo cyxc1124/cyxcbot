@@ -97,10 +97,10 @@ maintainer's call; never tag or push unless explicitly asked.
 - Prefer cutting from **`main`** after the intended commits are merged
   (historical tags point at `main`; `develop` is the integration branch).
 - If `develop` is ahead of `main`, confirm with the user whether to merge
-  first or tag a specific commit. Record `<release-branch>` and the
-  pre-bump base SHA. The SHA that step 7 tags is **only** the step-6
-  deploy-bump commit — do not reuse the step-2 base as `<release-commit>`
-  for tagging.
+  first or tag a specific commit. Record `<release-branch>` and
+  `<release-base>` (full SHA of the pre-bump tip you intend to ship).
+  The SHA that step 7 tags is **only** the step-6 deploy-bump commit —
+  never tag `<release-base>` itself.
 - Lint/format/test CI jobs run only on **pull_request** (see
   `build-and-push.yml`); push to `main`/`develop` builds images but does
   not re-run that gate. Confirm the last merged PR checks were green
@@ -110,8 +110,15 @@ maintainer's call; never tag or push unless explicitly asked.
 
 ### 3. Bump deploy defaults
 
-Edit only (on top of `<release-commit>` / its branch — the bump commit
-becomes the commit that will be tagged):
+Check out / sync to `<release-base>` **before** editing (do not edit
+ambient `HEAD` if it differs):
+
+```bash
+git switch <release-branch>   # or: git switch --detach <release-base>
+test "$(git rev-parse HEAD)" = "$(git rev-parse <release-base>)"
+```
+
+Edit only:
 
 1. `deploy/compose/docker-compose.yml` → `ghcr.io/cyxc1124/cyxcbot:vX.Y.Z`
 2. `deploy/helm/values.yaml` → `tag: "vX.Y.Z"`
@@ -179,9 +186,15 @@ chore(deploy): 将默认镜像版本更新为 vX.Y.Z
 ```
 
 Do **not** include unrelated dirty files. After commit, set
-`<release-commit>` to that new SHA. Step 7 **must not** run until this
-bump commit exists and `<release-commit>` points at it (the step-2 SHA
-is the pre-bump base only).
+`<release-commit>` to that new SHA and verify it is built on the
+recorded base:
+
+```bash
+test "$(git rev-parse <release-commit>^)" = "$(git rev-parse <release-base>)"
+```
+
+Step 7 **must not** run until this bump commit exists and
+`<release-commit>` points at it.
 
 ### 7. Tag (only when asked)
 
@@ -190,9 +203,13 @@ is the pre-bump base only).
 1. Step 6 bump is committed (working tree clean for the four deploy
    files; they show `vX.Y.Z` / `appVersion: "X.Y.Z"` at
    `<release-commit>`).
-2. `<release-commit>` is the bump commit SHA from step 6 — not the
-   pre-bump SHA from step 2.
-3. Tag the **explicit** `<release-commit>` — never assume ambient `HEAD`:
+2. `<release-commit>` is the bump commit SHA from step 6 — not
+   `<release-base>`.
+3. Parent of `<release-commit>` equals `<release-base>`:
+   ```bash
+   test "$(git rev-parse <release-commit>^)" = "$(git rev-parse <release-base>)"
+   ```
+4. Tag the **explicit** `<release-commit>` — never assume ambient `HEAD`:
 
 ```bash
 git rev-parse --verify <release-commit>
@@ -210,19 +227,21 @@ EOF
 )"
 ```
 
-**Branch push** — only if `<release-branch>` tip **equals**
-`<release-commit>` (pushing the branch otherwise publishes later
-unreviewed commits):
+**Push** — do not push the tag if the branch push fails (otherwise CI
+publishes while the bump is missing from the intended branch).
+
+If `<release-branch>` tip **equals** `<release-commit>`, push both
+atomically:
 
 ```bash
 test "$(git rev-parse <release-branch>)" = "$(git rev-parse <release-commit>)"
-git push origin <release-branch>
-git push origin vX.Y.Z
+git push --atomic origin <release-branch> vX.Y.Z
 ```
 
 If tip ≠ `<release-commit>`, omit the branch push and push only
-`vX.Y.Z` (after ensuring that commit is reachable on the remote, e.g.
-already pushed). Do **not** hard-code `git push origin main`.
+`vX.Y.Z` after ensuring `<release-commit>` is already reachable on the
+remote. Do **not** hard-code `git push origin main`. Do **not** run a
+separate `git push origin vX.Y.Z` after a failed branch push.
 
 Pushing `vX.Y.Z` triggers:
 
