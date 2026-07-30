@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from nonebot.log import LoguruHandler
@@ -158,13 +157,8 @@ def test_queue_full_signals_disconnect_sentinel() -> None:
         hub.publish(_entry("overflow"))
 
         assert queue not in hub._subscribers
-        items: list[LogEntry | None] = []
-        while True:
-            try:
-                items.append(queue.get_nowait())
-            except asyncio.QueueEmpty:
-                break
-        assert items[-1] is None
+        assert queue.qsize() == 1
+        assert queue.get_nowait() is None
     finally:
         hub.unsubscribe(queue)
 

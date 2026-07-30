@@ -100,12 +100,13 @@ class LogBroadcastHub:
                     dead.append(queue)
             for queue in dead:
                 self._subscribers.pop(queue, None)
-                # Wake the consumer with None so WS can close and the client reconnect.
-                # Queue is full, so drop one slot first; ring buffer still has history.
-                try:
-                    queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    pass
+                # Drop backlog so None is next; otherwise a slow send_json loop
+                # may never reach the sentinel. Ring buffer still has history.
+                while True:
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
                 try:
                     queue.put_nowait(None)
                 except asyncio.QueueFull:
