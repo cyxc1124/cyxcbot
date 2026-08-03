@@ -55,7 +55,9 @@ export interface Settings {
   live_template_end: string
   link_template_video: string
   link_template_live: string
+  link_template_douyin: string
   bilibili_cookie: CookieStatus
+  douyin_cookie: CookieStatus
   status_check_allowed_qq: string[]
   nonebot_superusers: string[]
   command_aliases: Record<string, CommandAliasEntry>
@@ -65,7 +67,9 @@ export interface Settings {
   command_prefixes: string[]
 }
 
-export type SettingsUpdate = Partial<Omit<Settings, 'bilibili_cookie' | 'command_prefixes'>>
+export type SettingsUpdate = Partial<
+  Omit<Settings, 'bilibili_cookie' | 'douyin_cookie' | 'command_prefixes'>
+>
 
 export interface CookieTestResult {
   success: boolean
@@ -230,6 +234,46 @@ export interface LinkParserUserPolicyList {
 
 export interface LinkParserUserPolicyMutation {
   item: LinkParserUserPolicyItem
+}
+
+export interface DouyinLinkParserGroupPolicyItem {
+  group_id: string
+  group_name?: string | null
+  member_count?: number | null
+  customized: boolean
+  enabled: boolean
+}
+
+export interface DouyinLinkParserGroupPolicyList {
+  groups: DouyinLinkParserGroupPolicyItem[]
+  group_list_available: boolean
+}
+
+export interface DouyinLinkParserGroupPolicyMutation {
+  item: DouyinLinkParserGroupPolicyItem
+}
+
+export interface DouyinLinkParserUserPolicyItem {
+  user_id: string
+  nickname?: string | null
+  name?: string | null
+  customized: boolean
+  enabled: boolean
+}
+
+export interface DouyinLinkParserUserPolicyList {
+  users: DouyinLinkParserUserPolicyItem[]
+  friend_list_available: boolean
+}
+
+export interface DouyinLinkParserUserPolicyMutation {
+  item: DouyinLinkParserUserPolicyItem
+}
+
+export interface DouyinCookieStatus {
+  configured: boolean
+  preview?: string | null
+  message?: string
 }
 
 export interface LinkParserUserPolicyInput {

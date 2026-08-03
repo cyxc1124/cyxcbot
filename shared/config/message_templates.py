@@ -28,10 +28,15 @@ LINK_TEMPLATE_KEYS = {
     ),
 }
 
+DOUYIN_LINK_TEMPLATE_KEYS = {
+    "link_template_douyin": "{video}标题：{title}\n作者：{author}\n链接：{url}",
+}
+
 MESSAGE_TEMPLATE_KEYS = {
     **DYNAMIC_TEMPLATE_KEYS,
     **LIVE_TEMPLATE_KEYS,
     **LINK_TEMPLATE_KEYS,
+    **DOUYIN_LINK_TEMPLATE_KEYS,
 }
 
 MAX_TEMPLATE_LENGTH = 500
@@ -61,6 +66,11 @@ class LiveMessageTemplates:
 class LinkMessageTemplates:
     video: str = LINK_TEMPLATE_KEYS["link_template_video"]
     live: str = LINK_TEMPLATE_KEYS["link_template_live"]
+
+
+@dataclass
+class DouyinLinkMessageTemplates:
+    video: str = DOUYIN_LINK_TEMPLATE_KEYS["link_template_douyin"]
 
 
 def dynamic_templates_from_settings(
@@ -131,5 +141,16 @@ def link_templates_from_settings(settings: dict[str, str]) -> LinkMessageTemplat
         ),
         live=settings.get(
             "link_template_live", LINK_TEMPLATE_KEYS["link_template_live"]
+        ),
+    )
+
+
+def douyin_link_templates_from_settings(
+    settings: dict[str, str],
+) -> DouyinLinkMessageTemplates:
+    return DouyinLinkMessageTemplates(
+        video=settings.get(
+            "link_template_douyin",
+            DOUYIN_LINK_TEMPLATE_KEYS["link_template_douyin"],
         ),
     )

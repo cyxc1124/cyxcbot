@@ -86,6 +86,10 @@ function TemplateDetailPanel({
     const base = { ...PREVIEW_SAMPLE_VALUES }
     if (field.key === 'link_template_video') {
       base.url = 'https://www.bilibili.com/video/BV1xx411c7mD'
+    } else if (field.key === 'link_template_douyin') {
+      base.url = 'https://www.douyin.com/video/7123456789012345678'
+      base.author = '抖音用户'
+      base.title = '示例抖音视频'
     } else if (
       field.category === 'live' ||
       field.key === 'link_template_live'

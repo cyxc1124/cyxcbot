@@ -7,6 +7,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from shared.config.message_templates import (
+    DOUYIN_LINK_TEMPLATE_KEYS,
     DYNAMIC_TEMPLATE_KEYS,
     LINK_TEMPLATE_KEYS,
     LIVE_TEMPLATE_KEYS,
@@ -58,7 +59,11 @@ class SettingsResponse(BaseModel):
     live_template_end: str = Field(default=LIVE_TEMPLATE_KEYS["live_template_end"])
     link_template_video: str = Field(default=LINK_TEMPLATE_KEYS["link_template_video"])
     link_template_live: str = Field(default=LINK_TEMPLATE_KEYS["link_template_live"])
+    link_template_douyin: str = Field(
+        default=DOUYIN_LINK_TEMPLATE_KEYS["link_template_douyin"]
+    )
     bilibili_cookie: CookieStatusResponse
+    douyin_cookie: CookieStatusResponse
     status_check_allowed_qq: list[str] = Field(default_factory=list)
     nonebot_superusers: list[str] = Field(default_factory=list)
     command_aliases: dict[str, CommandAliasEntryModel] = Field(default_factory=dict)
@@ -95,6 +100,7 @@ class SettingsUpdateRequest(BaseModel):
     live_template_end: Optional[str] = Field(default=None, max_length=500)
     link_template_video: Optional[str] = Field(default=None, max_length=500)
     link_template_live: Optional[str] = Field(default=None, max_length=500)
+    link_template_douyin: Optional[str] = Field(default=None, max_length=500)
     status_check_allowed_qq: Optional[list[str]] = None
     nonebot_superusers: Optional[list[str]] = None
     command_aliases: Optional[dict[str, CommandAliasEntryModel]] = None

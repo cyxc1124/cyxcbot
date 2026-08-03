@@ -6,11 +6,16 @@ from dataclasses import dataclass, field
 from typing import Dict, List
 
 from shared.config.command_aliases import DEFAULT_EXTRA_PREFIXES, CommandAliasEntry
+from shared.config.douyin_link_parser_policy import (
+    DouyinLinkParserGroupPolicyRecord,
+    DouyinLinkParserUserPolicyRecord,
+)
 from shared.config.link_parser_policy import (
     LinkParserGroupPolicyRecord,
     LinkParserUserPolicyRecord,
 )
 from shared.config.message_templates import (
+    DouyinLinkMessageTemplates,
     DynamicMessageTemplates,
     LinkMessageTemplates,
     LiveMessageTemplates,
@@ -51,8 +56,13 @@ class AppConfigSnapshot:
     link_message_templates: LinkMessageTemplates = field(
         default_factory=LinkMessageTemplates
     )
+    douyin_link_message_templates: DouyinLinkMessageTemplates = field(
+        default_factory=DouyinLinkMessageTemplates
+    )
     bilibili_cookie: str = ""
     bilibili_cookie_set: bool = False
+    douyin_cookie: str = ""
+    douyin_cookie_set: bool = False
     message_group_restrict: bool = True
     message_enabled_group_ids: List[str] = field(default_factory=list)
     message_private_restrict: bool = True
@@ -75,6 +85,12 @@ class AppConfigSnapshot:
     link_parser_user_policies: Dict[str, LinkParserUserPolicyRecord] = field(
         default_factory=dict
     )
+    douyin_link_parser_group_policies: Dict[
+        str, DouyinLinkParserGroupPolicyRecord
+    ] = field(default_factory=dict)
+    douyin_link_parser_user_policies: Dict[
+        str, DouyinLinkParserUserPolicyRecord
+    ] = field(default_factory=dict)
     command_aliases: Dict[str, CommandAliasEntry] = field(default_factory=dict)
     command_extra_prefixes: List[str] = field(
         default_factory=lambda: list(DEFAULT_EXTRA_PREFIXES)

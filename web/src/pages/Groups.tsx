@@ -5,6 +5,7 @@ import { createRetryHandler } from '../utils/retryLoad'
 import { getMessagePolicy, updateMessagePolicy } from '../api/client'
 import type { Group } from '../api/types'
 import { GroupSpecialTitlePolicyTab } from '../components/GroupSpecialTitlePolicyTab'
+import { DouyinLinkParserGroupPolicyTab } from '../components/DouyinLinkParserPolicyTabs'
 import { LinkParserGroupPolicyTab } from '../components/LinkParserPolicyTabs'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
@@ -19,7 +20,7 @@ import {
   isItemEnabled,
 } from '../utils/restrictPolicy'
 
-type GroupsTab = 'message' | 'link-groups' | 'status' | 'special-title'
+type GroupsTab = 'message' | 'link-groups' | 'douyin-link-groups' | 'status' | 'special-title'
 
 export function GroupsPage() {
   const { showToast } = useToast()
@@ -55,6 +56,7 @@ export function GroupsPage() {
   const tabLabels: Record<GroupsTab, string> = {
     message: '群消息',
     'link-groups': '群链接解析',
+    'douyin-link-groups': '抖音链接',
     status: '状态查询',
     'special-title': '群头衔',
   }
@@ -239,6 +241,12 @@ export function GroupsPage() {
       {tab === 'link-groups' && (
         <div className="card">
           <LinkParserGroupPolicyTab />
+        </div>
+      )}
+
+      {tab === 'douyin-link-groups' && (
+        <div className="card">
+          <DouyinLinkParserGroupPolicyTab />
         </div>
       )}
 

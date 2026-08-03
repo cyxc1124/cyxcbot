@@ -17,6 +17,7 @@ import { SettingsLayout } from './pages/settings/SettingsLayout'
 import { SettingsAccountPage } from './pages/settings/SettingsAccount'
 import { SettingsBotPage } from './pages/settings/SettingsBot'
 import { SettingsCommandsPage } from './pages/settings/SettingsCommands'
+import { SettingsDouyinAccountPage } from './pages/settings/SettingsDouyinAccount'
 import { SettingsMonitorPage } from './pages/settings/SettingsMonitor'
 import { RustRconPage } from './pages/RustRcon'
 import { SetupPage } from './pages/Setup'
@@ -49,6 +50,7 @@ export default function App() {
                   <Route index element={<Navigate to="monitor" replace />} />
                   <Route path="monitor" element={<SettingsMonitorPage />} />
                   <Route path="account" element={<SettingsAccountPage />} />
+                  <Route path="douyin-account" element={<SettingsDouyinAccountPage />} />
                   <Route path="bot" element={<SettingsBotPage />} />
                   <Route path="commands" element={<SettingsCommandsPage />} />
                 </Route>

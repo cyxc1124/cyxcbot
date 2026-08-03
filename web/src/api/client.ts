@@ -11,6 +11,11 @@ import type {
   Friend,
   Group,
   GroupMessagePolicy,
+  DouyinCookieStatus,
+  DouyinLinkParserGroupPolicyList,
+  DouyinLinkParserGroupPolicyMutation,
+  DouyinLinkParserUserPolicyList,
+  DouyinLinkParserUserPolicyMutation,
   LinkParserGroupPolicyList,
   LinkParserGroupPolicyMutation,
   LinkParserUserPolicyInput,
@@ -495,6 +500,59 @@ export const resetLinkParserUserPolicy = (userId: string) =>
     `/link-parser/policies/users/${encodeURIComponent(userId)}`,
     { method: 'DELETE' },
   )
+
+export const getDouyinLinkParserGroupPolicies = () =>
+  request<DouyinLinkParserGroupPolicyList>('/douyin-link-parser/policies/groups')
+
+export const updateDouyinLinkParserGroupPolicy = (
+  groupId: string,
+  payload: { enabled: boolean },
+) =>
+  request<DouyinLinkParserGroupPolicyMutation>(
+    `/douyin-link-parser/policies/groups/${encodeURIComponent(groupId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    },
+  )
+
+export const resetDouyinLinkParserGroupPolicy = (groupId: string) =>
+  request<DouyinLinkParserGroupPolicyMutation>(
+    `/douyin-link-parser/policies/groups/${encodeURIComponent(groupId)}`,
+    { method: 'DELETE' },
+  )
+
+export const getDouyinLinkParserUserPolicies = () =>
+  request<DouyinLinkParserUserPolicyList>('/douyin-link-parser/policies/users')
+
+export const updateDouyinLinkParserUserPolicy = (
+  userId: string,
+  payload: { enabled: boolean; name?: string | null },
+) =>
+  request<DouyinLinkParserUserPolicyMutation>(
+    `/douyin-link-parser/policies/users/${encodeURIComponent(userId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    },
+  )
+
+export const resetDouyinLinkParserUserPolicy = (userId: string) =>
+  request<DouyinLinkParserUserPolicyMutation>(
+    `/douyin-link-parser/policies/users/${encodeURIComponent(userId)}`,
+    { method: 'DELETE' },
+  )
+
+export const saveDouyinCookie = (cookie: string) =>
+  request<DouyinCookieStatus>('/douyin-link-parser/cookie', {
+    method: 'PUT',
+    body: JSON.stringify({ cookie }),
+  })
+
+export const clearDouyinCookie = () =>
+  request<{ success: boolean; message: string }>('/douyin-link-parser/cookie', {
+    method: 'DELETE',
+  })
 
 // Monitors
 export const getMonitorStatus = () => request<MonitorStatus>('/monitors/status')
