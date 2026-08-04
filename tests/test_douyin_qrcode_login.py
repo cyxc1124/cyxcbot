@@ -1,10 +1,14 @@
 """Unit tests for Douyin QR login helpers (no Playwright / network)."""
 
+import pytest
+
 from shared.douyin.qrcode_login import (
     QR_SELECTORS,
+    DouyinQrcodeError,
     cookies_to_header,
     has_valid_login_cookie,
     is_logged_in_url,
+    refresh_qrcode_login,
 )
 
 
@@ -14,6 +18,14 @@ def test_qr_selectors_prefer_live_hashed_container():
     assert "img.RhjdbXj8" in QR_SELECTORS
     assert ".XI37I0dP" in QR_SELECTORS
     assert any("二维码" in s for s in QR_SELECTORS)
+
+
+@pytest.mark.asyncio
+async def test_refresh_requires_existing_session():
+    with pytest.raises(DouyinQrcodeError, match="缺少|不存在|过期"):
+        await refresh_qrcode_login("")
+    with pytest.raises(DouyinQrcodeError, match="不存在|过期"):
+        await refresh_qrcode_login("no-such-session")
 
 
 def test_cookies_to_header_and_sessionid_check():

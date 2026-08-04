@@ -16,6 +16,7 @@ from shared.douyin.qrcode_login import (
     DouyinQrcodeError,
     close_qr_session,
     poll_qrcode_login,
+    refresh_qrcode_login,
     start_qrcode_login,
 )
 from shared.security.crypto import encrypt_value, mask_secret
@@ -35,6 +36,20 @@ async def start_douyin_qrcode_login(_: AdminUser):
     except DouyinQrcodeError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
+    return DouyinQrcodeStartResponse(
+        session_id=data["session_id"],
+        image_base64=data["image_base64"],
+    )
+
+
+@router.post("/login/qrcode/refresh", response_model=DouyinQrcodeStartResponse)
+async def refresh_douyin_qrcode_login(body: DouyinQrcodePollRequest, _: AdminUser):
+    try:
+        data = await refresh_qrcode_login(body.session_id)
+    except DouyinQrcodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
     return DouyinQrcodeStartResponse(
         session_id=data["session_id"],

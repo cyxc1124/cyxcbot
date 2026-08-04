@@ -353,6 +353,89 @@ async def start_qrcode_login() -> dict[str, str]:
         _restore_proxy_env(removed_proxy)
 
 
+async def _qr_fingerprint(page: Page) -> str | None:
+    element = await _find_qr_element(page)
+    if element is None:
+        return None
+    try:
+        return await element.evaluate(
+            "el => el.getAttribute('src') || el.outerHTML.slice(0, 120)"
+        )
+    except Exception:
+        return None
+
+
+async def _trigger_qr_refresh(page: Page) -> None:
+    """Best-effort UI refresh without restarting Chromium."""
+    for text in ("点击刷新", "刷新二维码", "刷新"):
+        try:
+            await page.get_by_text(text, exact=False).first.click(timeout=1200)
+            await page.wait_for_timeout(600)
+            return
+        except Exception:
+            continue
+    for selector in (".XI37I0dP", "img.RhjdbXj8", "img[aria-label*='二维码']"):
+        try:
+            await page.locator(selector).first.click(timeout=1200, force=True)
+            await page.wait_for_timeout(600)
+            return
+        except Exception:
+            continue
+    await _open_login_panel(page)
+
+
+async def refresh_qrcode_login(session_id: str) -> dict[str, str]:
+    """Refresh QR on an existing Playwright session (no browser relaunch)."""
+    sid = (session_id or "").strip()
+    if not sid:
+        raise DouyinQrcodeError("缺少 session_id，请重新获取二维码")
+
+    async with _lock:
+        session = _sessions.get(sid)
+    if session is None:
+        raise DouyinQrcodeError("二维码会话不存在或已过期，请重新获取")
+    if session.closed or session.page is None:
+        await close_qr_session(sid)
+        raise DouyinQrcodeError("二维码会话已关闭，请重新获取")
+
+    page = session.page
+    old_fp = await _qr_fingerprint(page)
+    await _trigger_qr_refresh(page)
+
+    element = None
+    deadline = time.monotonic() + 12
+    while time.monotonic() < deadline:
+        element = await _find_qr_element(page)
+        if element is not None:
+            fp = await _qr_fingerprint(page)
+            if fp and fp != old_fp:
+                break
+        await page.wait_for_timeout(400)
+    else:
+        element = None
+
+    if element is None or (
+        old_fp is not None and await _qr_fingerprint(page) == old_fp
+    ):
+        # 同页点刷新无效时：不杀浏览器，重进首页登录弹窗拿新码
+        try:
+            await page.goto(DOUYIN_HOME, wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(1000)
+        except Exception:
+            logger.opt(exception=True).debug("刷新二维码时重载首页失败")
+        element = await _wait_for_qr_element(page, timeout_sec=20)
+
+    if element is None:
+        raise DouyinQrcodeError("刷新后未找到二维码，请重新获取")
+
+    png = await element.screenshot()
+    image_base64 = base64.b64encode(png).decode("ascii")
+    session.image_base64 = image_base64
+    session.created_at = time.monotonic()
+    logger.info("抖音扫码二维码已刷新 session_id={}", sid[:8])
+    return {"session_id": sid, "image_base64": image_base64}
+
+
 async def poll_qrcode_login(
     session_id: str,
     *,
@@ -375,6 +458,8 @@ async def poll_qrcode_login(
     page = session.page
     context = session.context
     start_url = page.url
+    # 客户端 abort（刷新）会 CancelledError：勿关会话，由 refresh/cancel API 管理生命周期
+    close_when_done = True
 
     try:
         for i in range(max(1, int(timeout_seconds))):
@@ -404,5 +489,9 @@ async def poll_qrcode_login(
             await asyncio.sleep(1)
 
         raise DouyinQrcodeError("二维码已超时，请重新获取（扫码后需在手机上确认）")
+    except asyncio.CancelledError:
+        close_when_done = False
+        raise
     finally:
-        await close_qr_session(sid)
+        if close_when_done:
+            await close_qr_session(sid)
