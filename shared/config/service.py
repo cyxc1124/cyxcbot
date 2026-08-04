@@ -784,9 +784,7 @@ class ConfigService:
 
         snap = self._snapshot
         masked = mask_secret(snap.bilibili_cookie) if snap.bilibili_cookie else ""
-        douyin_masked = (
-            mask_secret(snap.douyin_cookie) if snap.douyin_cookie else ""
-        )
+        douyin_masked = mask_secret(snap.douyin_cookie) if snap.douyin_cookie else ""
         dt = snap.dynamic_message_templates
         lt = snap.live_message_templates
         link = snap.link_message_templates

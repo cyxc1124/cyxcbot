@@ -55,7 +55,7 @@ def safe_log_url(value: object) -> str:
         query_keys = sorted(
             {key for key, _value in parse_qsl(parsed.query, keep_blank_values=True)}
         )
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return text.split("?", 1)[0].split("#", 1)[0]
     if not query_keys:
         return clean
@@ -67,7 +67,9 @@ def _is_login_required(data: object) -> bool:
         return False
     code = data.get("status_code")
     msg = str(data.get("status_msg") or "")
-    return code in _LOGIN_REQUIRED_STATUS_CODES or "请先登录" in msg or "用户未登录" in msg
+    return (
+        code in _LOGIN_REQUIRED_STATUS_CODES or "请先登录" in msg or "用户未登录" in msg
+    )
 
 
 def _safe_error_text(exc: Exception) -> str:
@@ -262,7 +264,9 @@ class DouyinAPIClient:
                                 max_retries,
                             )
                             if attempt < max_retries - 1:
-                                await asyncio.sleep(delays[min(attempt, len(delays) - 1)])
+                                await asyncio.sleep(
+                                    delays[min(attempt, len(delays) - 1)]
+                                )
                             continue
                         try:
                             parsed = await response.json(content_type=None)

@@ -56,7 +56,10 @@ class XBogus:
         array: List[int] = []
         idx = 0
         while idx < len(md5_str):
-            array.append((self._array[ord(md5_str[idx])] << 4) | self._array[ord(md5_str[idx + 1])])
+            array.append(
+                (self._array[ord(md5_str[idx])] << 4)
+                | self._array[ord(md5_str[idx + 1])]
+            )
             idx += 2
         return array
 
@@ -135,7 +138,9 @@ class XBogus:
         ua_md5_array = self._md5_str_to_array(
             self._md5(
                 base64.b64encode(
-                    self._rc4_encrypt(self._ua_key, self._user_agent.encode("ISO-8859-1"))
+                    self._rc4_encrypt(
+                        self._ua_key, self._user_agent.encode("ISO-8859-1")
+                    )
                 ).decode("ISO-8859-1")
             )
         )
@@ -211,6 +216,8 @@ class XBogus:
         return signed_url, xb, self._user_agent
 
 
-def generate_x_bogus(url: str, user_agent: Optional[str] = None) -> Tuple[str, str, str]:
+def generate_x_bogus(
+    url: str, user_agent: Optional[str] = None
+) -> Tuple[str, str, str]:
     signer = XBogus(user_agent=user_agent)
     return signer.build(url)

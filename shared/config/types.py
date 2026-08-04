@@ -85,12 +85,12 @@ class AppConfigSnapshot:
     link_parser_user_policies: Dict[str, LinkParserUserPolicyRecord] = field(
         default_factory=dict
     )
-    douyin_link_parser_group_policies: Dict[
-        str, DouyinLinkParserGroupPolicyRecord
-    ] = field(default_factory=dict)
-    douyin_link_parser_user_policies: Dict[
-        str, DouyinLinkParserUserPolicyRecord
-    ] = field(default_factory=dict)
+    douyin_link_parser_group_policies: Dict[str, DouyinLinkParserGroupPolicyRecord] = (
+        field(default_factory=dict)
+    )
+    douyin_link_parser_user_policies: Dict[str, DouyinLinkParserUserPolicyRecord] = (
+        field(default_factory=dict)
+    )
     command_aliases: Dict[str, CommandAliasEntry] = field(default_factory=dict)
     command_extra_prefixes: List[str] = field(
         default_factory=lambda: list(DEFAULT_EXTRA_PREFIXES)
