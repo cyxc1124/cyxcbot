@@ -20,7 +20,7 @@ def _video_parts(file_path: Path) -> Iterable[SegmentPart]:
         return []
     try:
         # 传 bytes → OneBot f2s 转为 base64://。Docker/分离协议端读不到 bot 本地 file://
-        # （ActionFailed retcode=1200「路径不存在」）。调用方应 to_thread，且由信号量串行化。
+        # （ActionFailed retcode=1200「路径不存在」）。调用方应 to_thread，编码/发送由信号量串行化。
         data = file_path.read_bytes()
         if not data:
             logger.warning("抖音视频文件为空: {}", file_path)
