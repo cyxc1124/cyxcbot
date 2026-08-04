@@ -31,11 +31,18 @@ export function DouyinQrLogin({ onSuccess, onError }: DouyinQrLoginProps) {
     }
   }, [])
 
+  const cancelLogin = useCallback(() => {
+    stopPolling()
+    setPhase('idle')
+    setMessage('')
+    setImageBase64('')
+  }, [stopPolling])
+
   const startLogin = useCallback(async () => {
     stopPolling()
     setPhase('loading')
-    setMessage('')
-    setImageBase64('')
+    setMessage(imageBase64 ? '正在刷新二维码…' : '')
+    // 刷新时保留旧图，避免闪空白；首次获取仍为空
 
     const controller = new AbortController()
     abortRef.current = controller
@@ -81,9 +88,18 @@ export function DouyinQrLogin({ onSuccess, onError }: DouyinQrLoginProps) {
         abortRef.current = null
       }
     }
-  }, [onError, onSuccess, stopPolling])
+  }, [imageBase64, onError, onSuccess, stopPolling])
 
   useEffect(() => () => stopPolling(), [stopPolling])
+
+  const primaryLabel =
+    phase === 'loading'
+      ? imageBase64
+        ? '刷新中…'
+        : '获取中…'
+      : phase === 'waiting'
+        ? '刷新二维码'
+        : '获取二维码'
 
   return (
     <div className="space-y-4 rounded-lg border border-border bg-muted p-4 border-border bg-card/40">
@@ -96,19 +112,17 @@ export function DouyinQrLogin({ onSuccess, onError }: DouyinQrLoginProps) {
         </div>
         <div className="flex gap-2">
           {(phase === 'waiting' || phase === 'loading') && (
-            <button type="button" className="btn-secondary" onClick={stopPolling}>
+            <button type="button" className="btn-secondary" onClick={cancelLogin}>
               取消
             </button>
           )}
           <button
             type="button"
             className="btn-primary"
-            disabled={phase === 'loading' || phase === 'waiting'}
+            disabled={phase === 'loading'}
             onClick={() => void startLogin()}
           >
-            {phase === 'idle' || phase === 'error' || phase === 'success'
-              ? '获取二维码'
-              : '等待扫码…'}
+            {primaryLabel}
           </button>
         </div>
       </div>
@@ -127,9 +141,13 @@ export function DouyinQrLogin({ onSuccess, onError }: DouyinQrLoginProps) {
         </p>
       )}
 
-      {imageBase64 && phase === 'waiting' && (
+      {imageBase64 && (phase === 'waiting' || phase === 'loading') && (
         <div className="flex justify-center py-2">
-          <div className="rounded-lg bg-white p-4 shadow-xs">
+          <div
+            className={`rounded-lg bg-white p-4 shadow-xs ${
+              phase === 'loading' ? 'opacity-60' : ''
+            }`}
+          >
             <img
               src={`data:image/png;base64,${imageBase64}`}
               alt="抖音登录二维码"
