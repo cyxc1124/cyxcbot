@@ -36,3 +36,13 @@ def test_video_parts_missing_or_empty(tmp_path: Path):
     empty = tmp_path / "empty.mp4"
     empty.write_bytes(b"")
     assert list(_sender._video_parts(empty)) == []
+
+
+def test_raw_max_bytes_fits_napcat_ws_after_base64():
+    from utils.douyin_api.download import DEFAULT_MAX_BYTES
+
+    # NapCat reverse-WS 默认约 100 MiB；base64 长度 = 4 * ceil(n/3)
+    napcat_ceiling = 100 * 1024 * 1024
+    encoded = 4 * ((DEFAULT_MAX_BYTES + 2) // 3)
+    framing_headroom = 5 * 1024 * 1024
+    assert encoded + framing_headroom <= napcat_ceiling
