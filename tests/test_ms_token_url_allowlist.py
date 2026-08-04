@@ -1,8 +1,14 @@
-"""msToken remote conf must not drive arbitrary SSRF POSTs."""
+"""msToken conf must not drive arbitrary SSRF POSTs."""
 
 from __future__ import annotations
 
-from utils.douyin_api.ms_token import is_allowed_ms_token_url
+import json
+from pathlib import Path
+
+from utils.douyin_api.ms_token import (
+    _VENDORED_MS_TOKEN_CONF,
+    is_allowed_ms_token_url,
+)
 
 
 def test_allows_https_mssdk_hosts() -> None:
@@ -22,8 +28,13 @@ def test_rejects_non_https_or_unlisted_hosts() -> None:
     assert not is_allowed_ms_token_url("")
 
 
-def test_f2_conf_url_is_commit_pinned() -> None:
-    from utils.douyin_api.ms_token import MsTokenManager
-
-    assert "/main/" not in MsTokenManager.F2_CONF_URL
-    assert "019b3fb61c6c62d091eb9000738a7a5b177de3a2" in MsTokenManager.F2_CONF_URL
+def test_vendored_ms_token_conf_is_local_and_allowlisted() -> None:
+    assert _VENDORED_MS_TOKEN_CONF.is_file()
+    data = json.loads(_VENDORED_MS_TOKEN_CONF.read_text(encoding="utf-8"))
+    required = {"url", "magic", "version", "dataType", "ulr", "strData"}
+    assert required.issubset(data)
+    assert is_allowed_ms_token_url(str(data["url"]))
+    # no runtime fetch of f2 main/raw
+    text = Path("utils/douyin_api/ms_token.py").read_text(encoding="utf-8")
+    assert "raw.githubusercontent.com" not in text
+    assert "Johnserf-Seed/f2" not in text

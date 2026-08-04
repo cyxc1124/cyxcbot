@@ -83,7 +83,7 @@ async def test_live_status_uses_instance_set_after_module_import() -> None:
 
     fake_instance.check_room_now.assert_awaited_once_with("12345")
     mocks["finish"].assert_awaited_once()
-    assert "测试主播" in mocks["finish"].await_args.args[0]
+    assert "测试主播" in str(mocks["finish"].await_args.args[0])
 
 
 @pytest.mark.asyncio
@@ -124,7 +124,7 @@ async def test_live_status_without_instance_does_not_close_shared_api_manager() 
     shared_init.assert_not_awaited()
     shared_close.assert_not_awaited()
     mocks["finish"].assert_awaited_once()
-    assert "房间12345" in mocks["finish"].await_args.args[0]
+    assert "房间12345" in str(mocks["finish"].await_args.args[0])
 
 
 @pytest.mark.asyncio
@@ -149,7 +149,7 @@ async def test_list_monitor_uses_instance_set_after_module_import() -> None:
         )
 
     mocks["finish"].assert_awaited_once()
-    message = mocks["finish"].await_args.args[0]
+    message = str(mocks["finish"].await_args.args[0])
     assert "测试主播" in message
     assert "🔴" in message
 
@@ -168,6 +168,6 @@ async def test_list_monitor_without_instance_falls_back_to_offline() -> None:
             MagicMock(), _make_event(text="监控列表")
         )
 
-    message = mocks["finish"].await_args.args[0]
+    message = str(mocks["finish"].await_args.args[0])
     assert "房间12345" in message
     assert "⚫" in message
