@@ -275,7 +275,7 @@ def get_container_cpu_limit() -> float | None:
                         break
                 elif content != "-1" and content.isdigit():  # cgroup v1
                     quota = int(content)
-            except OSError, ValueError:
+            except (OSError, ValueError):
                 continue
 
         if quota and not period:
@@ -287,7 +287,7 @@ def get_container_cpu_limit() -> float | None:
                     if content.isdigit():
                         period = int(content)
                         break
-                except OSError, ValueError:
+                except (OSError, ValueError):
                     continue
 
         if quota and period and quota > 0:
