@@ -40,8 +40,10 @@ __plugin_meta__ = PluginMetadata(
 group_douyin_link_parser = on_message(priority=4, block=False)
 private_douyin_link_parser = on_message(priority=4, block=False)
 
-# ponytail: 只串行化内存吃紧的 base64+发送（峰值≈单条拷贝）；下载不占此锁，
-# 避免 CDN 卡住拖死全局。升级：共享卷 file:// / HTTP 中转。
+# ponytail: 流水线准入限制临时文件占盘（下载可并行到上限）；编码/发送另串行化
+# 控 base64 内存。CDN 慢只占准入名额，不拖死已下完的发送。升级：共享卷 file://。
+_PIPELINE_LIMIT = 2
+_PIPELINE_SEM = asyncio.Semaphore(_PIPELINE_LIMIT)
 _ENCODE_SEND_SEM = asyncio.Semaphore(1)
 
 
@@ -84,7 +86,11 @@ async def _handle_douyin_link_message(
         message_text[:120],
     )
 
-    await _download_and_reply(bot, event, config, message_text)
+    if _PIPELINE_SEM.locked():
+        logger.info("抖音链接解析：等待流水线名额 user={}", event.user_id)
+
+    async with _PIPELINE_SEM:
+        await _download_and_reply(bot, event, config, message_text)
 
 
 async def _download_and_reply(
@@ -95,7 +101,7 @@ async def _download_and_reply(
 ) -> None:
     result = None
     try:
-        # CDN 可能长时间超时；不放在编码锁内
+        # CDN 可能长时间超时；不放在编码锁内（仍占流水线名额，限制临时文件数）
         result = await resolve_and_download(message_text, config.douyin_cookie)
         if _ENCODE_SEND_SEM.locked():
             logger.info("抖音链接解析：等待前序编码/发送完成 user={}", event.user_id)
