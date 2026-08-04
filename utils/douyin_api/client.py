@@ -55,7 +55,7 @@ def safe_log_url(value: object) -> str:
         query_keys = sorted(
             {key for key, _value in parse_qsl(parsed.query, keep_blank_values=True)}
         )
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return text.split("?", 1)[0].split("#", 1)[0]
     if not query_keys:
         return clean

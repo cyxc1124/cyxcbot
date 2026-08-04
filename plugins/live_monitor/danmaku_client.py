@@ -170,7 +170,7 @@ class DanmakuClient:
                 item = item.strip()
                 if item.startswith("DedeUserID="):
                     return int(item.split("=")[1])
-        except ValueError, IndexError:
+        except (ValueError, IndexError):
             pass
         return 0
 

@@ -71,7 +71,7 @@ def _resolution_metrics(
     try:
         width = int(play_addr.get("width") or entry.get("width") or 0)
         height = int(play_addr.get("height") or entry.get("height") or 0)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return 0, 0
     if width > 0 and height > 0:
         return min(width, height), width * height
@@ -114,7 +114,7 @@ def _pick_play_addr_by_quality(
             continue
         try:
             br = int(entry.get("bit_rate") or 0)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             br = 0
         short_edge, pixels = _resolution_metrics(entry, play_addr)
         entries.append((br, short_edge, pixels, play_addr))
