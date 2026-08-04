@@ -10,6 +10,7 @@ from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.log import logger
 
+from shared.notify.message_template import safe_text
 from utils.bilibili_api import VideoInfo
 
 
@@ -37,7 +38,7 @@ class VideoSender:
         message = Message()
 
         if not videos:
-            message.append("暂无视频")
+            message.append(safe_text("暂无视频"))
             return message
 
         # 获取UP主名称
@@ -48,7 +49,7 @@ class VideoSender:
         video = videos[0]
 
         # 第一行：xxx 最新投稿
-        message.append(f"【{uploader_name} 最新投稿】\n")
+        message.append(safe_text(f"【{uploader_name} 最新投稿】\n"))
 
         # 第二行：视频封面
         if video.cover:
@@ -58,11 +59,11 @@ class VideoSender:
                 logger.opt(exception=True).warning("添加视频封面失败")
 
         # 第三行：视频标题
-        message.append(f"{video.title}\n")
-        message.append("\n")
+        message.append(safe_text(f"{video.title}\n"))
+        message.append(safe_text("\n"))
 
         # 第四行：BV链接
-        message.append(f"{video.get_video_url()}")
+        message.append(safe_text(f"{video.get_video_url()}"))
 
         return message
 

@@ -11,6 +11,7 @@ from nonebot.plugin import PluginMetadata
 
 from shared.config.command_aliases import match_command_arg, match_plain
 from shared.config.service import get_config_service
+from shared.notify.message_template import safe_text_message
 from shared.onebot.lifecycle import stop_monitor_if_no_bots
 
 from . import live_monitor as live_monitor_mod
@@ -142,15 +143,17 @@ async def handle_live_status(bot: Bot, event: GroupMessageEvent):
                 message += f"人气：{result['online']}\n"
                 message += f"直播间：https://live.bilibili.com/{result['room_id']}"
 
-            await live_status_cmd.finish(message)
+            await live_status_cmd.finish(safe_text_message(message))
         else:
             await live_status_cmd.finish(
-                f"无法获取房间 {room_id} 的信息，请检查房间号是否正确"
+                safe_text_message(
+                    f"无法获取房间 {room_id} 的信息，请检查房间号是否正确"
+                )
             )
 
     except Exception as e:
         logger.error(f"查询直播状态失败: {e}")
-        await live_status_cmd.finish(f"查询失败：{str(e)}")
+        await live_status_cmd.finish(safe_text_message(f"查询失败：{str(e)}"))
 
 
 # 列出监控房间命令（触发词可在 Web Admin 设置 → 命令 中自定义）
@@ -198,4 +201,4 @@ async def handle_list_monitor(bot: Bot, event: GroupMessageEvent):
         except AttributeError, TypeError, KeyError:
             message += f"⚫ 房间{room_id}\n"
 
-    await list_monitor_cmd.finish(message)
+    await list_monitor_cmd.finish(safe_text_message(message))

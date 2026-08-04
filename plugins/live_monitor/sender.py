@@ -20,7 +20,7 @@ from shared.notify.delivery import (
     TargetDelivery,
     empty_delivery_result,
 )
-from shared.notify.message_template import build_message_from_template
+from shared.notify.message_template import build_message_from_template, safe_text
 from utils.bilibili_api import RoomInfo, UserInfo
 
 from .card_generator import PrefetchImages
@@ -60,8 +60,8 @@ class LiveNotificationSender:
             if can_at_all:
                 message.append(MessageSegment.at("all"))
             else:
-                message.append(LIVE_AT_ALL_FALLBACK)
-            message.append(" ")
+                message.append(safe_text(LIVE_AT_ALL_FALLBACK))
+            message.append(safe_text(" "))
 
         text_variables = self._start_text_variables(streamer_name, room_info)
 

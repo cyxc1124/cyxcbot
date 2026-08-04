@@ -19,6 +19,7 @@ from shared.config.rust_player import (
 )
 from shared.config.rust_rcon_policy import is_rust_rcon_enabled
 from shared.config.service import get_config_service
+from shared.notify.message_template import safe_text_message
 from shared.rust_player import rcon_online_cache, shop_store, store
 from utils.rust_rcon.client import RconAuthError, RconError, execute_rcon_command
 from utils.rust_rcon.give import normalize_give_quantity, parse_give_rejection
@@ -339,7 +340,7 @@ async def _handle_shop_list(
             lines.append("")
             lines.append(f"发送 @机器人 {trigger}1 查看第 1 页")
 
-    await rust_player_cmd.finish("\n".join(lines))
+    await rust_player_cmd.finish(safe_text_message("\n".join(lines)))
 
 
 async def _handle_shop_redeem(
@@ -369,7 +370,7 @@ async def _handle_shop_redeem(
             group_id, user_id, identifier, quantity
         )
     except ValueError as exc:
-        await rust_player_cmd.finish(str(exc))
+        await rust_player_cmd.finish(safe_text_message(str(exc)))
 
     give_quantity = normalize_give_quantity(result.quantity)
     give_command = f"giveto {binding.steam_id} {result.item.item_id} {give_quantity}"
@@ -426,7 +427,9 @@ async def _handle_shop_redeem(
             rejection,
         )
         await shop_store.add_group_points(group_id, user_id, result.total_cost)
-        await rust_player_cmd.finish(f"发放失败：{rejection}，积分已退回。")
+        await rust_player_cmd.finish(
+            safe_text_message(f"发放失败：{rejection}，积分已退回。")
+        )
 
     logger.info(
         "Rust 商品兑换: group={} user={} item={} qty={} cost={} remaining={}",
@@ -438,6 +441,8 @@ async def _handle_shop_redeem(
         result.remaining_points,
     )
     await rust_player_cmd.finish(
-        f"兑换成功：{result.item.name} x{result.quantity}，"
-        f"消耗 {result.total_cost} 积分，剩余 {result.remaining_points} 积分"
+        safe_text_message(
+            f"兑换成功：{result.item.name} x{result.quantity}，"
+            f"消耗 {result.total_cost} 积分，剩余 {result.remaining_points} 积分"
+        )
     )

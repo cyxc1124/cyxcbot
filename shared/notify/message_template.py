@@ -13,6 +13,16 @@ SegmentPart = Union[MessageSegment, str]
 SegmentHandler = Callable[[], Iterable[SegmentPart]]
 
 
+def safe_text(value: str) -> MessageSegment:
+    """Build a text segment that will not be re-parsed as CQ code."""
+    return MessageSegment.text(value)
+
+
+def safe_text_message(value: str) -> Message:
+    """Build a one-segment Message that will not be re-parsed as CQ code."""
+    return Message(safe_text(value))
+
+
 def render_message_template(template: str, variables: Mapping[str, str]) -> str:
     """Replace `{key}` placeholders in plain text; unknown keys are left unchanged."""
 
@@ -37,6 +47,16 @@ def iter_template_parts(template: str) -> Iterable[tuple[str, str]]:
         yield ("text", template[pos:])
 
 
+def _append_part(message: Message, part: SegmentPart) -> None:
+    """Append a part; strings become escaped text segments (not CQ-parsed)."""
+    if not part:
+        return
+    if isinstance(part, str):
+        message.append(safe_text(part))
+    else:
+        message.append(part)
+
+
 def build_message_from_template(
     template: str,
     text_variables: Mapping[str, str],
@@ -49,20 +69,16 @@ def build_message_from_template(
     for kind, content in iter_template_parts(template):
         if kind == "text":
             rendered = render_message_template(content, text_variables)
-            if rendered:
-                message.append(rendered)
+            _append_part(message, rendered)
             continue
 
         key = content
         if key in handlers:
             for part in handlers[key]() or []:
-                if part:
-                    message.append(part)
+                _append_part(message, part)
         elif key in text_variables:
-            value = text_variables[key]
-            if value:
-                message.append(value)
+            _append_part(message, text_variables[key])
         else:
-            message.append(f"{{{key}}}")
+            _append_part(message, f"{{{key}}}")
 
     return message
