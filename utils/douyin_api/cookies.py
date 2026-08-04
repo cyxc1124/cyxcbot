@@ -10,14 +10,15 @@ REQUIRED_COOKIE_KEYS = frozenset({"ttwid", "odin_tt", "passport_csrf_token"})
 
 
 def validate_cookies(cookies: dict[str, str]) -> bool:
-    """Return True when required session cookies are present.
+    """Return True when recommended session cookies are present.
 
-    ``msToken`` may be missing; it is generated on demand.
+    对齐 douyin-downloader：缺键只表示「不完整」，调用方应 warning 后仍可尝试。
+    ``msToken`` 可缺，运行时会自动生成。
     """
     clean = sanitize_cookies(cookies or {})
     missing = [key for key in sorted(REQUIRED_COOKIE_KEYS) if not clean.get(key)]
     if missing:
-        logger.warning("抖音 Cookie 校验失败，缺少: {}", ", ".join(missing))
+        logger.warning("抖音 Cookie 不完整，缺少: {}", ", ".join(missing))
         return False
     if not clean.get("msToken"):
         logger.info("抖音 Cookie 未含 msToken，将在请求时自动生成")

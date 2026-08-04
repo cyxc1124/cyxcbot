@@ -344,19 +344,24 @@ async def get_cookie_status(_: AdminUser):
 @router.put("/cookie", response_model=DouyinCookieStatusResponse)
 async def save_cookie(body: DouyinCookieSaveRequest, _: AdminUser):
     cookie = body.cookie.strip()
-    if not validate_cookie_header(cookie):
-        raise HTTPException(
-            status_code=400,
-            detail="Cookie 缺少必要字段（ttwid / odin_tt / passport_csrf_token）",
-        )
+    if not cookie:
+        raise HTTPException(status_code=400, detail="Cookie 不能为空")
+    # 对齐 douyin-downloader：字段不全可保存，仅提示；运行时也会 warning 后继续尝试
+    keys_ok = validate_cookie_header(cookie)
     svc = get_config_service()
     await svc.set_settings({"douyin_cookie_encrypted": encrypt_value(cookie)})
     await svc.reload()
     snap = svc.get_snapshot()
+    message = "抖音 Cookie 已保存"
+    if not keys_ok:
+        message = (
+            "抖音 Cookie 已保存，但缺少建议字段"
+            "（ttwid / odin_tt / passport_csrf_token），解析可能失败"
+        )
     return DouyinCookieStatusResponse(
         configured=snap.douyin_cookie_set,
         preview=mask_secret(snap.douyin_cookie) if snap.douyin_cookie else None,
-        message="抖音 Cookie 已保存",
+        message=message,
     )
 
 

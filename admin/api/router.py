@@ -7,6 +7,7 @@ from admin.api.v1 import (
     auth,
     bilibili,
     connections,
+    douyin,
     douyin_link_parser,
     groups,
     link_parser,
@@ -29,6 +30,7 @@ api_router.include_router(auth.router)
 api_router.include_router(about.router)
 api_router.include_router(settings.router)
 api_router.include_router(bilibili.router)
+api_router.include_router(douyin.router)
 api_router.include_router(targets.router)
 api_router.include_router(monitors.router)
 api_router.include_router(connections.router)

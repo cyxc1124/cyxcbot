@@ -69,8 +69,8 @@ async def _handle_douyin_link_message(
         return
 
     if not config.douyin_cookie:
-        logger.warning("抖音链接解析：未配置 Cookie，跳过解析")
-        return
+        # 对齐 douyin-downloader：无 Cookie 仅警告，仍尝试游客态解析
+        logger.warning("抖音链接解析：未配置 Cookie，将继续尝试（失败率可能较高）")
 
     logger.info(
         "抖音链接解析：收到消息 user={} text={!r}",
@@ -153,4 +153,6 @@ async def _douyin_link_parser_startup() -> None:
     config = get_config()
     logger.info("抖音链接解析插件已就绪")
     if not config.douyin_cookie:
-        logger.warning("抖音链接解析: 未配置 Cookie，解析功能不可用")
+        logger.warning(
+            "抖音链接解析: 未配置 Cookie，将以游客态尝试；建议在设置中配置以提高成功率"
+        )

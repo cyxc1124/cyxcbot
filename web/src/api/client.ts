@@ -12,6 +12,9 @@ import type {
   Group,
   GroupMessagePolicy,
   DouyinCookieStatus,
+  DouyinLogoutResult,
+  DouyinQrcodeLoginResult,
+  DouyinQrcodeStart,
   DouyinLinkParserGroupPolicyList,
   DouyinLinkParserGroupPolicyMutation,
   DouyinLinkParserUserPolicyList,
@@ -553,6 +556,68 @@ export const clearDouyinCookie = () =>
   request<{ success: boolean; message: string }>('/douyin-link-parser/cookie', {
     method: 'DELETE',
   })
+
+export const getDouyinQrcode = () =>
+  request<DouyinQrcodeStart>('/douyin/login/qrcode')
+
+export async function pollDouyinQrcodeLogin(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<DouyinQrcodeLoginResult> {
+  const headers = new Headers({ 'Content-Type': 'application/json' })
+  const token = getToken()
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+
+  const response = await fetch(`${API_BASE}/douyin/login/qrcode/poll`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ session_id: sessionId }),
+    signal,
+  }).catch(() => {
+    throw new ApiClientError('后端服务暂不可用，数据暂时无法加载', 0)
+  })
+
+  if (response.status === 401) {
+    clearToken()
+    if (
+      !window.location.pathname.startsWith('/login') &&
+      !window.location.pathname.startsWith('/setup')
+    ) {
+      window.location.href = '/login'
+    }
+    throw new ApiClientError('未授权，请重新登录', 401)
+  }
+
+  if (!response.ok) {
+    let message = `请求失败 (${response.status})`
+    if (response.status === 502 || response.status === 503 || response.status === 504) {
+      message = '后端服务暂不可用，数据暂时无法加载'
+    } else {
+      try {
+        const data = await response.json()
+        if (typeof data.detail === 'string') {
+          message = data.detail
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+    throw new ApiClientError(message, response.status)
+  }
+
+  return response.json() as Promise<DouyinQrcodeLoginResult>
+}
+
+export const cancelDouyinQrcodeLogin = (sessionId: string) =>
+  request<{ success: boolean; message: string }>('/douyin/login/qrcode/cancel', {
+    method: 'POST',
+    body: JSON.stringify({ session_id: sessionId }),
+  })
+
+export const logoutDouyin = () =>
+  request<DouyinLogoutResult>('/douyin/logout', { method: 'POST' })
 
 // Monitors
 export const getMonitorStatus = () => request<MonitorStatus>('/monitors/status')

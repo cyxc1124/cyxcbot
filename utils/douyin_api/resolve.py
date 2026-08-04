@@ -64,10 +64,16 @@ async def resolve_and_download(
     max_bytes: int = DEFAULT_MAX_BYTES,
     tmp_dir: Optional[Path] = None,
 ) -> DouyinVideoResult:
-    """Resolve the first Douyin URL in ``share_text`` and download its video."""
+    """Resolve the first Douyin URL in ``share_text`` and download its video.
+
+    Cookie 对齐 douyin-downloader：缺省或字段不全只 warning，仍尝试请求；
+    真正失败由短链/详情/下载结果决定（如 LoginRequiredError）。
+    """
     cookies = cookies_from_header(cookie_header)
     if not validate_cookies(cookies):
-        raise DouyinResolveError("抖音 Cookie 未配置或缺少必要字段")
+        logger.warning(
+            "抖音 Cookie 未配置或不完整，将继续尝试解析（建议配置 ttwid/odin_tt/passport_csrf_token）"
+        )
 
     urls = extract_douyin_urls(share_text)
     if not urls:

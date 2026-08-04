@@ -7,7 +7,7 @@ import { SettingsProvider, useSettingsForm } from './SettingsContext'
 const settingsNavItems = [
   { to: '/settings/monitor', label: '监控', description: '动态与直播检查间隔、功能开关' },
   { to: '/settings/account', label: 'B 站账号', description: '扫码登录与 Cookie 管理' },
-  { to: '/settings/douyin-account', label: '抖音账号', description: 'Cookie 粘贴（扫码即将支持）' },
+  { to: '/settings/douyin-account', label: '抖音账号', description: '扫码登录与 Cookie 管理' },
   { to: '/settings/bot', label: '机器人', description: 'QQ 命令权限与状态查询' },
   { to: '/settings/commands', label: '命令', description: '自定义命令触发词与开关' },
 ]

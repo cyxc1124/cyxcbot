@@ -276,6 +276,23 @@ export interface DouyinCookieStatus {
   message?: string
 }
 
+export interface DouyinQrcodeStart {
+  session_id: string
+  image_base64: string
+}
+
+export interface DouyinQrcodeLoginResult {
+  success: boolean
+  message: string
+  configured: boolean
+  preview?: string | null
+}
+
+export interface DouyinLogoutResult {
+  success: boolean
+  message: string
+}
+
 export interface LinkParserUserPolicyInput {
   user_id: string
   name?: string

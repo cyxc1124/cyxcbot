@@ -6,7 +6,7 @@
 
 - 监听 `on_message(priority=4, block=False)`（与 B 站链接解析同级，互不 `block`）
 - 策略默认关闭；仅当群 / 好友在 Web Admin「抖音链接」中开启后生效
-- 依赖独立的抖音 Cookie（设置 → 抖音账号），不共用 B 站 Cookie
+- Cookie 独立于 B 站（设置 → 抖音账号）；**非硬性必填**，对齐 douyin-downloader：缺省仅 warning，仍尝试游客态；建议配置 `ttwid` / `odin_tt` / `passport_csrf_token`（`msToken` 可缺省自动生成）
 - 文案模板键：`link_template_douyin`（占位符：`{video}` `{title}` `{author}` `{url}` `{aweme_id}`）
 
 ## 配置入口
@@ -15,7 +15,7 @@
 |------|------|
 | 群管理 → 抖音链接 | 按群开关 |
 | 好友管理 → 抖音链接 | 按好友开关 |
-| 设置 → 抖音账号 | Cookie 粘贴保存（扫码登录后续支持） |
+| 设置 → 抖音账号 | 扫码登录（Playwright，对齐 douyin_parse）或粘贴 Cookie |
 
 ## 实现
 
