@@ -10,16 +10,49 @@ import urllib.request
 from http.cookies import SimpleCookie
 from threading import Lock
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import yaml
 from nonebot.log import logger
+
+# Pin to a commit so a compromised f2 `main` cannot redirect msToken POSTs.
+_F2_CONF_COMMIT = "019b3fb61c6c62d091eb9000738a7a5b177de3a2"
+_ALLOWED_MS_TOKEN_HOSTS = frozenset(
+    {
+        "mssdk.bytedance.com",
+        "mssdk.zijieapi.com",
+    }
+)
+
+
+def _host_allowed(host: str, allowed: frozenset[str]) -> bool:
+    normalized = (host or "").strip().lower().rstrip(".")
+    if not normalized:
+        return False
+    return any(
+        normalized == base or normalized.endswith("." + base) for base in allowed
+    )
+
+
+def is_allowed_ms_token_url(url: str) -> bool:
+    """Return True when url is https to an allowlisted mssdk host."""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme != "https":
+        return False
+    if parsed.username or parsed.password:
+        return False
+    return _host_allowed(parsed.hostname or "", _ALLOWED_MS_TOKEN_HOSTS)
 
 
 class MsTokenManager:
     """Prefer real mssdk token; fall back to a random token."""
 
     F2_CONF_URL = (
-        "https://raw.githubusercontent.com/Johnserf-Seed/f2/main/f2/conf/conf.yaml"
+        f"https://raw.githubusercontent.com/Johnserf-Seed/f2/"
+        f"{_F2_CONF_COMMIT}/f2/conf/conf.yaml"
     )
     _cached_conf: Optional[dict[str, Any]] = None
     _cached_at: float = 0
@@ -66,6 +99,10 @@ class MsTokenManager:
         conf = self._load_f2_ms_token_conf()
         if not conf:
             return None
+        endpoint = str(conf.get("url") or "").strip()
+        if not is_allowed_ms_token_url(endpoint):
+            logger.warning("拒绝非白名单 msToken URL（host 校验失败）")
+            return None
         payload = {
             "magic": conf["magic"],
             "version": conf["version"],
@@ -75,7 +112,7 @@ class MsTokenManager:
             "tspFromClient": int(time.time() * 1000),
         }
         request = urllib.request.Request(
-            conf["url"],
+            endpoint,
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
@@ -114,6 +151,9 @@ class MsTokenManager:
                     "F2 msToken 配置不完整，缺少: {}",
                     sorted(required - set(ms_conf.keys())),
                 )
+                return None
+            if not is_allowed_ms_token_url(str(ms_conf.get("url") or "")):
+                logger.warning("F2 msToken URL 未通过 host 白名单，忽略远程配置")
                 return None
             with self._lock:
                 self._cached_conf = ms_conf
