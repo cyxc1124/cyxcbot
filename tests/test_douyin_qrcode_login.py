@@ -1,10 +1,19 @@
 """Unit tests for Douyin QR login helpers (no Playwright / network)."""
 
 from shared.douyin.qrcode_login import (
+    QR_SELECTORS,
     cookies_to_header,
     has_valid_login_cookie,
     is_logged_in_url,
 )
+
+
+def test_qr_selectors_prefer_live_hashed_container():
+    # Live panel: .XI37I0dP > img.RhjdbXj8[aria-label=二维码]
+    assert QR_SELECTORS[0] == ".XI37I0dP img"
+    assert "img.RhjdbXj8" in QR_SELECTORS
+    assert ".XI37I0dP" in QR_SELECTORS
+    assert any("二维码" in s for s in QR_SELECTORS)
 
 
 def test_cookies_to_header_and_sessionid_check():
