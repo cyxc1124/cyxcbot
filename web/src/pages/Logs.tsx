@@ -4,7 +4,13 @@ import { createLogsWebSocket, getRecentLogs } from '../api/client'
 import type { RuntimeLogEntry } from '../api/types'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { formatApiError } from '../utils/apiError'
-import { DISPLAY_MAX, LOG_FLUSH_MS, mergeLogs, trimLogs } from './logsDisplay'
+import {
+  DISPLAY_MAX,
+  LOG_FLUSH_MS,
+  isNearBottom,
+  mergeLogs,
+  trimLogs,
+} from './logsDisplay'
 
 const LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR'] as const
 type LogLevel = (typeof LEVELS)[number]
@@ -113,10 +119,36 @@ export function LogsPage() {
   // scrollToIndex is stable; the virtualizer object identity is not.
   const scrollToIndex = rowVirtualizer.scrollToIndex
 
+  const scrollToLatest = useCallback(() => {
+    if (logs.length === 0) return
+    scrollToIndex(logs.length - 1, { align: 'end' })
+  }, [logs.length, scrollToIndex])
+
   useEffect(() => {
     if (!autoScroll || paused || logs.length === 0) return
-    scrollToIndex(logs.length - 1, { align: 'end' })
-  }, [logs, autoScroll, paused, scrollToIndex])
+    scrollToLatest()
+  }, [logs, autoScroll, paused, scrollToLatest])
+
+  const handleScroll = useCallback(() => {
+    const el = containerRef.current
+    if (!el) return
+    // Distinguish by position: programmatic scrolls settle at the live edge,
+    // so only leaving that edge (user wheel/drag) cancels follow — no timing
+    // guard that would swallow genuine user scrolls.
+    if (!isNearBottom(el)) setAutoScroll(false)
+  }, [])
+
+  const handleFollowChecked = useCallback(
+    (checked: boolean) => {
+      if (checked) {
+        setAutoScroll(true)
+        requestAnimationFrame(() => scrollToLatest())
+      } else {
+        setAutoScroll(false)
+      }
+    },
+    [scrollToLatest],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -263,10 +295,10 @@ export function LogsPage() {
           <input
             type="checkbox"
             checked={autoScroll}
-            onChange={(e) => setAutoScroll(e.target.checked)}
+            onChange={(e) => handleFollowChecked(e.target.checked)}
             className="rounded border-input"
           />
-          自动滚到底部
+          跟随最新
         </label>
 
         <button type="button" className="btn-secondary" onClick={handleTogglePause}>
@@ -281,7 +313,7 @@ export function LogsPage() {
         </p>
       </div>
 
-      <div ref={containerRef} className="log-panel">
+      <div ref={containerRef} className="log-panel" onScroll={handleScroll}>
         {logs.length === 0 ? (
           <p className="font-mono text-sm text-muted-foreground">暂无日志，等待输出…</p>
         ) : (
