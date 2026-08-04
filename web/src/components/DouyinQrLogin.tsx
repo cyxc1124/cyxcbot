@@ -42,7 +42,14 @@ export function DouyinQrLogin({ onSuccess, onError }: DouyinQrLoginProps) {
 
     try {
       const qr = await getDouyinQrcode()
-      if (controller.signal.aborted) return
+      // 取消发生在 qrcode 请求返回前时 sessionRef 仍为空，stopPolling 无法 cancel；
+      // 若此处直接 return，服务端 Playwright Chromium 会一直挂到下次扫码或进程退出。
+      if (controller.signal.aborted) {
+        void cancelDouyinQrcodeLogin(qr.session_id).catch(() => {
+          // best-effort cleanup of Playwright session
+        })
+        return
+      }
 
       sessionRef.current = qr.session_id
       setImageBase64(qr.image_base64)
