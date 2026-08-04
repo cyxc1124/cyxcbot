@@ -2,20 +2,21 @@
 
 使用 GHCR 预构建镜像，在单机 / NAS 上快速部署 [机器草 cyxcbot](https://github.com/cyxc1124/cyxcbot)。
 
-业务配置（监控、B 站 Cookie 等）在 Web Admin 面板中管理；启动前请编辑 `docker-compose.yml` 中的 `WEB_SECRET_KEY`。
+业务配置（监控、B 站 Cookie 等）在 Web Admin 面板中管理；启动前必须设置足够长的随机 `WEB_SECRET_KEY`（Compose 未设置会直接失败）。
 
 ## 快速开始
 
 ```bash
 cd deploy/compose
 
-# 编辑 docker-compose.yml，修改 WEB_SECRET_KEY
+# 在同目录 .env 或当前 shell 中设置（勿提交真实密钥）
+export WEB_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
 
 docker compose pull
 docker compose up -d
 ```
 
-首次启动后访问 `http://<主机>:8081`，完成 `/setup` 初始化。
+首次启动后访问 `http://<主机>:8081`，尽快完成 `/setup` 初始化（未初始化时任何人可抢先创建管理员）。
 
 OneBot 协议端（如 NapCat）反向 WebSocket 连接 **8080** 端口。
 
@@ -28,7 +29,7 @@ OneBot 协议端（如 NapCat）反向 WebSocket 连接 **8080** 端口。
 | `image` | 镜像与版本 tag |
 | `ports` | 宿主机端口映射（默认 8080 / 8081） |
 | `volumes` | 数据目录（默认 `./data` → `/app/data`） |
-| `environment.WEB_SECRET_KEY` | **必填**，JWT 签名密钥 |
+| `environment.WEB_SECRET_KEY` | **必填**，由 `${WEB_SECRET_KEY}` 注入；JWT 签名与 Cookie 加密密钥 |
 | `environment.*` | 其他启动级配置，见根目录 [`env.example`](../../env.example) |
 
 ## 常用命令

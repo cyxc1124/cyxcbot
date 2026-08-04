@@ -46,3 +46,26 @@ def test_raw_max_bytes_fits_napcat_ws_after_base64():
     encoded = 4 * ((DEFAULT_MAX_BYTES + 2) // 3)
     framing_headroom = 5 * 1024 * 1024
     assert encoded + framing_headroom <= napcat_ceiling
+
+
+def test_douyin_link_message_escapes_cq_in_title_and_author(tmp_path: Path):
+    from utils.douyin_api.resolve import DouyinVideoResult
+
+    video = tmp_path / "1.mp4"
+    video.write_bytes(b"\x00\x00\x00\x18ftypmp42fake")
+    result = DouyinVideoResult(
+        aweme_id="1",
+        title="[CQ:at,qq=all] owned",
+        author="[CQ:image,file=http://127.0.0.1/x]",
+        share_url="https://www.douyin.com/video/1",
+        file_path=video,
+        detail={},
+    )
+    message = _sender.build_douyin_link_message(result)
+    text_parts = [seg for seg in message if seg.type == "text"]
+    assert text_parts
+    serialized = str(message)
+    assert "[CQ:at" not in serialized
+    assert "&#91;CQ:at,qq=all&#93;" in serialized
+    assert "&#91;CQ:image,file=http://127.0.0.1/x&#93;" in serialized
+    assert any(seg.type == "video" for seg in message)

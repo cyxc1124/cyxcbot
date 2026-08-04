@@ -51,6 +51,11 @@ async def start_web_admin_server():
         from admin.app import create_app
         from admin.config import get_web_host, get_web_port
         from shared.logging.broadcast import bridge_uvicorn_loggers
+        from shared.security.web_secret import require_web_secret_key
+
+        # Fail closed before binding the port when JWT/Fernet secret is missing
+        # or a known insecure placeholder (e.g. compose/env.example defaults).
+        require_web_secret_key()
 
         app = create_app()
         host = get_web_host()

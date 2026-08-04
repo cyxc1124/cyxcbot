@@ -11,13 +11,14 @@ sidebar_position: 3
 ```bash
 cd deploy/compose
 
-# 编辑 docker-compose.yml，修改 WEB_SECRET_KEY
+# 设置 WEB_SECRET_KEY（Compose 通过环境变量注入，未设置会失败）
+export WEB_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
 
 docker compose pull
 docker compose up -d
 ```
 
-首次启动后访问 `http://<主机>:8081`，完成 `/setup` 初始化。
+首次启动后访问 `http://<主机>:8081`，尽快完成 `/setup` 初始化（未初始化前任何人可抢先创建管理员）。
 
 OneBot 协议端反向 WebSocket 连接 **8080** 端口。
 

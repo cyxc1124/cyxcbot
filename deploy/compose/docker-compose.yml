@@ -16,7 +16,9 @@ services:
       WEB_HOST: "0.0.0.0"
       WEB_PORT: "8081"
       WEB_ADMIN_ENABLED: "true"
-      WEB_SECRET_KEY: change-me-to-a-long-random-string
+      # Required: export WEB_SECRET_KEY or put it in a .env next to this file.
+      # Compose fails fast if unset; do not commit real secrets.
+      WEB_SECRET_KEY: ${WEB_SECRET_KEY:?Set WEB_SECRET_KEY to a unique random string (>=32 chars)}
       SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:///data/cyxcbot.db
       LOG_LEVEL: INFO
     healthcheck:
