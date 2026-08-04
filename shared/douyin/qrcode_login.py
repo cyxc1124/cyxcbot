@@ -52,6 +52,9 @@ QR_SELECTORS = (
 _SESSION_TTL_SECONDS = 180
 _QR_WAIT_SECONDS = 35
 _POLL_DEFAULT_SECONDS = 120
+# poll 被 abort 时先保留 Chromium，供同会话 refresh 接手；无人认领则延迟关闭，
+# 避免标签页直接关闭时 CancelledError 把会话永久挂起。
+_DEFERRED_CLOSE_SECONDS = 15.0
 
 
 class DouyinQrcodeError(Exception):
@@ -68,9 +71,13 @@ class DouyinQrSession:
     page: Any
     created_at: float = field(default_factory=time.monotonic)
     closed: bool = False
+    # 被 refresh / 新一轮 poll / cancel 认领时递增，使未完成的延迟关闭失效
+    epoch: int = 0
+    poll_active: bool = False
 
 
 _sessions: dict[str, DouyinQrSession] = {}
+_deferred_close_tasks: dict[str, asyncio.Task] = {}
 _lock = asyncio.Lock()
 
 
@@ -221,9 +228,45 @@ async def _extract_login_cookies(context: BrowserContext, page: Page) -> str | N
     return None
 
 
+def _cancel_deferred_close(session_id: str) -> None:
+    task = _deferred_close_tasks.pop(session_id, None)
+    if task is not None and not task.done():
+        task.cancel()
+
+
+def _bump_session_epoch(session: DouyinQrSession) -> int:
+    session.epoch += 1
+    return session.epoch
+
+
+async def _deferred_close_session(session_id: str, epoch: int, delay: float) -> None:
+    try:
+        await asyncio.sleep(delay)
+    except asyncio.CancelledError:
+        return
+    async with _lock:
+        session = _sessions.get(session_id)
+        if session is None or session.epoch != epoch or session.poll_active:
+            _deferred_close_tasks.pop(session_id, None)
+            return
+        _sessions.pop(session_id, None)
+        _deferred_close_tasks.pop(session_id, None)
+    logger.info("抖音扫码会话延迟清理 session_id={}", session_id[:8])
+    await _close_session(session)
+
+
+def _schedule_deferred_close(session_id: str, epoch: int) -> None:
+    _cancel_deferred_close(session_id)
+    _deferred_close_tasks[session_id] = asyncio.create_task(
+        _deferred_close_session(session_id, epoch, _DEFERRED_CLOSE_SECONDS),
+        name=f"douyin-qr-deferred-close-{session_id[:8]}",
+    )
+
+
 async def close_qr_session(session_id: str) -> None:
     async with _lock:
         session = _sessions.pop(session_id, None)
+        _cancel_deferred_close(session_id)
     if session is None:
         return
     await _close_session(session)
@@ -253,6 +296,7 @@ async def _cleanup_stale_sessions_locked() -> None:
         if now - session.created_at > _SESSION_TTL_SECONDS
     ]
     for sid in stale:
+        _cancel_deferred_close(sid)
         session = _sessions.pop(sid, None)
         if session is not None:
             await _close_session(session)
@@ -276,6 +320,7 @@ async def start_qrcode_login() -> dict[str, str]:
             await _cleanup_stale_sessions_locked()
             # 同时只保留一个扫码会话，避免堆积 Chromium
             for sid in list(_sessions):
+                _cancel_deferred_close(sid)
                 old = _sessions.pop(sid)
                 await _close_session(old)
 
@@ -393,48 +438,70 @@ async def refresh_qrcode_login(session_id: str) -> dict[str, str]:
 
     async with _lock:
         session = _sessions.get(sid)
-    if session is None:
-        raise DouyinQrcodeError("二维码会话不存在或已过期，请重新获取")
+        if session is None:
+            raise DouyinQrcodeError("二维码会话不存在或已过期，请重新获取")
+        if not session.closed and session.page is not None:
+            # 认领会话：使 poll abort 触发的延迟关闭失效
+            _bump_session_epoch(session)
+            _cancel_deferred_close(sid)
     if session.closed or session.page is None:
         await close_qr_session(sid)
         raise DouyinQrcodeError("二维码会话已关闭，请重新获取")
 
+    # 等待被 abort 的 poll 退出，避免与 refresh 并发操作同一 Page
+    wait_deadline = time.monotonic() + 3
+    while session.poll_active and time.monotonic() < wait_deadline:
+        await asyncio.sleep(0.05)
+
     page = session.page
-    old_fp = await _qr_fingerprint(page)
-    await _trigger_qr_refresh(page)
+    claimed_epoch = session.epoch
+    succeeded = False
+    try:
+        old_fp = await _qr_fingerprint(page)
+        await _trigger_qr_refresh(page)
 
-    element = None
-    deadline = time.monotonic() + 12
-    while time.monotonic() < deadline:
-        element = await _find_qr_element(page)
-        if element is not None:
-            fp = await _qr_fingerprint(page)
-            if fp and fp != old_fp:
-                break
-        await page.wait_for_timeout(400)
-    else:
         element = None
+        deadline = time.monotonic() + 12
+        while time.monotonic() < deadline:
+            element = await _find_qr_element(page)
+            if element is not None:
+                fp = await _qr_fingerprint(page)
+                if fp and fp != old_fp:
+                    break
+            await page.wait_for_timeout(400)
+        else:
+            element = None
 
-    if element is None or (
-        old_fp is not None and await _qr_fingerprint(page) == old_fp
-    ):
-        # 同页点刷新无效时：不杀浏览器，重进 /user/self 登录弹窗拿新码
-        try:
-            await page.goto(DOUYIN_HOME, wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(1000)
-        except Exception:
-            logger.opt(exception=True).debug("刷新二维码时重载入口页失败")
-        element = await _wait_for_qr_element(page, timeout_sec=20)
+        if element is None or (
+            old_fp is not None and await _qr_fingerprint(page) == old_fp
+        ):
+            # 同页点刷新无效时：不杀浏览器，重进 /user/self 登录弹窗拿新码
+            try:
+                await page.goto(
+                    DOUYIN_HOME, wait_until="domcontentloaded", timeout=30000
+                )
+                await page.wait_for_timeout(1000)
+            except Exception:
+                logger.opt(exception=True).debug("刷新二维码时重载入口页失败")
+            element = await _wait_for_qr_element(page, timeout_sec=20)
 
-    if element is None:
-        raise DouyinQrcodeError("刷新后未找到二维码，请重新获取")
+        if element is None:
+            raise DouyinQrcodeError("刷新后未找到二维码，请重新获取")
 
-    png = await element.screenshot()
-    image_base64 = base64.b64encode(png).decode("ascii")
-    session.image_base64 = image_base64
-    session.created_at = time.monotonic()
-    logger.info("抖音扫码二维码已刷新 session_id={}", sid[:8])
-    return {"session_id": sid, "image_base64": image_base64}
+        png = await element.screenshot()
+        image_base64 = base64.b64encode(png).decode("ascii")
+        session.image_base64 = image_base64
+        session.created_at = time.monotonic()
+        succeeded = True
+        logger.info("抖音扫码二维码已刷新 session_id={}", sid[:8])
+        return {"session_id": sid, "image_base64": image_base64}
+    finally:
+        if not succeeded:
+            # refresh 失败/取消且客户端可能已断开：重新挂上延迟清理，避免 Chromium 常驻
+            async with _lock:
+                live = _sessions.get(sid)
+                if live is not None and live.epoch == claimed_epoch:
+                    _schedule_deferred_close(sid, claimed_epoch)
 
 
 async def poll_qrcode_login(
@@ -449,6 +516,11 @@ async def poll_qrcode_login(
 
     async with _lock:
         session = _sessions.get(sid)
+        if session is not None and not session.closed:
+            # 新一轮 poll 认领会话（例如 refresh 之后），取消断开时挂起的延迟关闭
+            _bump_session_epoch(session)
+            _cancel_deferred_close(sid)
+            session.poll_active = True
     if session is None:
         raise DouyinQrcodeError("二维码会话不存在或已过期，请重新获取")
 
@@ -459,7 +531,8 @@ async def poll_qrcode_login(
     page = session.page
     context = session.context
     start_url = page.url
-    # 客户端 abort（刷新）会 CancelledError：勿关会话，由 refresh/cancel API 管理生命周期
+    # 客户端 abort（刷新）会 CancelledError：暂勿立即关会话，改延迟清理；
+    # refresh/cancel/下一轮 poll 会认领并取消延迟任务。真断开则延迟后回收 Chromium。
     close_when_done = True
 
     try:
@@ -492,7 +565,13 @@ async def poll_qrcode_login(
         raise DouyinQrcodeError("二维码已超时，请重新获取（扫码后需在手机上确认）")
     except asyncio.CancelledError:
         close_when_done = False
+        async with _lock:
+            live = _sessions.get(sid)
+            epoch = live.epoch if live is not None else -1
+        if epoch >= 0:
+            _schedule_deferred_close(sid, epoch)
         raise
     finally:
+        session.poll_active = False
         if close_when_done:
             await close_qr_session(sid)
