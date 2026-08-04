@@ -24,6 +24,7 @@ from utils.douyin_api import (
 
 from .config import Config, get_config, reload_config
 from .message_text import collect_message_text
+from .send_result import is_onebot_send_success
 from .sender import build_douyin_link_message
 
 __plugin_meta__ = PluginMetadata(
@@ -83,18 +84,33 @@ async def _handle_douyin_link_message(
         result = await resolve_and_download(message_text, config.douyin_cookie)
         reply = build_douyin_link_message(result, config.message_templates)
         if isinstance(event, GroupMessageEvent):
-            await bot.send_group_msg(group_id=event.group_id, message=reply)
+            send_result = await bot.send_group_msg(
+                group_id=event.group_id, message=reply
+            )
         else:
-            await bot.send_private_msg(user_id=event.user_id, message=reply)
+            send_result = await bot.send_private_msg(
+                user_id=event.user_id, message=reply
+            )
+
+        if not is_onebot_send_success(send_result):
+            logger.warning(
+                "抖音链接解析发送未确认成功 user={} aweme_id={} result={!r}",
+                event.user_id,
+                result.aweme_id,
+                send_result,
+            )
+            return
+
         reply_scope = (
             f"group={event.group_id}"
             if isinstance(event, GroupMessageEvent)
             else "private"
         )
         logger.info(
-            "已回复抖音链接解析: user={}, aweme_id={}, {}",
+            "已回复抖音链接解析: user={}, aweme_id={}, message_id={}, {}",
             event.user_id,
             result.aweme_id,
+            _message_id_of(send_result),
             reply_scope,
         )
     except DouyinResolveError as exc:
@@ -102,8 +118,16 @@ async def _handle_douyin_link_message(
     except Exception:
         logger.opt(exception=True).error("抖音链接解析处理异常")
     finally:
+        # send_* 返回有效 message_id 表示协议端已接受本地文件，可立即清理；
+        # 失败路径同样清理，避免临时目录泄漏。
         if result is not None:
             _cleanup_temp(result.file_path)
+
+
+def _message_id_of(send_result: object) -> object:
+    if isinstance(send_result, dict):
+        return send_result.get("message_id")
+    return getattr(send_result, "message_id", send_result)
 
 
 def _cleanup_temp(file_path: Path) -> None:
