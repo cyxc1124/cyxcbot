@@ -27,7 +27,7 @@ def test_encrypt_empty_returns_empty() -> None:
 
 def test_decrypt_with_wrong_secret_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     ciphertext = encrypt_value("secret-cookie")
-    monkeypatch.setenv("WEB_SECRET_KEY", "different-secret-key-for-pytest")
+    monkeypatch.setenv("WEB_SECRET_KEY", "different-secret-key-for-pytest-32b!")
     with pytest.raises(ValueError, match="Failed to decrypt"):
         decrypt_value(ciphertext)
 

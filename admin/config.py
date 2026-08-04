@@ -15,10 +15,9 @@ def get_web_port() -> int:
 
 
 def get_jwt_secret() -> str:
-    secret = os.getenv("WEB_SECRET_KEY", "")
-    if not secret:
-        raise ValueError("WEB_SECRET_KEY must be set for Web Admin")
-    return secret
+    from shared.security.web_secret import require_web_secret_key
+
+    return require_web_secret_key()
 
 
 def get_jwt_algorithm() -> str:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import os
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -16,10 +15,9 @@ def _derive_fernet_key(secret: str) -> bytes:
 
 
 def get_fernet() -> Fernet:
-    secret = os.getenv("WEB_SECRET_KEY", "")
-    if not secret:
-        raise ValueError("WEB_SECRET_KEY is not configured")
-    return Fernet(_derive_fernet_key(secret))
+    from shared.security.web_secret import require_web_secret_key
+
+    return Fernet(_derive_fernet_key(require_web_secret_key()))
 
 
 def encrypt_value(plaintext: str) -> str:

@@ -9,7 +9,7 @@
 
 ```bash
 cd deploy/compose
-# 编辑 docker-compose.yml，修改 WEB_SECRET_KEY
+export WEB_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
 
 docker compose pull
 docker compose up -d
@@ -21,7 +21,7 @@ docker compose up -d
 
 ```bash
 kubectl create secret generic cyxcbot-secret \
-  --from-literal=WEB_SECRET_KEY='your-random-secret'
+  --from-literal=web-secret-key="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
 
 helm install cyxcbot ./deploy/helm --set secret.name=cyxcbot-secret
 ```
