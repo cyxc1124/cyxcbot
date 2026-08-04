@@ -1,9 +1,9 @@
 """Douyin web QR login via Playwright (flow adapted from douyin_parse).
 
 Unlike Bilibili TV login (pure HTTP passport API), Douyin has no stable
-public QR auth API here. We open www.douyin.com headless, trigger the
-official scan-login panel, screenshot the QR image, then poll browser
-cookies for ``sessionid``.
+public QR auth API here. We open www.douyin.com/user/self headless
+(lighter than the recommend feed), trigger the official scan-login panel,
+screenshot the QR image, then poll browser cookies for ``sessionid``.
 """
 
 from __future__ import annotations
@@ -26,7 +26,8 @@ except Exception:  # pragma: no cover - optional at import time
     Page = Any  # type: ignore[misc, assignment]
     async_playwright = None  # type: ignore[assignment]
 
-DOUYIN_HOME = "https://www.douyin.com/"
+# 个人页比推荐首页少拉 feed / 视频资源，扫码登录足够
+DOUYIN_HOME = "https://www.douyin.com/user/self"
 DOUYIN_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -417,12 +418,12 @@ async def refresh_qrcode_login(session_id: str) -> dict[str, str]:
     if element is None or (
         old_fp is not None and await _qr_fingerprint(page) == old_fp
     ):
-        # 同页点刷新无效时：不杀浏览器，重进首页登录弹窗拿新码
+        # 同页点刷新无效时：不杀浏览器，重进 /user/self 登录弹窗拿新码
         try:
             await page.goto(DOUYIN_HOME, wait_until="domcontentloaded", timeout=30000)
             await page.wait_for_timeout(1000)
         except Exception:
-            logger.opt(exception=True).debug("刷新二维码时重载首页失败")
+            logger.opt(exception=True).debug("刷新二维码时重载入口页失败")
         element = await _wait_for_qr_element(page, timeout_sec=20)
 
     if element is None:

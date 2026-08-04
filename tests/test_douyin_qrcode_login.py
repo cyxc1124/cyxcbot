@@ -44,6 +44,7 @@ def test_cookies_to_header_and_sessionid_check():
 
 def test_is_logged_in_url():
     assert is_logged_in_url("https://www.douyin.com/")
+    assert is_logged_in_url("https://www.douyin.com/user/self")
     assert is_logged_in_url("https://www.douyin.com/user/xxx")
     assert not is_logged_in_url("https://www.douyin.com/passport/login")
     assert not is_logged_in_url("https://example.com/")
