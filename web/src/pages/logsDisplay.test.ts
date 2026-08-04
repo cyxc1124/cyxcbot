@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { RuntimeLogEntry } from '../api/types'
-import { DISPLAY_MAX, LOG_FLUSH_MS, mergeLogs, trimLogs } from './logsDisplay'
+import {
+  DISPLAY_MAX,
+  LOG_FLUSH_MS,
+  NEAR_BOTTOM_PX,
+  isNearBottom,
+  mergeLogs,
+  trimLogs,
+} from './logsDisplay'
 
 function entry(n: number, sessionId = 'sess-a'): RuntimeLogEntry {
   return {
@@ -17,6 +24,26 @@ describe('logsDisplay', () => {
   it('keeps flush interval within suggested batching window', () => {
     expect(LOG_FLUSH_MS).toBeGreaterThanOrEqual(100)
     expect(LOG_FLUSH_MS).toBeLessThanOrEqual(250)
+  })
+
+  it('isNearBottom treats edge and small slack as following', () => {
+    expect(
+      isNearBottom({ scrollHeight: 1000, scrollTop: 800, clientHeight: 200 }),
+    ).toBe(true)
+    expect(
+      isNearBottom({
+        scrollHeight: 1000,
+        scrollTop: 800 - NEAR_BOTTOM_PX,
+        clientHeight: 200,
+      }),
+    ).toBe(true)
+    expect(
+      isNearBottom({
+        scrollHeight: 1000,
+        scrollTop: 800 - NEAR_BOTTOM_PX - 1,
+        clientHeight: 200,
+      }),
+    ).toBe(false)
   })
 
   it('mergeLogs returns previous list when incoming is empty', () => {
