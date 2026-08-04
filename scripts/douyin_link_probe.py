@@ -200,7 +200,9 @@ def _print_status(snap) -> None:
 
 
 def _policy_ok(snap, *, group_id: str | None, user_id: str, private: bool) -> bool:
-    from shared.config.douyin_link_parser_policy import resolve_douyin_link_parser_policy
+    from shared.config.douyin_link_parser_policy import (
+        resolve_douyin_link_parser_policy,
+    )
     from shared.group_policy import is_group_message_enabled_from_snapshot
     from shared.private_policy import is_private_message_enabled_from_snapshot
 
@@ -236,10 +238,7 @@ def _policy_ok(snap, *, group_id: str | None, user_id: str, private: bool) -> bo
         snap, group_id=gid, user_id=user_id, is_private=False
     )
     if not scope.enabled:
-        print(
-            f"[BLOCK] douyin link policy: group={gid} "
-            "(bot would silently ignore)"
-        )
+        print(f"[BLOCK] douyin link policy: group={gid} (bot would silently ignore)")
         return False
     print(f"[OK] douyin link policy: group={gid}")
     return True
