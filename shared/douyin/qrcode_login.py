@@ -1,9 +1,9 @@
 """Douyin web QR login via Playwright (flow adapted from douyin_parse).
 
 Unlike Bilibili TV login (pure HTTP passport API), Douyin has no stable
-public QR auth API here. We open www.douyin.com headless, trigger the
-official scan-login panel, screenshot the QR image, then poll browser
-cookies for ``sessionid``.
+public QR auth API here. We open www.douyin.com/user/self headless
+(lighter than the recommend feed), trigger the official scan-login panel,
+screenshot the QR image, then poll browser cookies for ``sessionid``.
 """
 
 from __future__ import annotations
@@ -26,17 +26,22 @@ except Exception:  # pragma: no cover - optional at import time
     Page = Any  # type: ignore[misc, assignment]
     async_playwright = None  # type: ignore[assignment]
 
-DOUYIN_HOME = "https://www.douyin.com/"
+# 个人页比推荐首页少拉 feed / 视频资源，扫码登录足够
+DOUYIN_HOME = "https://www.douyin.com/user/self"
 DOUYIN_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/130.0.0.0 Safari/537.36"
 )
 
+# 2026-08 实测抖音登录弹窗：容器 .XI37I0dP > img.RhjdbXj8[aria-label=二维码]
+# （data:image/png；中心带抖音 logo）。哈希 class 可能再变，故保留语义/旧选择器兜底。
 QR_SELECTORS = (
-    ".qrcode-img img",
-    "img[aria-label*='二维码']",
+    ".XI37I0dP img",
     "img.RhjdbXj8",
+    ".XI37I0dP",
+    "img[aria-label*='二维码']",
+    ".qrcode-img img",
     "img[src^='data:image/png;base64']",
     "img[src*='qrcode']",
     "img[src*='qr']",
@@ -141,6 +146,28 @@ async def _open_login_panel(page: Page) -> None:
             continue
 
 
+async def _prefer_qr_img(element) -> object:
+    """If the hit is the hashed wrapper, prefer the inner QR <img>."""
+    try:
+        tag = await element.evaluate("el => el.tagName")
+    except Exception:
+        return element
+    if tag != "DIV":
+        return element
+    try:
+        inner = await element.query_selector(
+            "img[aria-label*='二维码'], img.RhjdbXj8, img[src^='data:image/png']"
+        )
+        if not inner:
+            return element
+        box = await inner.bounding_box()
+        if box and box.get("width", 0) >= 100 and box.get("height", 0) >= 100:
+            return inner
+    except Exception:
+        pass
+    return element
+
+
 async def _find_qr_element(page: Page):
     scopes = [page, *page.frames]
     for scope in scopes:
@@ -151,7 +178,7 @@ async def _find_qr_element(page: Page):
                     continue
                 box = await element.bounding_box()
                 if box and box.get("width", 0) >= 100 and box.get("height", 0) >= 100:
-                    return element
+                    return await _prefer_qr_img(element)
             except Exception:
                 continue
     return None
@@ -327,6 +354,89 @@ async def start_qrcode_login() -> dict[str, str]:
         _restore_proxy_env(removed_proxy)
 
 
+async def _qr_fingerprint(page: Page) -> str | None:
+    element = await _find_qr_element(page)
+    if element is None:
+        return None
+    try:
+        return await element.evaluate(
+            "el => el.getAttribute('src') || el.outerHTML.slice(0, 120)"
+        )
+    except Exception:
+        return None
+
+
+async def _trigger_qr_refresh(page: Page) -> None:
+    """Best-effort UI refresh without restarting Chromium."""
+    for text in ("点击刷新", "刷新二维码", "刷新"):
+        try:
+            await page.get_by_text(text, exact=False).first.click(timeout=1200)
+            await page.wait_for_timeout(600)
+            return
+        except Exception:
+            continue
+    for selector in (".XI37I0dP", "img.RhjdbXj8", "img[aria-label*='二维码']"):
+        try:
+            await page.locator(selector).first.click(timeout=1200, force=True)
+            await page.wait_for_timeout(600)
+            return
+        except Exception:
+            continue
+    await _open_login_panel(page)
+
+
+async def refresh_qrcode_login(session_id: str) -> dict[str, str]:
+    """Refresh QR on an existing Playwright session (no browser relaunch)."""
+    sid = (session_id or "").strip()
+    if not sid:
+        raise DouyinQrcodeError("缺少 session_id，请重新获取二维码")
+
+    async with _lock:
+        session = _sessions.get(sid)
+    if session is None:
+        raise DouyinQrcodeError("二维码会话不存在或已过期，请重新获取")
+    if session.closed or session.page is None:
+        await close_qr_session(sid)
+        raise DouyinQrcodeError("二维码会话已关闭，请重新获取")
+
+    page = session.page
+    old_fp = await _qr_fingerprint(page)
+    await _trigger_qr_refresh(page)
+
+    element = None
+    deadline = time.monotonic() + 12
+    while time.monotonic() < deadline:
+        element = await _find_qr_element(page)
+        if element is not None:
+            fp = await _qr_fingerprint(page)
+            if fp and fp != old_fp:
+                break
+        await page.wait_for_timeout(400)
+    else:
+        element = None
+
+    if element is None or (
+        old_fp is not None and await _qr_fingerprint(page) == old_fp
+    ):
+        # 同页点刷新无效时：不杀浏览器，重进 /user/self 登录弹窗拿新码
+        try:
+            await page.goto(DOUYIN_HOME, wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(1000)
+        except Exception:
+            logger.opt(exception=True).debug("刷新二维码时重载入口页失败")
+        element = await _wait_for_qr_element(page, timeout_sec=20)
+
+    if element is None:
+        raise DouyinQrcodeError("刷新后未找到二维码，请重新获取")
+
+    png = await element.screenshot()
+    image_base64 = base64.b64encode(png).decode("ascii")
+    session.image_base64 = image_base64
+    session.created_at = time.monotonic()
+    logger.info("抖音扫码二维码已刷新 session_id={}", sid[:8])
+    return {"session_id": sid, "image_base64": image_base64}
+
+
 async def poll_qrcode_login(
     session_id: str,
     *,
@@ -349,6 +459,8 @@ async def poll_qrcode_login(
     page = session.page
     context = session.context
     start_url = page.url
+    # 客户端 abort（刷新）会 CancelledError：勿关会话，由 refresh/cancel API 管理生命周期
+    close_when_done = True
 
     try:
         for i in range(max(1, int(timeout_seconds))):
@@ -378,5 +490,9 @@ async def poll_qrcode_login(
             await asyncio.sleep(1)
 
         raise DouyinQrcodeError("二维码已超时，请重新获取（扫码后需在手机上确认）")
+    except asyncio.CancelledError:
+        close_when_done = False
+        raise
     finally:
-        await close_qr_session(sid)
+        if close_when_done:
+            await close_qr_session(sid)

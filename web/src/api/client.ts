@@ -560,6 +560,12 @@ export const clearDouyinCookie = () =>
 export const getDouyinQrcode = () =>
   request<DouyinQrcodeStart>('/douyin/login/qrcode')
 
+export const refreshDouyinQrcode = (sessionId: string) =>
+  request<DouyinQrcodeStart>('/douyin/login/qrcode/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ session_id: sessionId }),
+  })
+
 export async function pollDouyinQrcodeLogin(
   sessionId: string,
   signal?: AbortSignal,
