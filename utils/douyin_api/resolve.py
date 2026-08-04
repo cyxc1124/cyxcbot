@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -105,34 +106,42 @@ async def resolve_and_download(
         if not candidates:
             raise DouyinResolveError("未找到可下载的视频地址")
 
+        # 自建临时目录时，失败路径必须清理：插件侧 finally 仅在拿到 result 后清理，
+        # 全部候选下载失败会抛 DouyinResolveError，否则 douyin_* 目录会永久泄漏占盘。
+        owned_temp = tmp_dir is None
         work_dir = (
             Path(tmp_dir) if tmp_dir else Path(tempfile.mkdtemp(prefix="douyin_"))
         )
         work_dir.mkdir(parents=True, exist_ok=True)
         save_path = work_dir / f"{aweme_id}.mp4"
-        session = await client.get_session()
+        try:
+            session = await client.get_session()
 
-        for url, headers in candidates:
-            ok = await download_file(
-                url,
-                save_path,
-                session,
-                headers=headers,
-                max_bytes=max_bytes,
-            )
-            if ok and save_path.exists() and save_path.stat().st_size > 0:
-                logger.info(
-                    "抖音视频已下载 aweme_id={} size={}",
-                    aweme_id,
-                    save_path.stat().st_size,
+            for url, headers in candidates:
+                ok = await download_file(
+                    url,
+                    save_path,
+                    session,
+                    headers=headers,
+                    max_bytes=max_bytes,
                 )
-                return DouyinVideoResult(
-                    aweme_id=aweme_id,
-                    title=_title(detail),
-                    author=_author_name(detail),
-                    share_url=_share_url(detail, resolved_url),
-                    file_path=save_path,
-                    detail=detail,
-                )
+                if ok and save_path.exists() and save_path.stat().st_size > 0:
+                    logger.info(
+                        "抖音视频已下载 aweme_id={} size={}",
+                        aweme_id,
+                        save_path.stat().st_size,
+                    )
+                    owned_temp = False  # 交由调用方（插件 finally）清理
+                    return DouyinVideoResult(
+                        aweme_id=aweme_id,
+                        title=_title(detail),
+                        author=_author_name(detail),
+                        share_url=_share_url(detail, resolved_url),
+                        file_path=save_path,
+                        detail=detail,
+                    )
 
-        raise DouyinResolveError("视频下载失败（全部候选地址不可用）")
+            raise DouyinResolveError("视频下载失败（全部候选地址不可用）")
+        finally:
+            if owned_temp:
+                shutil.rmtree(work_dir, ignore_errors=True)
