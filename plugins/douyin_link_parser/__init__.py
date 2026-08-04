@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 from pathlib import Path
 
@@ -38,6 +39,10 @@ __plugin_meta__ = PluginMetadata(
 
 group_douyin_link_parser = on_message(priority=4, block=False)
 private_douyin_link_parser = on_message(priority=4, block=False)
+
+# ponytail: 串行化 inline base64 视频；峰值≈单条 raw+base64+JSON 拷贝。
+# 升级：协议端可读的共享卷 file://，或改 HTTP 文件中转。
+_VIDEO_JOB_SEM = asyncio.Semaphore(1)
 
 
 async def _handle_douyin_link_message(
@@ -79,10 +84,26 @@ async def _handle_douyin_link_message(
         message_text[:120],
     )
 
+    if _VIDEO_JOB_SEM.locked():
+        logger.info("抖音链接解析：等待前序下载/发送完成 user={}", event.user_id)
+
+    async with _VIDEO_JOB_SEM:
+        await _download_and_reply(bot, event, config, message_text)
+
+
+async def _download_and_reply(
+    bot: Bot,
+    event: GroupMessageEvent | PrivateMessageEvent,
+    config: Config,
+    message_text: str,
+) -> None:
     result = None
     try:
         result = await resolve_and_download(message_text, config.douyin_cookie)
-        reply = build_douyin_link_message(result, config.message_templates)
+        # read_bytes + f2s(base64) 是同步 CPU/IO，挪出事件循环
+        reply = await asyncio.to_thread(
+            build_douyin_link_message, result, config.message_templates
+        )
         if isinstance(event, GroupMessageEvent):
             send_result = await bot.send_group_msg(
                 group_id=event.group_id, message=reply
@@ -118,7 +139,7 @@ async def _handle_douyin_link_message(
     except Exception:
         logger.opt(exception=True).error("抖音链接解析处理异常")
     finally:
-        # send_* 返回有效 message_id 表示协议端已接受本地文件，可立即清理；
+        # send_* 返回有效 message_id 表示协议端已接受，可立即清理；
         # 失败路径同样清理，避免临时目录泄漏。
         if result is not None:
             _cleanup_temp(result.file_path)
