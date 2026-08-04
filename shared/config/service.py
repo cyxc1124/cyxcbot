@@ -18,12 +18,17 @@ from shared.config.command_aliases import (
     normalize_extra_prefixes,
     serialize_command_aliases,
 )
+from shared.config.douyin_link_parser_policy import (
+    DouyinLinkParserGroupPolicyRecord,
+    DouyinLinkParserUserPolicyRecord,
+)
 from shared.config.link_parser_policy import (
     LinkParserGroupPolicyRecord,
     LinkParserUserPolicyRecord,
 )
 from shared.config.message_templates import (
     MESSAGE_TEMPLATE_KEYS,
+    douyin_link_templates_from_settings,
     dynamic_templates_from_settings,
     link_templates_from_settings,
     live_templates_from_settings,
@@ -40,6 +45,8 @@ from shared.config.rust_rcon_policy import (
 )
 from shared.config.types import AppConfigSnapshot
 from shared.db.models import (
+    DouyinLinkParserGroupPolicy,
+    DouyinLinkParserUserPolicy,
     DynamicMonitorState,
     DynamicTarget,
     LinkParserGroupPolicy,
@@ -64,6 +71,7 @@ SETTING_KEYS = {
     "live_monitor_include_info": ("true", bool),
     "live_monitor_use_websocket": ("true", bool),
     "bilibili_cookie_encrypted": ("", str),
+    "douyin_cookie_encrypted": ("", str),
     "message_group_restrict": ("true", bool),
     "message_enabled_group_ids": ("[]", "json_list"),
     "message_private_restrict": ("true", bool),
@@ -163,6 +171,12 @@ class ConfigService:
                 link_parser_user_policies = await self._load_link_parser_user_policies(
                     session
                 )
+                douyin_link_parser_group_policies = (
+                    await self._load_douyin_link_parser_group_policies(session)
+                )
+                douyin_link_parser_user_policies = (
+                    await self._load_douyin_link_parser_user_policies(session)
+                )
                 rust_rcon_bindings = await self._load_rust_rcon_bindings(session)
                 rust_rcon_group_policies = await self._load_rust_rcon_group_policies(
                     session
@@ -180,6 +194,14 @@ class ConfigService:
                 cookie = decrypt_value(cookie_encrypted)
             except ValueError as exc:
                 logger.error("B 站 Cookie 解密失败: {}", exc)
+
+        douyin_cookie_encrypted = settings.get("douyin_cookie_encrypted", "")
+        douyin_cookie = ""
+        if douyin_cookie_encrypted:
+            try:
+                douyin_cookie = decrypt_value(douyin_cookie_encrypted)
+            except ValueError as exc:
+                logger.error("抖音 Cookie 解密失败: {}", exc)
 
         self._snapshot = AppConfigSnapshot(
             dynamic_monitor_mapping=dynamic_mapping,
@@ -201,8 +223,11 @@ class ConfigService:
             live_monitor_use_websocket=settings.get("live_monitor_use_websocket", True),
             live_message_templates=live_templates_from_settings(settings),
             link_message_templates=link_templates_from_settings(settings),
+            douyin_link_message_templates=douyin_link_templates_from_settings(settings),
             bilibili_cookie=cookie,
             bilibili_cookie_set=bool(cookie_encrypted),
+            douyin_cookie=douyin_cookie,
+            douyin_cookie_set=bool(douyin_cookie_encrypted),
             message_group_restrict=settings.get("message_group_restrict", True),
             message_enabled_group_ids=settings.get("message_enabled_group_ids", []),
             message_private_restrict=settings.get("message_private_restrict", True),
@@ -235,6 +260,8 @@ class ConfigService:
             nonebot_superusers=settings.get("nonebot_superusers", []),
             link_parser_group_policies=link_parser_group_policies,
             link_parser_user_policies=link_parser_user_policies,
+            douyin_link_parser_group_policies=douyin_link_parser_group_policies,
+            douyin_link_parser_user_policies=douyin_link_parser_user_policies,
             command_aliases=settings.get("command_aliases", {}),
             command_extra_prefixes=settings.get(
                 "command_extra_prefixes", list(DEFAULT_EXTRA_PREFIXES)
@@ -492,6 +519,31 @@ class ConfigService:
             for row in rows
         }
 
+    async def _load_douyin_link_parser_group_policies(
+        self, session
+    ) -> dict[str, DouyinLinkParserGroupPolicyRecord]:
+        rows = (await session.scalars(select(DouyinLinkParserGroupPolicy))).all()
+        return {
+            row.group_id: DouyinLinkParserGroupPolicyRecord(
+                group_id=row.group_id,
+                enabled=row.enabled,
+            )
+            for row in rows
+        }
+
+    async def _load_douyin_link_parser_user_policies(
+        self, session
+    ) -> dict[str, DouyinLinkParserUserPolicyRecord]:
+        rows = (await session.scalars(select(DouyinLinkParserUserPolicy))).all()
+        return {
+            row.user_id: DouyinLinkParserUserPolicyRecord(
+                user_id=row.user_id,
+                enabled=row.enabled,
+                name=row.name,
+            )
+            for row in rows
+        }
+
     async def _load_rust_rcon_bindings(self, session) -> list[RustRconBindingRecord]:
         stmt = (
             select(RustRconBinding)
@@ -670,15 +722,75 @@ class ConfigService:
                 if row:
                     await session.delete(row)
 
+    async def upsert_douyin_link_parser_group_policy(
+        self,
+        group_id: str,
+        *,
+        enabled: bool,
+    ) -> None:
+        gid = str(group_id).strip()
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(DouyinLinkParserGroupPolicy, gid)
+                if row:
+                    row.enabled = enabled
+                else:
+                    session.add(
+                        DouyinLinkParserGroupPolicy(group_id=gid, enabled=enabled)
+                    )
+
+    async def delete_douyin_link_parser_group_policy(self, group_id: str) -> None:
+        gid = str(group_id).strip()
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(DouyinLinkParserGroupPolicy, gid)
+                if row:
+                    await session.delete(row)
+
+    async def upsert_douyin_link_parser_user_policy(
+        self,
+        user_id: str,
+        *,
+        enabled: bool,
+        name: str | None = None,
+    ) -> None:
+        uid = str(user_id).strip()
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(DouyinLinkParserUserPolicy, uid)
+                if row:
+                    row.enabled = enabled
+                    row.name = name
+                else:
+                    session.add(
+                        DouyinLinkParserUserPolicy(
+                            user_id=uid,
+                            name=name,
+                            enabled=enabled,
+                        )
+                    )
+
+    async def delete_douyin_link_parser_user_policy(self, user_id: str) -> None:
+        uid = str(user_id).strip()
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(DouyinLinkParserUserPolicy, uid)
+                if row:
+                    await session.delete(row)
+
     def settings_for_api(self) -> dict:
         """Settings dict for API (cookie masked, never plaintext)."""
         from shared.security.crypto import mask_secret
 
         snap = self._snapshot
         masked = mask_secret(snap.bilibili_cookie) if snap.bilibili_cookie else ""
+        douyin_masked = (
+            mask_secret(snap.douyin_cookie) if snap.douyin_cookie else ""
+        )
         dt = snap.dynamic_message_templates
         lt = snap.live_message_templates
         link = snap.link_message_templates
+        douyin_link = snap.douyin_link_message_templates
         return {
             "dynamic_monitor_interval": snap.dynamic_monitor_interval,
             "dynamic_monitor_use_stagger": snap.dynamic_monitor_use_stagger,
@@ -698,9 +810,14 @@ class ConfigService:
             "live_template_end": lt.end,
             "link_template_video": link.video,
             "link_template_live": link.live,
+            "link_template_douyin": douyin_link.video,
             "bilibili_cookie": {
                 "configured": snap.bilibili_cookie_set,
                 "preview": masked or None,
+            },
+            "douyin_cookie": {
+                "configured": snap.douyin_cookie_set,
+                "preview": douyin_masked or None,
             },
             "status_check_allowed_qq": snap.status_check_allowed_qq,
             "nonebot_superusers": snap.nonebot_superusers,

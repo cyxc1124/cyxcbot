@@ -4,6 +4,7 @@ import { useMountAsync } from '../hooks/useMountAsync'
 import { createRetryHandler } from '../utils/retryLoad'
 import { getPrivateMessagePolicy, updatePrivateMessagePolicy } from '../api/client'
 import type { Friend } from '../api/types'
+import { DouyinLinkParserUserPolicyTab } from '../components/DouyinLinkParserPolicyTabs'
 import { LinkParserUserPolicyTab } from '../components/LinkParserPolicyTabs'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
@@ -18,7 +19,7 @@ import {
   isItemEnabled,
 } from '../utils/restrictPolicy'
 
-type PrivateTab = 'message' | 'link-users' | 'status'
+type PrivateTab = 'message' | 'link-users' | 'douyin-link-users' | 'status'
 
 export function PrivatePage() {
   const { showToast } = useToast()
@@ -54,6 +55,7 @@ export function PrivatePage() {
   const tabLabels: Record<PrivateTab, string> = {
     message: '好友消息',
     'link-users': '好友链接解析',
+    'douyin-link-users': '抖音链接',
     status: '状态查询',
   }
 
@@ -233,6 +235,12 @@ export function PrivatePage() {
       {tab === 'link-users' && (
         <div className="card">
           <LinkParserUserPolicyTab />
+        </div>
+      )}
+
+      {tab === 'douyin-link-users' && (
+        <div className="card">
+          <DouyinLinkParserUserPolicyTab />
         </div>
       )}
 

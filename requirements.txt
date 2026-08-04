@@ -20,6 +20,10 @@ cryptography==49.0.0
 
 # HTTP 客户端
 aiohttp==3.14.1
+httpx==0.28.1
+
+# 抖音 a_bogus 签名（SM3）
+gmssl==3.2.2
 
 # B 站监控与内容抓取
 feedparser==6.0.12

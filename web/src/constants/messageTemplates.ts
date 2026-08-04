@@ -11,6 +11,7 @@ export type TemplateKey =
   | 'live_template_end'
   | 'link_template_video'
   | 'link_template_live'
+  | 'link_template_douyin'
 
 export type TemplateCategory = 'dynamic' | 'live' | 'link'
 
@@ -44,6 +45,7 @@ export const DEFAULT_MESSAGE_TEMPLATES: Record<TemplateKey, string> = {
   link_template_video: '{cover}标题：{title}\nUP主：{author}\n发布时间：{pub_date}\n链接：{url}',
   link_template_live:
     '{cover}标题：{title}\n主播：{streamer_name}\n状态：{status}\n开播时间：{live_start_time}\n分区：{area}\n链接：{url}',
+  link_template_douyin: '{video}标题：{title}\n作者：{author}\n链接：{url}',
 }
 
 const dynamicMediaVariable: TemplateVariable = {
@@ -206,6 +208,14 @@ const linkLiveVariables: TemplateVariable[] = [
   { key: 'room_id', label: '房间号', description: '直播间 room_id' },
 ]
 
+const douyinLinkVariables: TemplateVariable[] = [
+  { key: 'video', label: '视频', description: '下载后的视频消息段', segment: true },
+  { key: 'title', label: '标题', description: '作品描述/标题' },
+  { key: 'author', label: '作者', description: '抖音昵称' },
+  { key: 'url', label: '链接', description: '作品分享链接' },
+  { key: 'aweme_id', label: '作品 ID', description: 'aweme_id' },
+]
+
 export const linkTemplateFields: TemplateField[] = [
   {
     key: 'link_template_video',
@@ -223,6 +233,14 @@ export const linkTemplateFields: TemplateField[] = [
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.link_template_live,
     variables: linkLiveVariables,
   },
+  {
+    key: 'link_template_douyin',
+    category: 'link',
+    label: '抖音链接解析',
+    description: '群聊/好友中识别到抖音分享链接时的自动回复内容',
+    defaultValue: DEFAULT_MESSAGE_TEMPLATES.link_template_douyin,
+    variables: douyinLinkVariables,
+  },
 ]
 
 export const allTemplateFields = [...dynamicTemplateFields, ...liveTemplateFields, ...linkTemplateFields]
@@ -237,6 +255,7 @@ export const PREVIEW_SEGMENT_LABELS: Record<string, string> = {
   media: '[动态截图或正文图片]',
   card: '[卡片图片]',
   cover: '[封面图片]',
+  video: '[视频]',
   images: '[图片1]\n[图片2]',
 }
 
