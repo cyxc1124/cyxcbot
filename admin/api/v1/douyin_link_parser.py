@@ -168,9 +168,7 @@ async def _user_meta(user_id: str) -> dict:
     return {"user_id": str(user_id)}
 
 
-@router.get(
-    "/policies/groups", response_model=DouyinLinkParserGroupPolicyListResponse
-)
+@router.get("/policies/groups", response_model=DouyinLinkParserGroupPolicyListResponse)
 async def list_group_policies(_: AdminUser):
     svc = get_config_service()
     snap = svc.get_snapshot()

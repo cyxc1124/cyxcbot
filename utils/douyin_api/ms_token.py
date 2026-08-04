@@ -18,7 +18,9 @@ from nonebot.log import logger
 class MsTokenManager:
     """Prefer real mssdk token; fall back to a random token."""
 
-    F2_CONF_URL = "https://raw.githubusercontent.com/Johnserf-Seed/f2/main/f2/conf/conf.yaml"
+    F2_CONF_URL = (
+        "https://raw.githubusercontent.com/Johnserf-Seed/f2/main/f2/conf/conf.yaml"
+    )
     _cached_conf: Optional[dict[str, Any]] = None
     _cached_at: float = 0
     _cache_ttl_seconds: int = 3600
@@ -43,7 +45,9 @@ class MsTokenManager:
     @classmethod
     def gen_false_ms_token(cls) -> str:
         token = (
-            "".join(random.choice(string.ascii_letters + string.digits) for _ in range(182))
+            "".join(
+                random.choice(string.ascii_letters + string.digits) for _ in range(182)
+            )
             + "=="
         )
         logger.debug("已生成回退 msToken")
@@ -98,7 +102,9 @@ class MsTokenManager:
             if self._cached_conf and (now - self._cached_at) < self._cache_ttl_seconds:
                 return self._cached_conf
         try:
-            with urllib.request.urlopen(self.conf_url, timeout=self.timeout_seconds) as resp:
+            with urllib.request.urlopen(
+                self.conf_url, timeout=self.timeout_seconds
+            ) as resp:
                 raw = resp.read().decode("utf-8")
             data = yaml.safe_load(raw) or {}
             ms_conf = data.get("f2", {}).get("douyin", {}).get("msToken", {})
@@ -119,7 +125,9 @@ class MsTokenManager:
 
     @staticmethod
     def _extract_ms_token_from_headers(headers: Any) -> Optional[str]:
-        set_cookies = headers.get_all("Set-Cookie") if hasattr(headers, "get_all") else []
+        set_cookies = (
+            headers.get_all("Set-Cookie") if hasattr(headers, "get_all") else []
+        )
         for header in set_cookies or []:
             cookie = SimpleCookie()
             cookie.load(header)

@@ -71,7 +71,7 @@ def _resolution_metrics(
     try:
         width = int(play_addr.get("width") or entry.get("width") or 0)
         height = int(play_addr.get("height") or entry.get("height") or 0)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0, 0
     if width > 0 and height > 0:
         return min(width, height), width * height
@@ -114,7 +114,7 @@ def _pick_play_addr_by_quality(
             continue
         try:
             br = int(entry.get("bit_rate") or 0)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             br = 0
         short_edge, pixels = _resolution_metrics(entry, play_addr)
         entries.append((br, short_edge, pixels, play_addr))
@@ -211,7 +211,9 @@ def _build_signed_play_url(
         normalised_quality,
         normalised_quality if normalised_quality in _QUALITY_TARGET_WIDTH else "1080p",
     )
-    ratio = selected_ratio if selected_ratio in _QUALITY_TARGET_WIDTH else fallback_ratio
+    ratio = (
+        selected_ratio if selected_ratio in _QUALITY_TARGET_WIDTH else fallback_ratio
+    )
     params = {
         "video_id": uri,
         "ratio": ratio,

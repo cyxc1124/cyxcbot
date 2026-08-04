@@ -47,7 +47,9 @@ def _title(detail: dict[str, Any]) -> str:
 
 
 def _share_url(detail: dict[str, Any], fallback: str) -> str:
-    share = detail.get("share_info") if isinstance(detail.get("share_info"), dict) else {}
+    share = (
+        detail.get("share_info") if isinstance(detail.get("share_info"), dict) else {}
+    )
     url = str(share.get("share_url") or "").strip()
     if url:
         return url
@@ -103,7 +105,9 @@ async def resolve_and_download(
         if not candidates:
             raise DouyinResolveError("未找到可下载的视频地址")
 
-        work_dir = Path(tmp_dir) if tmp_dir else Path(tempfile.mkdtemp(prefix="douyin_"))
+        work_dir = (
+            Path(tmp_dir) if tmp_dir else Path(tempfile.mkdtemp(prefix="douyin_"))
+        )
         work_dir.mkdir(parents=True, exist_ok=True)
         save_path = work_dir / f"{aweme_id}.mp4"
         session = await client.get_session()
