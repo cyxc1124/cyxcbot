@@ -57,7 +57,6 @@ export function LogsPage() {
   const flushTimerRef = useRef<number | undefined>(undefined)
   const flushGenerationRef = useRef(0)
   const pausedRef = useRef(paused)
-  const programmaticScrollRef = useRef(false)
   const wsRef = useRef<WebSocket | null>(null)
 
   pausedRef.current = paused
@@ -122,12 +121,7 @@ export function LogsPage() {
 
   const scrollToLatest = useCallback(() => {
     if (logs.length === 0) return
-    programmaticScrollRef.current = true
     scrollToIndex(logs.length - 1, { align: 'end' })
-    // Ignore the scroll event caused by this assignment (same pattern as RustForge).
-    requestAnimationFrame(() => {
-      programmaticScrollRef.current = false
-    })
   }, [logs.length, scrollToIndex])
 
   useEffect(() => {
@@ -136,10 +130,11 @@ export function LogsPage() {
   }, [logs, autoScroll, paused, scrollToLatest])
 
   const handleScroll = useCallback(() => {
-    if (programmaticScrollRef.current) return
     const el = containerRef.current
     if (!el) return
-    // User scrolled away from the live edge — stop following.
+    // Distinguish by position: programmatic scrolls settle at the live edge,
+    // so only leaving that edge (user wheel/drag) cancels follow — no timing
+    // guard that would swallow genuine user scrolls.
     if (!isNearBottom(el)) setAutoScroll(false)
   }, [])
 
