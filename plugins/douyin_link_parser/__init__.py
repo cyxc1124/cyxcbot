@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 from pathlib import Path
 
@@ -38,6 +39,12 @@ __plugin_meta__ = PluginMetadata(
 
 group_douyin_link_parser = on_message(priority=4, block=False)
 private_douyin_link_parser = on_message(priority=4, block=False)
+
+# ponytail: 流水线准入限制临时文件占盘（下载可并行到上限）；编码/发送另串行化
+# 控 base64 内存。CDN 慢只占准入名额，不拖死已下完的发送。升级：共享卷 file://。
+_PIPELINE_LIMIT = 2
+_PIPELINE_SEM = asyncio.Semaphore(_PIPELINE_LIMIT)
+_ENCODE_SEND_SEM = asyncio.Semaphore(1)
 
 
 async def _handle_douyin_link_message(
@@ -79,18 +86,38 @@ async def _handle_douyin_link_message(
         message_text[:120],
     )
 
+    if _PIPELINE_SEM.locked():
+        logger.info("抖音链接解析：等待流水线名额 user={}", event.user_id)
+
+    async with _PIPELINE_SEM:
+        await _download_and_reply(bot, event, config, message_text)
+
+
+async def _download_and_reply(
+    bot: Bot,
+    event: GroupMessageEvent | PrivateMessageEvent,
+    config: Config,
+    message_text: str,
+) -> None:
     result = None
     try:
+        # CDN 可能长时间超时；不放在编码锁内（仍占流水线名额，限制临时文件数）
         result = await resolve_and_download(message_text, config.douyin_cookie)
-        reply = build_douyin_link_message(result, config.message_templates)
-        if isinstance(event, GroupMessageEvent):
-            send_result = await bot.send_group_msg(
-                group_id=event.group_id, message=reply
+        if _ENCODE_SEND_SEM.locked():
+            logger.info("抖音链接解析：等待前序编码/发送完成 user={}", event.user_id)
+        async with _ENCODE_SEND_SEM:
+            # read_bytes + f2s(base64) 是同步 CPU/IO，挪出事件循环
+            reply = await asyncio.to_thread(
+                build_douyin_link_message, result, config.message_templates
             )
-        else:
-            send_result = await bot.send_private_msg(
-                user_id=event.user_id, message=reply
-            )
+            if isinstance(event, GroupMessageEvent):
+                send_result = await bot.send_group_msg(
+                    group_id=event.group_id, message=reply
+                )
+            else:
+                send_result = await bot.send_private_msg(
+                    user_id=event.user_id, message=reply
+                )
 
         if not is_onebot_send_success(send_result):
             logger.warning(
@@ -118,7 +145,7 @@ async def _handle_douyin_link_message(
     except Exception:
         logger.opt(exception=True).error("抖音链接解析处理异常")
     finally:
-        # send_* 返回有效 message_id 表示协议端已接受本地文件，可立即清理；
+        # send_* 返回有效 message_id 表示协议端已接受，可立即清理；
         # 失败路径同样清理，避免临时目录泄漏。
         if result is not None:
             _cleanup_temp(result.file_path)

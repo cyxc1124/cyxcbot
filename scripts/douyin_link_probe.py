@@ -248,8 +248,12 @@ def _print_message(message) -> None:
     print("[MESSAGE] would send via send_group_msg / send_private_msg:")
     for i, seg in enumerate(message):
         if seg.type == "video":
-            file_val = seg.data.get("file", "")
-            print(f"  [{i}] video file={file_val!r}")
+            file_val = str(seg.data.get("file", ""))
+            if file_val.startswith("base64://"):
+                print(f"  [{i}] video file=base64://<{len(file_val) - 9} chars>")
+            else:
+                preview = file_val if len(file_val) <= 120 else file_val[:120] + "…"
+                print(f"  [{i}] video file={preview!r}")
         elif seg.type == "text":
             text = seg.data.get("text", str(seg))
             preview = text if len(text) <= 200 else text[:200] + "…"
