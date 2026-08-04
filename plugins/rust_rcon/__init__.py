@@ -8,6 +8,7 @@ from nonebot.plugin import PluginMetadata
 from shared.config.rust_rcon import is_qq_allowed_for_binding, match_rust_rcon_binding
 from shared.config.rust_rcon_policy import is_rust_rcon_enabled
 from shared.config.service import get_config_service
+from shared.notify.message_template import safe_text_message
 from utils.rust_rcon.client import (
     RconAuthError,
     RconError,
@@ -106,4 +107,4 @@ async def handle_rust_rcon(
         await rust_rcon_cmd.finish("RCON 执行失败，请稍后重试")
 
     label = binding.name or binding.alias
-    await rust_rcon_cmd.finish(f"[{label}]\n{result}")
+    await rust_rcon_cmd.finish(safe_text_message(f"[{label}]\n{result}"))

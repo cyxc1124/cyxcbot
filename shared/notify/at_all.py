@@ -5,6 +5,8 @@ from __future__ import annotations
 from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 
+from shared.notify.message_template import safe_text
+
 LIVE_AT_ALL_FALLBACK = "📢 请关注直播动态！"
 DYNAMIC_AT_ALL_FALLBACK = "📢 新动态提醒！"
 
@@ -35,6 +37,6 @@ async def resolve_at_all_prefix(
     if enabled and await bot_can_at_all(bot, group_id):
         prefix.append(MessageSegment.at("all"))
     else:
-        prefix.append(fallback)
-    prefix.append(" ")
+        prefix.append(safe_text(fallback))
+    prefix.append(safe_text(" "))
     return prefix
