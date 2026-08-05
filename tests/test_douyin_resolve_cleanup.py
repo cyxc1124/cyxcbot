@@ -200,4 +200,3 @@ async def test_resolve_album_downloads_images_and_live(tmp_path: Path):
     assert [item.kind for item in result.items] == ["image", "video"]
     assert all(item.file_path.exists() for item in result.items)
     assert work_dir.exists()
-
