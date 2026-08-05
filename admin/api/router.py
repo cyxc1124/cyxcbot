@@ -16,6 +16,7 @@ from admin.api.v1 import (
     private,
     rust_players,
     rust_rcon,
+    rust_rcon_custom,
     rust_rcon_policies,
     rust_shop,
     settings,
@@ -39,6 +40,7 @@ api_router.include_router(private.router)
 api_router.include_router(link_parser.router)
 api_router.include_router(douyin_link_parser.router)
 api_router.include_router(rust_rcon.router)
+api_router.include_router(rust_rcon_custom.router)
 api_router.include_router(rust_rcon_policies.router)
 api_router.include_router(rust_players.router)
 api_router.include_router(rust_shop.router)

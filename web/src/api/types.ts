@@ -564,3 +564,31 @@ export interface RustShopItemUpdate {
   enabled?: boolean
   sort_order?: number
 }
+
+export interface RustRconCustomCommand {
+  id: number
+  name: string
+  template: string
+  binding_id: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface RustRconCustomCommandListResponse {
+  items: RustRconCustomCommand[]
+}
+
+export interface RustRconCustomCommandCreate {
+  name: string
+  template: string
+  binding_id: number
+  enabled?: boolean
+}
+
+export interface RustRconCustomCommandUpdate {
+  name?: string
+  template?: string
+  binding_id?: number
+  enabled?: boolean
+}

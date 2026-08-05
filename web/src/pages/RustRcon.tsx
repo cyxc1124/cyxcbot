@@ -1,12 +1,20 @@
 import { useState } from 'react'
 import { RustPlayerCommandsTab } from '../components/RustPlayerCommandsTab'
 import { RustPlayersTab } from '../components/RustPlayersTab'
+import { RustRconCustomCommandsTab } from '../components/RustRconCustomCommandsTab'
 import { RustShopItemsTab } from '../components/RustShopItemsTab'
 import { RustRconGroupPolicyTab, RustRconUserPolicyTab } from '../components/RustRconPolicyTabs'
 import { SubPageTabs } from '../components/SubPageTabs'
 import { SettingsRustRconPage } from './settings/SettingsRustRcon'
 
-type RustRconTab = 'bindings' | 'groups' | 'users' | 'commands' | 'players' | 'shop'
+type RustRconTab =
+  | 'bindings'
+  | 'groups'
+  | 'users'
+  | 'commands'
+  | 'custom'
+  | 'players'
+  | 'shop'
 
 export function RustRconPage() {
   const [tab, setTab] = useState<RustRconTab>('bindings')
@@ -16,6 +24,7 @@ export function RustRconPage() {
     groups: '群权限',
     users: '好友权限',
     commands: '群管命令',
+    custom: '自定义指令',
     players: '积分与绑定',
     shop: '积分商城',
   }
@@ -52,6 +61,8 @@ export function RustRconPage() {
       )}
 
       {tab === 'commands' && <RustPlayerCommandsTab />}
+
+      {tab === 'custom' && <RustRconCustomCommandsTab />}
 
       {tab === 'players' && <RustPlayersTab />}
 

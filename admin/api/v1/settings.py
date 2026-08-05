@@ -25,6 +25,7 @@ from shared.config.command_aliases import (
 )
 from shared.config.message_templates import MESSAGE_TEMPLATE_KEYS
 from shared.config.rust_rcon import command_aliases_rust_rcon_conflict
+from shared.config.rust_rcon_custom import command_aliases_custom_command_conflict
 from shared.config.service import get_config_service
 
 router = APIRouter(
@@ -105,11 +106,17 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         error = validation_error(normalized)
         if error:
             raise HTTPException(status_code=400, detail=error)
+        snap = svc.get_snapshot()
         rcon_conflict = command_aliases_rust_rcon_conflict(
-            normalized, svc.get_snapshot().rust_rcon_bindings
+            normalized, snap.rust_rcon_bindings
         )
         if rcon_conflict:
             raise HTTPException(status_code=400, detail=rcon_conflict)
+        custom_conflict = command_aliases_custom_command_conflict(
+            normalized, snap.rust_rcon_custom_commands
+        )
+        if custom_conflict:
+            raise HTTPException(status_code=400, detail=custom_conflict)
         updates["command_aliases"] = json.dumps(
             serialize_command_aliases(normalized), ensure_ascii=False
         )

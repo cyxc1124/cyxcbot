@@ -306,3 +306,16 @@ def test_repair_stamps_o5_when_enabled_name_index_exists(tmp_path: Path) -> None
         revision = conn.execute(text("SELECT version_num FROM alembic_version")).first()
     verify.dispose()
     assert revision == ("o5p6q7r8s9t0",)
+
+
+def test_infer_revision_detects_custom_command_table() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE shared_db_rustrconcustomcommand ("
+                "id INTEGER PRIMARY KEY, name TEXT NOT NULL)"
+            )
+        )
+    assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "s9t0u1v2w3x4"
+    engine.dispose()

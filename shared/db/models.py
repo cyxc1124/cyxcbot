@@ -283,6 +283,9 @@ class RustRconBinding(Model):
     allowed_users: Mapped[list["RustRconBindingAllowedUser"]] = relationship(
         back_populates="binding", cascade="all, delete-orphan"
     )
+    custom_commands: Mapped[list["RustRconCustomCommand"]] = relationship(
+        back_populates="binding", cascade="all, delete-orphan"
+    )
 
 
 class RustRconBindingAllowedUser(Model):
@@ -302,6 +305,29 @@ class RustRconBindingAllowedUser(Model):
     __table_args__ = (
         UniqueConstraint("binding_id", "user_id", name="uq_rust_rcon_binding_user"),
     )
+
+
+class RustRconCustomCommand(Model):
+    """Admin-defined chat shortcut that expands to an RCON command template."""
+
+    __tablename__ = "shared_db_rustrconcustomcommand"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    template: Mapped[str] = mapped_column(String(512), nullable=False)
+    binding_id: Mapped[int] = mapped_column(
+        ForeignKey("shared_db_rustrconbinding.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+    binding: Mapped["RustRconBinding"] = relationship(back_populates="custom_commands")
 
 
 class RustRconGroupPolicy(Model):

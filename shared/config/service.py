@@ -39,6 +39,7 @@ from shared.config.rust_rcon import (
     RustRconBindingRecord,
     warn_rust_rcon_command_alias_conflicts,
 )
+from shared.config.rust_rcon_custom import RustRconCustomCommandRecord
 from shared.config.rust_rcon_policy import (
     RustRconGroupPolicyRecord,
     RustRconUserPolicyRecord,
@@ -54,6 +55,7 @@ from shared.db.models import (
     LiveMonitorState,
     LiveTarget,
     RustRconBinding,
+    RustRconCustomCommand,
     RustRconGroupPolicy,
     RustRconUserPolicy,
     SystemSetting,
@@ -178,6 +180,9 @@ class ConfigService:
                     await self._load_douyin_link_parser_user_policies(session)
                 )
                 rust_rcon_bindings = await self._load_rust_rcon_bindings(session)
+                rust_rcon_custom_commands = await self._load_rust_rcon_custom_commands(
+                    session
+                )
                 rust_rcon_group_policies = await self._load_rust_rcon_group_policies(
                     session
                 )
@@ -267,6 +272,7 @@ class ConfigService:
                 "command_extra_prefixes", list(DEFAULT_EXTRA_PREFIXES)
             ),
             rust_rcon_bindings=rust_rcon_bindings,
+            rust_rcon_custom_commands=rust_rcon_custom_commands,
             rust_rcon_group_policies=rust_rcon_group_policies,
             rust_rcon_user_policies=rust_rcon_user_policies,
             rust_checkin_points_min=settings.get("rust_checkin_points_min", 1),
@@ -578,6 +584,22 @@ class ConfigService:
                 )
             )
         return bindings
+
+    async def _load_rust_rcon_custom_commands(
+        self, session
+    ) -> list[RustRconCustomCommandRecord]:
+        stmt = select(RustRconCustomCommand).order_by(RustRconCustomCommand.id)
+        rows = (await session.scalars(stmt)).all()
+        return [
+            RustRconCustomCommandRecord(
+                id=row.id,
+                name=row.name,
+                template=row.template,
+                binding_id=row.binding_id,
+                enabled=row.enabled,
+            )
+            for row in rows
+        ]
 
     async def _load_rust_rcon_group_policies(
         self, session
