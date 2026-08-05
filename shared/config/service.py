@@ -588,7 +588,11 @@ class ConfigService:
     async def _load_rust_rcon_custom_commands(
         self, session
     ) -> list[RustRconCustomCommandRecord]:
-        stmt = select(RustRconCustomCommand).order_by(RustRconCustomCommand.id)
+        stmt = (
+            select(RustRconCustomCommand)
+            .options(selectinload(RustRconCustomCommand.allowed_users))
+            .order_by(RustRconCustomCommand.id)
+        )
         rows = (await session.scalars(stmt)).all()
         return [
             RustRconCustomCommandRecord(
@@ -597,6 +601,12 @@ class ConfigService:
                 template=row.template,
                 binding_id=row.binding_id,
                 enabled=row.enabled,
+                allowed_qq_ids=tuple(
+                    sorted(
+                        {str(item.user_id) for item in row.allowed_users},
+                        key=lambda value: (not value.isdigit(), value),
+                    )
+                ),
             )
             for row in rows
         ]

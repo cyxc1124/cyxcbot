@@ -12,10 +12,33 @@ import { formatApiError } from '../utils/apiError'
 import { createRetryHandler } from '../utils/retryLoad'
 import { useMountAsync } from './useMountAsync'
 
+function parseQqInput(raw: string): string[] {
+  return [
+    ...new Set(
+      raw
+        .split('\n')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0),
+    ),
+  ]
+}
+
+function formatQqInput(qqList: string[]): string {
+  return qqList.join('\n')
+}
+
+function validateQqList(list: string[]): string | null {
+  if (list.length === 0) return '请至少填写一个允许执行的 QQ 号'
+  const invalid = list.filter((qq) => !/^\d+$/.test(qq))
+  if (invalid.length > 0) return `QQ 号格式无效: ${invalid.join(', ')}`
+  return null
+}
+
 export interface RustRconCustomCommandFormState {
   name: string
   template: string
   binding_id: string
+  allowedQqText: string
   enabled: boolean
 }
 
@@ -26,6 +49,7 @@ export function emptyRustRconCustomCommandForm(
     name: '',
     template: 'giveto {steamid} ',
     binding_id: defaultBindingId,
+    allowedQqText: '',
     enabled: true,
   }
 }
@@ -35,6 +59,7 @@ function formFromItem(item: RustRconCustomCommand): RustRconCustomCommandFormSta
     name: item.name,
     template: item.template,
     binding_id: String(item.binding_id),
+    allowedQqText: formatQqInput(item.allowed_qq_ids),
     enabled: item.enabled,
   }
 }
@@ -124,6 +149,12 @@ export function useRustRconCustomCommands() {
         showToast('error', '请选择 RCON 服务器绑定')
         return
       }
+      const allowedQqIds = parseQqInput(form.allowedQqText)
+      const qqError = validateQqList(allowedQqIds)
+      if (qqError) {
+        showToast('error', qqError)
+        return
+      }
 
       setSaving(true)
       try {
@@ -132,6 +163,7 @@ export function useRustRconCustomCommands() {
             name: form.name.trim(),
             template: form.template.trim(),
             binding_id: bindingId,
+            allowed_qq_ids: allowedQqIds,
             enabled: form.enabled,
           })
           showToast('success', '自定义指令已添加')
@@ -140,6 +172,7 @@ export function useRustRconCustomCommands() {
             name: form.name.trim(),
             template: form.template.trim(),
             binding_id: bindingId,
+            allowed_qq_ids: allowedQqIds,
             enabled: form.enabled,
           })
           showToast('success', '自定义指令已更新')

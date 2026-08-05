@@ -46,7 +46,7 @@ export function RustRconCustomCommandsTab() {
               <code className="font-mono text-xs">@机器人 指令名 @群用户</code>
               （需对方已绑定 SteamID）或{' '}
               <code className="font-mono text-xs">@机器人 指令名 SteamID64</code>
-              。执行权限与对应服务器绑定的 QQ 白名单一致；群须开启 Rust 远控。
+              。每条指令单独配置允许执行的 QQ；群须开启 Rust 远控。
             </p>
           </div>
           {!showForm && (
@@ -118,6 +118,18 @@ export function RustRconCustomCommandsTab() {
                   }
                 />
               </label>
+              <label className="space-y-1 sm:col-span-2">
+                <span className="text-xs text-muted-foreground">允许执行的 QQ 号</span>
+                <textarea
+                  className="input min-h-24 w-full font-mono text-xs"
+                  value={form.allowedQqText}
+                  disabled={saving}
+                  placeholder={'每行一个 QQ 号\n123456789'}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, allowedQqText: e.target.value }))
+                  }
+                />
+              </label>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <ToggleSwitch
@@ -149,12 +161,13 @@ export function RustRconCustomCommandsTab() {
 
         {!showForm && items.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
+            <table className="w-full min-w-[860px] text-left text-sm">
               <thead>
                 <tr className="border-b border-border text-muted-foreground">
                   <th className="pb-3 pr-4 font-medium">指令名</th>
                   <th className="pb-3 pr-4 font-medium">命令模板</th>
                   <th className="pb-3 pr-4 font-medium">服务器</th>
+                  <th className="pb-3 pr-4 font-medium">允许 QQ</th>
                   <th className="pb-3 pr-4 font-medium">启用</th>
                   <th className="pb-3 font-medium text-right">操作</th>
                 </tr>
@@ -169,6 +182,11 @@ export function RustRconCustomCommandsTab() {
                         {item.template}
                       </td>
                       <td className="py-3.5 pr-4">{bindingLabel(item.binding_id)}</td>
+                      <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground whitespace-pre-line">
+                        {item.allowed_qq_ids.length > 0
+                          ? item.allowed_qq_ids.join('\n')
+                          : '—'}
+                      </td>
                       <td className="py-3.5 pr-4">
                         <ToggleSwitch
                           checked={item.enabled}

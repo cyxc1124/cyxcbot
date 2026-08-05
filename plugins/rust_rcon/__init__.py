@@ -7,6 +7,7 @@ from nonebot.plugin import PluginMetadata
 
 from shared.config.rust_rcon import is_qq_allowed_for_binding, match_rust_rcon_binding
 from shared.config.rust_rcon_custom import (
+    is_qq_allowed_for_custom_command,
     match_rust_rcon_custom_command,
     render_custom_command_template,
     resolve_steamid_target,
@@ -32,6 +33,7 @@ __plugin_meta__ = PluginMetadata(
 群聊：@机器人 触发词 命令（如 @机器人 rcon1 status）
 私聊：触发词 命令（如 rcon1 status）
 自定义指令：@机器人 指令名 @群用户 或 @机器人 指令名 SteamID64
+（每条指令可单独配置允许执行的 QQ 白名单）
 """,
     type="application",
     homepage="https://github.com/cyxc1124/cyxcbot",
@@ -131,8 +133,8 @@ async def _handle_custom_command(
         return False
 
     user_id = str(event.user_id)
-    # 与任意 RCON 命令一致：绑定级 QQ 白名单；不在名单时静默忽略。
-    if not is_qq_allowed_for_binding(binding, user_id):
+    # 自定义指令用指令级 QQ 白名单（与绑定级任意 RCON 白名单独立）；不在名单时静默忽略。
+    if not is_qq_allowed_for_custom_command(command, user_id):
         return True
 
     steam_id: str | None = None

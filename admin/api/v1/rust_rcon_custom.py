@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, status
 from nonebot_plugin_orm import get_session
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 
 from admin.deps import AdminUser, RequireSetup
 from admin.schemas.rust_rcon_custom import (
@@ -14,15 +15,27 @@ from admin.schemas.rust_rcon_custom import (
     RustRconCustomCommandResponse,
     RustRconCustomCommandUpdateRequest,
 )
+from shared.config.rust_rcon import normalize_allowed_qq_ids
 from shared.config.rust_rcon_custom import custom_command_name_conflict
 from shared.config.service import get_config_service
-from shared.db.models import RustRconBinding, RustRconCustomCommand
+from shared.db.models import (
+    RustRconBinding,
+    RustRconCustomCommand,
+    RustRconCustomCommandAllowedUser,
+)
 
 router = APIRouter(
     prefix="/rust-rcon/custom-commands",
     tags=["rust-rcon-custom-commands"],
     dependencies=[RequireSetup],
 )
+
+
+def _allowed_qq_ids(row: RustRconCustomCommand) -> list[str]:
+    return sorted(
+        {str(item.user_id) for item in row.allowed_users},
+        key=lambda value: (not value.isdigit(), value),
+    )
 
 
 def _to_response(row: RustRconCustomCommand) -> RustRconCustomCommandResponse:
@@ -32,6 +45,7 @@ def _to_response(row: RustRconCustomCommand) -> RustRconCustomCommandResponse:
         template=row.template,
         binding_id=row.binding_id,
         enabled=row.enabled,
+        allowed_qq_ids=_allowed_qq_ids(row),
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -44,6 +58,18 @@ async def _ensure_binding_exists(session, binding_id: int) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="RCON 绑定不存在",
         )
+
+
+async def _sync_allowed_users(
+    session, row: RustRconCustomCommand, allowed_qq_ids: list[str]
+) -> None:
+    normalized = normalize_allowed_qq_ids(allowed_qq_ids)
+    for item in list(row.allowed_users):
+        await session.delete(item)
+    await session.flush()
+    row.allowed_users = [
+        RustRconCustomCommandAllowedUser(user_id=qq) for qq in normalized
+    ]
 
 
 def _ensure_name_available(name: str, *, exclude_id: int | None = None) -> None:
@@ -67,7 +93,9 @@ async def list_rust_rcon_custom_commands(
         async with session.begin():
             rows = (
                 await session.scalars(
-                    select(RustRconCustomCommand).order_by(RustRconCustomCommand.id)
+                    select(RustRconCustomCommand)
+                    .options(selectinload(RustRconCustomCommand.allowed_users))
+                    .order_by(RustRconCustomCommand.id)
                 )
             ).all()
             return RustRconCustomCommandListResponse(
@@ -95,10 +123,14 @@ async def create_rust_rcon_custom_command(
                     template=body.template,
                     binding_id=body.binding_id,
                     enabled=body.enabled,
+                    allowed_users=[
+                        RustRconCustomCommandAllowedUser(user_id=qq)
+                        for qq in body.allowed_qq_ids
+                    ],
                 )
                 session.add(row)
                 await session.flush()
-                await session.refresh(row)
+                await session.refresh(row, ["allowed_users"])
                 response = _to_response(row)
     except IntegrityError as exc:
         raise HTTPException(
@@ -119,7 +151,13 @@ async def update_rust_rcon_custom_command(
     try:
         async with get_session() as session:
             async with session.begin():
-                row = await session.get(RustRconCustomCommand, command_id)
+                row = (
+                    await session.scalars(
+                        select(RustRconCustomCommand)
+                        .where(RustRconCustomCommand.id == command_id)
+                        .options(selectinload(RustRconCustomCommand.allowed_users))
+                    )
+                ).first()
                 if row is None:
                     raise HTTPException(
                         status_code=status.HTTP_404_NOT_FOUND,
@@ -136,9 +174,11 @@ async def update_rust_rcon_custom_command(
                     row.binding_id = body.binding_id
                 if body.enabled is not None:
                     row.enabled = body.enabled
+                if body.allowed_qq_ids is not None:
+                    await _sync_allowed_users(session, row, body.allowed_qq_ids)
 
                 await session.flush()
-                await session.refresh(row)
+                await session.refresh(row, ["allowed_users"])
                 response = _to_response(row)
     except IntegrityError as exc:
         raise HTTPException(

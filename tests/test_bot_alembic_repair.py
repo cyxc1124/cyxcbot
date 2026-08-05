@@ -319,3 +319,17 @@ def test_infer_revision_detects_custom_command_table() -> None:
         )
     assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "s9t0u1v2w3x4"
     engine.dispose()
+
+
+def test_infer_revision_detects_custom_command_allowed_users_table() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE shared_db_rustrconcustomcommandalloweduser ("
+                "id INTEGER PRIMARY KEY, command_id INTEGER NOT NULL, "
+                "user_id TEXT NOT NULL)"
+            )
+        )
+    assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "t0u1v2w3x4y5"
+    engine.dispose()

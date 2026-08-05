@@ -328,6 +328,32 @@ class RustRconCustomCommand(Model):
     )
 
     binding: Mapped["RustRconBinding"] = relationship(back_populates="custom_commands")
+    allowed_users: Mapped[list["RustRconCustomCommandAllowedUser"]] = relationship(
+        back_populates="command", cascade="all, delete-orphan"
+    )
+
+
+class RustRconCustomCommandAllowedUser(Model):
+    """QQ users allowed to trigger a Rust RCON custom command."""
+
+    __tablename__ = "shared_db_rustrconcustomcommandalloweduser"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    command_id: Mapped[int] = mapped_column(
+        ForeignKey("shared_db_rustrconcustomcommand.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    command: Mapped["RustRconCustomCommand"] = relationship(
+        back_populates="allowed_users"
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "command_id", "user_id", name="uq_rust_rcon_custom_command_user"
+        ),
+    )
 
 
 class RustRconGroupPolicy(Model):

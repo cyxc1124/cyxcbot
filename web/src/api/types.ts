@@ -571,6 +571,7 @@ export interface RustRconCustomCommand {
   template: string
   binding_id: number
   enabled: boolean
+  allowed_qq_ids: string[]
   created_at: string
   updated_at: string
 }
@@ -583,6 +584,7 @@ export interface RustRconCustomCommandCreate {
   name: string
   template: string
   binding_id: number
+  allowed_qq_ids: string[]
   enabled?: boolean
 }
 
@@ -590,5 +592,6 @@ export interface RustRconCustomCommandUpdate {
   name?: string
   template?: string
   binding_id?: number
+  allowed_qq_ids?: string[]
   enabled?: boolean
 }

@@ -23,6 +23,14 @@ class RustRconCustomCommandRecord:
     template: str
     binding_id: int
     enabled: bool = True
+    allowed_qq_ids: tuple[str, ...] = ()
+
+
+def is_qq_allowed_for_custom_command(
+    command: RustRconCustomCommandRecord, user_id: str
+) -> bool:
+    qq = str(user_id).strip()
+    return qq in command.allowed_qq_ids
 
 
 def normalize_custom_command_name(raw: str) -> str:

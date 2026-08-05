@@ -10,6 +10,7 @@ from shared.config.rust_rcon_custom import (
     RustRconCustomCommandRecord,
     alias_custom_command_conflict,
     custom_command_name_conflict,
+    is_qq_allowed_for_custom_command,
     match_rust_rcon_custom_command,
     normalize_custom_command_name,
     normalize_custom_command_template,
@@ -29,6 +30,7 @@ def _cmd(
     template: str = "giveto {steamid} wood 1",
     binding_id: int = 1,
     enabled: bool = True,
+    allowed_qq_ids: tuple[str, ...] = ("10001",),
 ) -> RustRconCustomCommandRecord:
     return RustRconCustomCommandRecord(
         id=id,
@@ -36,6 +38,7 @@ def _cmd(
         template=template,
         binding_id=binding_id,
         enabled=enabled,
+        allowed_qq_ids=allowed_qq_ids,
     )
 
 
@@ -128,3 +131,10 @@ def test_custom_command_name_conflict() -> None:
     assert custom_command_name_conflict("功能10", snap, exclude_id=9) is None
     assert custom_command_name_conflict("功能11", snap) is None
     assert alias_custom_command_conflict("功能10", snap.rust_rcon_custom_commands)
+
+
+def test_is_qq_allowed_for_custom_command() -> None:
+    command = _cmd(allowed_qq_ids=("10001", "10002"))
+    assert is_qq_allowed_for_custom_command(command, "10001")
+    assert not is_qq_allowed_for_custom_command(command, "99999")
+    assert not is_qq_allowed_for_custom_command(_cmd(allowed_qq_ids=()), "10001")
