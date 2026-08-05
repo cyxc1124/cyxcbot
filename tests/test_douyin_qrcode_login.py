@@ -172,3 +172,81 @@ async def test_refresh_claim_cancels_deferred_close_after_poll_abort(
     assert session.session_id in sessions
     assert session.closed is False
     await close_qr_session(session.session_id)
+
+
+@pytest.mark.asyncio
+async def test_poll_abort_after_refresh_claim_does_not_arm_deferred_close(
+    isolated_qr_sessions, monkeypatch
+):
+    """Refresh claimed first: aborted poll must not schedule deferred on that epoch.
+
+    Concrete trigger: user clicks refresh → frontend aborts poll while refresh API
+    already bumped epoch. Buggy poll CancelledError used *current* epoch, so a
+    slow refresh (goto fallback can exceed deferred delay) lost Chromium mid-flight.
+    """
+    sessions, deferred = isolated_qr_sessions
+    session = _make_fake_session()
+    sessions[session.session_id] = session
+
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def cookies_block():
+        entered.set()
+        await release.wait()
+        return []
+
+    session.context.cookies = AsyncMock(side_effect=cookies_block)
+    session.page.wait_for_timeout = AsyncMock()
+    session.page.goto = AsyncMock()
+
+    poll_task = asyncio.create_task(
+        poll_qrcode_login(session.session_id, timeout_seconds=30)
+    )
+    await entered.wait()
+    epoch_during_poll = session.epoch
+    assert session.poll_active is True
+
+    refresh_hold = asyncio.Event()
+
+    async def slow_trigger(_page):
+        await refresh_hold.wait()
+
+    monkeypatch.setattr(qr_mod, "_trigger_qr_refresh", slow_trigger)
+    monkeypatch.setattr(qr_mod, "_qr_fingerprint", AsyncMock(return_value="fp-old"))
+    monkeypatch.setattr(qr_mod, "_find_qr_element", AsyncMock(return_value=None))
+    monkeypatch.setattr(qr_mod, "_wait_for_qr_element", AsyncMock(return_value=None))
+
+    refresh_task = asyncio.create_task(refresh_qrcode_login(session.session_id))
+    # refresh 先认领（bump epoch），再等 poll_active
+    for _ in range(50):
+        if session.epoch > epoch_during_poll:
+            break
+        await asyncio.sleep(0.01)
+    assert session.epoch > epoch_during_poll
+
+    poll_task.cancel()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await poll_task
+
+    # 修复后：不应再按 refresh 的 epoch 挂延迟关闭
+    assert session.session_id not in deferred
+
+    await asyncio.sleep(0.12)
+    assert session.session_id in sessions
+    assert session.closed is False
+
+    assert session.poll_active is False
+
+    refresh_hold.set()
+    with pytest.raises(DouyinQrcodeError, match="刷新后未找到|重新获取"):
+        await refresh_task
+    # refresh 失败路径会自行挂上延迟清理，且旧 poll 不得留下 sticky poll_active
+    assert session.poll_active is False
+    assert session.session_id in deferred
+
+    await asyncio.sleep(0.12)
+    assert session.session_id not in sessions
+    assert session.closed is True
+    session.browser.close.assert_awaited()
