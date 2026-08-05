@@ -165,7 +165,6 @@ async def update_rust_rcon_custom_command(
                     )
 
                 if body.name is not None and body.name != row.name:
-                    _ensure_name_available(body.name, exclude_id=command_id)
                     row.name = body.name
                 if body.template is not None:
                     row.template = body.template
@@ -176,6 +175,10 @@ async def update_rust_rcon_custom_command(
                     row.enabled = body.enabled
                 if body.allowed_qq_ids is not None:
                     await _sync_allowed_users(session, row, body.allowed_qq_ids)
+
+                # 启用中的指令始终按最终 name 复核冲突（含仅打开开关的路径）。
+                if row.enabled:
+                    _ensure_name_available(row.name, exclude_id=command_id)
 
                 await session.flush()
                 await session.refresh(row, ["allowed_users"])

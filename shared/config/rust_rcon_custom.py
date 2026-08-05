@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from shared.config.command_aliases import COMMAND_LABELS, resolve_entry
+from shared.config.command_aliases import COMMAND_LABELS, match_plain
 from shared.config.rust_player import normalize_steam_id
 from shared.config.rust_rcon import MAX_ALIAS_LENGTH, normalize_alias
 
@@ -130,10 +130,14 @@ def custom_command_name_conflict(
     *,
     exclude_id: int | None = None,
 ) -> str | None:
-    """Return error if *name* collides with aliases / other custom commands."""
+    """Return error if *name* collides with aliases / other custom commands.
+
+    Built-in command checks use the same ``@机器人`` fuzzy prefix/suffix
+    semantics as runtime ``match_plain(..., is_tome=True)``, so names like
+    ``签到奖励`` conflict with trigger ``签到``.
+    """
     for command_id in COMMAND_LABELS:
-        entry = resolve_entry(command_id, snapshot.command_aliases)
-        if entry.enabled and name in entry.triggers:
+        if match_plain(name, command_id, snapshot.command_aliases, is_tome=True):
             label = COMMAND_LABELS[command_id]
             return f"指令名「{name}」与命令「{label}」冲突"
 
@@ -162,16 +166,16 @@ def command_aliases_custom_command_conflict(
     config: dict,
     commands: list[RustRconCustomCommandRecord],
 ) -> str | None:
-    enabled_names = {command.name for command in commands if command.enabled}
-    if not enabled_names:
+    enabled_commands = [command for command in commands if command.enabled]
+    if not enabled_commands:
         return None
     for command_id, entry in config.items():
         if not getattr(entry, "enabled", False):
             continue
         label = COMMAND_LABELS.get(command_id, command_id)
-        for trigger in entry.triggers:
-            if trigger in enabled_names:
-                return f"触发词「{trigger}」与自定义指令冲突（命令「{label}」）"
+        for command in enabled_commands:
+            if match_plain(command.name, command_id, config, is_tome=True):
+                return f"触发词与自定义指令「{command.name}」冲突（命令「{label}」）"
     return None
 
 

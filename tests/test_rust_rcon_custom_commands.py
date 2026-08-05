@@ -9,6 +9,7 @@ from shared.config.rust_rcon import RustRconBindingRecord
 from shared.config.rust_rcon_custom import (
     RustRconCustomCommandRecord,
     alias_custom_command_conflict,
+    command_aliases_custom_command_conflict,
     custom_command_name_conflict,
     is_qq_allowed_for_custom_command,
     match_rust_rcon_custom_command,
@@ -126,11 +127,38 @@ def test_custom_command_name_conflict() -> None:
         rust_rcon_custom_commands=[_cmd(id=9, name="功能10")],
     )
     assert custom_command_name_conflict("签到", snap) is not None
+    assert custom_command_name_conflict("签到奖励", snap) is not None
+    assert custom_command_name_conflict("奖励签到", snap) is not None
     assert custom_command_name_conflict("rcon1", snap) is not None
     assert custom_command_name_conflict("功能10", snap) is not None
     assert custom_command_name_conflict("功能10", snap, exclude_id=9) is None
     assert custom_command_name_conflict("功能11", snap) is None
     assert alias_custom_command_conflict("功能10", snap.rust_rcon_custom_commands)
+
+
+def test_command_aliases_custom_command_fuzzy_conflict() -> None:
+    commands = [_cmd(id=1, name="签到奖励", enabled=True)]
+    config = {
+        "rust_player_checkin": CommandAliasEntry(enabled=True, triggers=["签到"]),
+    }
+    assert command_aliases_custom_command_conflict(config, commands) is not None
+    assert (
+        command_aliases_custom_command_conflict(
+            config, [_cmd(id=1, name="签到奖励", enabled=False)]
+        )
+        is None
+    )
+    assert (
+        command_aliases_custom_command_conflict(
+            {
+                "rust_player_checkin": CommandAliasEntry(
+                    enabled=True, triggers=["积分"]
+                ),
+            },
+            commands,
+        )
+        is None
+    )
 
 
 def test_is_qq_allowed_for_custom_command() -> None:
