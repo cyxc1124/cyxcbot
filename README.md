@@ -196,9 +196,19 @@ cyxcbot/
 - **[嘉穗Miho](https://space.bilibili.com/3493119318297082)** — 机器草最初为她和粉丝群而生
 - **Dreadload** — 2.0 改版的直接契机；感谢他的反馈与试用
 - **[NoneBot2](https://github.com/nonebot/nonebot2)** — 机器人开发框架
-- **[HarukaBot](https://github.com/SK-415/HarukaBot)** — 动态截图功能的灵感来源
-- **[biliup](https://github.com/biliup/biliup)** — B 站登录功能实现参考
 - **[Cursor](https://cursor.com/)** — 本项目大量功能与重构在 Cursor AI 辅助下完成
+
+### 参考项目
+
+- **[HarukaBot](https://github.com/SK-415/HarukaBot)** — 动态截图功能的灵感来源
+- **[biliup](https://github.com/biliup/biliup)** — B 站扫码登录流程参考
+- **[blrec](https://github.com/acgnhiki/blrec)** — 直播监控、弹幕 WebSocket、WBI 签名参考
+- **[RSSHub](https://github.com/DIYgod/RSSHub)** — 动态 API 请求参数与 dm 校验、WBI 实现参考
+- **[douyin-downloader](https://github.com/jiji262/douyin-downloader)** — 抖音链接解析与单视频下载链路移植来源
+- **[f2](https://github.com/Johnserf-Seed/f2)** — 抖音 ABogus / msToken 相关实现
+- **[Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API)** — 抖音 XBogus 签名实现
+- **[douyin_parse](https://github.com/DLWangSan/douyin_parse)** — 抖音扫码登录（Playwright）流程参考
+- **[webrcon](https://github.com/Facepunch/webrcon)** — Rust RCON WebSocket 协议参考
 
 ---
 
