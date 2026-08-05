@@ -1,8 +1,8 @@
 # 机器草
 
-基于 [NoneBot2](https://nonebot.dev/) 的 QQ 机器人，专注 B 站动态、直播监控与群消息推送。内置 Web Admin 管理面板，可在浏览器中完成监控配置、权限策略与消息模板管理，无需反复改环境变量。
+基于 [NoneBot2](https://nonebot.dev/) 的 QQ 机器人，专注 B 站动态、直播监控与群消息推送。内置 Web Admin 管理面板，业务配置在浏览器中完成，环境变量只保留启动级项。
 
-📖 **完整文档**：https://cyxc1124.github.io/cyxcbot/（源码在 [docs/](docs/)，本地预览：`cd docs && npm start`）
+📖 **完整文档**（功能说明、插件与配置）：https://cyxc1124.github.io/cyxcbot/（源码在 [docs/](docs/)，本地预览：`cd docs && npm start`）
 
 ---
 
@@ -19,43 +19,6 @@
 | 管理界面 | 无 | React 管理面板（监控、群组、模板、日志等） |
 
 如果你还在用 `DYNAMIC_MONITOR_*`、`LIVE_MONITOR_*`、`STATUS_CHECK_*`、`SUPERUSERS` 等旧环境变量，启动时会有弃用提示——请改到 Web Admin 里配置。
-
----
-
-## 功能概览
-
-### B 站监控
-
-- **直播监控**（`live_monitor`）：WebSocket 弹幕 + API 轮询双重机制，开播/下播秒级推送，支持多房间、多群/好友、@全体
-- **动态监控**（`dynamic_monitor`）：轮询 UP 主动态，可选 Playwright 网页截图，支持分散/批量检查模式
-- **视频查询**（`video_monitor`）：在已配置映射的群中响应 `最新视频` / `最新投稿` 命令（新投稿推送由动态监控负责）
-
-### 消息与解析
-
-- **链接解析**（`bilibili_link_parser`）：群内/好友 B 站链接自动解析（视频、直播、小程序等），按群/好友单独开关
-- **动态图片提取**：`#提取` / `#获取` 命令，按动态 ID 拉取图片
-- **主动查询**：群内发送 `最新动态` / `置顶动态` / `最新视频` 等命令
-- **消息模板**：开播、下播、动态等推送文案可在面板自定义
-
-### 权限与安全
-
-- **群消息守卫**（`group_guard`）、**私聊守卫**（`private_guard`）：群/好友消息响应总开关
-- **状态查询**（`status_check`）：超级用户或指定 QQ 可查询机器人运行状态
-
-### Web Admin
-
-| 页面 | 说明 |
-|------|------|
-| `/` | 仪表盘 |
-| `/dynamic` | 动态监控配置与运行状态 |
-| `/live` | 直播监控配置与运行状态 |
-| `/groups`、`/private` | 群组 / 好友管理与链接解析、状态查询策略 |
-| `/templates` | 消息模板 |
-| `/settings` | 监控参数、B 站账号、机器人设置 |
-| `/logs` | 实时运行日志（WebSocket） |
-| `/about` | 版本与构建信息 |
-
-前端开发说明见 [web/README.md](web/README.md)。各插件细节见 `plugins/*/README.md`。
 
 ---
 
@@ -95,7 +58,7 @@ docker run -d \
 
 自 **2.0.0** 起提供 Windows 打包。Release 页下载 `cyxcbot-windows-<version>.zip`，解压后：
 
-1. 复制 `env.example` 为 `.env`，至少设置 `WEB_SECRET_KEY`
+1. 复制 `env.example` 为 `.env`，设置 `WEB_SECRET_KEY`（≥32 字符随机串）
 2. 运行 `cyxcbot.exe`
 3. 浏览器打开 `http://localhost:8081` 完成初始化
 
@@ -109,7 +72,7 @@ CI 流程见 [`.github/workflows/build-windows.yml`](.github/workflows/build-win
 
 ### 方式三：本地开发
 
-本地开发请使用 **Python 3.14** 与仓库根目录下的 `.venv/`，不要使用系统全局 Python。
+本地开发请使用 **Python 3.14** 与仓库根目录下的 `.venv/`，不要使用系统全局 `python3`。
 
 ```bash
 # 1. 创建虚拟环境
@@ -118,37 +81,44 @@ python3 -m venv .venv
 # 2. 安装依赖
 ./.venv/bin/pip install -r requirements.txt
 
-# 3. Playwright 浏览器（动态截图需要，安装一次即可）
+# 3. Playwright 浏览器（截图 / 抖音扫码需要，安装一次即可）
 ./.venv/bin/playwright install chromium
 
 # 4. 配置环境
 cp env.example .env
-# 编辑 .env：WEB_SECRET_KEY、SQLALCHEMY_DATABASE_URL 等
+# 生成并写入 WEB_SECRET_KEY（≥32 字符；未设置时机器人可启动，但 Web Admin 不会监听）
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 
-# 5. 启动机器人（首次启动自动建表 / 迁移）
+# 5. 启动机器人（请用 venv，不要用系统 python3）
 ./.venv/bin/python bot.py
 
-# 6. 另开终端启动前端开发服务器
+# 6. 另开终端启动前端开发服务器（可选）
 cd web && npm install && npm run dev
 ```
 
 Windows（PowerShell）创建 venv：`py -3.14 -m venv .venv`，激活：`.\.venv\Scripts\Activate.ps1`。
 
+- OneBot：`http://localhost:8080`
+- Web Admin API：`http://localhost:8081`
+- 前端开发服务器：`http://localhost:5173`（Vite 代理 API 到 8081）
+
+更细的说明见文档站 [本地开发](https://cyxc1124.github.io/cyxcbot/getting-started/local-dev)。
+
 ---
 
 ## 环境变量
 
-2.0 之后，**只有启动级配置**仍通过环境变量；业务配置（监控映射、B 站 Cookie、权限、模板等）全部在 Web Admin / 数据库中管理。
+2.0 之后，**只有启动级配置**仍通过环境变量；业务配置全部在 Web Admin / 数据库中管理。
 
 | 类别 | 变量 | 说明 |
 |------|------|------|
 | OneBot | `HOST`、`PORT` | 机器人监听地址与端口（默认 `0.0.0.0:8080`） |
-| Web Admin | `WEB_HOST`、`WEB_PORT`、`WEB_ADMIN_ENABLED` | API 监听（默认 `8081`） |
-| 安全 | `WEB_SECRET_KEY` | JWT 签名密钥（**必填**） |
+| Web Admin | `WEB_HOST`、`WEB_PORT`、`WEB_ADMIN_ENABLED` | API 监听（默认 `8081`）；`false` 可禁用面板 |
+| 安全 | `WEB_SECRET_KEY` | JWT / Cookie 加密密钥（Web Admin 启动时必填，≥32 字符） |
 | 数据库 | `SQLALCHEMY_DATABASE_URL` | 默认 SQLite `sqlite+aiosqlite:///data/cyxcbot.db` |
 | 日志 | `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` 等 |
 
-完整示例见 [`env.example`](env.example)。
+完整示例见 [`env.example`](env.example)；明细见 [环境变量](https://cyxc1124.github.io/cyxcbot/configuration/env-vars)。
 
 ---
 
@@ -160,16 +130,9 @@ cyxcbot/
 ├── admin/                 # Web Admin API（FastAPI）
 ├── shared/                # 共享 DB、配置、监控公共逻辑
 ├── plugins/               # NoneBot 插件
-│   ├── live_monitor/      # 直播监控
-│   ├── dynamic_monitor/   # 动态监控
-│   ├── video_monitor/     # 视频查询命令
-│   ├── bilibili_link_parser/
-│   ├── status_check/
-│   ├── group_guard/
-│   └── private_guard/
 ├── web/                   # 管理面板前端
 ├── docs/                  # 文档站（Docusaurus）
-├── utils/                 # B 站 API、截图等工具
+├── utils/                 # B 站 / 抖音 API、截图等工具
 ├── scripts/               # Windows 打包脚本
 ├── Dockerfile
 ├── env.example
@@ -181,11 +144,8 @@ cyxcbot/
 ## 开发与测试
 
 ```bash
-# 代码格式化 / 检查
 ./.venv/bin/ruff check .
 ./.venv/bin/ruff format .
-
-# 单元测试
 ./.venv/bin/pytest
 ```
 

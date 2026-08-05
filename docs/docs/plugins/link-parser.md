@@ -2,9 +2,11 @@
 sidebar_position: 4
 ---
 
-# 链接解析
+# B 站链接解析
 
-自动识别群聊/好友中的 B 站链接并回复解析结果。
+自动识别群聊/好友中的 B 站链接并回复解析结果。对应插件：`bilibili_link_parser`。
+
+抖音分享链接见 [抖音链接解析](./douyin-link-parser)。
 
 ## 触发方式
 
