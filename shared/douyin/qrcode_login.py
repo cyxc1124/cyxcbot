@@ -73,6 +73,9 @@ class DouyinQrSession:
     closed: bool = False
     # 被 refresh / 新一轮 poll / cancel 认领时递增，使未完成的延迟关闭失效
     epoch: int = 0
+    # 仅由 poll 递增；用于识别哪一轮 poll 拥有 poll_active（与 epoch 分离，
+    # 避免 refresh bump epoch 后旧 poll 无法清除 active，拖死延迟清理）
+    poll_ticket: int = 0
     poll_active: bool = False
 
 
@@ -514,11 +517,15 @@ async def poll_qrcode_login(
     if not sid:
         raise DouyinQrcodeError("缺少 session_id，请重新获取二维码")
 
+    poll_epoch = -1
+    poll_ticket = -1
     async with _lock:
         session = _sessions.get(sid)
         if session is not None and not session.closed:
             # 新一轮 poll 认领会话（例如 refresh 之后），取消断开时挂起的延迟关闭
-            _bump_session_epoch(session)
+            poll_epoch = _bump_session_epoch(session)
+            session.poll_ticket += 1
+            poll_ticket = session.poll_ticket
             _cancel_deferred_close(sid)
             session.poll_active = True
     if session is None:
@@ -565,13 +572,20 @@ async def poll_qrcode_login(
         raise DouyinQrcodeError("二维码已超时，请重新获取（扫码后需在手机上确认）")
     except asyncio.CancelledError:
         close_when_done = False
+        # 只用本轮 poll 的 epoch 调度延迟关闭。若 refresh / 新 poll 已 bump epoch，
+        # 说明会话已被认领：再按「当前 epoch」挂延迟任务会在慢速 refresh（goto 等
+        # 可达数十秒）中把 Chromium 杀掉。
         async with _lock:
             live = _sessions.get(sid)
-            epoch = live.epoch if live is not None else -1
-        if epoch >= 0:
-            _schedule_deferred_close(sid, epoch)
+            if live is not None and live.epoch == poll_epoch:
+                _schedule_deferred_close(sid, poll_epoch)
         raise
     finally:
-        session.poll_active = False
+        # 按 poll_ticket 清理 active，避免：1) 盖掉后来的 poll；2) refresh bump
+        # epoch 后旧 poll 清不掉 active，导致 refresh 失败时的延迟清理被跳过。
+        async with _lock:
+            live = _sessions.get(sid)
+            if live is not None and live.poll_ticket == poll_ticket:
+                live.poll_active = False
         if close_when_done:
             await close_qr_session(sid)
