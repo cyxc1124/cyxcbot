@@ -16,8 +16,8 @@ SegmentPart = Union[MessageSegment, str]
 
 # QQ / NapCat：同条消息里 video 段常吞掉后续文字；图集（纯 image）可混排。
 _MEDIA_SEG_TYPES = frozenset({"video", "image"})
-# QQ NT sendMsg 同条图片过多会 result=34（实测 26 张失败）；留余量按批拆分。
-MAX_MEDIA_PER_MESSAGE = 9
+# QQ NT sendMsg 同条图片过多会 result=34（实测 26 张失败）；按批拆分。
+MAX_MEDIA_PER_MESSAGE = 10
 
 
 def _video_parts(file_path: Path) -> Iterable[SegmentPart]:

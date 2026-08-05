@@ -10,7 +10,7 @@
 - 支持 `aweme_type` 视频（0/4）与图集（2/68）；Live Photo 取 `images[].video.play_addr` 以视频发送
 - 文案模板键：`link_template_douyin`（占位符：`{video}` `{title}` `{author}` `{url}` `{aweme_id}`；`{video}` 会展开为全部图片/视频段）
 - 含视频段时拆开发送（先媒体后文案）：QQ 同条混排 video 时常吞掉文字
-- 图集图片过多时按批发送（每条最多 9 张），避免 QQ NT `sendMsg result=34`；下载最多 20 项
+- 图集图片过多时按批发送（每条最多 10 张），避免 QQ NT `sendMsg result=34`
 
 ## 配置入口
 

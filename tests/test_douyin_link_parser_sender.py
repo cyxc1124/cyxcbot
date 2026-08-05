@@ -163,7 +163,8 @@ def test_reply_batches_chunks_large_image_album(tmp_path: Path):
     batches = _sender.reply_batches(_sender.build_douyin_link_message(result))
     media_batches = [b for b in batches if any(seg.type == "image" for seg in b)]
     caption_batches = [b for b in batches if all(seg.type == "text" for seg in b)]
-    assert len(media_batches) == 3  # 9 + 9 + 8
+    assert len(media_batches) == 3  # 10 + 10 + 6
+    assert sum(sum(1 for seg in b if seg.type == "image") for b in media_batches) == 26
     assert all(
         sum(1 for seg in b if seg.type == "image") <= _sender.MAX_MEDIA_PER_MESSAGE
         for b in media_batches
