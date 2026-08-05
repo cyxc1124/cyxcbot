@@ -14,6 +14,9 @@ from utils.douyin_api import DouyinMediaItem, DouyinVideoResult
 
 SegmentPart = Union[MessageSegment, str]
 
+# QQ / NapCat：同条消息里 video 段常吞掉后续文字；图集（纯 image）可混排。
+_MEDIA_SEG_TYPES = frozenset({"video", "image"})
+
 
 def _video_parts(file_path: Path) -> Iterable[SegmentPart]:
     if not file_path.exists():
@@ -76,3 +79,30 @@ def build_douyin_link_message(
         text_variables,
         {"video": lambda: _media_parts(result)},
     )
+
+
+def split_media_and_caption(message: Message) -> tuple[Message, Message]:
+    """Split into (media, caption). Caption may be empty Message."""
+    media = Message()
+    caption = Message()
+    for seg in message:
+        if seg.type in _MEDIA_SEG_TYPES:
+            media.append(seg)
+        elif seg.type == "text" and not str(seg.data.get("text", "")).strip():
+            continue
+        else:
+            caption.append(seg)
+    return media, caption
+
+
+def reply_batches(message: Message) -> list[Message]:
+    """One batch normally; if contains video, media then caption (QQ drops mixed text)."""
+    if not any(seg.type == "video" for seg in message):
+        return [message] if message else []
+    media, caption = split_media_and_caption(message)
+    batches: list[Message] = []
+    if media:
+        batches.append(media)
+    if caption:
+        batches.append(caption)
+    return batches
