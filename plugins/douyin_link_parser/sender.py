@@ -16,6 +16,8 @@ SegmentPart = Union[MessageSegment, str]
 
 # QQ / NapCat：同条消息里 video 段常吞掉后续文字；图集（纯 image）可混排。
 _MEDIA_SEG_TYPES = frozenset({"video", "image"})
+# QQ NT sendMsg 同条图片过多会 result=34（实测 26 张失败）；留余量按批拆分。
+MAX_MEDIA_PER_MESSAGE = 9
 
 
 def _video_parts(file_path: Path) -> Iterable[SegmentPart]:
@@ -95,14 +97,48 @@ def split_media_and_caption(message: Message) -> tuple[Message, Message]:
     return media, caption
 
 
+def _chunk_media(media: Message, *, size: int = MAX_MEDIA_PER_MESSAGE) -> list[Message]:
+    chunks: list[Message] = []
+    current = Message()
+    count = 0
+    for seg in media:
+        if count >= size:
+            chunks.append(current)
+            current = Message()
+            count = 0
+        current.append(seg)
+        count += 1
+    if current:
+        chunks.append(current)
+    return chunks
+
+
 def reply_batches(message: Message) -> list[Message]:
-    """One batch normally; if contains video, media then caption (QQ drops mixed text)."""
-    if not any(seg.type == "video" for seg in message):
-        return [message] if message else []
+    """Split for QQ limits: video↔text 不可混；同条图片过多会 sendMsg result=34。"""
+    if not message:
+        return []
     media, caption = split_media_and_caption(message)
-    batches: list[Message] = []
-    if media:
-        batches.append(media)
+    if not media:
+        return [caption] if caption else []
+
+    has_video = any(seg.type == "video" for seg in media)
+    media_chunks = _chunk_media(media)
+
+    # 少量纯图 + 文案可同条（图集小合集）
+    if (
+        not has_video
+        and len(media_chunks) == 1
+        and caption
+        and len(media_chunks[0]) <= MAX_MEDIA_PER_MESSAGE
+    ):
+        combined = Message()
+        for seg in media_chunks[0]:
+            combined.append(seg)
+        for seg in caption:
+            combined.append(seg)
+        return [combined]
+
+    batches = list(media_chunks)
     if caption:
         batches.append(caption)
     return batches

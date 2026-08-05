@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from utils.douyin_api.resolve import (
+    DEFAULT_MAX_ALBUM_ITEMS,
     DouyinResolveError,
     _share_url,
     resolve_and_download,
@@ -200,3 +201,46 @@ async def test_resolve_album_downloads_images_and_live(tmp_path: Path):
     assert [item.kind for item in result.items] == ["image", "video"]
     assert all(item.file_path.exists() for item in result.items)
     assert work_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_resolve_album_truncates_to_max_items(tmp_path: Path):
+    detail = {
+        "aweme_id": "1122334455",
+        "aweme_type": 68,
+        "desc": "many",
+        "author": {"nickname": "tester"},
+        "images": [
+            {"url_list": [f"https://cdn.example/{i}.jpg"]}
+            for i in range(DEFAULT_MAX_ALBUM_ITEMS + 6)
+        ],
+    }
+    work_dir = tmp_path / "album_cap"
+    work_dir.mkdir()
+
+    async def fake_download(url, path, session, **kwargs):
+        path.write_bytes(b"x")
+        return True
+
+    client = MagicMock()
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+    client.get_video_detail = AsyncMock(return_value=detail)
+    client.get_session = AsyncMock(return_value=MagicMock())
+    client.BASE_URL = "https://www.douyin.com"
+    client.headers = {"User-Agent": "test"}
+
+    with (
+        patch("utils.douyin_api.resolve.DouyinAPIClient", return_value=client),
+        patch(
+            "utils.douyin_api.resolve.download_file",
+            new=AsyncMock(side_effect=fake_download),
+        ),
+    ):
+        result = await resolve_and_download(
+            "https://www.douyin.com/note/1122334455",
+            cookie_header="",
+            tmp_dir=work_dir,
+        )
+
+    assert len(result.items) == DEFAULT_MAX_ALBUM_ITEMS

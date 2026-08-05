@@ -21,6 +21,9 @@ from .video_urls import build_video_url_candidates, download_headers
 ContentTypeLabel = Literal["video", "album"]
 MediaKind = Literal["video", "image"]
 
+# 图文上限约 35；控制磁盘/编码压力，发送侧另按批拆分
+DEFAULT_MAX_ALBUM_ITEMS = 20
+
 
 @dataclass(frozen=True)
 class DouyinMediaItem:
@@ -150,6 +153,14 @@ async def _download_album(
     album_urls = extract_album_urls(detail)
     if not album_urls:
         raise DouyinResolveError("未找到可下载的图集地址")
+    if len(album_urls) > DEFAULT_MAX_ALBUM_ITEMS:
+        logger.warning(
+            "抖音图集超过下载上限，截断 aweme_id={} {}→{}",
+            aweme_id,
+            len(album_urls),
+            DEFAULT_MAX_ALBUM_ITEMS,
+        )
+        album_urls = album_urls[:DEFAULT_MAX_ALBUM_ITEMS]
 
     session = await client.get_session()
     headers = download_headers(client)

@@ -9,7 +9,8 @@
 - Cookie 独立于 B 站（设置 → 抖音账号）；**非硬性必填**，对齐 douyin-downloader：缺省仅 warning，仍尝试游客态；建议配置 `ttwid` / `odin_tt` / `passport_csrf_token`（`msToken` 可缺省自动生成）
 - 支持 `aweme_type` 视频（0/4）与图集（2/68）；Live Photo 取 `images[].video.play_addr` 以视频发送
 - 文案模板键：`link_template_douyin`（占位符：`{video}` `{title}` `{author}` `{url}` `{aweme_id}`；`{video}` 会展开为全部图片/视频段）
-- 含视频段时拆成两条发送（先媒体后文案）：QQ 同条混排 video 时常吞掉文字；纯图集仍一条
+- 含视频段时拆开发送（先媒体后文案）：QQ 同条混排 video 时常吞掉文字
+- 图集图片过多时按批发送（每条最多 9 张），避免 QQ NT `sendMsg result=34`；下载最多 20 项
 
 ## 配置入口
 
