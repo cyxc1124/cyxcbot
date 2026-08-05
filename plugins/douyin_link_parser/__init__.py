@@ -13,6 +13,7 @@ from pathlib import Path
 
 from nonebot import get_driver, on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, PrivateMessageEvent
+from nonebot.adapters.onebot.v11.exception import ActionFailed
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
@@ -149,6 +150,18 @@ async def _download_and_reply(
         )
     except DouyinResolveError as exc:
         logger.warning("抖音链接解析失败: {}", exc)
+    except ActionFailed as exc:
+        # NapCat 常把整段 invoke payload 塞进 message，避免 ERROR 刷屏
+        detail = str(
+            getattr(exc, "wording", None) or getattr(exc, "message", None) or exc
+        )
+        logger.warning(
+            "抖音链接解析发送失败 user={} aweme_id={} retcode={} detail={!r}",
+            event.user_id,
+            getattr(result, "aweme_id", None),
+            getattr(exc, "retcode", None),
+            detail[:200],
+        )
     except Exception:
         logger.opt(exception=True).error("抖音链接解析处理异常")
     finally:

@@ -140,3 +140,34 @@ def test_reply_batches_keeps_image_album_as_one(tmp_path: Path):
     assert len(batches) == 1
     assert any(seg.type == "image" for seg in batches[0])
     assert any(seg.type == "text" for seg in batches[0])
+
+
+def test_reply_batches_chunks_large_image_album(tmp_path: Path):
+    from utils.douyin_api.resolve import DouyinMediaItem, DouyinVideoResult
+
+    items: list[DouyinMediaItem] = []
+    for i in range(26):
+        path = tmp_path / f"{i}.jpg"
+        path.write_bytes(b"\xff\xd8\xff" + bytes([i]))
+        items.append(DouyinMediaItem(kind="image", file_path=path))
+    result = DouyinVideoResult(
+        aweme_id="4",
+        title="big",
+        author="a",
+        share_url="https://www.douyin.com/note/4",
+        file_path=items[0].file_path,
+        detail={},
+        content_type="album",
+        items=items,
+    )
+    batches = _sender.reply_batches(_sender.build_douyin_link_message(result))
+    media_batches = [b for b in batches if any(seg.type == "image" for seg in b)]
+    caption_batches = [b for b in batches if all(seg.type == "text" for seg in b)]
+    assert len(media_batches) == 3  # 10 + 10 + 6
+    assert sum(sum(1 for seg in b if seg.type == "image") for b in media_batches) == 26
+    assert all(
+        sum(1 for seg in b if seg.type == "image") <= _sender.MAX_MEDIA_PER_MESSAGE
+        for b in media_batches
+    )
+    assert len(caption_batches) == 1
+    assert "标题：big" in str(caption_batches[0])
