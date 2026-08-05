@@ -121,10 +121,12 @@ print("debug")
 
 # ❌ 不要用标准库 logging（不会进 NoneBot 格式，也不会进 Web 日志广播）
 import logging
+
 logger = logging.getLogger(__name__)
 
 # ❌ 不要手写 traceback
 import traceback
+
 logger.error(f"错误: {traceback.format_exc()}")
 ```
 
