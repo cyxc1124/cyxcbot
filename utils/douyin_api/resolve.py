@@ -67,15 +67,22 @@ def _title(detail: dict[str, Any], *, content_type: ContentTypeLabel) -> str:
     return f"{label} {aweme_id}".strip()
 
 
-def _share_url(detail: dict[str, Any], fallback: str) -> str:
-    share = (
-        detail.get("share_info") if isinstance(detail.get("share_info"), dict) else {}
-    )
-    url = str(share.get("share_url") or "").strip()
-    if url:
-        return url
+def _share_url(
+    detail: dict[str, Any],
+    fallback: str,
+    *,
+    content_type: ContentTypeLabel,
+) -> str:
+    """Prefer canonical www.douyin.com links over tracking share_url.
+
+    ``share_info.share_url`` is often ``iesdouyin.com/share/video/...`` with
+    query noise, and albums still use ``/video/`` even though the real page is
+    ``/note/{id}``.
+    """
     aweme_id = str(detail.get("aweme_id") or "").strip()
     if aweme_id:
+        if content_type == "album":
+            return f"https://www.douyin.com/note/{aweme_id}"
         return f"https://www.douyin.com/video/{aweme_id}"
     return fallback
 
@@ -92,7 +99,7 @@ def _result(
         aweme_id=aweme_id,
         title=_title(detail, content_type=content_type),
         author=_author_name(detail),
-        share_url=_share_url(detail, resolved_url),
+        share_url=_share_url(detail, resolved_url, content_type=content_type),
         file_path=items[0].file_path,
         detail=detail,
         content_type=content_type,

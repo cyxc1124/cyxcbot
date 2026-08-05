@@ -96,3 +96,47 @@ def test_album_message_emits_images_and_live_video(tmp_path: Path):
     assert types.count("image") == 1
     assert types.count("video") == 1
     assert any(seg.type == "text" for seg in message)
+
+
+def test_reply_batches_splits_video_caption(tmp_path: Path):
+    from utils.douyin_api.resolve import DouyinVideoResult
+
+    video = tmp_path / "1.mp4"
+    video.write_bytes(b"\x00\x00\x00\x18ftypmp42fake")
+    result = DouyinVideoResult(
+        aweme_id="1",
+        title="hello",
+        author="bob",
+        share_url="https://www.douyin.com/video/1",
+        file_path=video,
+        detail={},
+    )
+    message = _sender.build_douyin_link_message(result)
+    batches = _sender.reply_batches(message)
+    assert len(batches) == 2
+    assert all(seg.type == "video" for seg in batches[0])
+    assert any(seg.type == "text" for seg in batches[1])
+    assert "标题：hello" in str(batches[1])
+    assert "作者：bob" in str(batches[1])
+
+
+def test_reply_batches_keeps_image_album_as_one(tmp_path: Path):
+    from utils.douyin_api.resolve import DouyinMediaItem, DouyinVideoResult
+
+    img = tmp_path / "0.jpg"
+    img.write_bytes(b"\xff\xd8\xfffakejpg")
+    result = DouyinVideoResult(
+        aweme_id="3",
+        title="pics",
+        author="a",
+        share_url="https://www.douyin.com/note/3",
+        file_path=img,
+        detail={},
+        content_type="album",
+        items=[DouyinMediaItem(kind="image", file_path=img)],
+    )
+    message = _sender.build_douyin_link_message(result)
+    batches = _sender.reply_batches(message)
+    assert len(batches) == 1
+    assert any(seg.type == "image" for seg in batches[0])
+    assert any(seg.type == "text" for seg in batches[0])

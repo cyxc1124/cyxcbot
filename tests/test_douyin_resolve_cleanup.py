@@ -8,7 +8,30 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from utils.douyin_api.resolve import DouyinResolveError, resolve_and_download
+from utils.douyin_api.resolve import (
+    DouyinResolveError,
+    _share_url,
+    resolve_and_download,
+)
+
+
+def test_share_url_prefers_canonical_over_tracking_share():
+    messy = (
+        "https://www.iesdouyin.com/share/video/7669019015309872827/"
+        "?region=CN&share_sign=x"
+    )
+    detail = {
+        "aweme_id": "7669019015309872827",
+        "share_info": {"share_url": messy},
+    }
+    assert (
+        _share_url(detail, "https://v.douyin.com/x/", content_type="album")
+        == "https://www.douyin.com/note/7669019015309872827"
+    )
+    assert (
+        _share_url(detail, "https://v.douyin.com/x/", content_type="video")
+        == "https://www.douyin.com/video/7669019015309872827"
+    )
 
 
 @pytest.mark.asyncio
@@ -126,7 +149,12 @@ async def test_resolve_album_downloads_images_and_live(tmp_path: Path):
         "aweme_type": 68,
         "desc": "album unit",
         "author": {"nickname": "tester"},
-        "share_info": {"share_url": "https://www.douyin.com/note/9988776655"},
+        "share_info": {
+            "share_url": (
+                "https://www.iesdouyin.com/share/video/9988776655/"
+                "?region=CN&share_sign=x"
+            )
+        },
         "images": [
             {"url_list": ["https://cdn.example/a.jpg"]},
             {
@@ -168,6 +196,7 @@ async def test_resolve_album_downloads_images_and_live(tmp_path: Path):
 
     assert result.content_type == "album"
     assert result.title == "album unit"
+    assert result.share_url == "https://www.douyin.com/note/9988776655"
     assert [item.kind for item in result.items] == ["image", "video"]
     assert all(item.file_path.exists() for item in result.items)
     assert work_dir.exists()

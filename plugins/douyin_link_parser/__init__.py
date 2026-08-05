@@ -27,7 +27,7 @@ from utils.douyin_api import (
 from .config import Config, get_config, reload_config
 from .message_text import collect_message_text
 from .send_result import is_onebot_send_success
-from .sender import build_douyin_link_message
+from .sender import build_douyin_link_message, reply_batches
 
 __plugin_meta__ = PluginMetadata(
     name="抖音链接解析",
@@ -111,21 +111,27 @@ async def _download_and_reply(
             reply = await asyncio.to_thread(
                 build_douyin_link_message, result, config.message_templates
             )
-            if isinstance(event, GroupMessageEvent):
-                send_result = await bot.send_group_msg(
-                    group_id=event.group_id, message=reply
-                )
-            else:
-                send_result = await bot.send_private_msg(
-                    user_id=event.user_id, message=reply
-                )
+            # 含 video 时拆成媒体 + 文案两条：同条混排时 QQ 常只显示视频
+            batches = reply_batches(reply)
+            send_results: list[object] = []
+            for batch in batches:
+                if isinstance(event, GroupMessageEvent):
+                    send_results.append(
+                        await bot.send_group_msg(group_id=event.group_id, message=batch)
+                    )
+                else:
+                    send_results.append(
+                        await bot.send_private_msg(user_id=event.user_id, message=batch)
+                    )
 
-        if not is_onebot_send_success(send_result):
+        if not send_results or not all(
+            is_onebot_send_success(item) for item in send_results
+        ):
             logger.warning(
-                "抖音链接解析发送未确认成功 user={} aweme_id={} result={!r}",
+                "抖音链接解析发送未确认成功 user={} aweme_id={} results={!r}",
                 event.user_id,
                 result.aweme_id,
-                send_result,
+                send_results,
             )
             return
 
@@ -135,10 +141,10 @@ async def _download_and_reply(
             else "private"
         )
         logger.info(
-            "已回复抖音链接解析: user={}, aweme_id={}, message_id={}, {}",
+            "已回复抖音链接解析: user={}, aweme_id={}, message_ids={}, {}",
             event.user_id,
             result.aweme_id,
-            _message_id_of(send_result),
+            [_message_id_of(item) for item in send_results],
             reply_scope,
         )
     except DouyinResolveError as exc:
