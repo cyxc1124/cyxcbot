@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 def _nonzero_message_id(mid: object) -> bool:
-    """LLOneBot / LuckyLilliaBot short id 为有符号 int，负值亦有效；仅 0/空失败。"""
+    """LuckyLilliaBot ``createMsgShortId`` = ``md5.readInt32BE()``（有符号 int32），负值有效。"""
     if mid is None:
         return False
     if isinstance(mid, bool):

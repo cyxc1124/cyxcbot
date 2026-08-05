@@ -18,7 +18,7 @@ def test_is_onebot_send_success():
     assert is_onebot_send_success({"message_id": 123})
     assert is_onebot_send_success({"message_id": "456"})
     assert is_onebot_send_success(42)
-    # LLOneBot / LuckyLilliaBot：short message_id 可为负（有符号 32-bit）
+    # LuckyLilliaBot store.createMsgShortId: hash.readInt32BE() → signed int32
     assert is_onebot_send_success({"message_id": -904673447})
     assert is_onebot_send_success(-2146941368)
     assert not is_onebot_send_success(None)
