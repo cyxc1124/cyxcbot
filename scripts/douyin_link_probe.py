@@ -328,14 +328,19 @@ async def _run_download_and_build(
         size = result.file_path.stat().st_size if result.file_path.exists() else 0
         print(
             f"[OK] downloaded aweme_id={result.aweme_id} "
+            f"content_type={result.content_type} items={len(result.items)} "
             f"author={result.author!r} title={result.title[:60]!r} "
             f"size={size} path={result.file_path}"
         )
+        for item in result.items:
+            item_size = item.file_path.stat().st_size if item.file_path.exists() else 0
+            print(f"[OK]   {item.kind} size={item_size} path={item.file_path}")
         print(f"[OK] share_url={result.share_url}")
 
         reply = build_douyin_link_message(result, templates)
         _print_message(reply)
-        _maybe_keep(result.file_path, keep)
+        for item in result.items:
+            _maybe_keep(item.file_path, keep)
         return 0
     except DouyinResolveError as exc:
         print(f"[FAIL] DouyinResolveError: {exc}")

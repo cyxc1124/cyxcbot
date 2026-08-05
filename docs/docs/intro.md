@@ -77,5 +77,5 @@ slug: /intro
 - **[douyin-downloader](https://github.com/jiji262/douyin-downloader)** — 抖音链接解析与单视频下载链路移植来源
 - **[f2](https://github.com/Johnserf-Seed/f2)** — 抖音 ABogus / msToken 相关实现
 - **[Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API)** — 抖音 XBogus 签名实现
-- **[douyin_parse](https://github.com/DLWangSan/douyin_parse)** — 抖音扫码登录（Playwright）流程参考
+- **[douyin_parse](https://github.com/DLWangSan/douyin_parse)** — 抖音扫码登录（Playwright）流程，以及图集 / Live 图内容类型判定参考
 - **[webrcon](https://github.com/Facepunch/webrcon)** — Rust RCON WebSocket 协议参考

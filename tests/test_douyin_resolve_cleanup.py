@@ -112,5 +112,62 @@ async def test_resolve_keeps_temp_on_success_for_caller_cleanup(tmp_path: Path):
         )
 
     assert result.file_path == save_path
+    assert result.content_type == "video"
+    assert len(result.items) == 1
+    assert result.items[0].kind == "video"
     assert save_path.exists()
+    assert work_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_resolve_album_downloads_images_and_live(tmp_path: Path):
+    detail = {
+        "aweme_id": "9988776655",
+        "aweme_type": 68,
+        "desc": "album unit",
+        "author": {"nickname": "tester"},
+        "share_info": {"share_url": "https://www.douyin.com/note/9988776655"},
+        "images": [
+            {"url_list": ["https://cdn.example/a.jpg"]},
+            {
+                "live_photo_type": 1,
+                "url_list": ["https://cdn.example/cover.jpg"],
+                "video": {
+                    "play_addr": {"url_list": ["https://cdn.example/live.mp4"]},
+                },
+            },
+        ],
+    }
+    work_dir = tmp_path / "album_owned"
+    work_dir.mkdir()
+
+    async def fake_download(url, path, session, **kwargs):
+        path.write_bytes(b"payload-" + url.encode())
+        return True
+
+    client = MagicMock()
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+    client.get_video_detail = AsyncMock(return_value=detail)
+    client.get_session = AsyncMock(return_value=MagicMock())
+    client.BASE_URL = "https://www.douyin.com"
+    client.headers = {"User-Agent": "test"}
+
+    with (
+        patch("utils.douyin_api.resolve.DouyinAPIClient", return_value=client),
+        patch(
+            "utils.douyin_api.resolve.download_file",
+            new=AsyncMock(side_effect=fake_download),
+        ),
+    ):
+        result = await resolve_and_download(
+            "https://www.douyin.com/note/9988776655",
+            cookie_header="",
+            tmp_dir=work_dir,
+        )
+
+    assert result.content_type == "album"
+    assert result.title == "album unit"
+    assert [item.kind for item in result.items] == ["image", "video"]
+    assert all(item.file_path.exists() for item in result.items)
     assert work_dir.exists()
