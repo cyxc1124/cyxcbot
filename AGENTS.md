@@ -41,7 +41,7 @@ deploy/             # Docker Compose / Helm
 | `live_monitor` | 直播开播/下播（WebSocket + API 轮询） |
 | `video_monitor` | 群内 `最新视频`/`最新投稿` **命令查询**（非自动推送；新投稿推送见 `dynamic_monitor`） |
 | `bilibili_link_parser` | 群/好友 B 站链接与 QQ 小程序自动解析 |
-| `douyin_link_parser` | 群/好友抖音分享链接解析与视频回传 |
+| `douyin_link_parser` | 群/好友抖音分享链接解析与视频/图集/Live 图回传（Live 以视频发送） |
 | `group_guard` / `private_guard` | 入站消息总开关（不影响监控主动推送） |
 | `status_check` | `/status` 运行状态查询与权限控制 |
 

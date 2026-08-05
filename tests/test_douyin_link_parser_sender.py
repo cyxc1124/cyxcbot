@@ -69,3 +69,30 @@ def test_douyin_link_message_escapes_cq_in_title_and_author(tmp_path: Path):
     assert "&#91;CQ:at,qq=all&#93;" in serialized
     assert "&#91;CQ:image,file=http://127.0.0.1/x&#93;" in serialized
     assert any(seg.type == "video" for seg in message)
+
+
+def test_album_message_emits_images_and_live_video(tmp_path: Path):
+    from utils.douyin_api.resolve import DouyinMediaItem, DouyinVideoResult
+
+    img = tmp_path / "0.jpg"
+    live = tmp_path / "1.mp4"
+    img.write_bytes(b"\xff\xd8\xfffakejpg")
+    live.write_bytes(b"\x00\x00\x00\x18ftypmp42fake")
+    result = DouyinVideoResult(
+        aweme_id="2",
+        title="album",
+        author="a",
+        share_url="https://www.douyin.com/note/2",
+        file_path=img,
+        detail={},
+        content_type="album",
+        items=[
+            DouyinMediaItem(kind="image", file_path=img),
+            DouyinMediaItem(kind="video", file_path=live),
+        ],
+    )
+    message = _sender.build_douyin_link_message(result)
+    types = [seg.type for seg in message if seg.type in {"image", "video", "text"}]
+    assert types.count("image") == 1
+    assert types.count("video") == 1
+    assert any(seg.type == "text" for seg in message)

@@ -10,7 +10,7 @@ from nonebot.log import logger
 
 from shared.config.message_templates import DouyinLinkMessageTemplates
 from shared.notify.message_template import build_message_from_template
-from utils.douyin_api import DouyinVideoResult
+from utils.douyin_api import DouyinMediaItem, DouyinVideoResult
 
 SegmentPart = Union[MessageSegment, str]
 
@@ -31,6 +31,35 @@ def _video_parts(file_path: Path) -> Iterable[SegmentPart]:
         return []
 
 
+def _image_parts(file_path: Path) -> Iterable[SegmentPart]:
+    if not file_path.exists():
+        return []
+    try:
+        data = file_path.read_bytes()
+        if not data:
+            logger.warning("抖音图片文件为空: {}", file_path)
+            return []
+        return [MessageSegment.image(data)]
+    except Exception:
+        logger.opt(exception=True).warning("添加抖音图片段失败: {}", file_path)
+        return []
+
+
+def _media_parts(result: DouyinVideoResult) -> Iterable[SegmentPart]:
+    """Expand ``{video}`` to all media: static images + Live/video segments."""
+    items = list(result.items) if result.items else []
+    if not items and result.file_path:
+        items = [DouyinMediaItem(kind="video", file_path=result.file_path)]
+
+    parts: list[SegmentPart] = []
+    for item in items:
+        if item.kind == "image":
+            parts.extend(_image_parts(item.file_path))
+        else:
+            parts.extend(_video_parts(item.file_path))
+    return parts
+
+
 def build_douyin_link_message(
     result: DouyinVideoResult,
     templates: Optional[DouyinLinkMessageTemplates] = None,
@@ -45,5 +74,5 @@ def build_douyin_link_message(
     return build_message_from_template(
         tpl.video,
         text_variables,
-        {"video": lambda: _video_parts(result.file_path)},
+        {"video": lambda: _media_parts(result)},
     )

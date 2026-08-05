@@ -1,7 +1,8 @@
 """
 抖音链接自动解析插件
 
-识别群聊/好友中的抖音分享链接，下载视频并以视频消息回传。
+识别群聊/好友中的抖音分享链接，下载视频/图集/Live 图并回传。
+Live 图以视频消息发送。
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from .sender import build_douyin_link_message
 
 __plugin_meta__ = PluginMetadata(
     name="抖音链接解析",
-    description="自动解析群聊/好友中的抖音分享链接并回传视频",
+    description="自动解析群聊/好友中的抖音分享链接并回传视频/图集/Live 图",
     usage="发送含抖音短链或作品链接即可触发",
     type="application",
     config=Config,
