@@ -18,8 +18,12 @@ def test_is_onebot_send_success():
     assert is_onebot_send_success({"message_id": 123})
     assert is_onebot_send_success({"message_id": "456"})
     assert is_onebot_send_success(42)
+    # LuckyLilliaBot store.createMsgShortId: hash.readInt32BE() → signed int32
+    assert is_onebot_send_success({"message_id": -904673447})
+    assert is_onebot_send_success(-2146941368)
     assert not is_onebot_send_success(None)
     assert not is_onebot_send_success({})
     assert not is_onebot_send_success({"message_id": 0})
+    assert not is_onebot_send_success(0)
     assert not is_onebot_send_success({"message_id": ""})
     assert not is_onebot_send_success({"status": "ok"})
