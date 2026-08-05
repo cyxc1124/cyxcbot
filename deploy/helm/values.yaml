@@ -7,7 +7,7 @@ replicaCount: 1  # Pod 副本数（机器人通常保持 1）
 image:
   repository: ghcr.io/cyxc1124/cyxcbot
   pullPolicy: IfNotPresent
-  tag: "v2.3.0"  # 留空则使用 v + Chart.appVersion
+  tag: "v2.9.0"  # 留空则使用 v + Chart.appVersion
 
 # 拉取私有镜像时使用（如 GHCR 需认证）
 imagePullSecrets: []
