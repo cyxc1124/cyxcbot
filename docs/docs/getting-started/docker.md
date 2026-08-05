@@ -24,7 +24,7 @@ docker run -d \
 
 ## 首次配置
 
-1. 复制 `env.example` 为 `.env`，至少设置 `WEB_SECRET_KEY`
+1. 复制 `env.example` 为 `.env`，设置 `WEB_SECRET_KEY`（≥32 字符随机串）
 2. 启动容器后访问 `http://<主机>:8081`
 3. 完成 `/setup` 初始化
 4. 协议端连接宿主机 **8080** 端口

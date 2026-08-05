@@ -8,8 +8,8 @@ sidebar_position: 1
 
 1. 访问 Web Admin（默认 `http://<主机>:8081`）
 2. 完成 `/setup` 初始化管理员账户
-3. 在面板中配置 OneBot 连接、B 站账号与监控映射
-4. 将 OneBot 协议端（如 NapCat）反向 WebSocket 连接到 **8080** 端口
+3. 将 OneBot 协议端（如 NapCat）反向 WebSocket 连接到机器人 **8080** 端口（面板不填 OneBot 地址）
+4. 在面板中配置 B 站账号与监控映射；按需再配置 [抖音链接解析](../plugins/douyin-link-parser)、[Rust 群管](../plugins/rust-rcon) 或 [群头衔](../plugins/group-special-title)
 
 ## 部署方式对比
 
@@ -25,4 +25,4 @@ sidebar_position: 1
 
 - 可访问 B 站 API 的网络环境
 - OneBot V11 协议端（如 [NapCat](https://github.com/NapNeko/NapCatQQ)、[LLOneBot](https://github.com/LLOneBot/LLOneBot) 等）
-- 启动前设置 `WEB_SECRET_KEY`（见 [环境变量](../configuration/env-vars)）
+- 使用 Web Admin 时设置 `WEB_SECRET_KEY`（≥32 字符；见 [环境变量](../configuration/env-vars)、[本地开发](./local-dev)）

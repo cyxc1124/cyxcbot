@@ -19,7 +19,7 @@ Web Admin 是机器草的浏览器管理界面，基于 React + TypeScript + Tai
 
 ## 认证
 
-使用 JWT 认证。`WEB_SECRET_KEY` 用于签名 Token 和加密 Cookie，**必须在部署前设置**。
+使用 JWT 认证。`WEB_SECRET_KEY` 用于签名 Token 和加密 Cookie；Web Admin 启动前必须设置（≥32 字符随机串）。未设置时机器人进程仍可运行，但面板不会监听。详见 [环境变量](../configuration/env-vars)。
 
 首次访问通过 `/setup` 创建管理员；之后通过 `/login` 登录。
 

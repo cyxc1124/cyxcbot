@@ -14,12 +14,16 @@ cyxcbot/
 │   ├── dynamic_monitor/   # 动态监控
 │   ├── video_monitor/     # 视频查询命令
 │   ├── bilibili_link_parser/
+│   ├── douyin_link_parser/
+│   ├── rust_rcon/         # Rust WebRCON 远控
+│   ├── rust_player/       # Rust 群积分 / 签到 / 商城
+│   ├── group_special_title/  # 群头衔设置
 │   ├── status_check/
 │   ├── group_guard/
 │   └── private_guard/
 ├── web/                   # 管理面板前端（React + Vite）
 ├── docs/                  # 文档站（Docusaurus）
-├── utils/                 # B 站 API、截图等工具
+├── utils/                 # B 站 / 抖音 / Rust RCON、截图等工具
 ├── deploy/                # Docker Compose / Helm
 ├── scripts/               # Windows 打包脚本
 ├── tests/                 # 单元测试
@@ -41,9 +45,13 @@ FastAPI 应用，提供 Web Admin REST API 与 WebSocket 日志推送。启动�
 - `shared/db/` — SQLAlchemy 模型与 Alembic 迁移
 - `shared/config/` — 配置服务与策略
 - `shared/bilibili/` — B 站扫码登录
+- `shared/douyin/` — 抖音扫码登录
+- `shared/rust_player/` — Rust 群积分、签到、商城存储
 - `shared/monitor/` — 监控调度公共逻辑
 - `shared/logging/` — Web 日志广播（`broadcast.py`）与磁盘会话日志（`file_sink.py`）
 - `utils/bilibili_api/` — B 站 HTTP API 封装
+- `utils/douyin_api/` — 抖音解析与下载链路
+- `utils/rust_rcon/` — WebRCON 客户端、`status` / `giveto` 辅助
 
 ### `plugins/`
 

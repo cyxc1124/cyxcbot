@@ -23,8 +23,16 @@ sidebar_position: 1
 |------|--------|------|
 | `WEB_HOST` | `0.0.0.0` | API 监听地址 |
 | `WEB_PORT` | `8081` | API 监听端口 |
-| `WEB_SECRET_KEY` | — | JWT 签名密钥（**必填**） |
-| `WEB_ADMIN_ENABLED` | `true` | 设为 `false` 可禁用 Web Admin |
+| `WEB_SECRET_KEY` | — | JWT 签名与 Cookie 加密密钥。Web Admin **启动时必填**（≥32 字符，勿用占位值）；未设置时机器人仍可启动，但面板不监听 |
+| `WEB_ADMIN_ENABLED` | `true` | 设为 `false` 可禁用 Web Admin（跳过密钥校验） |
+
+生成示例：
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Docker Compose 通过 `${WEB_SECRET_KEY:?...}` 注入，未设置时 **Compose 会直接失败**（与本地 `bot.py` 行为不同）。
 
 ## 数据库
 
@@ -59,6 +67,10 @@ SQLALCHEMY_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/cyxcbo
 |------|--------|------|
 | `JWT_ALGORITHM` | `HS256` | JWT 算法 |
 | `JWT_EXPIRE_MINUTES` | `1440` | Token 过期时间（分钟） |
+
+## 业务配置不在环境变量中
+
+监控映射、B 站 / 抖音 Cookie、群策略、消息模板、**Rust 群管**（RCON 绑定、签到奖励、商城等）均存数据库，经 Web Admin 管理，无对应启动环境变量。
 
 ## 已弃用的业务环境变量
 
