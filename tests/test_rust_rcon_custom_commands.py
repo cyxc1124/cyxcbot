@@ -136,6 +136,29 @@ def test_custom_command_name_conflict() -> None:
     assert alias_custom_command_conflict("功能10", snap.rust_rcon_custom_commands)
 
 
+def test_custom_command_name_conflict_strips_command_prefix() -> None:
+    snap = AppConfigSnapshot(
+        rust_rcon_bindings=[
+            RustRconBindingRecord(
+                id=1,
+                alias="/kill",
+                host="127.0.0.1",
+                port=28016,
+                password="x",
+                enabled=True,
+            )
+        ],
+        rust_rcon_custom_commands=[_cmd(id=2, name="/heal")],
+    )
+    assert custom_command_name_conflict("kill", snap) is not None
+    assert custom_command_name_conflict("/kill", snap) is not None
+    assert custom_command_name_conflict("heal", snap) is not None
+    assert custom_command_name_conflict("xyz", snap) is None
+    assert alias_custom_command_conflict("/heal", [_cmd(id=3, name="heal")])
+    assert alias_custom_command_conflict("heal", [_cmd(id=3, name="/heal")])
+    assert alias_custom_command_conflict("/xyz", [_cmd(id=3, name="heal")]) is None
+
+
 def test_command_aliases_custom_command_fuzzy_conflict() -> None:
     commands = [_cmd(id=1, name="签到奖励", enabled=True)]
     config = {

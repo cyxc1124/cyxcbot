@@ -65,6 +65,24 @@ def _strip_command_prefix(text: str) -> str | None:
     return strip_prefix(text)
 
 
+def trigger_match_keys(trigger: str) -> set[str]:
+    """Forms a trigger can match after the same prefix stripping as runtime matchers."""
+    trigger = str(trigger).strip()
+    if not trigger:
+        return set()
+    keys = {trigger}
+    stripped = _strip_command_prefix(trigger)
+    if stripped is not None:
+        stripped = stripped.strip()
+        if stripped:
+            keys.add(stripped)
+    return keys
+
+
+def triggers_conflict(left: str, right: str) -> bool:
+    return bool(trigger_match_keys(left) & trigger_match_keys(right))
+
+
 def match_rust_rcon_custom_command(
     text: str,
     commands: list[RustRconCustomCommandRecord],
@@ -142,11 +160,11 @@ def custom_command_name_conflict(
             return f"指令名「{name}」与命令「{label}」冲突"
 
     for binding in snapshot.rust_rcon_bindings:
-        if binding.enabled and binding.alias == name:
+        if binding.enabled and triggers_conflict(binding.alias, name):
             return f"指令名「{name}」与 RCON 绑定触发词冲突"
 
     for command in snapshot.rust_rcon_custom_commands:
-        if command.name == name and command.id != exclude_id:
+        if command.id != exclude_id and triggers_conflict(command.name, name):
             return f"指令名「{name}」已存在"
 
     return None
@@ -157,7 +175,7 @@ def alias_custom_command_conflict(
     commands: list[RustRconCustomCommandRecord],
 ) -> str | None:
     for command in commands:
-        if command.enabled and command.name == alias:
+        if command.enabled and triggers_conflict(command.name, alias):
             return f"触发词「{alias}」与自定义指令「{command.name}」冲突"
     return None
 
