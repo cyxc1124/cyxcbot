@@ -9,7 +9,7 @@ sidebar_position: 4
 ## 使用 Release 包
 
 1. 在 [GitHub Releases](https://github.com/cyxc1124/cyxcbot/releases) 下载 `cyxcbot-windows-<version>.zip`
-2. 解压后复制 `env.example` 为 `.env`，至少设置 `WEB_SECRET_KEY`
+2. 解压后复制 `env.example` 为 `.env`，设置 `WEB_SECRET_KEY`（≥32 字符随机串；可用 `python -c "import secrets; print(secrets.token_urlsafe(48))"` 生成）
 3. 运行 `cyxcbot.exe`
 4. 浏览器打开 `http://localhost:8081` 完成 `/setup` 初始化
 

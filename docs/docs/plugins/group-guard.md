@@ -1,5 +1,5 @@
 ---
-sidebar_position: 6
+sidebar_position: 7
 ---
 
 # 群消息守卫
@@ -16,7 +16,7 @@ sidebar_position: 6
 
 - 在不需要机器人参与的群中静默
 - 临时停用某群的所有功能而不删除监控映射
-- 配合链接解析、状态查询等细粒度策略使用
+- 配合链接解析、状态查询、[群头衔](./group-special-title)、[Rust 群管](./rust-rcon) 等细粒度策略使用（守卫关闭时上述入站功能均不可用）
 
 ## 注意事项
 
