@@ -52,6 +52,10 @@ import type {
   RustShopItemCreate,
   RustShopItemListResponse,
   RustShopItemUpdate,
+  RustRconCustomCommand,
+  RustRconCustomCommandCreate,
+  RustRconCustomCommandListResponse,
+  RustRconCustomCommandUpdate,
   Settings,
   SettingsUpdate,
   SetupRequest,
@@ -386,6 +390,28 @@ export const updateRustShopItem = (id: number, data: RustShopItemUpdate) =>
 export const deleteRustShopItem = (id: number) =>
   request<void>(`/rust-shop/items/${id}`, { method: 'DELETE' })
 
+// Rust RCON custom commands
+export const getRustRconCustomCommands = () =>
+  request<RustRconCustomCommandListResponse>('/rust-rcon/custom-commands')
+
+export const createRustRconCustomCommand = (data: RustRconCustomCommandCreate) =>
+  request<RustRconCustomCommand>('/rust-rcon/custom-commands', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const updateRustRconCustomCommand = (
+  id: number,
+  data: RustRconCustomCommandUpdate,
+) =>
+  request<RustRconCustomCommand>(`/rust-rcon/custom-commands/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+
+export const deleteRustRconCustomCommand = (id: number) =>
+  request<void>(`/rust-rcon/custom-commands/${id}`, { method: 'DELETE' })
+
 // Groups
 export const getGroups = async (): Promise<Group[]> => {
   const data = await request<{ groups: Group[] }>('/groups')
@@ -464,6 +490,7 @@ export const updateLinkParserGroupPolicy = (
     video_enabled: boolean
     live_enabled: boolean
     dynamic_enabled: boolean
+    send_video_enabled: boolean
   },
 ) =>
   request<LinkParserGroupPolicyMutation>(`/link-parser/policies/groups/${encodeURIComponent(groupId)}`, {

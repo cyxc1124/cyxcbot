@@ -65,10 +65,23 @@ export interface Settings {
   command_extra_prefixes: string[]
   /** 只读：当前生效的完整前缀集合 = COMMAND_START ∪ command_extra_prefixes */
   command_prefixes: string[]
+  /** B 站发视频共享目录；空则使用平台默认 */
+  link_parser_shared_media_dir: string
+  /** 只读：当前平台默认目录 */
+  link_parser_shared_media_dir_default: string
+  /** 只读：解析后的实际目录 */
+  link_parser_shared_media_dir_resolved: string
 }
 
 export type SettingsUpdate = Partial<
-  Omit<Settings, 'bilibili_cookie' | 'douyin_cookie' | 'command_prefixes'>
+  Omit<
+    Settings,
+    | 'bilibili_cookie'
+    | 'douyin_cookie'
+    | 'command_prefixes'
+    | 'link_parser_shared_media_dir_default'
+    | 'link_parser_shared_media_dir_resolved'
+  >
 >
 
 export interface CookieTestResult {
@@ -206,6 +219,7 @@ export interface LinkParserGroupPolicyItem {
   video_enabled: boolean
   live_enabled: boolean
   dynamic_enabled: boolean
+  send_video_enabled: boolean
 }
 
 export interface LinkParserGroupPolicyList {
@@ -225,6 +239,7 @@ export interface LinkParserUserPolicyItem {
   video_enabled: boolean
   live_enabled: boolean
   dynamic_enabled: boolean
+  send_video_enabled: boolean
 }
 
 export interface LinkParserUserPolicyList {
@@ -299,6 +314,7 @@ export interface LinkParserUserPolicyInput {
   video_enabled: boolean
   live_enabled: boolean
   dynamic_enabled: boolean
+  send_video_enabled: boolean
 }
 
 // Monitors
@@ -563,4 +579,35 @@ export interface RustShopItemUpdate {
   points_cost?: number
   enabled?: boolean
   sort_order?: number
+}
+
+export interface RustRconCustomCommand {
+  id: number
+  name: string
+  template: string
+  binding_id: number
+  enabled: boolean
+  allowed_qq_ids: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface RustRconCustomCommandListResponse {
+  items: RustRconCustomCommand[]
+}
+
+export interface RustRconCustomCommandCreate {
+  name: string
+  template: string
+  binding_id: number
+  allowed_qq_ids: string[]
+  enabled?: boolean
+}
+
+export interface RustRconCustomCommandUpdate {
+  name?: string
+  template?: string
+  binding_id?: number
+  allowed_qq_ids?: string[]
+  enabled?: boolean
 }

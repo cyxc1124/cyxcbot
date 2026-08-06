@@ -5,8 +5,11 @@ import { createRetryHandler } from '../utils/retryLoad'
 import {
   buildPolicyPayload,
   buildToggleAllPayload,
+  buildToggleAllSendVideoPayload,
   isAllPoliciesEnabled,
+  isAllSendVideoEnabled,
   isNoPoliciesEnabled,
+  isNoSendVideoEnabled,
   type LinkParserPolicyFlags,
 } from '../utils/linkParserPolicy'
 import { formatApiError } from '../utils/apiError'
@@ -28,6 +31,7 @@ interface UseLinkParserPoliciesOptions<T extends LinkParserPolicyRow> {
   ) => Promise<{ item: T }>
   resetItem: (id: string) => Promise<{ item: T }>
   toggleAllSuccessMessage: (enabled: boolean) => string
+  toggleAllSendVideoSuccessMessage: (enabled: boolean) => string
 }
 
 export function useLinkParserPolicies<T extends LinkParserPolicyRow>({
@@ -38,6 +42,7 @@ export function useLinkParserPolicies<T extends LinkParserPolicyRow>({
   updateItem,
   resetItem,
   toggleAllSuccessMessage,
+  toggleAllSendVideoSuccessMessage,
 }: UseLinkParserPoliciesOptions<T>) {
   const { showToast } = useToast()
   const [items, setItems] = useState<T[]>([])
@@ -123,22 +128,46 @@ export function useLinkParserPolicies<T extends LinkParserPolicyRow>({
   const handleToggleAll = async (enabled: boolean) => {
     if (items.length === 0) return
 
-    const payload = buildToggleAllPayload(enabled)
     const prevItems = items
     setTogglingAll(true)
+    // 全开：只开三项解析，保留各行已有的「发送视频」；全关走 reset
     setItems((current) =>
-      current.map((item) => ({
-        ...item,
-        ...payload,
-        customized: enabled,
-      })),
+      current.map((item) => {
+        if (!enabled) {
+          return {
+            ...item,
+            ...buildToggleAllPayload(false),
+            customized: false,
+          }
+        }
+        const payload = {
+          video_enabled: true,
+          live_enabled: true,
+          dynamic_enabled: true,
+          send_video_enabled: item.send_video_enabled,
+        }
+        return {
+          ...item,
+          ...payload,
+          customized: true,
+        }
+      }),
     )
 
     try {
       await Promise.all(
         items.map((item) =>
           enabled
-            ? updateItem(getItemId(item), payload, item)
+            ? updateItem(
+                getItemId(item),
+                {
+                  video_enabled: true,
+                  live_enabled: true,
+                  dynamic_enabled: true,
+                  send_video_enabled: item.send_video_enabled,
+                },
+                item,
+              )
             : resetItem(getItemId(item)),
         ),
       )
@@ -152,8 +181,56 @@ export function useLinkParserPolicies<T extends LinkParserPolicyRow>({
     }
   }
 
+  const handleToggleAllSendVideo = async (enabled: boolean) => {
+    if (items.length === 0) return
+
+    const prevItems = items
+    setTogglingAll(true)
+    setItems((current) =>
+      current.map((item) => {
+        const payload = buildToggleAllSendVideoPayload(item, enabled)
+        return {
+          ...item,
+          ...payload,
+          customized:
+            payload.video_enabled ||
+            payload.live_enabled ||
+            payload.dynamic_enabled ||
+            payload.send_video_enabled,
+        }
+      }),
+    )
+
+    try {
+      await Promise.all(
+        items.map((item) => {
+          const payload = buildToggleAllSendVideoPayload(item, enabled)
+          const nextCustomized =
+            payload.video_enabled ||
+            payload.live_enabled ||
+            payload.dynamic_enabled ||
+            payload.send_video_enabled
+          // 全关发送视频后若三项解析也全关，走 reset 清掉记录
+          if (!nextCustomized) {
+            return resetItem(getItemId(item))
+          }
+          return updateItem(getItemId(item), payload, item)
+        }),
+      )
+      await load()
+      showToast('success', toggleAllSendVideoSuccessMessage(enabled))
+    } catch (err) {
+      setItems(prevItems)
+      showToast('error', formatApiError(err, '批量保存失败'))
+    } finally {
+      setTogglingAll(false)
+    }
+  }
+
   const allEnabled = isAllPoliciesEnabled(items)
   const noneEnabled = isNoPoliciesEnabled(items)
+  const allSendVideoEnabled = isAllSendVideoEnabled(items)
+  const noneSendVideoEnabled = isNoSendVideoEnabled(items)
   const busy = togglingAll || savingIds.size > 0
 
   return {
@@ -166,8 +243,11 @@ export function useLinkParserPolicies<T extends LinkParserPolicyRow>({
     patchItem,
     handleReset,
     handleToggleAll,
+    handleToggleAllSendVideo,
     allEnabled,
     noneEnabled,
+    allSendVideoEnabled,
+    noneSendVideoEnabled,
     busy,
   }
 }

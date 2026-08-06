@@ -21,6 +21,7 @@ from shared.config.message_templates import (
     LiveMessageTemplates,
 )
 from shared.config.rust_rcon import RustRconBindingRecord
+from shared.config.rust_rcon_custom import RustRconCustomCommandRecord
 from shared.config.rust_rcon_policy import (
     RustRconGroupPolicyRecord,
     RustRconUserPolicyRecord,
@@ -96,6 +97,9 @@ class AppConfigSnapshot:
         default_factory=lambda: list(DEFAULT_EXTRA_PREFIXES)
     )
     rust_rcon_bindings: List[RustRconBindingRecord] = field(default_factory=list)
+    rust_rcon_custom_commands: List[RustRconCustomCommandRecord] = field(
+        default_factory=list
+    )
     rust_rcon_group_policies: Dict[str, RustRconGroupPolicyRecord] = field(
         default_factory=dict
     )
@@ -107,3 +111,5 @@ class AppConfigSnapshot:
     rust_checkin_online_bonus_points: int = 50
     rust_steam_bind_bonus_points: int = 200
     rust_checkin_rcon_binding_id: int = 0
+    # B 站链接解析发视频：与协议端共享的目录（空=平台默认）
+    link_parser_shared_media_dir: str = ""

@@ -39,9 +39,14 @@ from shared.config.rust_rcon import (
     RustRconBindingRecord,
     warn_rust_rcon_command_alias_conflicts,
 )
+from shared.config.rust_rcon_custom import RustRconCustomCommandRecord
 from shared.config.rust_rcon_policy import (
     RustRconGroupPolicyRecord,
     RustRconUserPolicyRecord,
+)
+from shared.config.shared_media import (
+    default_shared_media_dir,
+    resolve_shared_media_dir,
 )
 from shared.config.types import AppConfigSnapshot
 from shared.db.models import (
@@ -54,6 +59,7 @@ from shared.db.models import (
     LiveMonitorState,
     LiveTarget,
     RustRconBinding,
+    RustRconCustomCommand,
     RustRconGroupPolicy,
     RustRconUserPolicy,
     SystemSetting,
@@ -98,6 +104,8 @@ SETTING_KEYS = {
     "rust_checkin_online_bonus_points": ("50", int),
     "rust_steam_bind_bonus_points": ("200", int),
     "rust_checkin_rcon_binding_id": ("0", int),
+    # 空字符串 = 运行时按平台默认（Linux /root/.config/QQ/tmp，其余 data/tmp）
+    "link_parser_shared_media_dir": ("", str),
 }
 
 for key, default in MESSAGE_TEMPLATE_KEYS.items():
@@ -178,6 +186,9 @@ class ConfigService:
                     await self._load_douyin_link_parser_user_policies(session)
                 )
                 rust_rcon_bindings = await self._load_rust_rcon_bindings(session)
+                rust_rcon_custom_commands = await self._load_rust_rcon_custom_commands(
+                    session
+                )
                 rust_rcon_group_policies = await self._load_rust_rcon_group_policies(
                     session
                 )
@@ -267,6 +278,7 @@ class ConfigService:
                 "command_extra_prefixes", list(DEFAULT_EXTRA_PREFIXES)
             ),
             rust_rcon_bindings=rust_rcon_bindings,
+            rust_rcon_custom_commands=rust_rcon_custom_commands,
             rust_rcon_group_policies=rust_rcon_group_policies,
             rust_rcon_user_policies=rust_rcon_user_policies,
             rust_checkin_points_min=settings.get("rust_checkin_points_min", 1),
@@ -280,6 +292,10 @@ class ConfigService:
             rust_checkin_rcon_binding_id=settings.get(
                 "rust_checkin_rcon_binding_id", 0
             ),
+            link_parser_shared_media_dir=settings.get(
+                "link_parser_shared_media_dir", ""
+            )
+            or "",
         )
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
         warn_rust_rcon_command_alias_conflicts(
@@ -500,6 +516,7 @@ class ConfigService:
                 video_enabled=row.video_enabled,
                 live_enabled=row.live_enabled,
                 dynamic_enabled=row.dynamic_enabled,
+                send_video_enabled=row.send_video_enabled,
             )
             for row in rows
         }
@@ -514,6 +531,7 @@ class ConfigService:
                 video_enabled=row.video_enabled,
                 live_enabled=row.live_enabled,
                 dynamic_enabled=row.dynamic_enabled,
+                send_video_enabled=row.send_video_enabled,
                 name=row.name,
             )
             for row in rows
@@ -578,6 +596,32 @@ class ConfigService:
                 )
             )
         return bindings
+
+    async def _load_rust_rcon_custom_commands(
+        self, session
+    ) -> list[RustRconCustomCommandRecord]:
+        stmt = (
+            select(RustRconCustomCommand)
+            .options(selectinload(RustRconCustomCommand.allowed_users))
+            .order_by(RustRconCustomCommand.id)
+        )
+        rows = (await session.scalars(stmt)).all()
+        return [
+            RustRconCustomCommandRecord(
+                id=row.id,
+                name=row.name,
+                template=row.template,
+                binding_id=row.binding_id,
+                enabled=row.enabled,
+                allowed_qq_ids=tuple(
+                    sorted(
+                        {str(item.user_id) for item in row.allowed_users},
+                        key=lambda value: (not value.isdigit(), value),
+                    )
+                ),
+            )
+            for row in rows
+        ]
 
     async def _load_rust_rcon_group_policies(
         self, session
@@ -658,22 +702,33 @@ class ConfigService:
         video_enabled: bool,
         live_enabled: bool,
         dynamic_enabled: bool,
+        send_video_enabled: bool,
     ) -> None:
+        from shared.config.link_parser_policy import normalize_link_parser_flags
+
+        video, live, dynamic, send = normalize_link_parser_flags(
+            video_enabled=video_enabled,
+            live_enabled=live_enabled,
+            dynamic_enabled=dynamic_enabled,
+            send_video_enabled=send_video_enabled,
+        )
         gid = str(group_id).strip()
         async with get_session() as session:
             async with session.begin():
                 row = await session.get(LinkParserGroupPolicy, gid)
                 if row:
-                    row.video_enabled = video_enabled
-                    row.live_enabled = live_enabled
-                    row.dynamic_enabled = dynamic_enabled
+                    row.video_enabled = video
+                    row.live_enabled = live
+                    row.dynamic_enabled = dynamic
+                    row.send_video_enabled = send
                 else:
                     session.add(
                         LinkParserGroupPolicy(
                             group_id=gid,
-                            video_enabled=video_enabled,
-                            live_enabled=live_enabled,
-                            dynamic_enabled=dynamic_enabled,
+                            video_enabled=video,
+                            live_enabled=live,
+                            dynamic_enabled=dynamic,
+                            send_video_enabled=send,
                         )
                     )
 
@@ -692,25 +747,36 @@ class ConfigService:
         video_enabled: bool,
         live_enabled: bool,
         dynamic_enabled: bool,
+        send_video_enabled: bool,
         name: str | None = None,
     ) -> None:
+        from shared.config.link_parser_policy import normalize_link_parser_flags
+
+        video, live, dynamic, send = normalize_link_parser_flags(
+            video_enabled=video_enabled,
+            live_enabled=live_enabled,
+            dynamic_enabled=dynamic_enabled,
+            send_video_enabled=send_video_enabled,
+        )
         uid = str(user_id).strip()
         async with get_session() as session:
             async with session.begin():
                 row = await session.get(LinkParserUserPolicy, uid)
                 if row:
-                    row.video_enabled = video_enabled
-                    row.live_enabled = live_enabled
-                    row.dynamic_enabled = dynamic_enabled
+                    row.video_enabled = video
+                    row.live_enabled = live
+                    row.dynamic_enabled = dynamic
+                    row.send_video_enabled = send
                     row.name = name
                 else:
                     session.add(
                         LinkParserUserPolicy(
                             user_id=uid,
                             name=name,
-                            video_enabled=video_enabled,
-                            live_enabled=live_enabled,
-                            dynamic_enabled=dynamic_enabled,
+                            video_enabled=video,
+                            live_enabled=live,
+                            dynamic_enabled=dynamic,
+                            send_video_enabled=send,
                         )
                     )
 
@@ -824,6 +890,11 @@ class ConfigService:
             else serialize_command_aliases(normalize_command_aliases({})),
             "command_extra_prefixes": list(snap.command_extra_prefixes),
             "command_prefixes": sorted(command_prefixes()),
+            "link_parser_shared_media_dir": snap.link_parser_shared_media_dir,
+            "link_parser_shared_media_dir_default": str(default_shared_media_dir()),
+            "link_parser_shared_media_dir_resolved": str(
+                resolve_shared_media_dir(snap.link_parser_shared_media_dir)
+            ),
         }
 
 

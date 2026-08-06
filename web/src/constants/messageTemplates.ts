@@ -42,7 +42,8 @@ export const DEFAULT_MESSAGE_TEMPLATES: Record<TemplateKey, string> = {
   dynamic_template_extract_image_label: '图片{index}',
   live_template_start: '{streamer_name} 开播啦！\n{card}\n{url}',
   live_template_end: '【下播提醒】\n{streamer_name}下播啦！\n{card}\n直播时长：{duration}',
-  link_template_video: '{cover}标题：{title}\nUP主：{author}\n发布时间：{pub_date}\n链接：{url}',
+  link_template_video:
+    '{video}{cover}标题：{title}\nUP主：{author}\n发布时间：{pub_date}\n链接：{url}',
   link_template_live:
     '{cover}标题：{title}\n主播：{streamer_name}\n状态：{status}\n开播时间：{live_start_time}\n分区：{area}\n链接：{url}',
   link_template_douyin: '{video}标题：{title}\n作者：{author}\n链接：{url}',
@@ -188,7 +189,13 @@ export const liveTemplateFields: TemplateField[] = [
 ]
 
 const linkVideoVariables: TemplateVariable[] = [
-  { key: 'cover', label: '视频封面', description: '视频封面图片', segment: true },
+  {
+    key: 'video',
+    label: '视频',
+    description: '开启「发送视频」后下载的视频消息段；未开启时为空',
+    segment: true,
+  },
+  { key: 'cover', label: '视频封面', description: '视频封面图片；与视频分开发送', segment: true },
   { key: 'title', label: '标题', description: '视频标题' },
   { key: 'author', label: 'UP 主', description: 'UP 主显示名称' },
   { key: 'pub_date', label: '发布时间', description: '视频发布时间' },

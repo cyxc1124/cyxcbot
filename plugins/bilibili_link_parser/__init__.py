@@ -2,11 +2,20 @@
 B 站链接自动解析插件
 
 自动识别群聊/好友中的视频链接、直播间链接、b23.tv 短链与 QQ 小程序分享，
-并回复封面、标题、UP 主/主播、时间信息与链接。
+并回复封面、标题、UP 主/主播、时间信息与链接；可选下载并发送视频文件。
 """
+
+from __future__ import annotations
+
+import asyncio
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
 
 from nonebot import get_driver, on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, PrivateMessageEvent
+from nonebot.adapters.onebot.v11.exception import ActionFailed
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
@@ -14,8 +23,17 @@ from shared.config.link_parser_policy import (
     LinkParserScopePolicy,
     resolve_link_parser_policy,
 )
+from shared.config.message_templates import LinkMessageTemplates
 from shared.config.service import get_config_service
-from utils.bilibili_api import DynamicFetcher, extract_bilibili_refs, video_api_manager
+from shared.config.shared_media import resolve_shared_media_dir
+from utils.bilibili_api import (
+    BilibiliVideoDownloadError,
+    DynamicFetcher,
+    VideoInfo,
+    download_bilibili_video,
+    extract_bilibili_refs,
+    video_api_manager,
+)
 from utils.bilibili_api import api_manager as live_api_manager
 from utils.screenshot import get_dynamic_screenshot
 
@@ -26,6 +44,7 @@ from .sender import (
     build_live_link_message,
     build_video_link_message,
 )
+from .video_send import all_sends_ok, send_batches, send_video_with_cover_fallback
 
 __plugin_meta__ = PluginMetadata(
     name="B 站链接解析",
@@ -38,6 +57,19 @@ __plugin_meta__ = PluginMetadata(
 
 group_link_parser = on_message(priority=4, block=False)
 private_link_parser = on_message(priority=4, block=False)
+
+# ponytail: 流水线限临时文件占盘；编码/发送串行避免并发 ffmpeg + 同目录写冲突。
+_PIPELINE_LIMIT = 2
+_PIPELINE_SEM = asyncio.Semaphore(_PIPELINE_LIMIT)
+_ENCODE_SEND_SEM = asyncio.Semaphore(1)
+
+
+@dataclass
+class _ResolvedReply:
+    message: Message | None = None
+    video: VideoInfo | None = None
+    video_path: Path | None = None
+    templates: LinkMessageTemplates | None = None
 
 
 async def _fetch_dynamic_screenshot(
@@ -57,16 +89,52 @@ async def _fetch_dynamic_screenshot(
     return screenshot_image
 
 
+async def _maybe_download_video(
+    video: VideoInfo,
+    *,
+    enabled: bool,
+    cookie: str | None,
+    output_dir: Path,
+) -> Path | None:
+    if not enabled:
+        return None
+    if not video.bvid or not video.cid:
+        logger.warning(
+            "B 站链接解析：缺少 bvid/cid，跳过视频发送 bvid={} cid={}",
+            video.bvid,
+            video.cid,
+        )
+        return None
+    try:
+        return await download_bilibili_video(
+            video_api_manager.api.session,
+            bvid=video.bvid,
+            cid=video.cid,
+            cookie=cookie,
+            output_dir=output_dir,
+        )
+    except BilibiliVideoDownloadError as exc:
+        logger.warning("B 站视频下载失败，降级为封面+文字: {}", exc)
+        return None
+    except Exception:
+        logger.opt(exception=True).warning("B 站视频下载异常，降级为封面+文字")
+        return None
+
+
 async def _resolve_reply(
     config: Config,
     message_text: str,
     scope: LinkParserScopePolicy,
     *,
     enable_dynamic_screenshot: bool,
-):
+) -> _ResolvedReply:
     cookie = config.bilibili_cookie or None
     if not cookie:
         logger.warning("B 站链接解析：未配置 Cookie，直播接口可能返回 -352 或解析失败")
+
+    media_dir = resolve_shared_media_dir(
+        get_config_service().get_snapshot().link_parser_shared_media_dir
+    )
 
     await video_api_manager.init(cookie)
     await live_api_manager.init(cookie)
@@ -74,7 +142,7 @@ async def _resolve_reply(
     refs = await extract_bilibili_refs(message_text, session, cookie=cookie)
     if not refs:
         logger.debug("B 站链接解析：未识别到链接，text={!r}", message_text[:120])
-        return None
+        return _ResolvedReply()
 
     fetcher = DynamicFetcher(session, cookie)
 
@@ -87,7 +155,23 @@ async def _resolve_reply(
                     bvid=ref.bvid, aid=ref.aid
                 )
                 if video:
-                    return build_video_link_message(video, config.message_templates)
+                    video_path = await _maybe_download_video(
+                        video,
+                        enabled=scope.send_video_enabled,
+                        cookie=cookie,
+                        output_dir=media_dir,
+                    )
+                    if video_path is not None:
+                        return _ResolvedReply(
+                            video=video,
+                            video_path=video_path,
+                            templates=config.message_templates,
+                        )
+                    return _ResolvedReply(
+                        message=build_video_link_message(
+                            video, config.message_templates
+                        )
+                    )
             elif ref.kind == "dynamic" and ref.dynamic_id:
                 if not scope.dynamic_enabled:
                     continue
@@ -105,19 +189,24 @@ async def _resolve_reply(
                             dynamic.live_room_id
                         )
                         if room_info:
-                            return build_live_link_message(
-                                room_info, user_info, config.message_templates
+                            return _ResolvedReply(
+                                message=build_live_link_message(
+                                    room_info, user_info, config.message_templates
+                                )
                             )
                     screenshot_image = await _fetch_dynamic_screenshot(
                         dynamic, enabled=enable_dynamic_screenshot
                     )
-                    return build_dynamic_link_message(
-                        dynamic,
-                        config.message_templates,
-                        screenshot_image=screenshot_image,
-                        include_dynamic_media=(
-                            not enable_dynamic_screenshot or screenshot_image is None
-                        ),
+                    return _ResolvedReply(
+                        message=build_dynamic_link_message(
+                            dynamic,
+                            config.message_templates,
+                            screenshot_image=screenshot_image,
+                            include_dynamic_media=(
+                                not enable_dynamic_screenshot
+                                or screenshot_image is None
+                            ),
+                        )
                     )
             elif ref.room_id:
                 if not scope.live_enabled:
@@ -126,14 +215,35 @@ async def _resolve_reply(
                     ref.room_id
                 )
                 if room_info:
-                    return build_live_link_message(
-                        room_info, user_info, config.message_templates
+                    return _ResolvedReply(
+                        message=build_live_link_message(
+                            room_info, user_info, config.message_templates
+                        )
                     )
         except Exception:
             logger.opt(exception=True).warning("B 站链接解析失败 ref={}", ref)
 
     logger.warning("B 站链接解析：API 未返回有效内容 refs={}", refs)
-    return None
+    return _ResolvedReply()
+
+
+def _message_id_of(send_result: object) -> object:
+    if isinstance(send_result, dict):
+        return send_result.get("message_id")
+    return getattr(send_result, "message_id", send_result)
+
+
+def _cleanup_temp(file_path: Path | None) -> None:
+    """发送后删除视频文件；共享目录本身不删（仅清理偶然的 bilibili_* 临时目录）。"""
+    if file_path is None:
+        return
+    try:
+        parent = file_path.parent
+        file_path.unlink(missing_ok=True)
+        if parent.name.startswith("bilibili_") and parent.exists():
+            shutil.rmtree(parent, ignore_errors=True)
+    except Exception:
+        logger.opt(exception=True).debug("清理 B 站临时文件失败: {}", file_path)
 
 
 async def _handle_link_message(
@@ -160,11 +270,12 @@ async def _handle_link_message(
 
     if not scope.video_enabled and not scope.live_enabled and not scope.dynamic_enabled:
         logger.info(
-            "B 站链接解析: 策略未启用 user={} video={} live={} dynamic={}",
+            "B 站链接解析: 策略未启用 user={} video={} live={} dynamic={} send_video={}",
             event.user_id,
             scope.video_enabled,
             scope.live_enabled,
             scope.dynamic_enabled,
+            scope.send_video_enabled,
         )
         return
 
@@ -179,28 +290,100 @@ async def _handle_link_message(
         message_text[:120],
     )
 
-    reply = await _resolve_reply(
+    # 仅在可能下载视频时占流水线名额；封面/文字路径保持轻量
+    if scope.video_enabled and scope.send_video_enabled:
+        if _PIPELINE_SEM.locked():
+            logger.info("B 站链接解析：等待流水线名额 user={}", event.user_id)
+        async with _PIPELINE_SEM:
+            await _resolve_and_reply(
+                bot,
+                event,
+                config,
+                message_text,
+                scope,
+                enable_dynamic_screenshot=snap.dynamic_enable_screenshot,
+            )
+        return
+
+    await _resolve_and_reply(
+        bot,
+        event,
         config,
         message_text,
         scope,
         enable_dynamic_screenshot=snap.dynamic_enable_screenshot,
     )
-    if reply is None:
-        return
 
+
+async def _resolve_and_reply(
+    bot: Bot,
+    event: GroupMessageEvent | PrivateMessageEvent,
+    config: Config,
+    message_text: str,
+    scope: LinkParserScopePolicy,
+    *,
+    enable_dynamic_screenshot: bool,
+) -> None:
+    resolved = _ResolvedReply()
     try:
-        if isinstance(event, GroupMessageEvent):
-            await bot.send_group_msg(group_id=event.group_id, message=reply)
+        resolved = await _resolve_reply(
+            config,
+            message_text,
+            scope,
+            enable_dynamic_screenshot=enable_dynamic_screenshot,
+        )
+        templates = resolved.templates or config.message_templates
+        if resolved.video is not None and resolved.video_path is not None:
+            if _ENCODE_SEND_SEM.locked():
+                logger.info(
+                    "B 站链接解析：等待前序编码/发送完成 user={}", event.user_id
+                )
+            async with _ENCODE_SEND_SEM:
+                send_results = await send_video_with_cover_fallback(
+                    bot,
+                    event,
+                    video=resolved.video,
+                    video_path=resolved.video_path,
+                    templates=templates,
+                )
+        elif resolved.message is not None:
+            send_results = await send_batches(bot, event, [resolved.message])
         else:
-            await bot.send_private_msg(user_id=event.user_id, message=reply)
+            return
+
+        if not all_sends_ok(send_results):
+            logger.warning(
+                "B 站链接解析发送未确认成功 user={} results={!r}",
+                event.user_id,
+                send_results,
+            )
+            return
+
         reply_scope = (
             f"group={event.group_id}"
             if isinstance(event, GroupMessageEvent)
             else "private"
         )
-        logger.info("已回复 B 站链接解析: user={}, {}", event.user_id, reply_scope)
+        logger.info(
+            "已回复 B 站链接解析: user={}, message_ids={}, {}",
+            event.user_id,
+            [_message_id_of(item) for item in send_results],
+            reply_scope,
+        )
+    except ActionFailed as exc:
+        detail = str(
+            getattr(exc, "wording", None) or getattr(exc, "message", None) or exc
+        )
+        logger.warning(
+            "B 站链接解析发送失败 user={} retcode={} detail={!r}",
+            event.user_id,
+            getattr(exc, "retcode", None),
+            detail[:200],
+        )
     except Exception:
         logger.opt(exception=True).error("发送 B 站链接解析结果失败")
+    finally:
+        _cleanup_temp(resolved.video_path)
 
 
 @group_link_parser.handle()
