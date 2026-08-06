@@ -120,25 +120,54 @@ def match_rust_rcon_custom_command(
     return None
 
 
+def collect_explicit_mention_qq_ids(
+    segments: list[tuple[str, str]],
+    *,
+    self_id: str,
+) -> list[str]:
+    """Return distinct @QQ targets from ``(type, qq)`` segments.
+
+    Skips ``at`` that immediately follows a ``reply`` segment — QQ clients
+    commonly inject that auto-@ when replying, and it must not become the
+    RCON target.
+    """
+    self_id = str(self_id).strip()
+    result: list[str] = []
+    for index, (segment_type, raw_qq) in enumerate(segments):
+        if segment_type != "at":
+            continue
+        if index > 0 and segments[index - 1][0] == "reply":
+            continue
+        qq = str(raw_qq).strip()
+        if not qq or qq == "all" or qq == self_id:
+            continue
+        if qq not in result:
+            result.append(qq)
+    return result
+
+
 def resolve_steamid_target(
     remainder: str,
     mentioned_user_ids: list[str],
 ) -> tuple[str | None, str | None]:
     """Return ``(kind, value)`` where kind is ``qq`` / ``steamid``, or ``(None, None)``.
 
-    Prefer @mention over plaintext SteamID when both are present.
+    Explicit SteamID64 in the remainder wins over @mentions (QQ reply often
+    injects an ``at`` for the replied user that is not the intended RCON
+    target). Multiple distinct @mentions are rejected as ambiguous.
     """
-    if mentioned_user_ids:
-        return "qq", mentioned_user_ids[0]
+    if len(mentioned_user_ids) > 1:
+        return "ambiguous_mention", None
 
     token = remainder.strip().split(None, 1)[0] if remainder.strip() else ""
-    if not token:
-        return None, None
-    steam_id = normalize_steam_id(token)
+    steam_id = normalize_steam_id(token) if token else None
     if steam_id is not None:
         return "steamid", steam_id
-    if token.isdigit() or token.lower().startswith("7656"):
+    if token and (token.isdigit() or token.lower().startswith("7656")):
         return "invalid_steamid", token
+
+    if mentioned_user_ids:
+        return "qq", mentioned_user_ids[0]
     return None, None
 
 
