@@ -10,6 +10,8 @@ import pytest
 from utils.bilibili_api.video_download import (
     DEFAULT_MAX_BYTES,
     BilibiliVideoDownloadError,
+    _is_too_large_error,
+    _reject_if_too_large,
     download_bilibili_video,
     pick_request_qn,
     select_dash_streams,
@@ -19,6 +21,19 @@ from utils.bilibili_api.video_download import (
 def test_max_bytes_matches_llbot_raw_file_ceiling() -> None:
     """file:// 直读，上限对齐 LuckyLilliaBot SendElement.video 原始文件硬顶。"""
     assert DEFAULT_MAX_BYTES == 1024 * 1024 * 1024
+
+
+def test_reject_if_too_large_raises_and_deletes(tmp_path: Path) -> None:
+    path = tmp_path / "big.mp4"
+    path.write_bytes(b"x" * 16)
+    with pytest.raises(BilibiliVideoDownloadError, match="超过发送大小上限"):
+        _reject_if_too_large(path, max_bytes=8)
+    assert not path.exists()
+
+
+def test_too_large_error_is_recognized() -> None:
+    assert _is_too_large_error(BilibiliVideoDownloadError("视频超过发送大小上限"))
+    assert not _is_too_large_error(BilibiliVideoDownloadError("当前视频无 DASH 流"))
 
 
 def test_pick_request_qn_caps_to_prefer() -> None:

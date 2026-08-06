@@ -7,14 +7,14 @@ from pathlib import Path
 
 # Linux / Docker：写在 QQ 数据目录下的 tmp，避免弄脏协议端根目录；卷仍挂 /root/.config/QQ。
 _LINUX_DEFAULT = Path("/root/.config/QQ") / "tmp"
-# Windows：落在机器草工作目录下的 data/tmp（Compose/Helm 已持久化 /app/data）。
-_WINDOWS_DEFAULT = Path("data") / "tmp"
+# Windows / macOS 等：落在机器草工作目录下的 data/tmp（Compose/Helm 已持久化 /app/data）。
+_LOCAL_DEFAULT = Path("data") / "tmp"
 
 
 def default_shared_media_dir() -> Path:
-    if sys.platform == "win32":
-        return _WINDOWS_DEFAULT
-    return _LINUX_DEFAULT
+    if sys.platform.startswith("linux"):
+        return _LINUX_DEFAULT
+    return _LOCAL_DEFAULT
 
 
 def resolve_shared_media_dir(configured: str | None) -> Path:

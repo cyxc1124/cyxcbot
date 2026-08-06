@@ -39,13 +39,12 @@ from utils.screenshot import get_dynamic_screenshot
 
 from .config import Config, get_config, reload_config
 from .message_text import collect_message_text
-from .send_result import is_onebot_send_success
 from .sender import (
     build_dynamic_link_message,
     build_live_link_message,
     build_video_link_message,
-    reply_batches,
 )
+from .video_send import all_sends_ok, send_batches, send_video_with_cover_fallback
 
 __plugin_meta__ = PluginMetadata(
     name="B 站链接解析",
@@ -228,24 +227,6 @@ async def _resolve_reply(
     return _ResolvedReply()
 
 
-async def _send_batches(
-    bot: Bot,
-    event: GroupMessageEvent | PrivateMessageEvent,
-    batches: list[Message],
-) -> list[object]:
-    send_results: list[object] = []
-    for batch in batches:
-        if isinstance(event, GroupMessageEvent):
-            send_results.append(
-                await bot.send_group_msg(group_id=event.group_id, message=batch)
-            )
-        else:
-            send_results.append(
-                await bot.send_private_msg(user_id=event.user_id, message=batch)
-            )
-    return send_results
-
-
 def _message_id_of(send_result: object) -> object:
     if isinstance(send_result, dict):
         return send_result.get("message_id")
@@ -351,27 +332,26 @@ async def _resolve_and_reply(
             scope,
             enable_dynamic_screenshot=enable_dynamic_screenshot,
         )
+        templates = resolved.templates or config.message_templates
         if resolved.video is not None and resolved.video_path is not None:
             if _ENCODE_SEND_SEM.locked():
                 logger.info(
                     "B 站链接解析：等待前序编码/发送完成 user={}", event.user_id
                 )
             async with _ENCODE_SEND_SEM:
-                reply = await asyncio.to_thread(
-                    build_video_link_message,
-                    resolved.video,
-                    resolved.templates or config.message_templates,
+                send_results = await send_video_with_cover_fallback(
+                    bot,
+                    event,
+                    video=resolved.video,
                     video_path=resolved.video_path,
+                    templates=templates,
                 )
-                send_results = await _send_batches(bot, event, reply_batches(reply))
         elif resolved.message is not None:
-            send_results = await _send_batches(bot, event, [resolved.message])
+            send_results = await send_batches(bot, event, [resolved.message])
         else:
             return
 
-        if not send_results or not all(
-            is_onebot_send_success(item) for item in send_results
-        ):
+        if not all_sends_ok(send_results):
             logger.warning(
                 "B 站链接解析发送未确认成功 user={} results={!r}",
                 event.user_id,

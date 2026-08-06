@@ -9,7 +9,7 @@ services:
     volumes:
       - ./data:/app/data
       # 与协议端 / QQ 共享的媒体目录（须两边同路径挂载）。
-      # Linux 默认写入 /root/.config/QQ/tmp；卷挂 QQ 数据根即可。Windows 本机默认 ./data/tmp。
+      # Linux 默认写入 /root/.config/QQ/tmp；卷挂 QQ 数据根即可。Windows/macOS 本机默认 ./data/tmp。
       # - /path/to/shared/QQ:/root/.config/QQ
     environment:
       HOST: "0.0.0.0"
