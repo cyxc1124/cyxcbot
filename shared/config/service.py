@@ -694,23 +694,31 @@ class ConfigService:
         dynamic_enabled: bool,
         send_video_enabled: bool,
     ) -> None:
+        from shared.config.link_parser_policy import normalize_link_parser_flags
+
+        video, live, dynamic, send = normalize_link_parser_flags(
+            video_enabled=video_enabled,
+            live_enabled=live_enabled,
+            dynamic_enabled=dynamic_enabled,
+            send_video_enabled=send_video_enabled,
+        )
         gid = str(group_id).strip()
         async with get_session() as session:
             async with session.begin():
                 row = await session.get(LinkParserGroupPolicy, gid)
                 if row:
-                    row.video_enabled = video_enabled
-                    row.live_enabled = live_enabled
-                    row.dynamic_enabled = dynamic_enabled
-                    row.send_video_enabled = send_video_enabled
+                    row.video_enabled = video
+                    row.live_enabled = live
+                    row.dynamic_enabled = dynamic
+                    row.send_video_enabled = send
                 else:
                     session.add(
                         LinkParserGroupPolicy(
                             group_id=gid,
-                            video_enabled=video_enabled,
-                            live_enabled=live_enabled,
-                            dynamic_enabled=dynamic_enabled,
-                            send_video_enabled=send_video_enabled,
+                            video_enabled=video,
+                            live_enabled=live,
+                            dynamic_enabled=dynamic,
+                            send_video_enabled=send,
                         )
                     )
 
@@ -732,25 +740,33 @@ class ConfigService:
         send_video_enabled: bool,
         name: str | None = None,
     ) -> None:
+        from shared.config.link_parser_policy import normalize_link_parser_flags
+
+        video, live, dynamic, send = normalize_link_parser_flags(
+            video_enabled=video_enabled,
+            live_enabled=live_enabled,
+            dynamic_enabled=dynamic_enabled,
+            send_video_enabled=send_video_enabled,
+        )
         uid = str(user_id).strip()
         async with get_session() as session:
             async with session.begin():
                 row = await session.get(LinkParserUserPolicy, uid)
                 if row:
-                    row.video_enabled = video_enabled
-                    row.live_enabled = live_enabled
-                    row.dynamic_enabled = dynamic_enabled
-                    row.send_video_enabled = send_video_enabled
+                    row.video_enabled = video
+                    row.live_enabled = live
+                    row.dynamic_enabled = dynamic
+                    row.send_video_enabled = send
                     row.name = name
                 else:
                     session.add(
                         LinkParserUserPolicy(
                             user_id=uid,
                             name=name,
-                            video_enabled=video_enabled,
-                            live_enabled=live_enabled,
-                            dynamic_enabled=dynamic_enabled,
-                            send_video_enabled=send_video_enabled,
+                            video_enabled=video,
+                            live_enabled=live,
+                            dynamic_enabled=dynamic,
+                            send_video_enabled=send,
                         )
                     )
 

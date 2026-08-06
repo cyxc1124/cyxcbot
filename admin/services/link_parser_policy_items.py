@@ -5,19 +5,20 @@ from __future__ import annotations
 from typing import Literal
 
 from admin.schemas.link_parser import LinkParserUserPolicyItem
+from shared.config.link_parser_policy import normalize_link_parser_flags
 from shared.private_policy import is_private_message_enabled_from_snapshot
 
 
 def _user_policy_values(snap, user_id: str) -> tuple[bool, bool, bool, bool, bool]:
     override = snap.link_parser_user_policies.get(str(user_id).strip())
     if override:
-        return (
-            override.video_enabled,
-            override.live_enabled,
-            override.dynamic_enabled,
-            override.send_video_enabled,
-            True,
+        video, live, dynamic, send = normalize_link_parser_flags(
+            video_enabled=override.video_enabled,
+            live_enabled=override.live_enabled,
+            dynamic_enabled=override.dynamic_enabled,
+            send_video_enabled=override.send_video_enabled,
         )
+        return video, live, dynamic, send, True
     return False, False, False, False, False
 
 

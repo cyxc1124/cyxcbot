@@ -38,6 +38,50 @@ function mergeUserItem(
   }
 }
 
+function BulkToggleButtons({
+  label,
+  enableLabel = '全部启用',
+  disableLabel = '全部关闭',
+  busy,
+  editable,
+  allEnabled,
+  noneEnabled,
+  onEnable,
+  onDisable,
+}: {
+  label: string
+  enableLabel?: string
+  disableLabel?: string
+  busy: boolean
+  editable: boolean
+  allEnabled: boolean
+  noneEnabled: boolean
+  onEnable: () => void
+  onDisable: () => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <button
+        type="button"
+        className="btn-secondary text-sm"
+        disabled={busy || !editable || allEnabled}
+        onClick={onEnable}
+      >
+        {enableLabel}
+      </button>
+      <button
+        type="button"
+        className="btn-secondary text-sm"
+        disabled={busy || !editable || noneEnabled}
+        onClick={onDisable}
+      >
+        {disableLabel}
+      </button>
+    </div>
+  )
+}
+
 export function LinkParserGroupPolicyTab() {
   const [groupListAvailable, setGroupListAvailable] = useState(true)
 
@@ -57,8 +101,11 @@ export function LinkParserGroupPolicyTab() {
     patchItem,
     handleReset,
     handleToggleAll,
+    handleToggleAllSendVideo,
     allEnabled,
     noneEnabled,
+    allSendVideoEnabled,
+    noneSendVideoEnabled,
     busy,
   } = useLinkParserPolicies({
     loadingKey: 'link-parser-groups',
@@ -69,6 +116,8 @@ export function LinkParserGroupPolicyTab() {
     resetItem: resetLinkParserGroupPolicy,
     toggleAllSuccessMessage: (enabled) =>
       enabled ? '已为全部群组启用链接解析' : '已为全部群组关闭链接解析',
+    toggleAllSendVideoSuccessMessage: (enabled) =>
+      enabled ? '已为全部群组启用发送视频' : '已为全部群组关闭发送视频',
   })
 
   const policyEditable = groupListAvailable
@@ -83,23 +132,25 @@ export function LinkParserGroupPolicyTab() {
           <GlobalPolicyHint scope="group" />
         </div>
         {groups.length > 0 && (
-          <div className="flex shrink-0 gap-2">
-            <button
-              type="button"
-              className="btn-secondary text-sm"
-              disabled={busy || !policyEditable || allEnabled}
-              onClick={() => void handleToggleAll(true)}
-            >
-              全部启用
-            </button>
-            <button
-              type="button"
-              className="btn-secondary text-sm"
-              disabled={busy || !policyEditable || noneEnabled}
-              onClick={() => void handleToggleAll(false)}
-            >
-              全部关闭
-            </button>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <BulkToggleButtons
+              label="链接解析"
+              busy={busy}
+              editable={policyEditable}
+              allEnabled={allEnabled}
+              noneEnabled={noneEnabled}
+              onEnable={() => void handleToggleAll(true)}
+              onDisable={() => void handleToggleAll(false)}
+            />
+            <BulkToggleButtons
+              label="发送视频"
+              busy={busy}
+              editable={policyEditable}
+              allEnabled={allSendVideoEnabled}
+              noneEnabled={noneSendVideoEnabled}
+              onEnable={() => void handleToggleAllSendVideo(true)}
+              onDisable={() => void handleToggleAllSendVideo(false)}
+            />
           </div>
         )}
       </div>
@@ -153,8 +204,11 @@ export function LinkParserUserPolicyTab() {
     patchItem,
     handleReset,
     handleToggleAll,
+    handleToggleAllSendVideo,
     allEnabled,
     noneEnabled,
+    allSendVideoEnabled,
+    noneSendVideoEnabled,
     busy,
   } = useLinkParserPolicies({
     loadingKey: 'link-parser-users',
@@ -172,6 +226,8 @@ export function LinkParserUserPolicyTab() {
     resetItem: resetLinkParserUserPolicy,
     toggleAllSuccessMessage: (enabled) =>
       enabled ? '已为全部好友启用链接解析' : '已为全部好友关闭链接解析',
+    toggleAllSendVideoSuccessMessage: (enabled) =>
+      enabled ? '已为全部好友启用发送视频' : '已为全部好友关闭发送视频',
   })
 
   const policyEditable = friendListAvailable
@@ -186,23 +242,25 @@ export function LinkParserUserPolicyTab() {
           <GlobalPolicyHint scope="user" />
         </div>
         {users.length > 0 && (
-          <div className="flex shrink-0 gap-2">
-            <button
-              type="button"
-              className="btn-secondary text-sm"
-              disabled={busy || !policyEditable || allEnabled}
-              onClick={() => void handleToggleAll(true)}
-            >
-              全部启用
-            </button>
-            <button
-              type="button"
-              className="btn-secondary text-sm"
-              disabled={busy || !policyEditable || noneEnabled}
-              onClick={() => void handleToggleAll(false)}
-            >
-              全部关闭
-            </button>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <BulkToggleButtons
+              label="链接解析"
+              busy={busy}
+              editable={policyEditable}
+              allEnabled={allEnabled}
+              noneEnabled={noneEnabled}
+              onEnable={() => void handleToggleAll(true)}
+              onDisable={() => void handleToggleAll(false)}
+            />
+            <BulkToggleButtons
+              label="发送视频"
+              busy={busy}
+              editable={policyEditable}
+              allEnabled={allSendVideoEnabled}
+              noneEnabled={noneSendVideoEnabled}
+              onEnable={() => void handleToggleAllSendVideo(true)}
+              onDisable={() => void handleToggleAllSendVideo(false)}
+            />
           </div>
         )}
       </div>

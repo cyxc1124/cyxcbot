@@ -12,7 +12,7 @@ from typing import Any, Optional
 import aiohttp
 from nonebot.log import logger
 
-from utils.douyin_api.download import DEFAULT_MAX_BYTES, download_file
+from utils.douyin_api.download import download_file
 
 from . import wbi
 
@@ -22,8 +22,11 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 FNVAL_DASH = 4048
-# QQ / NapCat base64 载荷有限；720P 在多数短视频上更易压进上限
+# 默认取 720P：群聊观感够用；体积仍受协议端硬顶约束（见下）
 DEFAULT_PREFER_QN = 64
+# LuckyLilliaBot ``SendElement.video`` 硬顶为原始文件 1024MB（entities.ts）；
+# 本仓库抖音路径的 70MB 是按 NapCat ~100MiB base64 载荷估的，对本协议端不适用。
+DEFAULT_MAX_BYTES = 1024 * 1024 * 1024
 
 
 class BilibiliVideoDownloadError(Exception):
@@ -42,7 +45,7 @@ def _stream_urls(stream: dict[str, Any]) -> list[str]:
 def select_dash_streams(
     play: dict[str, Any], prefer_qn: int
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """选择最佳 DASH 音视频轨（同画质优先 H.264）。"""
+    """选择最佳 DASH 音视频轨（同画质优先 H.264；不超过 prefer 时取最高，否则取最低）。"""
     dash = play.get("dash")
     if not dash:
         raise BilibiliVideoDownloadError("当前视频无 DASH 流")
@@ -52,9 +55,14 @@ def select_dash_streams(
     if not videos or not audios:
         raise BilibiliVideoDownloadError("DASH 缺少 video 或 audio 轨")
 
-    eligible = [v for v in videos if int(v.get("id") or 0) <= prefer_qn] or videos
-    best_qn = max(int(v.get("id") or 0) for v in eligible)
-    same_qn = [v for v in eligible if int(v.get("id") or 0) == best_qn]
+    capped = [v for v in videos if int(v.get("id") or 0) <= prefer_qn]
+    if capped:
+        best_qn = max(int(v.get("id") or 0) for v in capped)
+        same_qn = [v for v in capped if int(v.get("id") or 0) == best_qn]
+    else:
+        # 全部高于 prefer：取最低档，避免抬到更高清撑爆体积
+        best_qn = min(int(v.get("id") or 0) for v in videos)
+        same_qn = [v for v in videos if int(v.get("id") or 0) == best_qn]
     same_qn.sort(
         key=lambda v: 0 if v.get("codecid") == 7 else 1 if v.get("codecid") == 12 else 2
     )
@@ -69,7 +77,10 @@ def pick_request_qn(accept_quality: list[int] | None, prefer_qn: int) -> int:
     if not accept_quality:
         return prefer_qn
     reachable = [q for q in accept_quality if q <= prefer_qn]
-    return max(reachable or accept_quality)
+    if reachable:
+        return max(reachable)
+    # 没有 ≤ prefer 的档位时取最低可用，避免请求更高清
+    return min(accept_quality)
 
 
 async def fetch_playurl(
@@ -216,6 +227,15 @@ async def _try_durl(
     return dest
 
 
+def _cleanup_work_dir(work: Path, *, owned: bool) -> None:
+    if not owned:
+        return
+    try:
+        shutil.rmtree(work, ignore_errors=True)
+    except Exception:
+        logger.opt(exception=True).debug("清理 B 站下载临时目录失败: {}", work)
+
+
 async def download_bilibili_video(
     session: aiohttp.ClientSession,
     *,
@@ -226,10 +246,16 @@ async def download_bilibili_video(
     max_bytes: int = DEFAULT_MAX_BYTES,
     output_dir: Path | None = None,
 ) -> Path:
-    """下载单 P 视频为本地 mp4，调用方负责清理返回路径及其父目录。"""
+    """下载单 P 视频为本地 mp4，调用方负责清理返回路径及其父目录。
+
+    ``max_bytes`` 默认对齐 LuckyLilliaBot 视频硬顶（1024MB 原始文件），
+    不是抖音路径沿用的 NapCat 70MB 估计值。
+    失败时会清理本函数创建的临时目录，避免泄漏。
+    """
     if not bvid or not cid:
         raise BilibiliVideoDownloadError("缺少 bvid 或 cid")
 
+    owned_work = output_dir is None
     work = (
         Path(output_dir) if output_dir else Path(tempfile.mkdtemp(prefix="bilibili_"))
     )
@@ -237,6 +263,35 @@ async def download_bilibili_video(
     stem = f"{bvid}_{cid}_{uuid.uuid4().hex[:8]}"
     final = work / f"{stem}.mp4"
 
+    try:
+        return await _download_bilibili_video_into(
+            session,
+            work=work,
+            final=final,
+            stem=stem,
+            bvid=bvid,
+            cid=cid,
+            cookie=cookie,
+            prefer_qn=prefer_qn,
+            max_bytes=max_bytes,
+        )
+    except Exception:
+        _cleanup_work_dir(work, owned=owned_work)
+        raise
+
+
+async def _download_bilibili_video_into(
+    session: aiohttp.ClientSession,
+    *,
+    work: Path,
+    final: Path,
+    stem: str,
+    bvid: str,
+    cid: int,
+    cookie: Optional[str],
+    prefer_qn: int,
+    max_bytes: int,
+) -> Path:
     probe = await fetch_playurl(
         session, bvid=bvid, cid=cid, cookie=cookie, qn=prefer_qn
     )
