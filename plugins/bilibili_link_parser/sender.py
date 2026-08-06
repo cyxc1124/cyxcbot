@@ -93,8 +93,9 @@ def build_video_link_message(
 ) -> Message:
     """严格按模板顺序构建视频链接解析消息。
 
-    开启发送视频时附带 ``video_path``：有视频文件则不再附封面（避免同条混排），
-    且若自定义模板未含 ``{video}`` 仍会前置视频段。
+    ``{cover}`` 始终按模板展开；开启发送视频时附带 ``video_path``。
+    若自定义模板未含 ``{video}`` 仍会前置视频段。发送时由 ``reply_batches``
+    把 video 与封面/文案拆开，避免同条混排被 QQ 吞掉。
     """
     tpl = templates or LinkMessageTemplates()
     text_variables = {
@@ -105,12 +106,11 @@ def build_video_link_message(
         "bvid": video.bvid or "",
         "aid": str(video.aid) if video.aid else "",
     }
-    include_cover = video_path is None
     message = build_message_from_template(
         tpl.video,
         text_variables,
         {
-            "cover": lambda: _cover_parts(video.cover) if include_cover else [],
+            "cover": lambda: _cover_parts(video.cover),
             "video": lambda: _video_parts(video_path),
         },
     )
@@ -217,30 +217,41 @@ def _chunk_media(media: Message, *, size: int = MAX_MEDIA_PER_MESSAGE) -> list[M
 
 
 def reply_batches(message: Message) -> list[Message]:
-    """Split for QQ limits: video↔text 不可混；同条图片过多会 sendMsg result=34。"""
+    """Split for QQ limits: video 单独一条；封面图可与文案同条；图片过多再拆批。"""
     if not message:
         return []
     media, caption = split_media_and_caption(message)
     if not media:
         return [caption] if caption else []
 
-    has_video = any(seg.type == "video" for seg in media)
-    media_chunks = _chunk_media(media)
+    videos = Message()
+    images = Message()
+    for seg in media:
+        if seg.type == "video":
+            videos.append(seg)
+        else:
+            images.append(seg)
 
+    batches: list[Message] = []
+    # 每个 video 单独一条，避免与 image/text 混排被 QQ 吞掉
+    for seg in videos:
+        batches.append(Message([seg]))
+
+    image_chunks = _chunk_media(images)
     if (
-        not has_video
-        and len(media_chunks) == 1
+        len(image_chunks) == 1
         and caption
-        and len(media_chunks[0]) <= MAX_MEDIA_PER_MESSAGE
+        and len(image_chunks[0]) <= MAX_MEDIA_PER_MESSAGE
     ):
         combined = Message()
-        for seg in media_chunks[0]:
+        for seg in image_chunks[0]:
             combined.append(seg)
         for seg in caption:
             combined.append(seg)
-        return [combined]
+        batches.append(combined)
+        return batches
 
-    batches = list(media_chunks)
+    batches.extend(image_chunks)
     if caption:
         batches.append(caption)
     return batches
