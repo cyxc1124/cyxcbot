@@ -91,6 +91,11 @@ spec:
         # SQLite 与持久化数据目录（对应 persistence.* 配置）
         - name: data
           mountPath: /app/data
+        {{- if .Values.sharedMedia.enabled }}
+        # 与协议端共享的媒体目录（B 站发视频 file://，见 values.sharedMedia）
+        - name: shared-media
+          mountPath: {{ .Values.sharedMedia.mountPath | quote }}
+        {{- end }}
         {{- if .Values.probes.enabled }}
         # 存活 / 就绪探测：Web Admin GET /health
         livenessProbe:
@@ -120,6 +125,20 @@ spec:
         # persistence.enabled=false 时数据不持久化
         emptyDir: {}
         {{- end }}
+      {{- if .Values.sharedMedia.enabled }}
+      - name: shared-media
+        {{- if .Values.sharedMedia.hostPath }}
+        hostPath:
+          path: {{ .Values.sharedMedia.hostPath | quote }}
+          type: DirectoryOrCreate
+        {{- else if .Values.sharedMedia.existingClaim }}
+        persistentVolumeClaim:
+          claimName: {{ .Values.sharedMedia.existingClaim | quote }}
+        {{- else }}
+        persistentVolumeClaim:
+          claimName: {{ include "cyxcbot.fullname" . }}-shared-media
+        {{- end }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

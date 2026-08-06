@@ -72,7 +72,10 @@ def test_build_video_link_message_with_file_keeps_cover(
         cid=100,
     )
     msg = build_video_link_message(video, video_path=video_file)
-    assert any(seg.type == "video" for seg in msg)
+    video_seg = next(seg for seg in msg if seg.type == "video")
+    file_ref = str(video_seg.data.get("file", ""))
+    assert file_ref.startswith("file://"), file_ref
+    assert "base64://" not in file_ref
     assert any(seg.type == "image" for seg in msg)
     batches = reply_batches(msg)
     assert len(batches) >= 2

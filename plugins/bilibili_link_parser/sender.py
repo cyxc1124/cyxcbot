@@ -49,12 +49,12 @@ def _video_parts(file_path: Path | None) -> Iterable[SegmentPart]:
     if not file_path or not file_path.exists():
         return []
     try:
-        # 传 bytes → OneBot f2s 转为 base64://。Docker/分离协议端读不到 bot 本地 file://
-        data = file_path.read_bytes()
-        if not data:
+        if file_path.stat().st_size <= 0:
             logger.warning("B 站视频文件为空: {}", file_path)
             return []
-        return [MessageSegment.video(data)]
+        # 传 Path → file://；协议端须与 bot 同路径可见（NAS / 共享目录）。
+        # 不再 read_bytes → base64://，避免反向 WS 大包超时与内存峰值。
+        return [MessageSegment.video(file_path.resolve())]
     except Exception:
         logger.opt(exception=True).warning("添加 B 站视频段失败: {}", file_path)
         return []

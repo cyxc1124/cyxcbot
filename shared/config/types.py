@@ -111,3 +111,5 @@ class AppConfigSnapshot:
     rust_checkin_online_bonus_points: int = 50
     rust_steam_bind_bonus_points: int = 200
     rust_checkin_rcon_binding_id: int = 0
+    # B 站链接解析发视频：与协议端共享的目录（空=平台默认）
+    link_parser_shared_media_dir: str = ""

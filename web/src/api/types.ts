@@ -65,10 +65,23 @@ export interface Settings {
   command_extra_prefixes: string[]
   /** 只读：当前生效的完整前缀集合 = COMMAND_START ∪ command_extra_prefixes */
   command_prefixes: string[]
+  /** B 站发视频共享目录；空则使用平台默认 */
+  link_parser_shared_media_dir: string
+  /** 只读：当前平台默认目录 */
+  link_parser_shared_media_dir_default: string
+  /** 只读：解析后的实际目录 */
+  link_parser_shared_media_dir_resolved: string
 }
 
 export type SettingsUpdate = Partial<
-  Omit<Settings, 'bilibili_cookie' | 'douyin_cookie' | 'command_prefixes'>
+  Omit<
+    Settings,
+    | 'bilibili_cookie'
+    | 'douyin_cookie'
+    | 'command_prefixes'
+    | 'link_parser_shared_media_dir_default'
+    | 'link_parser_shared_media_dir_resolved'
+  >
 >
 
 export interface CookieTestResult {
