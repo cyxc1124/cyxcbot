@@ -9,6 +9,7 @@ from shared.config.rust_rcon import RustRconBindingRecord
 from shared.config.rust_rcon_custom import (
     RustRconCustomCommandRecord,
     alias_custom_command_conflict,
+    collect_explicit_mention_qq_ids,
     command_aliases_custom_command_conflict,
     custom_command_name_conflict,
     is_qq_allowed_for_custom_command,
@@ -93,14 +94,34 @@ def test_match_custom_command_respects_enabled_binding() -> None:
     assert matched is not None
 
 
-def test_resolve_steamid_target_prefers_mention() -> None:
+def test_collect_explicit_mention_qq_ids_skips_reply_auto_at() -> None:
+    segments = [
+        ("reply", ""),
+        ("at", "10001"),  # reply-auto @, must be ignored
+        ("at", "99999"),  # bot self
+        ("text", ""),
+        ("at", "10002"),
+        ("at", "10002"),
+    ]
+    assert collect_explicit_mention_qq_ids(segments, self_id="99999") == ["10002"]
+
+
+def test_resolve_steamid_target_prefers_explicit_steamid() -> None:
+    # Plain SteamID must win over an incidental @ (e.g. QQ reply-auto at).
     kind, value = resolve_steamid_target(_VALID_STEAM, ["10001"])
-    assert kind == "qq"
-    assert value == "10001"
+    assert kind == "steamid"
+    assert value == _VALID_STEAM
 
     kind, value = resolve_steamid_target(_VALID_STEAM, [])
     assert kind == "steamid"
     assert value == _VALID_STEAM
+
+    kind, value = resolve_steamid_target("", ["10001"])
+    assert kind == "qq"
+    assert value == "10001"
+
+    kind, value = resolve_steamid_target("", ["10001", "10002"])
+    assert kind == "ambiguous_mention"
 
     kind, value = resolve_steamid_target("12345", [])
     assert kind == "invalid_steamid"
