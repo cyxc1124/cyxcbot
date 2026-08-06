@@ -88,6 +88,8 @@ RUN apt-get update \
         fonts-noto-cjk \
         # Emoji字体支持（对应Windows的Segoe UI Emoji）
         fonts-noto-color-emoji \
+        # B 站链接解析发送视频：DASH 音视频混流
+        ffmpeg \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

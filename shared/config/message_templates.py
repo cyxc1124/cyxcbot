@@ -21,7 +21,9 @@ LIVE_TEMPLATE_KEYS = {
 }
 
 LINK_TEMPLATE_KEYS = {
-    "link_template_video": "{cover}标题：{title}\nUP主：{author}\n发布时间：{pub_date}\n链接：{url}",
+    "link_template_video": (
+        "{video}{cover}标题：{title}\nUP主：{author}\n发布时间：{pub_date}\n链接：{url}"
+    ),
     "link_template_live": (
         "{cover}标题：{title}\n主播：{streamer_name}\n状态：{status}\n"
         "开播时间：{live_start_time}\n分区：{area}\n链接：{url}"

@@ -26,7 +26,7 @@ export function GlobalPolicyHint({ scope }: { scope: 'group' | 'user' }) {
   return (
     <div className="space-y-1">
       <p className="text-sm text-muted-foreground">
-        在下方为每个{scope === 'group' ? '群' : '好友'}单独开启视频、直播或动态链接解析；三者都关闭时不解析。文案可在「消息模板」中配置。
+        在下方为每个{scope === 'group' ? '群' : '好友'}单独开启视频、直播或动态链接解析；均可关闭。开启「发送视频」时会额外下载并回传视频文件（需同时开启视频链接）。文案可在「消息模板」中配置。
       </p>
       {scope === 'group' && (
         <p className="text-sm text-muted-foreground">
@@ -53,7 +53,9 @@ interface LinkParserPolicyTableProps<T extends LinkParserPolicyRow> {
   editable?: boolean
   onPatch: (
     id: string,
-    patch: Partial<Pick<T, 'video_enabled' | 'live_enabled' | 'dynamic_enabled'>>,
+    patch: Partial<
+      Pick<T, 'video_enabled' | 'live_enabled' | 'dynamic_enabled' | 'send_video_enabled'>
+    >,
   ) => void
   onReset: (id: string) => void
 }
@@ -72,12 +74,13 @@ export function LinkParserPolicyTable<T extends LinkParserPolicyRow>({
 }: LinkParserPolicyTableProps<T>) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] text-left text-sm">
+      <table className="w-full min-w-[780px] text-left text-sm">
         <thead>
           <tr className="border-b border-border text-muted-foreground border-border">
             <th className="pb-3 pr-4 font-medium">{nameColumnLabel}</th>
             <th className="pb-3 pr-4 font-medium">{idColumnLabel}</th>
             <th className="pb-3 pr-4 font-medium">视频链接</th>
+            <th className="pb-3 pr-4 font-medium">发送视频</th>
             <th className="pb-3 pr-4 font-medium">直播链接</th>
             <th className="pb-3 pr-4 font-medium">动态链接</th>
             <th className="pb-3 font-medium text-right">操作</th>
@@ -101,7 +104,28 @@ export function LinkParserPolicyTable<T extends LinkParserPolicyRow>({
                   <PolicyToggleRow
                     checked={item.video_enabled}
                     disabled={disabled}
-                    onChange={(checked) => void onPatch(itemId, { video_enabled: checked })}
+                    onChange={(checked) =>
+                      void onPatch(
+                        itemId,
+                        checked
+                          ? { video_enabled: true }
+                          : { video_enabled: false, send_video_enabled: false },
+                      )
+                    }
+                  />
+                </td>
+                <td className="py-3.5 pr-4">
+                  <PolicyToggleRow
+                    checked={item.send_video_enabled}
+                    disabled={disabled}
+                    onChange={(checked) =>
+                      void onPatch(
+                        itemId,
+                        checked
+                          ? { send_video_enabled: true, video_enabled: true }
+                          : { send_video_enabled: false },
+                      )
+                    }
                   />
                 </td>
                 <td className="py-3.5 pr-4">

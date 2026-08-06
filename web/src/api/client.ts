@@ -490,6 +490,7 @@ export const updateLinkParserGroupPolicy = (
     video_enabled: boolean
     live_enabled: boolean
     dynamic_enabled: boolean
+    send_video_enabled: boolean
   },
 ) =>
   request<LinkParserGroupPolicyMutation>(`/link-parser/policies/groups/${encodeURIComponent(groupId)}`, {

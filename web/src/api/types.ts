@@ -206,6 +206,7 @@ export interface LinkParserGroupPolicyItem {
   video_enabled: boolean
   live_enabled: boolean
   dynamic_enabled: boolean
+  send_video_enabled: boolean
 }
 
 export interface LinkParserGroupPolicyList {
@@ -225,6 +226,7 @@ export interface LinkParserUserPolicyItem {
   video_enabled: boolean
   live_enabled: boolean
   dynamic_enabled: boolean
+  send_video_enabled: boolean
 }
 
 export interface LinkParserUserPolicyList {
@@ -299,6 +301,7 @@ export interface LinkParserUserPolicyInput {
   video_enabled: boolean
   live_enabled: boolean
   dynamic_enabled: boolean
+  send_video_enabled: boolean
 }
 
 // Monitors

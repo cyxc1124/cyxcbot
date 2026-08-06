@@ -15,6 +15,7 @@ class LinkParserGroupPolicyItem(BaseModel):
     video_enabled: bool
     live_enabled: bool
     dynamic_enabled: bool
+    send_video_enabled: bool
 
 
 class LinkParserGroupPolicyListResponse(BaseModel):
@@ -30,6 +31,7 @@ class LinkParserGroupPolicyUpdateRequest(BaseModel):
     video_enabled: bool
     live_enabled: bool
     dynamic_enabled: bool
+    send_video_enabled: bool = False
 
 
 class LinkParserUserPolicyItem(BaseModel):
@@ -40,6 +42,7 @@ class LinkParserUserPolicyItem(BaseModel):
     video_enabled: bool
     live_enabled: bool
     dynamic_enabled: bool
+    send_video_enabled: bool
 
 
 class LinkParserUserPolicyListResponse(BaseModel):
@@ -57,6 +60,7 @@ class LinkParserUserPolicyCreateRequest(BaseModel):
     video_enabled: bool = False
     live_enabled: bool = False
     dynamic_enabled: bool = False
+    send_video_enabled: bool = False
 
 
 class LinkParserUserPolicyUpdateRequest(BaseModel):
@@ -64,3 +68,4 @@ class LinkParserUserPolicyUpdateRequest(BaseModel):
     video_enabled: bool
     live_enabled: bool
     dynamic_enabled: bool
+    send_video_enabled: bool = False

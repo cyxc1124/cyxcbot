@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   buildPolicyPayload,
   buildToggleAllPayload,
+  buildToggleAllSendVideoPayload,
   isAllPoliciesEnabled,
+  isAllSendVideoEnabled,
   isNoPoliciesEnabled,
+  isNoSendVideoEnabled,
 } from './linkParserPolicy'
 import {
   emptyForm,
@@ -92,50 +95,109 @@ describe('linkParserPolicy utils', () => {
   it('buildPolicyPayload normalizes booleans and customized flag', () => {
     expect(
       buildPolicyPayload(
-        { video_enabled: false, live_enabled: false, dynamic_enabled: false },
+        {
+          video_enabled: false,
+          live_enabled: false,
+          dynamic_enabled: false,
+          send_video_enabled: false,
+        },
         { video_enabled: true },
       ),
     ).toEqual({
       video_enabled: true,
       live_enabled: false,
       dynamic_enabled: false,
+      send_video_enabled: false,
       customized: true,
     })
     expect(
       buildPolicyPayload(
-        { video_enabled: true, live_enabled: true, dynamic_enabled: false },
+        {
+          video_enabled: true,
+          live_enabled: true,
+          dynamic_enabled: false,
+          send_video_enabled: false,
+        },
         { dynamic_enabled: true },
       ),
     ).toEqual({
       video_enabled: true,
       live_enabled: true,
       dynamic_enabled: true,
+      send_video_enabled: false,
       customized: true,
     })
     expect(
       buildPolicyPayload(
-        { video_enabled: false, live_enabled: false, dynamic_enabled: false },
+        {
+          video_enabled: false,
+          live_enabled: false,
+          dynamic_enabled: false,
+          send_video_enabled: false,
+        },
         {},
       ),
     ).toEqual({
       video_enabled: false,
       live_enabled: false,
       dynamic_enabled: false,
+      send_video_enabled: false,
+      customized: false,
+    })
+  })
+
+  it('clears send_video when video_enabled is off', () => {
+    expect(
+      buildPolicyPayload(
+        {
+          video_enabled: true,
+          live_enabled: false,
+          dynamic_enabled: false,
+          send_video_enabled: true,
+        },
+        { video_enabled: false },
+      ),
+    ).toEqual({
+      video_enabled: false,
+      live_enabled: false,
+      dynamic_enabled: false,
+      send_video_enabled: false,
       customized: false,
     })
   })
 
   it('detects all enabled or all disabled policies', () => {
     const items = [
-      { video_enabled: true, live_enabled: true, dynamic_enabled: true },
-      { video_enabled: true, live_enabled: true, dynamic_enabled: true },
+      {
+        video_enabled: true,
+        live_enabled: true,
+        dynamic_enabled: true,
+        send_video_enabled: false,
+      },
+      {
+        video_enabled: true,
+        live_enabled: true,
+        dynamic_enabled: true,
+        send_video_enabled: true,
+      },
     ]
+    // 「全部启用」只看三项解析，不要求发送视频
     expect(isAllPoliciesEnabled(items)).toBe(true)
     expect(isNoPoliciesEnabled(items)).toBe(false)
 
     const off = [
-      { video_enabled: false, live_enabled: false, dynamic_enabled: false },
-      { video_enabled: false, live_enabled: false, dynamic_enabled: false },
+      {
+        video_enabled: false,
+        live_enabled: false,
+        dynamic_enabled: false,
+        send_video_enabled: false,
+      },
+      {
+        video_enabled: false,
+        live_enabled: false,
+        dynamic_enabled: false,
+        send_video_enabled: false,
+      },
     ]
     expect(isAllPoliciesEnabled(off)).toBe(false)
     expect(isNoPoliciesEnabled(off)).toBe(true)
@@ -144,16 +206,76 @@ describe('linkParserPolicy utils', () => {
     expect(isNoPoliciesEnabled([])).toBe(false)
   })
 
-  it('buildToggleAllPayload mirrors bulk enable/disable', () => {
+  it('buildToggleAllPayload never bulk-enables send_video', () => {
     expect(buildToggleAllPayload(true)).toEqual({
       video_enabled: true,
       live_enabled: true,
       dynamic_enabled: true,
+      send_video_enabled: false,
     })
     expect(buildToggleAllPayload(false)).toEqual({
       video_enabled: false,
       live_enabled: false,
       dynamic_enabled: false,
+      send_video_enabled: false,
     })
+  })
+
+  it('buildToggleAllSendVideoPayload enables video_enabled when turning on', () => {
+    expect(
+      buildToggleAllSendVideoPayload(
+        {
+          video_enabled: false,
+          live_enabled: true,
+          dynamic_enabled: false,
+          send_video_enabled: false,
+        },
+        true,
+      ),
+    ).toEqual({
+      video_enabled: true,
+      live_enabled: true,
+      dynamic_enabled: false,
+      send_video_enabled: true,
+    })
+    expect(
+      buildToggleAllSendVideoPayload(
+        {
+          video_enabled: true,
+          live_enabled: true,
+          dynamic_enabled: true,
+          send_video_enabled: true,
+        },
+        false,
+      ),
+    ).toEqual({
+      video_enabled: true,
+      live_enabled: true,
+      dynamic_enabled: true,
+      send_video_enabled: false,
+    })
+  })
+
+  it('detects all/none send_video flags', () => {
+    expect(
+      isAllSendVideoEnabled([
+        {
+          video_enabled: true,
+          live_enabled: false,
+          dynamic_enabled: false,
+          send_video_enabled: true,
+        },
+      ]),
+    ).toBe(true)
+    expect(
+      isNoSendVideoEnabled([
+        {
+          video_enabled: true,
+          live_enabled: true,
+          dynamic_enabled: true,
+          send_video_enabled: false,
+        },
+      ]),
+    ).toBe(true)
   })
 })
