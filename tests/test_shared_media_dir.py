@@ -13,7 +13,7 @@ from shared.config.shared_media import (
 
 def test_default_linux_path() -> None:
     with patch("shared.config.shared_media.sys.platform", "linux"):
-        assert default_shared_media_dir() == Path("/root/.config/QQ")
+        assert default_shared_media_dir() == Path("/root/.config/QQ") / "tmp"
 
 
 def test_default_windows_path() -> None:
@@ -23,8 +23,8 @@ def test_default_windows_path() -> None:
 
 def test_resolve_empty_uses_platform_default() -> None:
     with patch("shared.config.shared_media.sys.platform", "linux"):
-        assert resolve_shared_media_dir("") == Path("/root/.config/QQ")
-        assert resolve_shared_media_dir("  ") == Path("/root/.config/QQ")
+        assert resolve_shared_media_dir("") == Path("/root/.config/QQ") / "tmp"
+        assert resolve_shared_media_dir("  ") == Path("/root/.config/QQ") / "tmp"
 
 
 def test_resolve_custom_path() -> None:

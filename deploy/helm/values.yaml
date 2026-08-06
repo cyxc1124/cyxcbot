@@ -78,15 +78,15 @@ persistence:
 
 # 与协议端 / QQ 共享的媒体目录（B 站链接解析发视频用 file://，须同路径可见）
 #
-# 分离部署推荐：复用协议端已挂载的 QQ 数据 PVC（常见路径 /root/.config/QQ）：
+# 分离部署推荐：复用协议端 QQ 数据 PVC，挂载根目录 /root/.config/QQ；
+# 应用默认写入 /root/.config/QQ/tmp（Web Admin 留空即可）。
 #   sharedMedia:
 #     enabled: true
 #     mountPath: /root/.config/QQ
 #     existingClaim: <qq-data-pvc>
-# Web Admin「机器人 → 链接解析共享媒体目录」留空即可（默认同路径）。
 sharedMedia:
   enabled: false
-  mountPath: /root/.config/QQ
+  mountPath: /root/.config/QQ   # 卷挂载点（QQ 数据根）；写入路径默认其下 tmp
   # 三选一：existingClaim（推荐复用协议端 QQ 数据卷）/ hostPath / 自动 PVC
   hostPath: ""             # 节点本地或 NAS bind；与 existingClaim 二选一
   existingClaim: ""        # 复用协议端 QQ 数据 PVC

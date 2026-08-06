@@ -5,8 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Linux / Docker：与常见 QQ 客户端数据目录对齐，便于与协议端同路径挂载。
-_LINUX_DEFAULT = Path("/root/.config/QQ")
+# Linux / Docker：写在 QQ 数据目录下的 tmp，避免弄脏协议端根目录；卷仍挂 /root/.config/QQ。
+_LINUX_DEFAULT = Path("/root/.config/QQ") / "tmp"
 # Windows：落在机器草工作目录下的 data/tmp（Compose/Helm 已持久化 /app/data）。
 _WINDOWS_DEFAULT = Path("data") / "tmp"
 

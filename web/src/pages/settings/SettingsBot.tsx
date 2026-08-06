@@ -153,7 +153,7 @@ export function SettingsBotPage() {
             className="input font-mono text-sm"
             placeholder={
               settings?.link_parser_shared_media_dir_default ||
-              '/root/.config/QQ（Linux）或 data/tmp（Windows）'
+              '/root/.config/QQ/tmp（Linux）或 data/tmp（Windows）'
             }
             value={sharedMediaDir}
             disabled={formDisabled || saving}
@@ -167,8 +167,9 @@ export function SettingsBotPage() {
                 '—'}
             </code>
             。默认 Linux{' '}
-            <code className="font-mono">/root/.config/QQ</code>，Windows{' '}
-            <code className="font-mono">data/tmp</code>。
+            <code className="font-mono">/root/.config/QQ/tmp</code>，Windows{' '}
+            <code className="font-mono">data/tmp</code>
+            。K8s / Docker 仍挂载 QQ 数据根目录，文件写入其下 tmp。
           </p>
         </div>
       </div>
