@@ -54,7 +54,7 @@ def test_build_dynamic_link_message_falls_back_to_api_images() -> None:
     assert "正文摘要" in str(msg)
 
 
-def test_build_video_link_message_with_file_splits_batches(
+def test_build_video_link_message_with_file_keeps_cover(
     tmp_path: Path,
 ) -> None:
     video_file = tmp_path / "clip.mp4"
@@ -73,8 +73,11 @@ def test_build_video_link_message_with_file_splits_batches(
     )
     msg = build_video_link_message(video, video_path=video_file)
     assert any(seg.type == "video" for seg in msg)
-    assert not any(seg.type == "image" for seg in msg)
+    assert any(seg.type == "image" for seg in msg)
     batches = reply_batches(msg)
     assert len(batches) >= 2
     assert batches[0][0].type == "video"
-    assert "测试视频" in str(batches[-1])
+    # 封面与文案可同条；video 单独一条
+    cover_batch = next(b for b in batches if any(s.type == "image" for s in b))
+    assert any(s.type == "image" for s in cover_batch)
+    assert "测试视频" in str(cover_batch)

@@ -195,7 +195,7 @@ const linkVideoVariables: TemplateVariable[] = [
     description: '开启「发送视频」后下载的视频消息段；未开启时为空',
     segment: true,
   },
-  { key: 'cover', label: '视频封面', description: '视频封面图片（发送视频时通常为空）', segment: true },
+  { key: 'cover', label: '视频封面', description: '视频封面图片；与视频分开发送', segment: true },
   { key: 'title', label: '标题', description: '视频标题' },
   { key: 'author', label: 'UP 主', description: 'UP 主显示名称' },
   { key: 'pub_date', label: '发布时间', description: '视频发布时间' },
