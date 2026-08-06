@@ -13,6 +13,7 @@ from .live_api import LiveApi, LiveApiManager, api_manager
 # 直播相关
 from .live_models import LiveStatus, RoomInfo, UserInfo
 from .video_api import VideoApi, VideoApiManager, video_api_manager
+from .video_download import BilibiliVideoDownloadError, download_bilibili_video
 
 # 视频相关
 from .video_models import VideoInfo
@@ -35,6 +36,8 @@ __all__ = [
     "VideoApi",
     "VideoApiManager",
     "video_api_manager",
+    "BilibiliVideoDownloadError",
+    "download_bilibili_video",
     "BilibiliRef",
     "extract_bilibili_refs",
     "extract_video_refs",

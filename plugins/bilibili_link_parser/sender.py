@@ -1,6 +1,9 @@
 """链接解析结果消息构建。"""
 
+from __future__ import annotations
+
 from datetime import datetime
+from pathlib import Path
 from typing import Iterable, Optional, Union
 
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
@@ -12,6 +15,10 @@ from utils.bilibili_api import DynamicItem, RoomInfo, UserInfo, VideoInfo
 from utils.bilibili_api.live_models import LiveStatus
 
 SegmentPart = Union[MessageSegment, str]
+
+# QQ / NapCat：同条消息里 video 段常吞掉后续文字；图集（纯 image）可混排。
+_MEDIA_SEG_TYPES = frozenset({"video", "image"})
+MAX_MEDIA_PER_MESSAGE = 10
 
 
 def _format_live_status(room: RoomInfo) -> str:
@@ -35,6 +42,21 @@ def _cover_parts(cover_url: str | None) -> Iterable[SegmentPart]:
         return [MessageSegment.image(cover_url)]
     except Exception as exc:
         logger.warning(f"添加封面失败: {exc}")
+        return []
+
+
+def _video_parts(file_path: Path | None) -> Iterable[SegmentPart]:
+    if not file_path or not file_path.exists():
+        return []
+    try:
+        # 传 bytes → OneBot f2s 转为 base64://。Docker/分离协议端读不到 bot 本地 file://
+        data = file_path.read_bytes()
+        if not data:
+            logger.warning("B 站视频文件为空: {}", file_path)
+            return []
+        return [MessageSegment.video(data)]
+    except Exception:
+        logger.opt(exception=True).warning("添加 B 站视频段失败: {}", file_path)
         return []
 
 
@@ -66,8 +88,14 @@ def _dynamic_cover_parts(
 def build_video_link_message(
     video: VideoInfo,
     templates: Optional[LinkMessageTemplates] = None,
+    *,
+    video_path: Path | None = None,
 ) -> Message:
-    """严格按模板顺序构建视频链接解析消息。"""
+    """严格按模板顺序构建视频链接解析消息。
+
+    开启发送视频时附带 ``video_path``：有视频文件则不再附封面（避免同条混排），
+    且若自定义模板未含 ``{video}`` 仍会前置视频段。
+    """
     tpl = templates or LinkMessageTemplates()
     text_variables = {
         "title": video.title or "暂无标题",
@@ -77,11 +105,25 @@ def build_video_link_message(
         "bvid": video.bvid or "",
         "aid": str(video.aid) if video.aid else "",
     }
-    return build_message_from_template(
+    include_cover = video_path is None
+    message = build_message_from_template(
         tpl.video,
         text_variables,
-        {"cover": lambda: _cover_parts(video.cover)},
+        {
+            "cover": lambda: _cover_parts(video.cover) if include_cover else [],
+            "video": lambda: _video_parts(video_path),
+        },
     )
+    if video_path and not any(seg.type == "video" for seg in message):
+        prepend = Message()
+        for part in _video_parts(video_path):
+            if isinstance(part, MessageSegment):
+                prepend.append(part)
+            else:
+                prepend.append(MessageSegment.text(str(part)))
+        if prepend:
+            return prepend + message
+    return message
 
 
 def build_live_link_message(
@@ -138,6 +180,67 @@ def build_dynamic_link_message(
                 dynamic,
                 screenshot_image=screenshot_image,
                 include_dynamic_media=include_dynamic_media,
-            )
+            ),
+            "video": lambda: [],
         },
     )
+
+
+def split_media_and_caption(message: Message) -> tuple[Message, Message]:
+    """Split into (media, caption). Caption may be empty Message."""
+    media = Message()
+    caption = Message()
+    for seg in message:
+        if seg.type in _MEDIA_SEG_TYPES:
+            media.append(seg)
+        elif seg.type == "text" and not str(seg.data.get("text", "")).strip():
+            continue
+        else:
+            caption.append(seg)
+    return media, caption
+
+
+def _chunk_media(media: Message, *, size: int = MAX_MEDIA_PER_MESSAGE) -> list[Message]:
+    chunks: list[Message] = []
+    current = Message()
+    count = 0
+    for seg in media:
+        if count >= size:
+            chunks.append(current)
+            current = Message()
+            count = 0
+        current.append(seg)
+        count += 1
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def reply_batches(message: Message) -> list[Message]:
+    """Split for QQ limits: video↔text 不可混；同条图片过多会 sendMsg result=34。"""
+    if not message:
+        return []
+    media, caption = split_media_and_caption(message)
+    if not media:
+        return [caption] if caption else []
+
+    has_video = any(seg.type == "video" for seg in media)
+    media_chunks = _chunk_media(media)
+
+    if (
+        not has_video
+        and len(media_chunks) == 1
+        and caption
+        and len(media_chunks[0]) <= MAX_MEDIA_PER_MESSAGE
+    ):
+        combined = Message()
+        for seg in media_chunks[0]:
+            combined.append(seg)
+        for seg in caption:
+            combined.append(seg)
+        return [combined]
+
+    batches = list(media_chunks)
+    if caption:
+        batches.append(caption)
+    return batches

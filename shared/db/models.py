@@ -214,6 +214,9 @@ class LinkParserGroupPolicy(Model):
     dynamic_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
+    send_video_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )
@@ -229,6 +232,9 @@ class LinkParserUserPolicy(Model):
     video_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     live_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     dynamic_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    send_video_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(

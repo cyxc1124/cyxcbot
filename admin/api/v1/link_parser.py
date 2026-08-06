@@ -70,23 +70,28 @@ def _ensure_group_message_enabled(group_id: str, snap) -> None:
         )
 
 
-def _group_policy_values(snap, group_id: str) -> tuple[bool, bool, bool, bool]:
+def _group_policy_values(snap, group_id: str) -> tuple[bool, bool, bool, bool, bool]:
     override = snap.link_parser_group_policies.get(str(group_id).strip())
     if override:
         return (
             override.video_enabled,
             override.live_enabled,
             override.dynamic_enabled,
+            override.send_video_enabled,
             True,
         )
-    return False, False, False, False
+    return False, False, False, False, False
 
 
 def _build_group_item(snap, group: dict) -> LinkParserGroupPolicyItem:
     group_id = str(group["group_id"])
-    video_enabled, live_enabled, dynamic_enabled, customized = _group_policy_values(
-        snap, group_id
-    )
+    (
+        video_enabled,
+        live_enabled,
+        dynamic_enabled,
+        send_video_enabled,
+        customized,
+    ) = _group_policy_values(snap, group_id)
     return LinkParserGroupPolicyItem(
         group_id=group_id,
         group_name=group.get("group_name"),
@@ -95,6 +100,7 @@ def _build_group_item(snap, group: dict) -> LinkParserGroupPolicyItem:
         video_enabled=video_enabled,
         live_enabled=live_enabled,
         dynamic_enabled=dynamic_enabled,
+        send_video_enabled=send_video_enabled,
     )
 
 
@@ -103,9 +109,18 @@ def _build_group_items(snap, groups: list[dict]) -> list[LinkParserGroupPolicyIt
 
 
 def _is_default_off(
-    body: LinkParserGroupPolicyUpdateRequest | LinkParserUserPolicyUpdateRequest,
+    body: (
+        LinkParserGroupPolicyUpdateRequest
+        | LinkParserUserPolicyUpdateRequest
+        | LinkParserUserPolicyCreateRequest
+    ),
 ) -> bool:
-    return not body.video_enabled and not body.live_enabled and not body.dynamic_enabled
+    return (
+        not body.video_enabled
+        and not body.live_enabled
+        and not body.dynamic_enabled
+        and not body.send_video_enabled
+    )
 
 
 async def _group_meta(group_id: str) -> dict:
@@ -209,6 +224,7 @@ async def update_group_policy(
             video_enabled=body.video_enabled,
             live_enabled=body.live_enabled,
             dynamic_enabled=body.dynamic_enabled,
+            send_video_enabled=body.send_video_enabled,
         )
     await svc.reload()
 
@@ -269,6 +285,7 @@ async def create_user_policy(
             video_enabled=body.video_enabled,
             live_enabled=body.live_enabled,
             dynamic_enabled=body.dynamic_enabled,
+            send_video_enabled=body.send_video_enabled,
             name=body.name,
         )
     await svc.reload()
@@ -300,6 +317,7 @@ async def update_user_policy(
             video_enabled=body.video_enabled,
             live_enabled=body.live_enabled,
             dynamic_enabled=body.dynamic_enabled,
+            send_video_enabled=body.send_video_enabled,
             name=body.name
             if body.name is not None
             else (existing.name if existing else None),

@@ -506,6 +506,7 @@ class ConfigService:
                 video_enabled=row.video_enabled,
                 live_enabled=row.live_enabled,
                 dynamic_enabled=row.dynamic_enabled,
+                send_video_enabled=row.send_video_enabled,
             )
             for row in rows
         }
@@ -520,6 +521,7 @@ class ConfigService:
                 video_enabled=row.video_enabled,
                 live_enabled=row.live_enabled,
                 dynamic_enabled=row.dynamic_enabled,
+                send_video_enabled=row.send_video_enabled,
                 name=row.name,
             )
             for row in rows
@@ -690,6 +692,7 @@ class ConfigService:
         video_enabled: bool,
         live_enabled: bool,
         dynamic_enabled: bool,
+        send_video_enabled: bool,
     ) -> None:
         gid = str(group_id).strip()
         async with get_session() as session:
@@ -699,6 +702,7 @@ class ConfigService:
                     row.video_enabled = video_enabled
                     row.live_enabled = live_enabled
                     row.dynamic_enabled = dynamic_enabled
+                    row.send_video_enabled = send_video_enabled
                 else:
                     session.add(
                         LinkParserGroupPolicy(
@@ -706,6 +710,7 @@ class ConfigService:
                             video_enabled=video_enabled,
                             live_enabled=live_enabled,
                             dynamic_enabled=dynamic_enabled,
+                            send_video_enabled=send_video_enabled,
                         )
                     )
 
@@ -724,6 +729,7 @@ class ConfigService:
         video_enabled: bool,
         live_enabled: bool,
         dynamic_enabled: bool,
+        send_video_enabled: bool,
         name: str | None = None,
     ) -> None:
         uid = str(user_id).strip()
@@ -734,6 +740,7 @@ class ConfigService:
                     row.video_enabled = video_enabled
                     row.live_enabled = live_enabled
                     row.dynamic_enabled = dynamic_enabled
+                    row.send_video_enabled = send_video_enabled
                     row.name = name
                 else:
                     session.add(
@@ -743,6 +750,7 @@ class ConfigService:
                             video_enabled=video_enabled,
                             live_enabled=live_enabled,
                             dynamic_enabled=dynamic_enabled,
+                            send_video_enabled=send_video_enabled,
                         )
                     )
 

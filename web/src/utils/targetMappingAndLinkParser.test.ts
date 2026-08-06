@@ -92,50 +92,108 @@ describe('linkParserPolicy utils', () => {
   it('buildPolicyPayload normalizes booleans and customized flag', () => {
     expect(
       buildPolicyPayload(
-        { video_enabled: false, live_enabled: false, dynamic_enabled: false },
+        {
+          video_enabled: false,
+          live_enabled: false,
+          dynamic_enabled: false,
+          send_video_enabled: false,
+        },
         { video_enabled: true },
       ),
     ).toEqual({
       video_enabled: true,
       live_enabled: false,
       dynamic_enabled: false,
+      send_video_enabled: false,
       customized: true,
     })
     expect(
       buildPolicyPayload(
-        { video_enabled: true, live_enabled: true, dynamic_enabled: false },
+        {
+          video_enabled: true,
+          live_enabled: true,
+          dynamic_enabled: false,
+          send_video_enabled: false,
+        },
         { dynamic_enabled: true },
       ),
     ).toEqual({
       video_enabled: true,
       live_enabled: true,
       dynamic_enabled: true,
+      send_video_enabled: false,
       customized: true,
     })
     expect(
       buildPolicyPayload(
-        { video_enabled: false, live_enabled: false, dynamic_enabled: false },
+        {
+          video_enabled: false,
+          live_enabled: false,
+          dynamic_enabled: false,
+          send_video_enabled: false,
+        },
         {},
       ),
     ).toEqual({
       video_enabled: false,
       live_enabled: false,
       dynamic_enabled: false,
+      send_video_enabled: false,
+      customized: false,
+    })
+  })
+
+  it('clears send_video when video_enabled is off', () => {
+    expect(
+      buildPolicyPayload(
+        {
+          video_enabled: true,
+          live_enabled: false,
+          dynamic_enabled: false,
+          send_video_enabled: true,
+        },
+        { video_enabled: false },
+      ),
+    ).toEqual({
+      video_enabled: false,
+      live_enabled: false,
+      dynamic_enabled: false,
+      send_video_enabled: false,
       customized: false,
     })
   })
 
   it('detects all enabled or all disabled policies', () => {
     const items = [
-      { video_enabled: true, live_enabled: true, dynamic_enabled: true },
-      { video_enabled: true, live_enabled: true, dynamic_enabled: true },
+      {
+        video_enabled: true,
+        live_enabled: true,
+        dynamic_enabled: true,
+        send_video_enabled: true,
+      },
+      {
+        video_enabled: true,
+        live_enabled: true,
+        dynamic_enabled: true,
+        send_video_enabled: true,
+      },
     ]
     expect(isAllPoliciesEnabled(items)).toBe(true)
     expect(isNoPoliciesEnabled(items)).toBe(false)
 
     const off = [
-      { video_enabled: false, live_enabled: false, dynamic_enabled: false },
-      { video_enabled: false, live_enabled: false, dynamic_enabled: false },
+      {
+        video_enabled: false,
+        live_enabled: false,
+        dynamic_enabled: false,
+        send_video_enabled: false,
+      },
+      {
+        video_enabled: false,
+        live_enabled: false,
+        dynamic_enabled: false,
+        send_video_enabled: false,
+      },
     ]
     expect(isAllPoliciesEnabled(off)).toBe(false)
     expect(isNoPoliciesEnabled(off)).toBe(true)
@@ -149,11 +207,13 @@ describe('linkParserPolicy utils', () => {
       video_enabled: true,
       live_enabled: true,
       dynamic_enabled: true,
+      send_video_enabled: true,
     })
     expect(buildToggleAllPayload(false)).toEqual({
       video_enabled: false,
       live_enabled: false,
       dynamic_enabled: false,
+      send_video_enabled: false,
     })
   })
 })

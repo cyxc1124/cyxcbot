@@ -27,6 +27,7 @@ class VideoInfo:
     coin_count: int = 0  # 投币数
     share_count: int = 0  # 分享数
     like_count: int = 0  # 点赞数
+    cid: int = 0  # 默认分 P 的 cid（下载用）
 
     @classmethod
     def from_api_data(cls, data: dict) -> "VideoInfo":
@@ -35,6 +36,10 @@ class VideoInfo:
         cover = data.get("pic", "")
         if cover and not cover.startswith("http"):
             cover = "https:" + cover
+
+        pages = data.get("pages") or []
+        page_cid = pages[0].get("cid", 0) if pages else 0
+        cid = int(data.get("cid") or page_cid or 0)
 
         return cls(
             aid=data.get("aid", 0),
@@ -57,6 +62,7 @@ class VideoInfo:
             coin_count=data.get("stat", {}).get("coin", 0),
             share_count=data.get("stat", {}).get("share", 0),
             like_count=data.get("stat", {}).get("like", 0),
+            cid=cid,
         )
 
     def get_video_url(self) -> str:
@@ -110,4 +116,5 @@ class VideoInfo:
             "coin_count": self.coin_count,
             "share_count": self.share_count,
             "like_count": self.like_count,
+            "cid": self.cid,
         }

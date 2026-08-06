@@ -14,6 +14,7 @@ class LinkParserScopePolicy:
     video_enabled: bool = False
     live_enabled: bool = False
     dynamic_enabled: bool = False
+    send_video_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class LinkParserGroupPolicyRecord:
     video_enabled: bool = False
     live_enabled: bool = False
     dynamic_enabled: bool = False
+    send_video_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -30,6 +32,7 @@ class LinkParserUserPolicyRecord:
     video_enabled: bool = False
     live_enabled: bool = False
     dynamic_enabled: bool = False
+    send_video_enabled: bool = False
     name: str | None = None
 
 
@@ -49,6 +52,7 @@ def resolve_link_parser_policy(
                     video_enabled=user_override.video_enabled,
                     live_enabled=user_override.live_enabled,
                     dynamic_enabled=user_override.dynamic_enabled,
+                    send_video_enabled=user_override.send_video_enabled,
                 )
         return LinkParserScopePolicy()
 
@@ -59,6 +63,7 @@ def resolve_link_parser_policy(
                 video_enabled=group_override.video_enabled,
                 live_enabled=group_override.live_enabled,
                 dynamic_enabled=group_override.dynamic_enabled,
+                send_video_enabled=group_override.send_video_enabled,
             )
 
     return LinkParserScopePolicy()

@@ -167,6 +167,7 @@ export function LinkParserUserPolicyTab() {
         video_enabled: payload.video_enabled,
         live_enabled: payload.live_enabled,
         dynamic_enabled: payload.dynamic_enabled,
+        send_video_enabled: payload.send_video_enabled,
       }),
     resetItem: resetLinkParserUserPolicy,
     toggleAllSuccessMessage: (enabled) =>

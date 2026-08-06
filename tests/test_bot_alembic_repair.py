@@ -333,3 +333,17 @@ def test_infer_revision_detects_custom_command_allowed_users_table() -> None:
         )
     assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "t0u1v2w3x4y5"
     engine.dispose()
+
+
+def test_infer_revision_detects_send_video_enabled_column() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE shared_db_linkparsergrouppolicy ("
+                "group_id TEXT PRIMARY KEY, "
+                "send_video_enabled BOOLEAN NOT NULL)"
+            )
+        )
+    assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "u1v2w3x4y5z6"
+    engine.dispose()

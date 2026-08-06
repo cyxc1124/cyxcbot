@@ -23,6 +23,7 @@ def test_resolve_group_live_only_excludes_dynamic() -> None:
                 video_enabled=False,
                 live_enabled=True,
                 dynamic_enabled=False,
+                send_video_enabled=False,
             )
         }
     )
@@ -31,6 +32,7 @@ def test_resolve_group_live_only_excludes_dynamic() -> None:
         video_enabled=False,
         live_enabled=True,
         dynamic_enabled=False,
+        send_video_enabled=False,
     )
 
 
@@ -47,3 +49,19 @@ def test_resolve_user_dynamic_only() -> None:
     assert scope.dynamic_enabled is True
     assert scope.video_enabled is False
     assert scope.live_enabled is False
+    assert scope.send_video_enabled is False
+
+
+def test_resolve_group_send_video_independent() -> None:
+    snap = _snapshot(
+        link_parser_group_policies={
+            "1": LinkParserGroupPolicyRecord(
+                group_id="1",
+                video_enabled=True,
+                send_video_enabled=True,
+            )
+        }
+    )
+    scope = resolve_link_parser_policy(snap, group_id="1")
+    assert scope.video_enabled is True
+    assert scope.send_video_enabled is True
