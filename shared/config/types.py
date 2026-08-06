@@ -21,6 +21,7 @@ from shared.config.message_templates import (
     LiveMessageTemplates,
 )
 from shared.config.rust_rcon import RustRconBindingRecord
+from shared.config.rust_rcon_custom import RustRconCustomCommandRecord
 from shared.config.rust_rcon_policy import (
     RustRconGroupPolicyRecord,
     RustRconUserPolicyRecord,
@@ -96,6 +97,9 @@ class AppConfigSnapshot:
         default_factory=lambda: list(DEFAULT_EXTRA_PREFIXES)
     )
     rust_rcon_bindings: List[RustRconBindingRecord] = field(default_factory=list)
+    rust_rcon_custom_commands: List[RustRconCustomCommandRecord] = field(
+        default_factory=list
+    )
     rust_rcon_group_policies: Dict[str, RustRconGroupPolicyRecord] = field(
         default_factory=dict
     )

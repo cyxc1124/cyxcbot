@@ -20,6 +20,7 @@ from shared.config.rust_rcon import (
     normalize_allowed_qq_ids,
     normalize_port,
 )
+from shared.config.rust_rcon_custom import alias_custom_command_conflict
 from shared.config.service import get_config_service
 from shared.db.models import RustRconBinding, RustRconBindingAllowedUser
 from shared.security.crypto import encrypt_value, mask_secret
@@ -91,6 +92,14 @@ def _ensure_alias_available(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"触发词「{alias}」已被其他 RCON 绑定使用",
             )
+
+    custom_conflict = alias_custom_command_conflict(
+        alias, snap.rust_rcon_custom_commands
+    )
+    if custom_conflict:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=custom_conflict
+        )
 
 
 @router.get("", response_model=list[RustRconBindingResponse])
