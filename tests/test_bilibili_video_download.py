@@ -8,11 +8,17 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from utils.bilibili_api.video_download import (
+    DEFAULT_MAX_BYTES,
     BilibiliVideoDownloadError,
     download_bilibili_video,
     pick_request_qn,
     select_dash_streams,
 )
+
+
+def test_max_bytes_matches_llbot_raw_file_ceiling() -> None:
+    """file:// 直读，上限对齐 LuckyLilliaBot SendElement.video 原始文件硬顶。"""
+    assert DEFAULT_MAX_BYTES == 1024 * 1024 * 1024
 
 
 def test_pick_request_qn_caps_to_prefer() -> None:

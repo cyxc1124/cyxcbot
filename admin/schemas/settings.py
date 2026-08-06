@@ -69,6 +69,9 @@ class SettingsResponse(BaseModel):
     command_aliases: dict[str, CommandAliasEntryModel] = Field(default_factory=dict)
     command_extra_prefixes: list[str] = Field(default_factory=list)
     command_prefixes: list[str] = Field(default_factory=list)
+    link_parser_shared_media_dir: str = ""
+    link_parser_shared_media_dir_default: str = ""
+    link_parser_shared_media_dir_resolved: str = ""
 
 
 class CookieTestResultResponse(BaseModel):
@@ -105,3 +108,4 @@ class SettingsUpdateRequest(BaseModel):
     nonebot_superusers: Optional[list[str]] = None
     command_aliases: Optional[dict[str, CommandAliasEntryModel]] = None
     command_extra_prefixes: Optional[list[str]] = None
+    link_parser_shared_media_dir: Optional[str] = Field(default=None, max_length=512)

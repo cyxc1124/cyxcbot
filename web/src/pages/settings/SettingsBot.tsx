@@ -31,6 +31,7 @@ export function SettingsBotPage() {
   const [saving, setSaving] = useState(false)
   const [superuserText, setSuperuserText] = useState('')
   const [statusCheckText, setStatusCheckText] = useState('')
+  const [sharedMediaDir, setSharedMediaDir] = useState('')
   const [syncedSettings, setSyncedSettings] = useState(settings)
 
   if (settings !== syncedSettings) {
@@ -38,6 +39,7 @@ export function SettingsBotPage() {
     if (settings) {
       setSuperuserText(formatQqInput(settings.nonebot_superusers))
       setStatusCheckText(formatQqInput(settings.status_check_allowed_qq))
+      setSharedMediaDir(settings.link_parser_shared_media_dir)
     }
   }
 
@@ -61,11 +63,13 @@ export function SettingsBotPage() {
       const updated = await patchSettings({
         nonebot_superusers: superusers,
         status_check_allowed_qq: statusCheck,
+        link_parser_shared_media_dir: sharedMediaDir.trim(),
       })
       setSettings(updated)
       setSuperuserText(formatQqInput(updated.nonebot_superusers))
       setStatusCheckText(formatQqInput(updated.status_check_allowed_qq))
-      showToast('success', '机器人权限已保存')
+      setSharedMediaDir(updated.link_parser_shared_media_dir)
+      showToast('success', '机器人设置已保存')
       await load()
     } catch (err) {
       showToast('error', formatApiError(err, '保存失败'))
@@ -125,6 +129,46 @@ export function SettingsBotPage() {
           />
           <p className="mt-2 text-xs text-muted-foreground">
             也可使用逗号、分号或空格分隔。无权限用户发送命令时机器人不会回复。
+          </p>
+        </div>
+      </div>
+
+      <div className="card space-y-4">
+        <div>
+          <h3 className="font-semibold text-foreground">链接解析共享媒体目录</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            B 站「发送视频」会把文件写入此目录，并以{' '}
+            <code className="font-mono text-xs">file://</code>{' '}
+            交给协议端读取（不再走 base64）。分离部署时请把机器草与协议端 /
+            QQ 数据目录挂到同一路径。留空则使用平台默认。
+          </p>
+        </div>
+
+        <div>
+          <label className="label" htmlFor="link_parser_shared_media_dir">
+            目录路径
+          </label>
+          <input
+            id="link_parser_shared_media_dir"
+            className="input font-mono text-sm"
+            placeholder={
+              settings?.link_parser_shared_media_dir_default ||
+              '/root/.config/QQ（Linux）或 data/tmp（Windows）'
+            }
+            value={sharedMediaDir}
+            disabled={formDisabled || saving}
+            onChange={(e) => setSharedMediaDir(e.target.value)}
+          />
+          <p className="mt-2 text-xs text-muted-foreground">
+            当前生效：
+            <code className="ml-1 font-mono">
+              {settings?.link_parser_shared_media_dir_resolved ||
+                settings?.link_parser_shared_media_dir_default ||
+                '—'}
+            </code>
+            。默认 Linux{' '}
+            <code className="font-mono">/root/.config/QQ</code>，Windows{' '}
+            <code className="font-mono">data/tmp</code>。
           </p>
         </div>
       </div>

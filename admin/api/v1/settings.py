@@ -124,6 +124,11 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         updates["command_extra_prefixes"] = json.dumps(
             normalize_extra_prefixes(body.command_extra_prefixes), ensure_ascii=False
         )
+    if body.link_parser_shared_media_dir is not None:
+        raw = body.link_parser_shared_media_dir.strip()
+        if "\x00" in raw:
+            raise HTTPException(status_code=400, detail="共享媒体目录路径无效")
+        updates["link_parser_shared_media_dir"] = raw
 
     if updates:
         await svc.set_settings(updates)

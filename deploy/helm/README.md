@@ -103,6 +103,30 @@ helm uninstall cyxcbot
 | `persistence.storageClass` | StorageClass，留空使用集群默认 |
 | `persistence.existingClaim` | 复用已有 PVC 名称 |
 
+### 共享媒体目录（可选）
+
+B 站链接解析「发送视频」写入共享目录后以 `file://` 交给协议端读取（不再 base64）。分离部署时须让机器草与 OneBot 协议端 / QQ 客户端数据目录 **看到同一路径**。
+
+推荐复用协议端已挂载的 QQ 数据卷（常见挂载点 `/root/.config/QQ`）：
+
+```yaml
+sharedMedia:
+  enabled: true
+  mountPath: /root/.config/QQ
+  existingClaim: <qq-data-pvc>   # kubectl get pvc；与协议端共用同一 claim
+```
+
+| 字段 | 说明 |
+|------|------|
+| `sharedMedia.enabled` | 是否挂载共享卷，默认 `false` |
+| `sharedMedia.mountPath` | 容器内路径，默认 `/root/.config/QQ`（与 Web Admin 默认一致） |
+| `sharedMedia.existingClaim` | **推荐**：复用协议端 QQ 数据 PVC |
+| `sharedMedia.hostPath` | 节点 / NAS 本地路径；填写后优先于 PVC |
+| `sharedMedia.accessMode` | 自动建 PVC 时的访问模式，默认 `ReadWriteMany` |
+| `sharedMedia.size` | 自动建 PVC 大小，默认 `5Gi` |
+
+Web Admin → 设置 → 机器人 →「链接解析共享媒体目录」留空即可（Linux 默认 `/root/.config/QQ`）。跨 Pod 共享时 PVC 须为 `ReadWriteMany`。
+
 ### 资源与健康检查
 
 - `resources`：建议为 Playwright 动态截图预留至少 `512Mi` 内存 request、`2Gi` limit

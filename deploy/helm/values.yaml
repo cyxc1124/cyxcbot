@@ -76,6 +76,24 @@ persistence:
   size: 1Gi
   existingClaim: ""        # 复用已有 PVC 名称，填写后跳过 PVC 创建
 
+# 与协议端 / QQ 共享的媒体目录（B 站链接解析发视频用 file://，须同路径可见）
+#
+# 分离部署推荐：复用协议端已挂载的 QQ 数据 PVC（常见路径 /root/.config/QQ）：
+#   sharedMedia:
+#     enabled: true
+#     mountPath: /root/.config/QQ
+#     existingClaim: <qq-data-pvc>
+# Web Admin「机器人 → 链接解析共享媒体目录」留空即可（默认同路径）。
+sharedMedia:
+  enabled: false
+  mountPath: /root/.config/QQ
+  # 三选一：existingClaim（推荐复用协议端 QQ 数据卷）/ hostPath / 自动 PVC
+  hostPath: ""             # 节点本地或 NAS bind；与 existingClaim 二选一
+  existingClaim: ""        # 复用协议端 QQ 数据 PVC
+  storageClass: ""
+  accessMode: ReadWriteMany  # 自动建 PVC 时使用；跨 Deployment 共享须 RWX
+  size: 5Gi
+
 # 容器资源限制（Playwright 截图建议 memory limit ≥ 2Gi）
 resources:
   limits:

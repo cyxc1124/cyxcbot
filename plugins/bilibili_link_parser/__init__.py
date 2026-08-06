@@ -25,6 +25,7 @@ from shared.config.link_parser_policy import (
 )
 from shared.config.message_templates import LinkMessageTemplates
 from shared.config.service import get_config_service
+from shared.config.shared_media import resolve_shared_media_dir
 from utils.bilibili_api import (
     BilibiliVideoDownloadError,
     DynamicFetcher,
@@ -58,7 +59,7 @@ __plugin_meta__ = PluginMetadata(
 group_link_parser = on_message(priority=4, block=False)
 private_link_parser = on_message(priority=4, block=False)
 
-# ponytail: 与抖音链接解析同构——流水线限临时文件占盘；编码/发送串行控 base64 内存。
+# ponytail: 流水线限临时文件占盘；编码/发送串行避免并发 ffmpeg + 同目录写冲突。
 _PIPELINE_LIMIT = 2
 _PIPELINE_SEM = asyncio.Semaphore(_PIPELINE_LIMIT)
 _ENCODE_SEND_SEM = asyncio.Semaphore(1)
@@ -94,6 +95,7 @@ async def _maybe_download_video(
     *,
     enabled: bool,
     cookie: str | None,
+    output_dir: Path,
 ) -> Path | None:
     if not enabled:
         return None
@@ -110,6 +112,7 @@ async def _maybe_download_video(
             bvid=video.bvid,
             cid=video.cid,
             cookie=cookie,
+            output_dir=output_dir,
         )
     except BilibiliVideoDownloadError as exc:
         logger.warning("B 站视频下载失败，降级为封面+文字: {}", exc)
@@ -129,6 +132,10 @@ async def _resolve_reply(
     cookie = config.bilibili_cookie or None
     if not cookie:
         logger.warning("B 站链接解析：未配置 Cookie，直播接口可能返回 -352 或解析失败")
+
+    media_dir = resolve_shared_media_dir(
+        get_config_service().get_snapshot().link_parser_shared_media_dir
+    )
 
     await video_api_manager.init(cookie)
     await live_api_manager.init(cookie)
@@ -153,9 +160,9 @@ async def _resolve_reply(
                         video,
                         enabled=scope.send_video_enabled,
                         cookie=cookie,
+                        output_dir=media_dir,
                     )
                     if video_path is not None:
-                        # 延迟到编码锁内 to_thread 构建，避免 read_bytes 阻塞事件循环
                         return _ResolvedReply(
                             video=video,
                             video_path=video_path,
@@ -246,12 +253,12 @@ def _message_id_of(send_result: object) -> object:
 
 
 def _cleanup_temp(file_path: Path | None) -> None:
+    """发送后删除视频文件；共享目录本身不删（仅清理偶然的 bilibili_* 临时目录）。"""
     if file_path is None:
         return
     try:
         parent = file_path.parent
-        if file_path.exists():
-            file_path.unlink(missing_ok=True)
+        file_path.unlink(missing_ok=True)
         if parent.name.startswith("bilibili_") and parent.exists():
             shutil.rmtree(parent, ignore_errors=True)
     except Exception:

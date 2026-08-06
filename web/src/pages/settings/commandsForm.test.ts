@@ -31,6 +31,9 @@ function baseSettings(commandAliases: Settings['command_aliases']): Settings {
     command_aliases: commandAliases,
     command_extra_prefixes: [],
     command_prefixes: [],
+    link_parser_shared_media_dir: '',
+    link_parser_shared_media_dir_default: '/root/.config/QQ',
+    link_parser_shared_media_dir_resolved: '/root/.config/QQ',
   }
 }
 

@@ -44,6 +44,10 @@ from shared.config.rust_rcon_policy import (
     RustRconGroupPolicyRecord,
     RustRconUserPolicyRecord,
 )
+from shared.config.shared_media import (
+    default_shared_media_dir,
+    resolve_shared_media_dir,
+)
 from shared.config.types import AppConfigSnapshot
 from shared.db.models import (
     DouyinLinkParserGroupPolicy,
@@ -100,6 +104,8 @@ SETTING_KEYS = {
     "rust_checkin_online_bonus_points": ("50", int),
     "rust_steam_bind_bonus_points": ("200", int),
     "rust_checkin_rcon_binding_id": ("0", int),
+    # 空字符串 = 运行时按平台默认（Linux /root/.config/QQ，Windows data/tmp）
+    "link_parser_shared_media_dir": ("", str),
 }
 
 for key, default in MESSAGE_TEMPLATE_KEYS.items():
@@ -286,6 +292,10 @@ class ConfigService:
             rust_checkin_rcon_binding_id=settings.get(
                 "rust_checkin_rcon_binding_id", 0
             ),
+            link_parser_shared_media_dir=settings.get(
+                "link_parser_shared_media_dir", ""
+            )
+            or "",
         )
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
         warn_rust_rcon_command_alias_conflicts(
@@ -880,6 +890,11 @@ class ConfigService:
             else serialize_command_aliases(normalize_command_aliases({})),
             "command_extra_prefixes": list(snap.command_extra_prefixes),
             "command_prefixes": sorted(command_prefixes()),
+            "link_parser_shared_media_dir": snap.link_parser_shared_media_dir,
+            "link_parser_shared_media_dir_default": str(default_shared_media_dir()),
+            "link_parser_shared_media_dir_resolved": str(
+                resolve_shared_media_dir(snap.link_parser_shared_media_dir)
+            ),
         }
 
 

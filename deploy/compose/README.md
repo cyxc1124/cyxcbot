@@ -28,9 +28,21 @@ OneBot 协议端（如 NapCat）反向 WebSocket 连接 **8080** 端口。
 |------|------|
 | `image` | 镜像与版本 tag |
 | `ports` | 宿主机端口映射（默认 8080 / 8081） |
-| `volumes` | 数据目录（默认 `./data` → `/app/data`） |
+| `volumes` | 数据目录（默认 `./data` → `/app/data`）；可选再挂 NAS 共享媒体目录 |
 | `environment.WEB_SECRET_KEY` | **必填**，由 `${WEB_SECRET_KEY}` 注入；JWT 签名与 Cookie 加密密钥 |
 | `environment.*` | 其他启动级配置，见根目录 [`env.example`](../../env.example) |
+
+### 与协议端共享媒体目录
+
+B 站「发送视频」会把文件写到共享目录，协议端用 `file://` 直接读取（不再 base64）。分离部署时请让两侧挂到**同一路径**（常见为 QQ 客户端数据目录）：
+
+```yaml
+volumes:
+  - ./data:/app/data
+  - /path/to/shared/QQ:/root/.config/QQ
+```
+
+Linux / Docker 默认目录为 `/root/.config/QQ`；Windows 本机默认 `data/tmp`（已落在 `./data` 卷内）。可在 Web Admin → 设置 → 机器人 中修改。K8s 部署见 Helm README 的 `sharedMedia`。
 
 ## 常用命令
 

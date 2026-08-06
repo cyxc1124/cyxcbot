@@ -1,0 +1,17 @@
+{{- if and .Values.sharedMedia.enabled (not .Values.sharedMedia.hostPath) (not .Values.sharedMedia.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "cyxcbot.fullname" . }}-shared-media
+  labels:
+    {{- include "cyxcbot.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.sharedMedia.accessMode | quote }}
+  {{- with .Values.sharedMedia.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.sharedMedia.size | quote }}
+{{- end }}

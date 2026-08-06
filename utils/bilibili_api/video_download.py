@@ -22,10 +22,9 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 FNVAL_DASH = 4048
-# 默认取 720P：群聊观感够用；体积仍受协议端硬顶约束（见下）
+# 默认取 720P：群聊观感够用；体积上限对齐协议端原始文件硬顶（file:// 直读，无 base64）。
 DEFAULT_PREFER_QN = 64
-# LuckyLilliaBot ``SendElement.video`` 硬顶为原始文件 1024MB（entities.ts）；
-# 本仓库抖音路径的 70MB 是按 NapCat ~100MiB base64 载荷估的，对本协议端不适用。
+# LuckyLilliaBot ``SendElement.video`` 硬顶为原始文件 1024MB（entities.ts）。
 DEFAULT_MAX_BYTES = 1024 * 1024 * 1024
 
 
@@ -246,11 +245,12 @@ async def download_bilibili_video(
     max_bytes: int = DEFAULT_MAX_BYTES,
     output_dir: Path | None = None,
 ) -> Path:
-    """下载单 P 视频为本地 mp4，调用方负责清理返回路径及其父目录。
+    """下载单 P 视频为本地 mp4，调用方负责清理返回的文件路径。
 
-    ``max_bytes`` 默认对齐 LuckyLilliaBot 视频硬顶（1024MB 原始文件），
-    不是抖音路径沿用的 NapCat 70MB 估计值。
-    失败时会清理本函数创建的临时目录，避免泄漏。
+    ``max_bytes`` 默认对齐 LuckyLilliaBot 视频硬顶（1024MB 原始文件）。
+    超限时抛错，由链接解析降级为封面+文字。
+    ``output_dir`` 为空时使用系统临时目录；失败会清理该临时目录。
+    ``output_dir`` 非空时写入共享目录（不删目录本身），失败仅删除产物文件。
     """
     if not bvid or not cid:
         raise BilibiliVideoDownloadError("缺少 bvid 或 cid")
@@ -276,6 +276,7 @@ async def download_bilibili_video(
             max_bytes=max_bytes,
         )
     except Exception:
+        final.unlink(missing_ok=True)
         _cleanup_work_dir(work, owned=owned_work)
         raise
 
@@ -327,6 +328,9 @@ async def _download_bilibili_video_into(
                 session, play, final, cookie=cookie, max_bytes=max_bytes
             )
             if durl_path is not None:
+                if durl_path.stat().st_size > max_bytes:
+                    durl_path.unlink(missing_ok=True)
+                    raise BilibiliVideoDownloadError("视频超过发送大小上限")
                 return durl_path
         except BilibiliVideoDownloadError:
             pass
