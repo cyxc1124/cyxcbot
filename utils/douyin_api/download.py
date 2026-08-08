@@ -17,9 +17,8 @@ _DOWNLOAD_TOTAL_TIMEOUT_S = 300
 _DOWNLOAD_CONNECT_TIMEOUT_S = 15
 _DOWNLOAD_READ_STALL_TIMEOUT_S = 60
 
-# 原始文件上限（下载后经 base64:// 走反向 WS）。NapCat 默认载荷约 100 MiB，
-# base64 膨胀约 4/3：80 MiB → ~106.7 MiB 会顶穿；70 MiB → ~93.3 MiB，留 JSON 帧余量。
-DEFAULT_MAX_BYTES = 70 * 1024 * 1024
+# 原始文件上限：file:// 直读，对齐 LuckyLilliaBot SendElement.video 硬顶（1024MB）。
+DEFAULT_MAX_BYTES = 1024 * 1024 * 1024
 
 
 def _complete_content_range_size(response_headers) -> Optional[int]:

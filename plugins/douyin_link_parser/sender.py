@@ -24,13 +24,11 @@ def _video_parts(file_path: Path) -> Iterable[SegmentPart]:
     if not file_path.exists():
         return []
     try:
-        # 传 bytes → OneBot f2s 转为 base64://。Docker/分离协议端读不到 bot 本地 file://
-        # （ActionFailed retcode=1200「路径不存在」）。调用方应 to_thread，编码/发送由信号量串行化。
-        data = file_path.read_bytes()
-        if not data:
+        if file_path.stat().st_size <= 0:
             logger.warning("抖音视频文件为空: {}", file_path)
             return []
-        return [MessageSegment.video(data)]
+        # 传 Path → file://；协议端须与 bot 同路径可见（共享媒体目录）。
+        return [MessageSegment.video(file_path.resolve())]
     except Exception:
         logger.opt(exception=True).warning("添加抖音视频段失败: {}", file_path)
         return []
@@ -40,11 +38,10 @@ def _image_parts(file_path: Path) -> Iterable[SegmentPart]:
     if not file_path.exists():
         return []
     try:
-        data = file_path.read_bytes()
-        if not data:
+        if file_path.stat().st_size <= 0:
             logger.warning("抖音图片文件为空: {}", file_path)
             return []
-        return [MessageSegment.image(data)]
+        return [MessageSegment.image(file_path.resolve())]
     except Exception:
         logger.opt(exception=True).warning("添加抖音图片段失败: {}", file_path)
         return []

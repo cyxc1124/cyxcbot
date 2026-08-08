@@ -34,7 +34,7 @@ OneBot 协议端（如 NapCat）反向 WebSocket 连接 **8080** 端口。
 
 ### 与协议端共享媒体目录
 
-B 站「发送视频」会把文件写到共享目录，协议端用 `file://` 直接读取（不再 base64）。分离部署时请让两侧挂到**同一路径**（常见为 QQ 客户端数据目录）：
+B 站 / 抖音链接解析发视频会把文件写到共享目录，协议端用 `file://` 直接读取（不再 base64）。分离部署时请让两侧挂到**同一路径**（常见为 QQ 客户端数据目录）：
 
 ```yaml
 volumes:
@@ -42,7 +42,7 @@ volumes:
   - /path/to/shared/QQ:/root/.config/QQ
 ```
 
-Linux / Docker 默认写入 `/root/.config/QQ/tmp`（卷仍挂 QQ 数据根目录）；Windows / macOS 本机默认 `data/tmp`（已落在 `./data` 卷内）。可在 Web Admin → 设置 → 机器人 中修改。K8s 部署见 Helm README 的 `sharedMedia`。
+默认 `data/tmp`。与 LLBot 共用 QQ 数据持久化时，在 Web Admin 设为 `/root/.config/QQ/tmp`（卷挂 QQ 数据根）。K8s 见 Helm README 的 `sharedMedia`。
 
 ## 常用命令
 

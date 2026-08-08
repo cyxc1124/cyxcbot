@@ -8,7 +8,6 @@ Live 图以视频消息发送。
 from __future__ import annotations
 
 import asyncio
-import shutil
 from pathlib import Path
 
 from nonebot import get_driver, on_message
@@ -19,6 +18,10 @@ from nonebot.plugin import PluginMetadata
 
 from shared.config.douyin_link_parser_policy import resolve_douyin_link_parser_policy
 from shared.config.service import get_config_service
+from shared.config.shared_media import (
+    chmod_shared_media_file,
+    ensure_shared_media_dir,
+)
 from utils.douyin_api import (
     DouyinResolveError,
     extract_douyin_urls,
@@ -42,11 +45,11 @@ __plugin_meta__ = PluginMetadata(
 group_douyin_link_parser = on_message(priority=4, block=False)
 private_douyin_link_parser = on_message(priority=4, block=False)
 
-# ponytail: 流水线准入限制临时文件占盘（下载可并行到上限）；编码/发送另串行化
-# 控 base64 内存。CDN 慢只占准入名额，不拖死已下完的发送。升级：共享卷 file://。
+# ponytail: 流水线准入限制共享目录临时文件占盘（下载可并行到上限）；发送另串行化，
+# 避免协议端并发读大文件。CDN 慢只占准入名额，不拖死已下完的发送。
 _PIPELINE_LIMIT = 2
 _PIPELINE_SEM = asyncio.Semaphore(_PIPELINE_LIMIT)
-_ENCODE_SEND_SEM = asyncio.Semaphore(1)
+_SEND_SEM = asyncio.Semaphore(1)
 
 
 async def _handle_douyin_link_message(
@@ -103,15 +106,22 @@ async def _download_and_reply(
 ) -> None:
     result = None
     try:
-        # CDN 可能长时间超时；不放在编码锁内（仍占流水线名额，限制临时文件数）
-        result = await resolve_and_download(message_text, config.douyin_cookie)
-        if _ENCODE_SEND_SEM.locked():
-            logger.info("抖音链接解析：等待前序编码/发送完成 user={}", event.user_id)
-        async with _ENCODE_SEND_SEM:
-            # read_bytes + f2s(base64) 是同步 CPU/IO，挪出事件循环
-            reply = await asyncio.to_thread(
-                build_douyin_link_message, result, config.message_templates
-            )
+        # 与 B 站一致：媒体扁平写入共享根目录（无 douyin_* 子目录）。
+        media_dir = ensure_shared_media_dir(
+            get_config_service().get_snapshot().link_parser_shared_media_dir
+        )
+        # CDN 可能长时间超时；不放在发送锁内（仍占流水线名额，限制临时文件数）
+        result = await resolve_and_download(
+            message_text, config.douyin_cookie, tmp_dir=media_dir
+        )
+        for item in result.items or ():
+            chmod_shared_media_file(item.file_path)
+        if result.file_path:
+            chmod_shared_media_file(result.file_path)
+        if _SEND_SEM.locked():
+            logger.info("抖音链接解析：等待前序发送完成 user={}", event.user_id)
+        async with _SEND_SEM:
+            reply = build_douyin_link_message(result, config.message_templates)
             # 含 video 时拆成媒体 + 文案两条：同条混排时 QQ 常只显示视频
             batches = reply_batches(reply)
             send_results: list[object] = []
@@ -166,9 +176,9 @@ async def _download_and_reply(
         logger.opt(exception=True).error("抖音链接解析处理异常")
     finally:
         # send_* 返回有效 message_id 表示协议端已接受，可立即清理；
-        # 失败路径同样清理，避免临时目录泄漏。
+        # 失败路径同样清理，避免临时文件泄漏（共享根目录本身不删）。
         if result is not None:
-            _cleanup_temp(result.file_path)
+            _cleanup_result_files(result)
 
 
 def _message_id_of(send_result: object) -> object:
@@ -177,16 +187,17 @@ def _message_id_of(send_result: object) -> object:
     return getattr(send_result, "message_id", send_result)
 
 
-def _cleanup_temp(file_path: Path) -> None:
-    try:
-        parent = file_path.parent
-        if file_path.exists():
-            file_path.unlink(missing_ok=True)
-        # 仅清理我们创建的临时目录
-        if parent.name.startswith("douyin_") and parent.exists():
-            shutil.rmtree(parent, ignore_errors=True)
-    except Exception:
-        logger.opt(exception=True).debug("清理抖音临时文件失败: {}", file_path)
+def _cleanup_result_files(result) -> None:
+    paths: list[Path] = []
+    if result.items:
+        paths.extend(item.file_path for item in result.items)
+    elif result.file_path:
+        paths.append(result.file_path)
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:
+            logger.opt(exception=True).debug("清理抖音临时文件失败: {}", path)
 
 
 @group_douyin_link_parser.handle()
