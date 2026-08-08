@@ -104,13 +104,14 @@ async def _download_and_reply(
     message_text: str,
 ) -> None:
     result = None
-    media_dir = resolve_shared_media_dir(
-        get_config_service().get_snapshot().link_parser_shared_media_dir
-    )
-    media_dir.mkdir(parents=True, exist_ok=True)
-    # 落在共享目录下的唯一子目录，协议端可经同一挂载路径 file:// 读取。
-    work_dir = Path(tempfile.mkdtemp(prefix="douyin_", dir=media_dir))
+    work_dir: Path | None = None
     try:
+        media_dir = resolve_shared_media_dir(
+            get_config_service().get_snapshot().link_parser_shared_media_dir
+        )
+        media_dir.mkdir(parents=True, exist_ok=True)
+        # 落在共享目录下的唯一子目录，协议端可经同一挂载路径 file:// 读取。
+        work_dir = Path(tempfile.mkdtemp(prefix="douyin_", dir=media_dir))
         # CDN 可能长时间超时；不放在发送锁内（仍占流水线名额，限制临时文件数）
         result = await resolve_and_download(
             message_text, config.douyin_cookie, tmp_dir=work_dir
@@ -176,7 +177,7 @@ async def _download_and_reply(
         # 失败路径同样清理，避免临时目录泄漏。
         if result is not None:
             _cleanup_temp(result.file_path)
-        elif work_dir.exists():
+        elif work_dir is not None and work_dir.exists():
             shutil.rmtree(work_dir, ignore_errors=True)
 
 

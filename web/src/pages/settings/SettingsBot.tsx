@@ -166,9 +166,10 @@ export function SettingsBotPage() {
                 settings?.link_parser_shared_media_dir_default ||
                 '—'}
             </code>
-            。默认 Linux{' '}
-            <code className="font-mono">/root/.config/QQ/tmp</code>，Windows /
-            macOS <code className="font-mono">data/tmp</code>
+            。默认：Linux 在{' '}
+            <code className="font-mono">/root/.config/QQ/tmp</code>{' '}
+            可写时用该路径，否则与 Windows / macOS 一样用{' '}
+            <code className="font-mono">data/tmp</code>
             。K8s / Docker 仍挂载 QQ 数据根目录，文件写入其下 tmp。
           </p>
         </div>

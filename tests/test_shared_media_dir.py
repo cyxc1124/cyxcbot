@@ -11,9 +11,20 @@ from shared.config.shared_media import (
 )
 
 
-def test_default_linux_path() -> None:
-    with patch("shared.config.shared_media.sys.platform", "linux"):
+def test_default_linux_uses_qq_tmp_when_writable() -> None:
+    with (
+        patch("shared.config.shared_media.sys.platform", "linux"),
+        patch("shared.config.shared_media._linux_qq_tmp_usable", return_value=True),
+    ):
         assert default_shared_media_dir() == Path("/root/.config/QQ") / "tmp"
+
+
+def test_default_linux_falls_back_to_data_tmp_when_not_writable() -> None:
+    with (
+        patch("shared.config.shared_media.sys.platform", "linux"),
+        patch("shared.config.shared_media._linux_qq_tmp_usable", return_value=False),
+    ):
+        assert default_shared_media_dir() == Path("data") / "tmp"
 
 
 def test_default_windows_and_macos_use_data_tmp() -> None:
@@ -24,7 +35,10 @@ def test_default_windows_and_macos_use_data_tmp() -> None:
 
 
 def test_resolve_empty_uses_platform_default() -> None:
-    with patch("shared.config.shared_media.sys.platform", "linux"):
+    with (
+        patch("shared.config.shared_media.sys.platform", "linux"),
+        patch("shared.config.shared_media._linux_qq_tmp_usable", return_value=True),
+    ):
         assert resolve_shared_media_dir("") == Path("/root/.config/QQ") / "tmp"
         assert resolve_shared_media_dir("  ") == Path("/root/.config/QQ") / "tmp"
     with patch("shared.config.shared_media.sys.platform", "darwin"):

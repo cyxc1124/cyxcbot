@@ -125,7 +125,7 @@ sharedMedia:
 | `sharedMedia.accessMode` | 自动建 PVC 时的访问模式，默认 `ReadWriteMany` |
 | `sharedMedia.size` | 自动建 PVC 大小，默认 `5Gi` |
 
-Web Admin → 设置 → 机器人 →「链接解析共享媒体目录」留空即可（Linux 默认 `/root/.config/QQ/tmp`，Windows / macOS 默认 `data/tmp`）。跨 Pod 共享时 PVC 须为 `ReadWriteMany`。
+Web Admin → 设置 → 机器人 →「链接解析共享媒体目录」留空即可（Linux 在 `/root/.config/QQ/tmp` 可写时用该路径，否则与 Windows / macOS 一样默认 `data/tmp`）。跨 Pod 共享时 PVC 须为 `ReadWriteMany`。
 
 ### 资源与健康检查
 
