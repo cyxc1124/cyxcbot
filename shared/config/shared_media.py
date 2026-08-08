@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 # 通用默认：机器草工作目录下（Compose/Helm 已持久化 /app/data）。
@@ -10,8 +9,9 @@ from pathlib import Path
 # （常见为 /root/.config/QQ/tmp，卷仍挂 QQ 数据根）。
 _DEFAULT = Path("data") / "tmp"
 
-# 跨 UID 协议端需目录可遍历（execute）；mkdtemp 默认 0700 会挡读。
+# 新建共享根目录时的默认权限；已存在目录不改（避免扒掉 QQ tmp 组写）。
 _SHARED_DIR_MODE = 0o755
+# 下载产物尽量对跨 UID 协议端可读。
 _SHARED_FILE_MODE = 0o644
 
 
@@ -37,8 +37,7 @@ def _chmod_best_effort(path: Path, mode: int) -> None:
 def ensure_shared_media_dir(configured: str | None) -> Path:
     """解析并创建共享根目录。
 
-    仅对**新创建**的目录设 0755；已存在目录（如协议端 QQ tmp 的 0770）不改权限，
-    避免扒掉组写导致协议端无法再写自己的临时文件。
+    仅对**新创建**的目录设 0755；已存在目录（如协议端 QQ tmp 的 0770）不改权限。
     """
     path = resolve_shared_media_dir(configured)
     existed = path.is_dir()
@@ -46,13 +45,6 @@ def ensure_shared_media_dir(configured: str | None) -> Path:
     if not existed:
         _chmod_best_effort(path, _SHARED_DIR_MODE)
     return path
-
-
-def make_shared_workdir(media_dir: Path, *, prefix: str) -> Path:
-    """在共享根下建临时子目录（纠正 mkdtemp 的 0700）。"""
-    work = Path(tempfile.mkdtemp(prefix=prefix, dir=media_dir))
-    _chmod_best_effort(work, _SHARED_DIR_MODE)
-    return work
 
 
 def chmod_shared_media_file(path: Path) -> None:

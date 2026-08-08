@@ -105,7 +105,6 @@ async def test_resolve_keeps_temp_on_success_for_caller_cleanup(tmp_path: Path):
     }
     work_dir = tmp_path / "caller_owned"
     work_dir.mkdir()
-    save_path = work_dir / "1234567890.mp4"
 
     async def fake_download(url, path, session, **kwargs):
         path.write_bytes(b"fake-mp4")
@@ -134,11 +133,14 @@ async def test_resolve_keeps_temp_on_success_for_caller_cleanup(tmp_path: Path):
             tmp_dir=work_dir,
         )
 
-    assert result.file_path == save_path
     assert result.content_type == "video"
     assert len(result.items) == 1
     assert result.items[0].kind == "video"
-    assert save_path.exists()
+    assert result.file_path == result.items[0].file_path
+    assert result.file_path.parent == work_dir
+    assert result.file_path.name.startswith("douyin_1234567890_")
+    assert result.file_path.suffix == ".mp4"
+    assert result.file_path.exists()
     assert work_dir.exists()
 
 

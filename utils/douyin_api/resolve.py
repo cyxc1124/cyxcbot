@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -113,13 +114,14 @@ async def _download_video(
     aweme_id: str,
     work_dir: Path,
     *,
+    file_stem: str,
     max_bytes: int,
 ) -> list[DouyinMediaItem]:
     candidates = build_video_url_candidates(client, detail)
     if not candidates:
         raise DouyinResolveError("未找到可下载的视频地址")
 
-    save_path = work_dir / f"{aweme_id}.mp4"
+    save_path = work_dir / f"{file_stem}.mp4"
     session = await client.get_session()
     for url, headers in candidates:
         ok = await download_file(
@@ -145,6 +147,7 @@ async def _download_album(
     aweme_id: str,
     work_dir: Path,
     *,
+    file_stem: str,
     max_bytes: int,
 ) -> list[DouyinMediaItem]:
     album_urls = extract_album_urls(detail)
@@ -156,7 +159,7 @@ async def _download_album(
     items: list[DouyinMediaItem] = []
     for index, media in enumerate(album_urls):
         ext = guess_media_extension(media.url, kind=media.kind)
-        save_path = work_dir / f"{aweme_id}_{index:02d}{ext}"
+        save_path = work_dir / f"{file_stem}_{index:02d}{ext}"
         ok = await download_file(
             media.url,
             save_path,
@@ -236,23 +239,35 @@ async def resolve_and_download(
         kind = get_content_type(detail)
         content_type: ContentTypeLabel = "album" if kind == "image" else "video"
 
-        # 自建临时目录时，失败路径必须清理：插件侧 finally 仅在拿到 result 后清理，
-        # 全部候选下载失败会抛 DouyinResolveError，否则 douyin_* 目录会永久泄漏占盘。
+        # tmp_dir 为空时自建系统临时目录（失败整目录删）；非空时写入调用方目录
+        # （与 B 站一样扁平落盘，文件名带 uuid，避免共享根下并发冲突）。
         owned_temp = tmp_dir is None
         work_dir = (
             Path(tmp_dir) if tmp_dir else Path(tempfile.mkdtemp(prefix="douyin_"))
         )
         work_dir.mkdir(parents=True, exist_ok=True)
+        file_stem = f"douyin_{aweme_id}_{uuid.uuid4().hex[:8]}"
+        succeeded = False
         try:
             if content_type == "album":
                 items = await _download_album(
-                    client, detail, aweme_id, work_dir, max_bytes=max_bytes
+                    client,
+                    detail,
+                    aweme_id,
+                    work_dir,
+                    file_stem=file_stem,
+                    max_bytes=max_bytes,
                 )
             else:
                 items = await _download_video(
-                    client, detail, aweme_id, work_dir, max_bytes=max_bytes
+                    client,
+                    detail,
+                    aweme_id,
+                    work_dir,
+                    file_stem=file_stem,
+                    max_bytes=max_bytes,
                 )
-            owned_temp = False  # 交由调用方（插件 finally）清理
+            succeeded = True
             return _result(
                 aweme_id=aweme_id,
                 detail=detail,
@@ -261,5 +276,8 @@ async def resolve_and_download(
                 items=items,
             )
         finally:
-            if owned_temp:
+            if owned_temp and not succeeded:
                 shutil.rmtree(work_dir, ignore_errors=True)
+            elif not owned_temp and not succeeded:
+                for path in work_dir.glob(f"{file_stem}*"):
+                    path.unlink(missing_ok=True)

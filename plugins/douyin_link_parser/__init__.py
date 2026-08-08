@@ -8,7 +8,6 @@ Live 图以视频消息发送。
 from __future__ import annotations
 
 import asyncio
-import shutil
 from pathlib import Path
 
 from nonebot import get_driver, on_message
@@ -22,7 +21,6 @@ from shared.config.service import get_config_service
 from shared.config.shared_media import (
     chmod_shared_media_file,
     ensure_shared_media_dir,
-    make_shared_workdir,
 )
 from utils.douyin_api import (
     DouyinResolveError,
@@ -107,16 +105,14 @@ async def _download_and_reply(
     message_text: str,
 ) -> None:
     result = None
-    work_dir: Path | None = None
     try:
+        # 与 B 站一致：媒体扁平写入共享根目录（无 douyin_* 子目录）。
         media_dir = ensure_shared_media_dir(
             get_config_service().get_snapshot().link_parser_shared_media_dir
         )
-        # 落在共享目录下的唯一子目录；chmod 0755 以便跨 UID 协议端遍历。
-        work_dir = make_shared_workdir(media_dir, prefix="douyin_")
         # CDN 可能长时间超时；不放在发送锁内（仍占流水线名额，限制临时文件数）
         result = await resolve_and_download(
-            message_text, config.douyin_cookie, tmp_dir=work_dir
+            message_text, config.douyin_cookie, tmp_dir=media_dir
         )
         for item in result.items or ():
             chmod_shared_media_file(item.file_path)
@@ -180,11 +176,9 @@ async def _download_and_reply(
         logger.opt(exception=True).error("抖音链接解析处理异常")
     finally:
         # send_* 返回有效 message_id 表示协议端已接受，可立即清理；
-        # 失败路径同样清理，避免临时目录泄漏。
+        # 失败路径同样清理，避免临时文件泄漏（共享根目录本身不删）。
         if result is not None:
-            _cleanup_temp(result.file_path)
-        elif work_dir is not None and work_dir.exists():
-            shutil.rmtree(work_dir, ignore_errors=True)
+            _cleanup_result_files(result)
 
 
 def _message_id_of(send_result: object) -> object:
@@ -193,15 +187,17 @@ def _message_id_of(send_result: object) -> object:
     return getattr(send_result, "message_id", send_result)
 
 
-def _cleanup_temp(file_path: Path) -> None:
-    """发送后删除媒体文件；共享目录本身不删（仅清理 douyin_* 临时子目录）。"""
-    try:
-        parent = file_path.parent
-        file_path.unlink(missing_ok=True)
-        if parent.name.startswith("douyin_") and parent.exists():
-            shutil.rmtree(parent, ignore_errors=True)
-    except Exception:
-        logger.opt(exception=True).debug("清理抖音临时文件失败: {}", file_path)
+def _cleanup_result_files(result) -> None:
+    paths: list[Path] = []
+    if result.items:
+        paths.extend(item.file_path for item in result.items)
+    elif result.file_path:
+        paths.append(result.file_path)
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:
+            logger.opt(exception=True).debug("清理抖音临时文件失败: {}", path)
 
 
 @group_douyin_link_parser.handle()
