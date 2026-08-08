@@ -47,6 +47,16 @@ def test_ensure_shared_media_dir_creates_traversable(tmp_path: Path) -> None:
     assert stat.S_IMODE(root.stat().st_mode) == 0o755
 
 
+def test_ensure_shared_media_dir_preserves_existing_mode(tmp_path: Path) -> None:
+    # 协议端 QQ tmp 常见 0770；不得被改成 0755 扒掉组写。
+    existing = tmp_path / "qq_tmp"
+    existing.mkdir()
+    os.chmod(existing, 0o770)
+    root = ensure_shared_media_dir(str(existing))
+    assert root == existing
+    assert stat.S_IMODE(root.stat().st_mode) == 0o770
+
+
 def test_chmod_shared_media_file(tmp_path: Path) -> None:
     f = tmp_path / "clip.mp4"
     f.write_bytes(b"x")

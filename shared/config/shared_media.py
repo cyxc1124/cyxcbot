@@ -35,10 +35,16 @@ def _chmod_best_effort(path: Path, mode: int) -> None:
 
 
 def ensure_shared_media_dir(configured: str | None) -> Path:
-    """解析、创建共享根目录，并尽量设为协议端可遍历。"""
+    """解析并创建共享根目录。
+
+    仅对**新创建**的目录设 0755；已存在目录（如协议端 QQ tmp 的 0770）不改权限，
+    避免扒掉组写导致协议端无法再写自己的临时文件。
+    """
     path = resolve_shared_media_dir(configured)
+    existed = path.is_dir()
     path.mkdir(parents=True, exist_ok=True)
-    _chmod_best_effort(path, _SHARED_DIR_MODE)
+    if not existed:
+        _chmod_best_effort(path, _SHARED_DIR_MODE)
     return path
 
 
