@@ -139,7 +139,7 @@ export function SettingsBotPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             B 站 / 抖音链接解析发视频（及抖音图集本地文件）时写入此目录，并以{' '}
             <code className="font-mono text-xs">file://</code>{' '}
-            交给协议端读取（不再走 base64）。分离部署时请把机器草与协议端 /
+            交给协议端读取（不再走 base64）。目录必须已存在（挂载或预先创建），应用不会自动创建根目录。分离部署时请把机器草与协议端 /
             QQ 数据目录挂到同一路径。留空则使用平台默认。
           </p>
         </div>
