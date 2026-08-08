@@ -107,7 +107,7 @@ helm uninstall cyxcbot
 
 B 站 / 抖音链接解析发视频写入共享目录后以 `file://` 交给协议端读取（不再 base64）。分离部署时须让机器草与 OneBot 协议端 / QQ 客户端数据目录 **看到同一路径**。
 
-推荐复用协议端已挂载的 QQ 数据卷（常见挂载点 `/root/.config/QQ`）。卷挂到根目录即可；应用默认写入其子目录 `tmp`：
+留空时默认写入 `data/tmp`。与 LLBot 等共用 QQ 数据持久化时，在 Web Admin 将共享媒体目录设为 `/root/.config/QQ/tmp`，并挂载协议端 QQ 数据卷（常见挂载点 `/root/.config/QQ`）：
 
 ```yaml
 sharedMedia:
@@ -125,7 +125,7 @@ sharedMedia:
 | `sharedMedia.accessMode` | 自动建 PVC 时的访问模式，默认 `ReadWriteMany` |
 | `sharedMedia.size` | 自动建 PVC 大小，默认 `5Gi` |
 
-Web Admin → 设置 → 机器人 →「链接解析共享媒体目录」留空即可（Linux 在 `/root/.config/QQ/tmp` 可写时用该路径，否则与 Windows / macOS 一样默认 `data/tmp`）。跨 Pod 共享时 PVC 须为 `ReadWriteMany`。
+Web Admin → 设置 → 机器人 →「链接解析共享媒体目录」设为 `/root/.config/QQ/tmp`（与 LLBot 共用时）。跨 Pod 共享时 PVC 须为 `ReadWriteMany`。
 
 ### 资源与健康检查
 

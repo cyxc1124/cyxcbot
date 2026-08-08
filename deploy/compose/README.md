@@ -42,7 +42,7 @@ volumes:
   - /path/to/shared/QQ:/root/.config/QQ
 ```
 
-Linux / Docker 在 `/root/.config/QQ/tmp` 可写时写入该路径（卷仍挂 QQ 数据根）；否则与 Windows / macOS 一样用 `data/tmp`。可在 Web Admin → 设置 → 机器人 中修改。K8s 部署见 Helm README 的 `sharedMedia`。
+默认 `data/tmp`。与 LLBot 共用 QQ 数据持久化时，在 Web Admin 设为 `/root/.config/QQ/tmp`（卷挂 QQ 数据根）。K8s 见 Helm README 的 `sharedMedia`。
 
 ## 常用命令
 

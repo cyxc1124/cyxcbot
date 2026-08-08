@@ -152,8 +152,7 @@ export function SettingsBotPage() {
             id="link_parser_shared_media_dir"
             className="input font-mono text-sm"
             placeholder={
-              settings?.link_parser_shared_media_dir_default ||
-              '/root/.config/QQ/tmp（Linux）或 data/tmp（Windows / macOS）'
+              settings?.link_parser_shared_media_dir_default || 'data/tmp'
             }
             value={sharedMediaDir}
             disabled={formDisabled || saving}
@@ -166,11 +165,11 @@ export function SettingsBotPage() {
                 settings?.link_parser_shared_media_dir_default ||
                 '—'}
             </code>
-            。默认：Linux 在{' '}
-            <code className="font-mono">/root/.config/QQ/tmp</code>{' '}
-            可写时用该路径，否则与 Windows / macOS 一样用{' '}
+            。默认{' '}
             <code className="font-mono">data/tmp</code>
-            。K8s / Docker 仍挂载 QQ 数据根目录，文件写入其下 tmp。
+            。与协议端（如 LLBot）共用 QQ 数据持久化目录时，请设为{' '}
+            <code className="font-mono">/root/.config/QQ/tmp</code>
+            （卷挂 QQ 数据根即可）。
           </p>
         </div>
       </div>
