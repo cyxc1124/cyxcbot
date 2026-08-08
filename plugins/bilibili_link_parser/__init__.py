@@ -25,7 +25,7 @@ from shared.config.link_parser_policy import (
 )
 from shared.config.message_templates import LinkMessageTemplates
 from shared.config.service import get_config_service
-from shared.config.shared_media import SharedMediaDirError, require_shared_media_dir
+from shared.config.shared_media import resolve_shared_media_dir
 from utils.bilibili_api import (
     BilibiliVideoDownloadError,
     DynamicFetcher,
@@ -132,15 +132,9 @@ async def _resolve_reply(
     if not cookie:
         logger.warning("B 站链接解析：未配置 Cookie，直播接口可能返回 -352 或解析失败")
 
-    media_dir: Path | None = None
-    if scope.send_video_enabled:
-        try:
-            media_dir = require_shared_media_dir(
-                get_config_service().get_snapshot().link_parser_shared_media_dir
-            )
-        except SharedMediaDirError as exc:
-            # 目录未就绪时不下载视频；后续走封面+文字（发送侧封面降级仍保留）。
-            logger.warning("B 站链接解析：{}，视频将降级为封面+文字", exc)
+    media_dir = resolve_shared_media_dir(
+        get_config_service().get_snapshot().link_parser_shared_media_dir
+    )
 
     await video_api_manager.init(cookie)
     await live_api_manager.init(cookie)
@@ -161,15 +155,11 @@ async def _resolve_reply(
                     bvid=ref.bvid, aid=ref.aid
                 )
                 if video:
-                    video_path = (
-                        await _maybe_download_video(
-                            video,
-                            enabled=True,
-                            cookie=cookie,
-                            output_dir=media_dir,
-                        )
-                        if media_dir is not None
-                        else None
+                    video_path = await _maybe_download_video(
+                        video,
+                        enabled=scope.send_video_enabled,
+                        cookie=cookie,
+                        output_dir=media_dir,
                     )
                     if video_path is not None:
                         return _ResolvedReply(

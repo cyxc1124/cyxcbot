@@ -11,10 +11,6 @@ _LINUX_DEFAULT = Path("/root/.config/QQ") / "tmp"
 _LOCAL_DEFAULT = Path("data") / "tmp"
 
 
-class SharedMediaDirError(Exception):
-    """共享媒体目录未就绪（不存在或不是目录）。"""
-
-
 def default_shared_media_dir() -> Path:
     if sys.platform.startswith("linux"):
         return _LINUX_DEFAULT
@@ -27,13 +23,3 @@ def resolve_shared_media_dir(configured: str | None) -> Path:
     if not raw:
         return default_shared_media_dir()
     return Path(raw).expanduser()
-
-
-def require_shared_media_dir(configured: str | None) -> Path:
-    """解析配置并要求目录已存在；不会自动创建根目录。"""
-    path = resolve_shared_media_dir(configured)
-    if not path.is_dir():
-        raise SharedMediaDirError(
-            f"共享媒体目录不存在或不是目录: {path}（须预先挂载/创建，不会自动建根目录）"
-        )
-    return path
