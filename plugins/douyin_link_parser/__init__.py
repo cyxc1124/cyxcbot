@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import shutil
-import tempfile
 from pathlib import Path
 
 from nonebot import get_driver, on_message
@@ -20,7 +19,11 @@ from nonebot.plugin import PluginMetadata
 
 from shared.config.douyin_link_parser_policy import resolve_douyin_link_parser_policy
 from shared.config.service import get_config_service
-from shared.config.shared_media import resolve_shared_media_dir
+from shared.config.shared_media import (
+    chmod_shared_media_file,
+    ensure_shared_media_dir,
+    make_shared_workdir,
+)
 from utils.douyin_api import (
     DouyinResolveError,
     extract_douyin_urls,
@@ -106,16 +109,19 @@ async def _download_and_reply(
     result = None
     work_dir: Path | None = None
     try:
-        media_dir = resolve_shared_media_dir(
+        media_dir = ensure_shared_media_dir(
             get_config_service().get_snapshot().link_parser_shared_media_dir
         )
-        media_dir.mkdir(parents=True, exist_ok=True)
-        # 落在共享目录下的唯一子目录，协议端可经同一挂载路径 file:// 读取。
-        work_dir = Path(tempfile.mkdtemp(prefix="douyin_", dir=media_dir))
+        # 落在共享目录下的唯一子目录；chmod 0755 以便跨 UID 协议端遍历。
+        work_dir = make_shared_workdir(media_dir, prefix="douyin_")
         # CDN 可能长时间超时；不放在发送锁内（仍占流水线名额，限制临时文件数）
         result = await resolve_and_download(
             message_text, config.douyin_cookie, tmp_dir=work_dir
         )
+        for item in result.items or ():
+            chmod_shared_media_file(item.file_path)
+        if result.file_path:
+            chmod_shared_media_file(result.file_path)
         if _SEND_SEM.locked():
             logger.info("抖音链接解析：等待前序发送完成 user={}", event.user_id)
         async with _SEND_SEM:
