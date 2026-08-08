@@ -249,7 +249,9 @@ def _print_message(message) -> None:
     for i, seg in enumerate(message):
         if seg.type == "video":
             file_val = str(seg.data.get("file", ""))
-            if file_val.startswith("base64://"):
+            if file_val.startswith("file://"):
+                print(f"  [{i}] video file={file_val}")
+            elif file_val.startswith("base64://"):
                 print(f"  [{i}] video file=base64://<{len(file_val) - 9} chars>")
             else:
                 preview = file_val if len(file_val) <= 120 else file_val[:120] + "…"

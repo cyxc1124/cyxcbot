@@ -25,7 +25,10 @@ from shared.config.link_parser_policy import (
 )
 from shared.config.message_templates import LinkMessageTemplates
 from shared.config.service import get_config_service
-from shared.config.shared_media import resolve_shared_media_dir
+from shared.config.shared_media import (
+    chmod_shared_media_file,
+    ensure_shared_media_dir,
+)
 from utils.bilibili_api import (
     BilibiliVideoDownloadError,
     DynamicFetcher,
@@ -106,13 +109,15 @@ async def _maybe_download_video(
         )
         return None
     try:
-        return await download_bilibili_video(
+        path = await download_bilibili_video(
             video_api_manager.api.session,
             bvid=video.bvid,
             cid=video.cid,
             cookie=cookie,
             output_dir=output_dir,
         )
+        chmod_shared_media_file(path)
+        return path
     except BilibiliVideoDownloadError as exc:
         logger.warning("B 站视频下载失败，降级为封面+文字: {}", exc)
         return None
@@ -132,10 +137,6 @@ async def _resolve_reply(
     if not cookie:
         logger.warning("B 站链接解析：未配置 Cookie，直播接口可能返回 -352 或解析失败")
 
-    media_dir = resolve_shared_media_dir(
-        get_config_service().get_snapshot().link_parser_shared_media_dir
-    )
-
     await video_api_manager.init(cookie)
     await live_api_manager.init(cookie)
     session = video_api_manager.api.session
@@ -145,6 +146,9 @@ async def _resolve_reply(
         return _ResolvedReply()
 
     fetcher = DynamicFetcher(session, cookie)
+    shared_media_configured = (
+        get_config_service().get_snapshot().link_parser_shared_media_dir
+    )
 
     for ref in refs:
         try:
@@ -155,11 +159,16 @@ async def _resolve_reply(
                     bvid=ref.bvid, aid=ref.aid
                 )
                 if video:
-                    video_path = await _maybe_download_video(
-                        video,
-                        enabled=scope.send_video_enabled,
-                        cookie=cookie,
-                        output_dir=media_dir,
+                    # 仅真正下载视频时才碰共享目录，避免非强制 chmod 影响 QQ tmp。
+                    video_path = (
+                        await _maybe_download_video(
+                            video,
+                            enabled=True,
+                            cookie=cookie,
+                            output_dir=ensure_shared_media_dir(shared_media_configured),
+                        )
+                        if scope.send_video_enabled
+                        else None
                     )
                     if video_path is not None:
                         return _ResolvedReply(

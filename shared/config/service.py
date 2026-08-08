@@ -104,7 +104,7 @@ SETTING_KEYS = {
     "rust_checkin_online_bonus_points": ("50", int),
     "rust_steam_bind_bonus_points": ("200", int),
     "rust_checkin_rcon_binding_id": ("0", int),
-    # 空字符串 = 运行时按平台默认（Linux /root/.config/QQ/tmp，其余 data/tmp）
+    # 空字符串 = 运行时默认 data/tmp；与 LLBot 共用时在 Web Admin 设 QQ 路径
     "link_parser_shared_media_dir": ("", str),
 }
 
