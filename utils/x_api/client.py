@@ -100,10 +100,15 @@ class XApiClient:
         user_id: str,
         *,
         max_results: int = 5,
+        since_id: str | None = None,
         username: str = "",
         name: str = "",
     ) -> Optional[List[TweetItem]]:
-        """Fetch recent tweets for a user id. Returns None on request failure."""
+        """Fetch recent tweets for a user id. Returns None on request failure.
+
+        When ``since_id`` is set (X snowflake), only tweets newer than that id
+        are requested — same semantics as twitter-api-v2 ``userTimeline``.
+        """
         uid = str(user_id or "").strip()
         if not uid:
             return None
@@ -111,15 +116,8 @@ class XApiClient:
             logger.warning("X API: 未配置 Bearer Token，无法拉取推文")
             return None
 
-        clamped = max(5, min(100, int(max_results)))
+        params = build_user_timeline_params(max_results=max_results, since_id=since_id)
         url = f"{_API_BASE}/users/{uid}/tweets"
-        params = {
-            "max_results": str(clamped),
-            "exclude": "retweets,replies",
-            "tweet.fields": "created_at,text,attachments",
-            "expansions": "attachments.media_keys",
-            "media.fields": "url,preview_image_url,type",
-        }
         try:
             async with self.session.get(
                 url, params=params, **self._request_kwargs()
@@ -165,6 +163,26 @@ class XApiClient:
 
         items.sort(key=lambda t: tweet_id_as_int(t.id), reverse=True)
         return items
+
+
+def build_user_timeline_params(
+    *,
+    max_results: int = 5,
+    since_id: str | None = None,
+) -> dict[str, str]:
+    """Build GET /2/users/:id/tweets query params (testable without HTTP)."""
+    clamped = max(5, min(100, int(max_results)))
+    params: dict[str, str] = {
+        "max_results": str(clamped),
+        "exclude": "retweets,replies",
+        "tweet.fields": "created_at,text,attachments",
+        "expansions": "attachments.media_keys",
+        "media.fields": "url,preview_image_url,type",
+    }
+    sid = str(since_id or "").strip()
+    if sid and sid != "0" and tweet_id_as_int(sid) > 0:
+        params["since_id"] = sid
+    return params
 
 
 def _index_media(includes: Any) -> Dict[str, dict]:

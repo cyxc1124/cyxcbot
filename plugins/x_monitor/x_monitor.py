@@ -480,10 +480,19 @@ class XMonitor:
         if not self._check_still_valid(username, check_generation):
             return True
 
+        last_tweet_id = self.last_tweet_ids.get(username, "0")
+        # 已建基准后用 since_id 只拉增量，减少 Post: Read 计费（对齐 twitter-api-v2）
+        since_id = None
+        if self.initialized_usernames.get(username, False) and tweet_id_as_int(
+            last_tweet_id
+        ):
+            since_id = last_tweet_id
+
         tweets = await self.client.fetch_user_tweets(
             user.id,
             username=username,
             name=user.name or username,
+            since_id=since_id,
         )
         if tweets is None:
             logger.debug("获取 X 博主 {} 推文失败", username)
@@ -492,7 +501,6 @@ class XMonitor:
         if not self._check_still_valid(username, check_generation):
             return True
 
-        last_tweet_id = self.last_tweet_ids.get(username, "0")
         new_tweets = collect_new_tweets(tweets, last_tweet_id)
 
         if not self.initialized_usernames.get(username, False):
