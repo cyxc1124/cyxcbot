@@ -203,6 +203,85 @@ class LiveMonitorState(Model):
     )
 
 
+class XTarget(Model):
+    """X (Twitter) monitor target."""
+
+    __tablename__ = "shared_db_xtarget"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    at_all: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+    groups: Mapped[list["XTargetGroup"]] = relationship(
+        back_populates="target", cascade="all, delete-orphan"
+    )
+    users: Mapped[list["XTargetUser"]] = relationship(
+        back_populates="target", cascade="all, delete-orphan"
+    )
+
+
+class XTargetGroup(Model):
+    """Group mapping for an X target."""
+
+    __tablename__ = "shared_db_xtargetgroup"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    x_target_id: Mapped[int] = mapped_column(
+        ForeignKey("shared_db_xtarget.id", ondelete="CASCADE"), nullable=False
+    )
+    group_id: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    target: Mapped["XTarget"] = relationship(back_populates="groups")
+
+    __table_args__ = (
+        UniqueConstraint("x_target_id", "group_id", name="uq_x_target_group"),
+    )
+
+
+class XTargetUser(Model):
+    """Friend mapping for an X target."""
+
+    __tablename__ = "shared_db_xtargetuser"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    x_target_id: Mapped[int] = mapped_column(
+        ForeignKey("shared_db_xtarget.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    target: Mapped["XTarget"] = relationship(back_populates="users")
+
+    __table_args__ = (
+        UniqueConstraint("x_target_id", "user_id", name="uq_x_target_user"),
+    )
+
+
+class XMonitorState(Model):
+    """Persisted runtime state for X monitor per username."""
+
+    __tablename__ = "shared_db_xmonitorstate"
+
+    username: Mapped[str] = mapped_column(String(64), primary_key=True)
+    last_tweet_id: Mapped[str] = mapped_column(String(32), default="0", nullable=False)
+    initialized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # 部分投递失败时保留待重试目标，重启后避免对已成功目标重复推送
+    pending_tweet_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    pending_group_ids: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    pending_user_ids: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+
 class LinkParserGroupPolicy(Model):
     """Per-group override for Bilibili link parser."""
 

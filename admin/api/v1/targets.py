@@ -1,10 +1,12 @@
-"""Dynamic and live target CRUD endpoints."""
+"""Dynamic, live and X target CRUD endpoints."""
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, HTTPException, status
 from nonebot_plugin_orm import get_session
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from admin.deps import AdminUser, RequireSetup
@@ -15,6 +17,9 @@ from admin.schemas.targets import (
     LiveTargetCreate,
     LiveTargetResponse,
     LiveTargetUpdate,
+    XTargetCreate,
+    XTargetResponse,
+    XTargetUpdate,
 )
 from admin.services.target_metadata import (
     resolve_dynamic_target_name,
@@ -22,7 +27,10 @@ from admin.services.target_metadata import (
     resolve_live_target_name,
     resolve_missing_dynamic_target_names,
     resolve_missing_live_target_names,
+    resolve_missing_x_target_names,
     resolve_up_name,
+    resolve_x_target_name,
+    resolve_x_user,
 )
 from shared.config.service import get_config_service
 from shared.db.models import (
@@ -32,6 +40,9 @@ from shared.db.models import (
     LiveTarget,
     LiveTargetGroup,
     LiveTargetUser,
+    XTarget,
+    XTargetGroup,
+    XTargetUser,
 )
 from shared.monitor.background_task import spawn_background_task
 
@@ -66,6 +77,51 @@ def _live_to_response(target: LiveTarget) -> LiveTargetResponse:
         user_ids=[u.user_id for u in target.users],
         created_at=target.created_at,
         updated_at=target.updated_at,
+    )
+
+
+def _x_to_response(target: XTarget) -> XTargetResponse:
+    return XTargetResponse(
+        id=target.id,
+        username=target.username,
+        name=target.name,
+        x_user_id=target.user_id,
+        enabled=target.enabled,
+        at_all=target.at_all,
+        group_ids=[g.group_id for g in target.groups],
+        user_ids=[u.user_id for u in target.users],
+        created_at=target.created_at,
+        updated_at=target.updated_at,
+    )
+
+
+def _normalize_x_username(username: str) -> str:
+    # 先 trim 再去 @，否则 " @Example" 会变成 "@example" 绕过唯一性
+    return (username or "").strip().lstrip("@").strip().lower()
+
+
+_X_HANDLE_RE = re.compile(r"^[a-z0-9_]{1,15}$")
+
+
+def _parse_x_username(username: str) -> str:
+    """Normalize and reject syntactically invalid X handles."""
+    key = _normalize_x_username(username)
+    if not key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="用户名不能为空"
+        )
+    if not _X_HANDLE_RE.fullmatch(key):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="无效的 X 用户名（1-15 位字母、数字或下划线）",
+        )
+    return key
+
+
+async def _find_x_target_by_username(session, username: str):
+    """Case-insensitive lookup for existing X targets."""
+    return await session.scalar(
+        select(XTarget).where(func.lower(XTarget.username) == username.lower())
     )
 
 
@@ -130,6 +186,22 @@ async def _sync_users_live(session, target: LiveTarget, user_ids: list[str]) -> 
         await session.delete(user)
     await session.flush()
     target.users = [LiveTargetUser(user_id=uid) for uid in normalized]
+
+
+async def _sync_groups_x(session, target: XTarget, group_ids: list[str]) -> None:
+    normalized = _normalize_group_ids(group_ids)
+    for group in list(target.groups):
+        await session.delete(group)
+    await session.flush()
+    target.groups = [XTargetGroup(group_id=gid) for gid in normalized]
+
+
+async def _sync_users_x(session, target: XTarget, user_ids: list[str]) -> None:
+    normalized = _normalize_user_ids(user_ids)
+    for user in list(target.users):
+        await session.delete(user)
+    await session.flush()
+    target.users = [XTargetUser(user_id=uid) for uid in normalized]
 
 
 # --- Dynamic targets ---
@@ -549,6 +621,294 @@ async def delete_live_target(target_id: int, _: AdminUser):
     async with get_session() as session:
         async with session.begin():
             target = await session.get(LiveTarget, target_id)
+            if not target:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+                )
+            await session.delete(target)
+
+    await get_config_service().reload()
+
+
+# --- X targets ---
+
+
+@router.get("/x-targets", response_model=list[XTargetResponse])
+async def list_x_targets(_: AdminUser):
+    async with get_session() as session:
+        async with session.begin():
+            stmt = select(XTarget).options(
+                selectinload(XTarget.groups),
+                selectinload(XTarget.users),
+            )
+            targets = (await session.scalars(stmt)).all()
+            response = [_x_to_response(t) for t in targets]
+            missing = [
+                (t.id, t.username) for t in targets if not t.name or not t.user_id
+            ]
+
+    if missing:
+        spawn_background_task(
+            "补全 X target 名称",
+            resolve_missing_x_target_names(missing),
+        )
+    return response
+
+
+@router.post(
+    "/x-targets",
+    response_model=XTargetResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_x_target(body: XTargetCreate, _: AdminUser):
+    _ensure_recipients(body.group_ids, body.user_ids)
+    username = _parse_x_username(body.username)
+
+    async with get_session() as session:
+        async with session.begin():
+            existing = await _find_x_target_by_username(session, username)
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Username already exists",
+                )
+
+        resolved_name, resolved_user_id = await resolve_x_target_name(
+            username, body.name
+        )
+        if not resolved_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="无法获取 X 用户信息，请检查用户名与 Bearer Token，或手动填写显示名称",
+            )
+
+        async with session.begin():
+            existing = await _find_x_target_by_username(session, username)
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Username already exists",
+                )
+
+            target = XTarget(
+                username=username,
+                name=resolved_name,
+                user_id=resolved_user_id,
+                enabled=body.enabled,
+                at_all=body.at_all,
+            )
+            await _sync_groups_x(session, target, body.group_ids)
+            await _sync_users_x(session, target, body.user_ids)
+            session.add(target)
+            await session.flush()
+            await session.refresh(target, ["groups", "users"])
+            response = _x_to_response(target)
+
+    await get_config_service().reload()
+
+    return response
+
+
+@router.get("/x-targets/{target_id}", response_model=XTargetResponse)
+async def get_x_target(target_id: int, _: AdminUser):
+    async with get_session() as session:
+        async with session.begin():
+            target = await session.scalar(
+                select(XTarget)
+                .where(XTarget.id == target_id)
+                .options(
+                    selectinload(XTarget.groups),
+                    selectinload(XTarget.users),
+                )
+            )
+            if not target:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+                )
+            response = _x_to_response(target)
+    return response
+
+
+@router.patch("/x-targets/{target_id}", response_model=XTargetResponse)
+async def update_x_target(target_id: int, body: XTargetUpdate, _: AdminUser):
+    async with get_session() as session:
+        async with session.begin():
+            target = await session.scalar(
+                select(XTarget)
+                .where(XTarget.id == target_id)
+                .options(
+                    selectinload(XTarget.groups),
+                    selectinload(XTarget.users),
+                )
+            )
+            if not target:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+                )
+            current_username = target.username
+            username_changed = False
+            if body.username is not None:
+                username_for_name = _parse_x_username(body.username)
+                if username_for_name != _normalize_x_username(current_username):
+                    existing = await _find_x_target_by_username(
+                        session, username_for_name
+                    )
+                    if existing and existing.id != target_id:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail="Username already exists",
+                        )
+                    username_changed = True
+            else:
+                username_for_name = _normalize_x_username(current_username)
+            if body.name is not None:
+                pending_name = body.name.strip() or None
+            else:
+                pending_name = target.name
+            current_user_id = target.user_id
+
+        resolved_name: str | None = None
+        resolved_user_id: str | None = None
+        if not pending_name or body.username is not None:
+            name, user_id = await resolve_x_target_name(username_for_name, pending_name)
+            if not pending_name:
+                if not name:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="无法获取 X 用户信息，请检查用户名与 Bearer Token，或手动填写显示名称",
+                    )
+                resolved_name = name
+            resolved_user_id = user_id
+        elif not current_user_id:
+            user = await resolve_x_user(username_for_name)
+            if user:
+                resolved_user_id = user.id
+
+        async with session.begin():
+            target = await session.scalar(
+                select(XTarget)
+                .where(XTarget.id == target_id)
+                .options(
+                    selectinload(XTarget.groups),
+                    selectinload(XTarget.users),
+                )
+            )
+            if not target:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+                )
+
+            if body.username is not None:
+                new_username = _parse_x_username(body.username)
+                if new_username != target.username:
+                    existing = await _find_x_target_by_username(session, new_username)
+                    if existing and existing.id != target_id:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail="Username already exists",
+                        )
+                    target.username = new_username
+
+            # 解析期间若被改名，勿把旧账号资料写到新用户名上
+            if (
+                resolved_name is not None or resolved_user_id is not None
+            ) and _normalize_x_username(target.username) != username_for_name:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="目标用户名已变更，请重试",
+                )
+
+            if body.name is not None:
+                stripped = body.name.strip()
+                target.name = stripped if stripped else None
+            if resolved_name is not None:
+                target.name = resolved_name
+            if resolved_user_id is not None:
+                target.user_id = resolved_user_id
+            elif username_changed:
+                # 改名但未能解析到新账号 ID 时清空旧缓存，避免继续拉旧用户推文
+                target.user_id = None
+            if body.enabled is not None:
+                target.enabled = body.enabled
+            if body.at_all is not None:
+                target.at_all = body.at_all
+            if body.group_ids is not None:
+                await _sync_groups_x(session, target, body.group_ids)
+            if body.user_ids is not None:
+                await _sync_users_x(session, target, body.user_ids)
+            if body.group_ids is not None or body.user_ids is not None:
+                _ensure_recipients(
+                    [g.group_id for g in target.groups],
+                    [u.user_id for u in target.users],
+                )
+            await session.flush()
+            await session.refresh(target, ["groups", "users"])
+            response = _x_to_response(target)
+
+    await get_config_service().reload()
+
+    return response
+
+
+@router.post(
+    "/x-targets/{target_id}/refresh-profile",
+    response_model=XTargetResponse,
+)
+async def refresh_x_target_profile(target_id: int, _: AdminUser):
+    """强制向 X API 查询用户资料，并写回 name / x_user_id。"""
+    async with get_session() as session:
+        async with session.begin():
+            target = await session.get(XTarget, target_id)
+            if not target:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+                )
+            username = target.username
+
+    user = await resolve_x_user(username)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="无法获取 X 用户信息，请检查用户名、Bearer Token 与代理设置",
+        )
+
+    display_name = (user.name or user.username or username).strip() or username
+
+    async with get_session() as session:
+        async with session.begin():
+            target = await session.scalar(
+                select(XTarget)
+                .where(XTarget.id == target_id)
+                .options(
+                    selectinload(XTarget.groups),
+                    selectinload(XTarget.users),
+                )
+            )
+            if not target:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+                )
+            # 解析期间若已被改名，勿把旧账号资料写到新用户名上
+            if target.username != username:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="目标用户名已变更，请重新刷新",
+                )
+            target.name = display_name
+            target.user_id = user.id
+            await session.flush()
+            await session.refresh(target, ["groups", "users"])
+            response = _x_to_response(target)
+
+    await get_config_service().reload()
+    return response
+
+
+@router.delete("/x-targets/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_x_target(target_id: int, _: AdminUser):
+    async with get_session() as session:
+        async with session.begin():
+            target = await session.get(XTarget, target_id)
             if not target:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"

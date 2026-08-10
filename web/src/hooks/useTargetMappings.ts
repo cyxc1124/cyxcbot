@@ -2,14 +2,19 @@ import { useCallback, useMemo, useState, type FormEvent } from 'react'
 import {
   createDynamicTarget,
   createLiveTarget,
+  createXTarget,
   deleteDynamicTarget,
   deleteLiveTarget,
+  deleteXTarget,
   getDynamicTargets,
   getFriends,
   getGroups,
   getLiveTargets,
+  getXTargets,
+  refreshXTargetProfile,
   updateDynamicTarget,
   updateLiveTarget,
+  updateXTarget,
 } from '../api/client'
 import type { Friend, Group } from '../api/types'
 import { useToast } from '../contexts/ToastContext'
@@ -20,6 +25,7 @@ import { createRetryHandler } from '../utils/retryLoad'
 import {
   emptyForm,
   formFromTarget,
+  targetTypeMeta,
   type SubscriptionTarget,
   type TargetFormState,
   type TargetType,
@@ -28,6 +34,12 @@ import {
 interface UseTargetMappingsOptions {
   type: TargetType
   onTargetsChanged?: () => void | Promise<void>
+}
+
+async function fetchTargets(type: TargetType) {
+  if (type === 'dynamic') return getDynamicTargets()
+  if (type === 'x') return getXTargets()
+  return getLiveTargets()
 }
 
 export function useTargetMappings({ type, onTargetsChanged }: UseTargetMappingsOptions) {
@@ -40,22 +52,17 @@ export function useTargetMappings({ type, onTargetsChanged }: UseTargetMappingsO
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
-  const [form, setForm] = useState<TargetFormState>(() => emptyForm(type === 'dynamic'))
+  const [form, setForm] = useState<TargetFormState>(() => emptyForm(type))
   const [editOriginalId, setEditOriginalId] = useState('')
   const [saving, setSaving] = useState(false)
   const [togglingId, setTogglingId] = useState<number | null>(null)
+  const [refreshingId, setRefreshingId] = useState<number | null>(null)
 
-  const isDynamic = type === 'dynamic'
-  const idLabel = isDynamic ? 'UP 主 UID' : '直播间房间号'
-  const targetLabel = isDynamic ? 'UP 主' : '直播间'
+  const { idLabel, targetLabel, nameSource } = targetTypeMeta(type)
 
   const load = useCallback(async () => {
     try {
-      const [g, f, items] = await Promise.all([
-        getGroups(),
-        getFriends(),
-        isDynamic ? getDynamicTargets() : getLiveTargets(),
-      ])
+      const [g, f, items] = await Promise.all([getGroups(), getFriends(), fetchTargets(type)])
       setGroups(g)
       setFriends(f)
       setTargets(items)
@@ -69,7 +76,7 @@ export function useTargetMappings({ type, onTargetsChanged }: UseTargetMappingsO
     } finally {
       setLoading(false)
     }
-  }, [isDynamic, setLoading])
+  }, [type, setLoading])
 
   const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
 
@@ -88,8 +95,8 @@ export function useTargetMappings({ type, onTargetsChanged }: UseTargetMappingsO
     setShowForm(false)
     setEditingId(null)
     setEditOriginalId('')
-    setForm(emptyForm(isDynamic))
-  }, [isDynamic])
+    setForm(emptyForm(type))
+  }, [type])
 
   const openCreate = useCallback(() => {
     resetForm()
@@ -100,12 +107,12 @@ export function useTargetMappings({ type, onTargetsChanged }: UseTargetMappingsO
   const openEdit = useCallback(
     (target: SubscriptionTarget) => {
       setEditingId(target.id)
-      setEditOriginalId(formFromTarget(target, isDynamic).id)
+      setEditOriginalId(formFromTarget(target, type).id)
       setSelectedId(target.id)
-      setForm(formFromTarget(target, isDynamic))
+      setForm(formFromTarget(target, type))
       setShowForm(true)
     },
-    [isDynamic],
+    [type],
   )
 
   const selectTarget = useCallback((target: SubscriptionTarget) => {
@@ -130,48 +137,45 @@ export function useTargetMappings({ type, onTargetsChanged }: UseTargetMappingsO
         return
       }
 
-      if (isDynamic) {
+      const payload = {
+        name: form.name || undefined,
+        enabled: form.enabled,
+        at_all: form.at_all,
+        group_ids: form.group_ids,
+        user_ids: form.user_ids,
+      }
+
+      if (type === 'dynamic') {
         if (editingId) {
-          await updateDynamicTarget(editingId, {
-            uid: idValue,
+          await updateDynamicTarget(editingId, { uid: idValue, ...payload, name: form.name })
+          showToast('success', '订阅已更新')
+        } else {
+          const created = await createDynamicTarget({ uid: idValue, ...payload })
+          setSelectedId(created.id)
+          showToast('success', '订阅已创建')
+        }
+      } else if (type === 'x') {
+        if (editingId) {
+          await updateXTarget(editingId, {
+            username: idValue,
+            ...payload,
             name: form.name,
-            enabled: form.enabled,
-            at_all: form.at_all,
-            group_ids: form.group_ids,
-            user_ids: form.user_ids,
           })
           showToast('success', '订阅已更新')
         } else {
-          const created = await createDynamicTarget({
-            uid: idValue,
-            name: form.name || undefined,
-            enabled: form.enabled,
-            at_all: form.at_all,
-            group_ids: form.group_ids,
-            user_ids: form.user_ids,
-          })
+          const created = await createXTarget({ username: idValue, ...payload })
           setSelectedId(created.id)
           showToast('success', '订阅已创建')
         }
       } else if (editingId) {
         await updateLiveTarget(editingId, {
           room_id: idValue,
+          ...payload,
           name: form.name,
-          enabled: form.enabled,
-          at_all: form.at_all,
-          group_ids: form.group_ids,
-          user_ids: form.user_ids,
         })
         showToast('success', '订阅已更新')
       } else {
-        const created = await createLiveTarget({
-          room_id: idValue,
-          name: form.name || undefined,
-          enabled: form.enabled,
-          at_all: form.at_all,
-          group_ids: form.group_ids,
-          user_ids: form.user_ids,
-        })
+        const created = await createLiveTarget({ room_id: idValue, ...payload })
         setSelectedId(created.id)
         showToast('success', '订阅已创建')
       }
@@ -189,8 +193,10 @@ export function useTargetMappings({ type, onTargetsChanged }: UseTargetMappingsO
   const handleDelete = async (id: number) => {
     if (!confirm('确定要删除此订阅吗？')) return
     try {
-      if (isDynamic) {
+      if (type === 'dynamic') {
         await deleteDynamicTarget(id)
+      } else if (type === 'x') {
+        await deleteXTarget(id)
       } else {
         await deleteLiveTarget(id)
       }
@@ -206,8 +212,10 @@ export function useTargetMappings({ type, onTargetsChanged }: UseTargetMappingsO
   const toggleEnabled = async (target: SubscriptionTarget, enabled: boolean) => {
     setTogglingId(target.id)
     try {
-      if (isDynamic) {
+      if (type === 'dynamic') {
         await updateDynamicTarget(target.id, { enabled })
+      } else if (type === 'x') {
+        await updateXTarget(target.id, { enabled })
       } else {
         await updateLiveTarget(target.id, { enabled })
       }
@@ -224,8 +232,10 @@ export function useTargetMappings({ type, onTargetsChanged }: UseTargetMappingsO
   const toggleAtAll = async (target: SubscriptionTarget, at_all: boolean) => {
     setTogglingId(target.id)
     try {
-      if (isDynamic) {
+      if (type === 'dynamic') {
         await updateDynamicTarget(target.id, { at_all })
+      } else if (type === 'x') {
+        await updateXTarget(target.id, { at_all })
       } else {
         await updateLiveTarget(target.id, { at_all })
       }
@@ -235,6 +245,21 @@ export function useTargetMappings({ type, onTargetsChanged }: UseTargetMappingsO
       showToast('error', err instanceof Error ? err.message : '更新失败')
     } finally {
       setTogglingId(null)
+    }
+  }
+
+  const refreshProfile = async (target: SubscriptionTarget) => {
+    if (type !== 'x') return
+    setRefreshingId(target.id)
+    try {
+      await refreshXTargetProfile(target.id)
+      showToast('success', '用户资料已更新')
+      await load()
+      await notifyTargetsChanged()
+    } catch (err) {
+      showToast('error', formatApiError(err, '更新用户资料失败'))
+    } finally {
+      setRefreshingId(null)
     }
   }
 
@@ -254,9 +279,11 @@ export function useTargetMappings({ type, onTargetsChanged }: UseTargetMappingsO
     editOriginalId,
     saving,
     togglingId,
-    isDynamic,
+    refreshingId,
+    type,
     idLabel,
     targetLabel,
+    nameSource,
     openCreate,
     openEdit,
     selectTarget,
@@ -266,5 +293,6 @@ export function useTargetMappings({ type, onTargetsChanged }: UseTargetMappingsO
     handleDelete,
     toggleEnabled,
     toggleAtAll,
+    refreshProfile,
   }
 }

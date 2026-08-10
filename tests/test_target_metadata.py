@@ -414,3 +414,26 @@ async def test_update_live_target_rejects_duplicate_room_before_bilibili(monkeyp
 
     assert exc_info.value.status_code == 409
     resolve_mock.assert_not_called()
+
+
+def test_normalize_x_username_strips_space_before_at():
+    import admin.api.v1.targets as targets_api
+
+    assert targets_api._normalize_x_username(" @Example") == "example"
+    assert targets_api._normalize_x_username("@Example") == "example"
+    assert targets_api._normalize_x_username("  FoO  ") == "foo"
+
+
+def test_parse_x_username_rejects_invalid_handles():
+    from fastapi import HTTPException
+
+    import admin.api.v1.targets as targets_api
+
+    assert targets_api._parse_x_username(" @Example") == "example"
+    with pytest.raises(HTTPException) as exc_info:
+        targets_api._parse_x_username("user/name")
+    assert exc_info.value.status_code == 400
+    with pytest.raises(HTTPException):
+        targets_api._parse_x_username("user name")
+    with pytest.raises(HTTPException):
+        targets_api._parse_x_username("a" * 16)

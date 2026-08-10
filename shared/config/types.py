@@ -19,7 +19,9 @@ from shared.config.message_templates import (
     DynamicMessageTemplates,
     LinkMessageTemplates,
     LiveMessageTemplates,
+    XMessageTemplates,
 )
+from shared.config.proxy import ProxyConfig
 from shared.config.rust_rcon import RustRconBindingRecord
 from shared.config.rust_rcon_custom import RustRconCustomCommandRecord
 from shared.config.rust_rcon_policy import (
@@ -113,3 +115,15 @@ class AppConfigSnapshot:
     rust_checkin_rcon_binding_id: int = 0
     # B 站链接解析发视频：与协议端共享的目录（空=平台默认）
     link_parser_shared_media_dir: str = ""
+    x_monitor_mapping: Dict[str, List[str]] = field(default_factory=dict)
+    x_monitor_user_mapping: Dict[str, List[str]] = field(default_factory=dict)
+    x_at_all: Dict[str, bool] = field(default_factory=dict)
+    # username -> X numeric user id / display name（来自 XTarget，避免轮询重复查用户）
+    x_user_ids: Dict[str, str] = field(default_factory=dict)
+    x_display_names: Dict[str, str] = field(default_factory=dict)
+    x_monitor_interval: int = 120
+    x_monitor_use_stagger: bool = True
+    x_message_templates: XMessageTemplates = field(default_factory=XMessageTemplates)
+    x_api_bearer: str = ""
+    x_api_bearer_set: bool = False
+    x_proxy: ProxyConfig = field(default_factory=ProxyConfig)

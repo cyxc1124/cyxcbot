@@ -19,6 +19,8 @@ import { SettingsBotPage } from './pages/settings/SettingsBot'
 import { SettingsCommandsPage } from './pages/settings/SettingsCommands'
 import { SettingsDouyinAccountPage } from './pages/settings/SettingsDouyinAccount'
 import { SettingsMonitorPage } from './pages/settings/SettingsMonitor'
+import { SettingsXAccountPage } from './pages/settings/SettingsXAccount'
+import { XMonitorPage } from './pages/XMonitor'
 import { RustRconPage } from './pages/RustRcon'
 import { SetupPage } from './pages/Setup'
 import { AuthGuard, PublicGuard, SetupGuard } from './routes/Guards'
@@ -42,6 +44,7 @@ export default function App() {
                 <Route index element={<DashboardPage />} />
                 <Route path="dynamic" element={<DynamicMonitorPage />} />
                 <Route path="live" element={<LiveMonitorPage />} />
+                <Route path="x" element={<XMonitorPage />} />
                 <Route path="rust-rcon" element={<RustRconPage />} />
                 <Route path="templates" element={<MessageTemplatesPage />} />
                 <Route path="groups" element={<GroupsPage />} />
@@ -51,6 +54,7 @@ export default function App() {
                   <Route path="monitor" element={<SettingsMonitorPage />} />
                   <Route path="account" element={<SettingsAccountPage />} />
                   <Route path="douyin-account" element={<SettingsDouyinAccountPage />} />
+                  <Route path="x-account" element={<SettingsXAccountPage />} />
                   <Route path="bot" element={<SettingsBotPage />} />
                   <Route path="commands" element={<SettingsCommandsPage />} />
                 </Route>

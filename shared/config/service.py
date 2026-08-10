@@ -32,8 +32,10 @@ from shared.config.message_templates import (
     dynamic_templates_from_settings,
     link_templates_from_settings,
     live_templates_from_settings,
+    x_templates_from_settings,
 )
 from shared.config.nonebot_superusers import apply_nonebot_superusers
+from shared.config.proxy import ProxyConfig
 from shared.config.rust_player import MAX_RUST_PLAYER_POINTS
 from shared.config.rust_rcon import (
     RustRconBindingRecord,
@@ -63,6 +65,8 @@ from shared.db.models import (
     RustRconGroupPolicy,
     RustRconUserPolicy,
     SystemSetting,
+    XMonitorState,
+    XTarget,
 )
 from shared.security.crypto import decrypt_value
 
@@ -106,6 +110,15 @@ SETTING_KEYS = {
     "rust_checkin_rcon_binding_id": ("0", int),
     # 空字符串 = 运行时默认 data/tmp；与 LLBot 共用时在 Web Admin 设 QQ 路径
     "link_parser_shared_media_dir": ("", str),
+    "x_monitor_interval": ("120", int),
+    "x_monitor_use_stagger": ("true", bool),
+    "x_api_bearer_encrypted": ("", str),
+    "x_proxy_enabled": ("false", bool),
+    "x_proxy_scheme": ("http", str),
+    "x_proxy_host": ("", str),
+    "x_proxy_port": ("7890", int),
+    "x_proxy_username": ("", str),
+    "x_proxy_password_encrypted": ("", str),
 }
 
 for key, default in MESSAGE_TEMPLATE_KEYS.items():
@@ -173,6 +186,13 @@ class ConfigService:
                     live_user_mapping,
                     live_at_all,
                 ) = await self._load_live_target_data(session)
+                (
+                    x_mapping,
+                    x_user_mapping,
+                    x_at_all,
+                    x_user_ids,
+                    x_display_names,
+                ) = await self._load_x_target_data(session)
                 link_parser_group_policies = (
                     await self._load_link_parser_group_policies(session)
                 )
@@ -197,6 +217,7 @@ class ConfigService:
                 )
                 await self._prune_dynamic_monitor_states(session, set(dynamic_mapping))
                 await self._prune_live_monitor_states(session, set(live_mapping))
+                await self._prune_x_monitor_states(session, set(x_mapping))
 
         cookie_encrypted = settings.get("bilibili_cookie_encrypted", "")
         cookie = ""
@@ -213,6 +234,24 @@ class ConfigService:
                 douyin_cookie = decrypt_value(douyin_cookie_encrypted)
             except ValueError as exc:
                 logger.error("抖音 Cookie 解密失败: {}", exc)
+
+        x_api_bearer_encrypted = settings.get("x_api_bearer_encrypted", "")
+        x_api_bearer = ""
+        if x_api_bearer_encrypted:
+            try:
+                x_api_bearer = decrypt_value(x_api_bearer_encrypted)
+            except ValueError as exc:
+                logger.error("X API Bearer Token 解密失败: {}", exc)
+
+        x_proxy_password_encrypted = settings.get("x_proxy_password_encrypted", "")
+        x_proxy_password = ""
+        if x_proxy_password_encrypted:
+            try:
+                x_proxy_password = decrypt_value(x_proxy_password_encrypted)
+            except ValueError as exc:
+                logger.error("X 代理密码解密失败: {}", exc)
+        settings["x_proxy_password"] = x_proxy_password
+        x_proxy = ProxyConfig.from_settings(settings)
 
         self._snapshot = AppConfigSnapshot(
             dynamic_monitor_mapping=dynamic_mapping,
@@ -296,15 +335,27 @@ class ConfigService:
                 "link_parser_shared_media_dir", ""
             )
             or "",
+            x_monitor_mapping=x_mapping,
+            x_monitor_user_mapping=x_user_mapping,
+            x_at_all=x_at_all,
+            x_user_ids=x_user_ids,
+            x_display_names=x_display_names,
+            x_monitor_interval=settings.get("x_monitor_interval", 120),
+            x_monitor_use_stagger=settings.get("x_monitor_use_stagger", True),
+            x_message_templates=x_templates_from_settings(settings),
+            x_api_bearer=x_api_bearer,
+            x_api_bearer_set=bool(x_api_bearer_encrypted),
+            x_proxy=x_proxy,
         )
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
         warn_rust_rcon_command_alias_conflicts(
             self._snapshot.command_aliases, self._snapshot.rust_rcon_bindings
         )
         logger.info(
-            "配置已从数据库加载: {} 个动态目标, {} 个直播目标",
+            "配置已从数据库加载: {} 个动态目标, {} 个直播目标, {} 个 X 目标",
             len(dynamic_mapping),
             len(live_mapping),
+            len(x_mapping),
         )
         return self._snapshot
 
@@ -367,7 +418,9 @@ class ConfigService:
                     parsed = int(default)
                 if "retention" in key:
                     result[key] = max(0, min(3650, parsed))
-                elif key.startswith("dynamic"):
+                elif key == "x_proxy_port":
+                    result[key] = max(1, min(65535, parsed))
+                elif key.startswith("dynamic") or key.startswith("x_"):
                     result[key] = max(10, min(3600, parsed))
                 elif key == "group_special_title_daily_limit":
                     result[key] = max(0, min(100, parsed))
@@ -444,6 +497,22 @@ class ConfigService:
                 len(active_room_ids),
             )
 
+    async def _prune_x_monitor_states(
+        self, session, active_usernames: set[str]
+    ) -> None:
+        """Drop persisted X monitor state for disabled or removed targets."""
+        stmt = delete(XMonitorState)
+        if active_usernames:
+            stmt = stmt.where(XMonitorState.username.not_in(active_usernames))
+        result = await session.execute(stmt)
+        deleted = result.rowcount or 0
+        if deleted:
+            logger.info(
+                "已清除 {} 条 X 监控持久化状态（当前启用目标: {} 个）",
+                deleted,
+                len(active_usernames),
+            )
+
     async def _load_dynamic_target_data(
         self, session
     ) -> tuple[
@@ -505,6 +574,43 @@ class ConfigService:
             user_mapping[target.room_id] = [u.user_id for u in target.users]
             at_all[target.room_id] = target.at_all
         return mapping, user_mapping, at_all
+
+    async def _load_x_target_data(
+        self, session
+    ) -> tuple[
+        dict[str, list[str]],
+        dict[str, list[str]],
+        dict[str, bool],
+        dict[str, str],
+        dict[str, str],
+    ]:
+        """One query for enabled X targets; derive monitor mappings and profile cache."""
+        stmt = (
+            select(XTarget)
+            .where(XTarget.enabled.is_(True))
+            .options(
+                selectinload(XTarget.groups),
+                selectinload(XTarget.users),
+            )
+        )
+        targets = (await session.scalars(stmt)).all()
+        mapping: dict[str, list[str]] = {}
+        user_mapping: dict[str, list[str]] = {}
+        at_all: dict[str, bool] = {}
+        x_user_ids: dict[str, str] = {}
+        x_display_names: dict[str, str] = {}
+        for target in targets:
+            username = (target.username or "").strip().lstrip("@").strip().lower()
+            if not username:
+                continue
+            mapping[username] = [g.group_id for g in target.groups]
+            user_mapping[username] = [u.user_id for u in target.users]
+            at_all[username] = target.at_all
+            if target.user_id:
+                x_user_ids[username] = str(target.user_id).strip()
+            if target.name and target.name.strip():
+                x_display_names[username] = target.name.strip()
+        return mapping, user_mapping, at_all, x_user_ids, x_display_names
 
     async def _load_link_parser_group_policies(
         self, session
@@ -851,10 +957,13 @@ class ConfigService:
         snap = self._snapshot
         masked = mask_secret(snap.bilibili_cookie) if snap.bilibili_cookie else ""
         douyin_masked = mask_secret(snap.douyin_cookie) if snap.douyin_cookie else ""
+        x_bearer_masked = mask_secret(snap.x_api_bearer) if snap.x_api_bearer else ""
         dt = snap.dynamic_message_templates
         lt = snap.live_message_templates
         link = snap.link_message_templates
         douyin_link = snap.douyin_link_message_templates
+        xt = snap.x_message_templates
+        xp = snap.x_proxy
         return {
             "dynamic_monitor_interval": snap.dynamic_monitor_interval,
             "dynamic_monitor_use_stagger": snap.dynamic_monitor_use_stagger,
@@ -895,6 +1004,21 @@ class ConfigService:
             "link_parser_shared_media_dir_resolved": str(
                 resolve_shared_media_dir(snap.link_parser_shared_media_dir)
             ),
+            "x_monitor_interval": snap.x_monitor_interval,
+            "x_monitor_use_stagger": snap.x_monitor_use_stagger,
+            "x_template_push": xt.push,
+            "x_api_bearer": {
+                "configured": snap.x_api_bearer_set,
+                "preview": x_bearer_masked or None,
+            },
+            "x_proxy": {
+                "enabled": xp.enabled,
+                "scheme": xp.scheme,
+                "host": xp.host,
+                "port": xp.port,
+                "username": xp.username,
+                "password_configured": bool(xp.password),
+            },
         }
 
 

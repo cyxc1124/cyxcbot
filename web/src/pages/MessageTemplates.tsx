@@ -11,6 +11,7 @@ import {
   dynamicTemplateFields,
   linkTemplateFields,
   liveTemplateFields,
+  xTemplateFields,
   PREVIEW_SAMPLE_VALUES,
   PREVIEW_SEGMENT_LABELS,
   templateCategoryLabels,
@@ -95,6 +96,10 @@ function TemplateDetailPanel({
       field.key === 'link_template_live'
     ) {
       base.url = 'https://live.bilibili.com/12345'
+    } else if (field.category === 'x') {
+      base.name = 'Elon Musk'
+      base.url = 'https://x.com/elonmusk/status/1234567890'
+      base.media = '[推文图片]'
     }
     return base
   })()
@@ -359,6 +364,7 @@ export function MessageTemplatesPage() {
                 [
                   ['dynamic', dynamicTemplateFields],
                   ['live', liveTemplateFields],
+                  ['x', xTemplateFields],
                   ['link', linkTemplateFields],
                 ] as const
               ).map(([category, fields]) => (

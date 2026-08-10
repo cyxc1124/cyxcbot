@@ -38,6 +38,12 @@ import type {
   MonitorActionResult,
   MonitorStatus,
   RecentLogsResponse,
+  XBearerStatus,
+  XBearerTestResult,
+  XMonitorStatus,
+  XTarget,
+  XTargetCreate,
+  XTargetUpdate,
   RustRconBinding,
   RustRconBindingCreate,
   RustRconBindingUpdate,
@@ -294,6 +300,21 @@ export const updateLiveTarget = (id: number, data: LiveTargetUpdate) =>
 
 export const deleteLiveTarget = (id: number) =>
   request<void>(`/live-targets/${id}`, { method: 'DELETE' })
+
+// X Targets
+export const getXTargets = () => request<XTarget[]>('/x-targets')
+
+export const createXTarget = (data: XTargetCreate) =>
+  request<XTarget>('/x-targets', { method: 'POST', body: JSON.stringify(data) })
+
+export const updateXTarget = (id: number, data: XTargetUpdate) =>
+  request<XTarget>(`/x-targets/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+
+export const deleteXTarget = (id: number) =>
+  request<void>(`/x-targets/${id}`, { method: 'DELETE' })
+
+export const refreshXTargetProfile = (id: number) =>
+  request<XTarget>(`/x-targets/${id}/refresh-profile`, { method: 'POST' })
 
 // Rust RCON bindings
 export const getRustRconBindings = () =>
@@ -652,6 +673,24 @@ export const cancelDouyinQrcodeLogin = (sessionId: string) =>
 export const logoutDouyin = () =>
   request<DouyinLogoutResult>('/douyin/logout', { method: 'POST' })
 
+// X account
+export const getXBearerStatus = () => request<XBearerStatus>('/x/bearer')
+
+export const saveXBearer = (bearer: string) =>
+  request<XBearerStatus>('/x/bearer', {
+    method: 'PUT',
+    body: JSON.stringify({ bearer }),
+  })
+
+export const clearXBearer = () =>
+  request<XBearerStatus>('/x/bearer', { method: 'DELETE' })
+
+export const testXBearer = (username = 'X') =>
+  request<XBearerTestResult>('/x/bearer/test', {
+    method: 'POST',
+    body: JSON.stringify({ username }),
+  })
+
 // Monitors
 export const getMonitorStatus = () => request<MonitorStatus>('/monitors/status')
 
@@ -659,6 +698,8 @@ export const getDynamicMonitorStatus = () =>
   request<DynamicMonitorStatus>('/monitors/dynamic')
 
 export const getLiveMonitorStatus = () => request<LiveMonitorStatus>('/monitors/live')
+
+export const getXMonitorStatus = () => request<XMonitorStatus>('/monitors/x')
 
 export const getSystemMonitorStatus = () =>
   request<SystemMonitorStatus>('/monitors/system')
@@ -673,6 +714,9 @@ export const triggerDynamicCheck = () =>
 
 export const triggerLiveCheck = () =>
   request<MonitorActionResult>('/monitors/live/check', { method: 'POST' })
+
+export const triggerXCheck = () =>
+  request<MonitorActionResult>('/monitors/x/check', { method: 'POST' })
 
 export const getRecentLogs = (params: { limit?: number; min_level?: string } = {}) =>
   request<RecentLogsResponse>(

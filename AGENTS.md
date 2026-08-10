@@ -38,6 +38,7 @@ deploy/             # Docker Compose / Helm
 | 插件 | 职责 |
 |------|------|
 | `dynamic_monitor` | UP 主动态轮询推送与置顶变更推送；`最新动态`/`置顶动态`/`#提取` |
+| `x_monitor` | X (Twitter) 博主新推文轮询推送（需 Bearer Token；支持 HTTP/HTTPS/SOCKS5 代理） |
 | `live_monitor` | 直播开播/下播（WebSocket + API 轮询） |
 | `video_monitor` | 群内 `最新视频`/`最新投稿` **命令查询**（非自动推送；新投稿推送见 `dynamic_monitor`） |
 | `bilibili_link_parser` | 群/好友 B 站链接与 QQ 小程序自动解析 |
@@ -75,7 +76,7 @@ deploy/             # Docker Compose / Helm
 **插件读配置的标准模式**：
 
 1. `Config.from_service()` 从 `get_config_service().get_snapshot()` 取快照
-2. 需热重载的插件注册 `get_config_service().register_reload_callback(...)`（见 `dynamic_monitor`、`live_monitor`、`video_monitor`、`bilibili_link_parser`）
+2. 需热重载的插件注册 `get_config_service().register_reload_callback(...)`（见 `dynamic_monitor`、`x_monitor`、`live_monitor`、`video_monitor`、`bilibili_link_parser`）
 3. 超级用户由 `shared/config/nonebot_superusers.py` 从 DB 同步到 NoneBot
 
 数据库迁移在 `shared/db/migrations/`；启动时 `nonebot.init(alembic_startup_check=True)` 经 Alembic **upgrade** 应用（勿用 sync 模式，模型变更失败时可能删表重建）。
@@ -178,6 +179,7 @@ logger.error(f"错误: {traceback.format_exc()}")
 | Admin↔OneBot 桥接 | `admin/services/onebot_bridge.py` |
 | Web API | `admin/api/v1/` |
 | B 站 HTTP 封装 | `utils/bilibili_api/` |
+| X HTTP 封装 | `utils/x_api/` |
 | 截图 | `utils/screenshot/` |
 | 前端页面 | `web/src/pages/` |
 

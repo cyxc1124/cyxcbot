@@ -36,6 +36,15 @@ export interface CommandAliasEntry {
   triggers: string[]
 }
 
+export interface XProxySettings {
+  enabled: boolean
+  scheme: string
+  host: string
+  port: number
+  username: string
+  password_configured: boolean
+}
+
 export interface Settings {
   dynamic_monitor_interval: number
   dynamic_monitor_use_stagger: boolean
@@ -56,8 +65,13 @@ export interface Settings {
   link_template_video: string
   link_template_live: string
   link_template_douyin: string
+  x_monitor_interval: number
+  x_monitor_use_stagger: boolean
+  x_template_push: string
   bilibili_cookie: CookieStatus
   douyin_cookie: CookieStatus
+  x_api_bearer: CookieStatus
+  x_proxy: XProxySettings
   status_check_allowed_qq: string[]
   nonebot_superusers: string[]
   command_aliases: Record<string, CommandAliasEntry>
@@ -78,11 +92,22 @@ export type SettingsUpdate = Partial<
     Settings,
     | 'bilibili_cookie'
     | 'douyin_cookie'
+    | 'x_api_bearer'
+    | 'x_proxy'
     | 'command_prefixes'
     | 'link_parser_shared_media_dir_default'
     | 'link_parser_shared_media_dir_resolved'
   >
->
+> & {
+  x_api_bearer?: string
+  x_proxy_enabled?: boolean
+  x_proxy_scheme?: string
+  x_proxy_host?: string
+  x_proxy_port?: number
+  x_proxy_username?: string
+  /** 明文；undefined=不改；""=清除 */
+  x_proxy_password?: string
+}
 
 export interface CookieTestResult {
   success: boolean
@@ -132,6 +157,20 @@ export interface LiveTarget {
   created_at: string
 }
 
+export interface XTarget {
+  id: number
+  username: string
+  name: string | null
+  /** X 平台数字 ID（DB 缓存，轮询优先使用） */
+  x_user_id: string | null
+  enabled: boolean
+  at_all: boolean
+  group_ids: string[]
+  user_ids: string[]
+  created_at: string
+  updated_at?: string
+}
+
 export interface DynamicTargetCreate {
   uid: string
   name?: string
@@ -150,10 +189,22 @@ export interface LiveTargetCreate {
   user_ids?: string[]
 }
 
+export interface XTargetCreate {
+  username: string
+  name?: string
+  enabled?: boolean
+  at_all?: boolean
+  group_ids: string[]
+  user_ids?: string[]
+}
+
 export type DynamicTargetUpdate = Partial<
   Omit<DynamicTarget, 'id' | 'created_at'>
 >
 export type LiveTargetUpdate = Partial<Omit<LiveTarget, 'id' | 'created_at'>>
+export type XTargetUpdate = Partial<
+  Omit<XTarget, 'id' | 'created_at' | 'updated_at' | 'x_user_id'>
+>
 
 // Groups
 export interface Group {
@@ -308,6 +359,20 @@ export interface DouyinLogoutResult {
   message: string
 }
 
+export interface XBearerStatus {
+  configured: boolean
+  preview?: string | null
+  message?: string
+}
+
+export interface XBearerTestResult {
+  success: boolean
+  message: string
+  username?: string | null
+  name?: string | null
+  user_id?: string | null
+}
+
 export interface LinkParserUserPolicyInput {
   user_id: string
   name?: string
@@ -362,6 +427,17 @@ export interface LiveMonitorStatus {
   last_error: string | null
   live_rooms: number
   checks_total: number
+}
+
+export interface XMonitorStatus {
+  enabled: boolean
+  interval_seconds: number
+  target_count: number
+  poll_schedule: MonitorPollSchedule
+  last_check_at: string | null
+  last_error: string | null
+  checks_total: number
+  new_tweets_total: number
 }
 
 export interface SystemMonitorStatus {
