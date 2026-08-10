@@ -9,18 +9,42 @@ from nonebot.log import logger
 
 from shared.config.proxy import ProxyConfig
 
+from .media import (
+    index_media as _index_media,
+)
+from .media import (
+    media_items_for_tweet as _media_items_for_tweet,
+)
+from .media import (
+    media_urls_for_tweet as _media_urls_for_tweet,
+)
 from .models import TweetItem, XUser, tweet_id_as_int
 
 _API_BASE = "https://api.x.com/2"
 
 
 def create_session(proxy: ProxyConfig | None = None) -> aiohttp.ClientSession:
-    """Create an aiohttp session; SOCKS5 uses ProxyConnector, else plain TCP."""
-    if proxy is not None and proxy.is_configured and proxy.scheme == "socks5":
-        from aiohttp_socks import ProxyConnector
+    """Create an aiohttp session.
 
+    已配置的 http/https/socks5 代理一律走 ProxyConnector，保证同 session 上的
+    API 与 t.co 解析请求都经代理，避免部分请求直连。
+    """
+    if proxy is not None and proxy.is_configured:
         url = proxy.to_url()
         if url:
+            from aiohttp_socks import ProxyConnector
+
+            # aiohttp_socks 只认 http/socks4/socks5。
+            # UI 的 https 多为误选（Clash 等本地代理实际是 HTTP CONNECT）；
+            # 真 TLS-to-proxy 会连不上，且账号密码会以明文发往代理主机。
+            if proxy.scheme == "https":
+                logger.warning(
+                    "X 代理 scheme=https 不受支持，已按 http://{}:{} 连接；"
+                    "若代理仅接受 TLS，请改用 http/socks5 或升级客户端",
+                    proxy.host,
+                    proxy.port,
+                )
+                url = "http://" + url.removeprefix("https://")
             return aiohttp.ClientSession(connector=ProxyConnector.from_url(url))
     return aiohttp.ClientSession()
 
@@ -32,12 +56,9 @@ class XApiClient:
         self,
         session: aiohttp.ClientSession,
         bearer: str,
-        proxy_url: Optional[str] = None,
     ) -> None:
         self.session = session
         self.bearer = (bearer or "").strip()
-        # http/https 代理走 per-request；socks5 已在 connector 层处理
-        self.proxy_url = proxy_url
         self._user_cache: Dict[str, XUser] = {}
 
     def _headers(self) -> dict[str, str]:
@@ -47,10 +68,7 @@ class XApiClient:
         }
 
     def _request_kwargs(self) -> dict[str, Any]:
-        kwargs: dict[str, Any] = {"headers": self._headers(), "timeout": 30}
-        if self.proxy_url:
-            kwargs["proxy"] = self.proxy_url
-        return kwargs
+        return {"headers": self._headers(), "timeout": 30}
 
     async def get_user_by_username(self, username: str) -> Optional[XUser]:
         """Resolve username (without @) to XUser."""
@@ -152,6 +170,7 @@ class XApiClient:
                     continue
                 tweet_id = str(row["id"])
                 media_urls = _media_urls_for_tweet(row, media_by_key)
+                media_items = _media_items_for_tweet(row, media_by_key)
                 items.append(
                     TweetItem(
                         id=tweet_id,
@@ -165,6 +184,7 @@ class XApiClient:
                             else f"https://x.com/i/status/{tweet_id}"
                         ),
                         media_urls=media_urls,
+                        media_items=media_items,
                     )
                 )
 
@@ -207,6 +227,69 @@ class XApiClient:
             return None
         return payload if isinstance(payload, dict) else {}
 
+    async def get_tweet_by_id(self, tweet_id: str) -> Optional[TweetItem]:
+        """Fetch a single tweet by ID with author + media expansions."""
+        tid = str(tweet_id or "").strip()
+        if not tid:
+            return None
+        if not self.bearer:
+            logger.warning("X API: 未配置 Bearer Token，无法拉取推文")
+            return None
+
+        url = f"{_API_BASE}/tweets/{tid}"
+        params = {
+            "tweet.fields": "created_at,text,attachments,author_id",
+            "expansions": "attachments.media_keys,author_id",
+            "media.fields": "url,preview_image_url,type,variants",
+            "user.fields": "name,username",
+        }
+        try:
+            async with self.session.get(
+                url, params=params, **self._request_kwargs()
+            ) as response:
+                if response.status != 200:
+                    logger.warning(
+                        "X API 拉取单条推文失败: tweet_id={} HTTP {}",
+                        tid,
+                        response.status,
+                    )
+                    return None
+                payload = await response.json()
+        except Exception:
+            logger.opt(exception=True).error("X API 拉取单条推文异常: tweet_id={}", tid)
+            return None
+
+        if not isinstance(payload, dict):
+            return None
+        data = payload.get("data")
+        if not isinstance(data, dict) or not data.get("id"):
+            return None
+
+        includes = (
+            payload.get("includes") if isinstance(payload.get("includes"), dict) else {}
+        )
+        media_by_key = _index_media(includes)
+        users_by_id = _index_users(includes)
+        author_id = str(data.get("author_id") or "").strip()
+        author = users_by_id.get(author_id) or {}
+        handle = str(author.get("username") or "").strip().lstrip("@").strip().lower()
+        display_name = str(author.get("name") or handle)
+        tweet_id_str = str(data["id"])
+        return TweetItem(
+            id=tweet_id_str,
+            text=str(data.get("text") or ""),
+            created_at=str(data.get("created_at") or ""),
+            username=handle,
+            name=display_name,
+            url=(
+                f"https://x.com/{handle}/status/{tweet_id_str}"
+                if handle
+                else f"https://x.com/i/status/{tweet_id_str}"
+            ),
+            media_urls=_media_urls_for_tweet(data, media_by_key),
+            media_items=_media_items_for_tweet(data, media_by_key),
+        )
+
 
 def build_user_timeline_params(
     *,
@@ -221,7 +304,7 @@ def build_user_timeline_params(
         "exclude": "retweets,replies",
         "tweet.fields": "created_at,text,attachments",
         "expansions": "attachments.media_keys",
-        "media.fields": "url,preview_image_url,type",
+        "media.fields": "url,preview_image_url,type,variants",
     }
     sid = str(since_id or "").strip()
     if sid and sid != "0" and tweet_id_as_int(sid) > 0:
@@ -232,26 +315,12 @@ def build_user_timeline_params(
     return params
 
 
-def _index_media(includes: Any) -> Dict[str, dict]:
+def _index_users(includes: Any) -> Dict[str, dict]:
     if not isinstance(includes, dict):
         return {}
-    media_list = includes.get("media") or []
+    users = includes.get("users") or []
     result: Dict[str, dict] = {}
-    for item in media_list:
-        if isinstance(item, dict) and item.get("media_key"):
-            result[str(item["media_key"])] = item
+    for item in users:
+        if isinstance(item, dict) and item.get("id"):
+            result[str(item["id"])] = item
     return result
-
-
-def _media_urls_for_tweet(tweet: dict, media_by_key: Dict[str, dict]) -> List[str]:
-    attachments = tweet.get("attachments") or {}
-    keys = attachments.get("media_keys") or []
-    urls: List[str] = []
-    for key in keys:
-        media = media_by_key.get(str(key))
-        if not media:
-            continue
-        url = media.get("url") or media.get("preview_image_url")
-        if url:
-            urls.append(str(url))
-    return urls

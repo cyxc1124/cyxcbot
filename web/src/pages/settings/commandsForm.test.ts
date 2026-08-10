@@ -24,6 +24,7 @@ function baseSettings(commandAliases: Settings['command_aliases']): Settings {
     link_template_video: '',
     link_template_live: '',
     link_template_douyin: '',
+    link_template_x: '',
     x_monitor_interval: 120,
     x_monitor_use_stagger: true,
     x_template_push: '',

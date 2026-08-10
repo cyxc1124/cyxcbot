@@ -32,6 +32,7 @@ from shared.config.message_templates import (
     dynamic_templates_from_settings,
     link_templates_from_settings,
     live_templates_from_settings,
+    x_link_templates_from_settings,
     x_templates_from_settings,
 )
 from shared.config.nonebot_superusers import apply_nonebot_superusers
@@ -51,6 +52,10 @@ from shared.config.shared_media import (
     resolve_shared_media_dir,
 )
 from shared.config.types import AppConfigSnapshot
+from shared.config.x_link_parser_policy import (
+    XLinkParserGroupPolicyRecord,
+    XLinkParserUserPolicyRecord,
+)
 from shared.db.models import (
     DouyinLinkParserGroupPolicy,
     DouyinLinkParserUserPolicy,
@@ -65,6 +70,8 @@ from shared.db.models import (
     RustRconGroupPolicy,
     RustRconUserPolicy,
     SystemSetting,
+    XLinkParserGroupPolicy,
+    XLinkParserUserPolicy,
     XMonitorState,
     XTarget,
 )
@@ -205,6 +212,12 @@ class ConfigService:
                 douyin_link_parser_user_policies = (
                     await self._load_douyin_link_parser_user_policies(session)
                 )
+                x_link_parser_group_policies = (
+                    await self._load_x_link_parser_group_policies(session)
+                )
+                x_link_parser_user_policies = (
+                    await self._load_x_link_parser_user_policies(session)
+                )
                 rust_rcon_bindings = await self._load_rust_rcon_bindings(session)
                 rust_rcon_custom_commands = await self._load_rust_rcon_custom_commands(
                     session
@@ -274,6 +287,7 @@ class ConfigService:
             live_message_templates=live_templates_from_settings(settings),
             link_message_templates=link_templates_from_settings(settings),
             douyin_link_message_templates=douyin_link_templates_from_settings(settings),
+            x_link_message_templates=x_link_templates_from_settings(settings),
             bilibili_cookie=cookie,
             bilibili_cookie_set=bool(cookie_encrypted),
             douyin_cookie=douyin_cookie,
@@ -312,6 +326,8 @@ class ConfigService:
             link_parser_user_policies=link_parser_user_policies,
             douyin_link_parser_group_policies=douyin_link_parser_group_policies,
             douyin_link_parser_user_policies=douyin_link_parser_user_policies,
+            x_link_parser_group_policies=x_link_parser_group_policies,
+            x_link_parser_user_policies=x_link_parser_user_policies,
             command_aliases=settings.get("command_aliases", {}),
             command_extra_prefixes=settings.get(
                 "command_extra_prefixes", list(DEFAULT_EXTRA_PREFIXES)
@@ -668,6 +684,31 @@ class ConfigService:
             for row in rows
         }
 
+    async def _load_x_link_parser_group_policies(
+        self, session
+    ) -> dict[str, XLinkParserGroupPolicyRecord]:
+        rows = (await session.scalars(select(XLinkParserGroupPolicy))).all()
+        return {
+            row.group_id: XLinkParserGroupPolicyRecord(
+                group_id=row.group_id,
+                enabled=row.enabled,
+            )
+            for row in rows
+        }
+
+    async def _load_x_link_parser_user_policies(
+        self, session
+    ) -> dict[str, XLinkParserUserPolicyRecord]:
+        rows = (await session.scalars(select(XLinkParserUserPolicy))).all()
+        return {
+            row.user_id: XLinkParserUserPolicyRecord(
+                user_id=row.user_id,
+                enabled=row.enabled,
+                name=row.name,
+            )
+            for row in rows
+        }
+
     async def _load_rust_rcon_bindings(self, session) -> list[RustRconBindingRecord]:
         stmt = (
             select(RustRconBinding)
@@ -950,6 +991,60 @@ class ConfigService:
                 if row:
                     await session.delete(row)
 
+    async def upsert_x_link_parser_group_policy(
+        self,
+        group_id: str,
+        *,
+        enabled: bool,
+    ) -> None:
+        gid = str(group_id).strip()
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(XLinkParserGroupPolicy, gid)
+                if row:
+                    row.enabled = enabled
+                else:
+                    session.add(XLinkParserGroupPolicy(group_id=gid, enabled=enabled))
+
+    async def delete_x_link_parser_group_policy(self, group_id: str) -> None:
+        gid = str(group_id).strip()
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(XLinkParserGroupPolicy, gid)
+                if row:
+                    await session.delete(row)
+
+    async def upsert_x_link_parser_user_policy(
+        self,
+        user_id: str,
+        *,
+        enabled: bool,
+        name: str | None = None,
+    ) -> None:
+        uid = str(user_id).strip()
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(XLinkParserUserPolicy, uid)
+                if row:
+                    row.enabled = enabled
+                    row.name = name
+                else:
+                    session.add(
+                        XLinkParserUserPolicy(
+                            user_id=uid,
+                            name=name,
+                            enabled=enabled,
+                        )
+                    )
+
+    async def delete_x_link_parser_user_policy(self, user_id: str) -> None:
+        uid = str(user_id).strip()
+        async with get_session() as session:
+            async with session.begin():
+                row = await session.get(XLinkParserUserPolicy, uid)
+                if row:
+                    await session.delete(row)
+
     def settings_for_api(self) -> dict:
         """Settings dict for API (cookie masked, never plaintext)."""
         from shared.security.crypto import mask_secret
@@ -962,6 +1057,7 @@ class ConfigService:
         lt = snap.live_message_templates
         link = snap.link_message_templates
         douyin_link = snap.douyin_link_message_templates
+        x_link = snap.x_link_message_templates
         xt = snap.x_message_templates
         xp = snap.x_proxy
         return {
@@ -984,6 +1080,7 @@ class ConfigService:
             "link_template_video": link.video,
             "link_template_live": link.live,
             "link_template_douyin": douyin_link.video,
+            "link_template_x": x_link.tweet,
             "bilibili_cookie": {
                 "configured": snap.bilibili_cookie_set,
                 "preview": masked or None,

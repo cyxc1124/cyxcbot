@@ -19,6 +19,7 @@ from shared.config.message_templates import (
     DynamicMessageTemplates,
     LinkMessageTemplates,
     LiveMessageTemplates,
+    XLinkMessageTemplates,
     XMessageTemplates,
 )
 from shared.config.proxy import ProxyConfig
@@ -27,6 +28,10 @@ from shared.config.rust_rcon_custom import RustRconCustomCommandRecord
 from shared.config.rust_rcon_policy import (
     RustRconGroupPolicyRecord,
     RustRconUserPolicyRecord,
+)
+from shared.config.x_link_parser_policy import (
+    XLinkParserGroupPolicyRecord,
+    XLinkParserUserPolicyRecord,
 )
 
 
@@ -62,6 +67,9 @@ class AppConfigSnapshot:
     douyin_link_message_templates: DouyinLinkMessageTemplates = field(
         default_factory=DouyinLinkMessageTemplates
     )
+    x_link_message_templates: XLinkMessageTemplates = field(
+        default_factory=XLinkMessageTemplates
+    )
     bilibili_cookie: str = ""
     bilibili_cookie_set: bool = False
     douyin_cookie: str = ""
@@ -93,6 +101,12 @@ class AppConfigSnapshot:
     )
     douyin_link_parser_user_policies: Dict[str, DouyinLinkParserUserPolicyRecord] = (
         field(default_factory=dict)
+    )
+    x_link_parser_group_policies: Dict[str, XLinkParserGroupPolicyRecord] = field(
+        default_factory=dict
+    )
+    x_link_parser_user_policies: Dict[str, XLinkParserUserPolicyRecord] = field(
+        default_factory=dict
     )
     command_aliases: Dict[str, CommandAliasEntry] = field(default_factory=dict)
     command_extra_prefixes: List[str] = field(

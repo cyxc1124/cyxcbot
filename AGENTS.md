@@ -43,6 +43,7 @@ deploy/             # Docker Compose / Helm
 | `video_monitor` | 群内 `最新视频`/`最新投稿` **命令查询**（非自动推送；新投稿推送见 `dynamic_monitor`） |
 | `bilibili_link_parser` | 群/好友 B 站链接与 QQ 小程序自动解析 |
 | `douyin_link_parser` | 群/好友抖音分享链接解析与视频/图集/Live 图回传（Live 以视频发送） |
+| `x_link_parser` | 群/好友 X (Twitter) 链接解析与推文文字/图片/视频回传（复用 X Bearer/代理） |
 | `rust_rcon` | 群/私聊 WebRCON 远控（触发词 + QQ 白名单；会话开关默认关） |
 | `rust_player` | 群内签到、SteamID 绑定、积分查询与商城兑换（仅群聊） |
 | `group_special_title` | 群成员自助设置 QQ 专属头衔（须群主、白名单；`/头衔`） |
@@ -76,7 +77,7 @@ deploy/             # Docker Compose / Helm
 **插件读配置的标准模式**：
 
 1. `Config.from_service()` 从 `get_config_service().get_snapshot()` 取快照
-2. 需热重载的插件注册 `get_config_service().register_reload_callback(...)`（见 `dynamic_monitor`、`x_monitor`、`live_monitor`、`video_monitor`、`bilibili_link_parser`）
+2. 需热重载的插件注册 `get_config_service().register_reload_callback(...)`（见 `dynamic_monitor`、`x_monitor`、`live_monitor`、`video_monitor`、`bilibili_link_parser`、`douyin_link_parser`、`x_link_parser`）
 3. 超级用户由 `shared/config/nonebot_superusers.py` 从 DB 同步到 NoneBot
 
 数据库迁移在 `shared/db/migrations/`；启动时 `nonebot.init(alembic_startup_check=True)` 经 Alembic **upgrade** 应用（勿用 sync 模式，模型变更失败时可能删表重建）。

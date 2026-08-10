@@ -15,7 +15,6 @@ from nonebot.log import logger
 from nonebot_plugin_orm import get_session
 from sqlalchemy import select
 
-from shared.config.proxy import ProxyConfig
 from shared.config.service import get_config_service
 from shared.db.models import XTarget
 from shared.monitor.background_task import spawn_background_task
@@ -68,12 +67,6 @@ def _ensure_config_reload_registered() -> None:
     if not _config_reload_registered:
         get_config_service().register_reload_callback(_on_config_reload)
         _config_reload_registered = True
-
-
-def _proxy_url_for_http(proxy: ProxyConfig) -> Optional[str]:
-    if proxy.is_configured and proxy.scheme in ("http", "https"):
-        return proxy.to_url()
-    return None
 
 
 class XMonitor:
@@ -159,11 +152,7 @@ class XMonitor:
         if self.session and not self.session.closed:
             await self.session.close()
         self.session = create_session(self.config.x_proxy)
-        self.client = XApiClient(
-            self.session,
-            self.config.x_api_bearer,
-            proxy_url=_proxy_url_for_http(self.config.x_proxy),
-        )
+        self.client = XApiClient(self.session, self.config.x_api_bearer)
 
     async def init_resources(self):
         await self._rebuild_session()

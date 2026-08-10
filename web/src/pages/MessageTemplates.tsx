@@ -91,6 +91,13 @@ function TemplateDetailPanel({
       base.url = 'https://www.douyin.com/video/7123456789012345678'
       base.author = '抖音用户'
       base.title = '示例抖音视频'
+    } else if (field.key === 'link_template_x') {
+      base.name = 'Elon Musk'
+      base.username = 'elonmusk'
+      base.url = 'https://x.com/elonmusk/status/1234567890'
+      base.media = '[推文图片]'
+      base.text = 'Hello from X!'
+      base.tweet_id = '1234567890'
     } else if (
       field.category === 'live' ||
       field.key === 'link_template_live'

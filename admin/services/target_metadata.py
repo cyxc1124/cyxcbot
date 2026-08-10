@@ -156,12 +156,6 @@ def _x_proxy_and_bearer() -> tuple[ProxyConfig, str]:
     return snap.x_proxy, snap.x_api_bearer
 
 
-def _x_http_proxy_url(proxy: ProxyConfig) -> str | None:
-    if proxy.is_configured and proxy.scheme in ("http", "https"):
-        return proxy.to_url()
-    return None
-
-
 async def resolve_x_user(username: str) -> Optional[XUser]:
     """Fetch X user by username (without @)."""
     key = (username or "").strip().lstrip("@").strip()
@@ -174,7 +168,7 @@ async def resolve_x_user(username: str) -> Optional[XUser]:
     try:
         session = create_session(proxy)
         async with session:
-            client = XApiClient(session, bearer, proxy_url=_x_http_proxy_url(proxy))
+            client = XApiClient(session, bearer)
             return await client.get_user_by_username(key)
     except Exception as exc:
         logger.warning("解析 X 用户 {} 失败: {}", key, exc)

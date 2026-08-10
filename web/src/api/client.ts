@@ -19,6 +19,10 @@ import type {
   DouyinLinkParserGroupPolicyMutation,
   DouyinLinkParserUserPolicyList,
   DouyinLinkParserUserPolicyMutation,
+  XLinkParserGroupPolicyList,
+  XLinkParserGroupPolicyMutation,
+  XLinkParserUserPolicyList,
+  XLinkParserUserPolicyMutation,
   LinkParserGroupPolicyList,
   LinkParserGroupPolicyMutation,
   LinkParserUserPolicyInput,
@@ -591,6 +595,48 @@ export const updateDouyinLinkParserUserPolicy = (
 export const resetDouyinLinkParserUserPolicy = (userId: string) =>
   request<DouyinLinkParserUserPolicyMutation>(
     `/douyin-link-parser/policies/users/${encodeURIComponent(userId)}`,
+    { method: 'DELETE' },
+  )
+
+export const getXLinkParserGroupPolicies = () =>
+  request<XLinkParserGroupPolicyList>('/x-link-parser/policies/groups')
+
+export const updateXLinkParserGroupPolicy = (
+  groupId: string,
+  payload: { enabled: boolean },
+) =>
+  request<XLinkParserGroupPolicyMutation>(
+    `/x-link-parser/policies/groups/${encodeURIComponent(groupId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    },
+  )
+
+export const resetXLinkParserGroupPolicy = (groupId: string) =>
+  request<XLinkParserGroupPolicyMutation>(
+    `/x-link-parser/policies/groups/${encodeURIComponent(groupId)}`,
+    { method: 'DELETE' },
+  )
+
+export const getXLinkParserUserPolicies = () =>
+  request<XLinkParserUserPolicyList>('/x-link-parser/policies/users')
+
+export const updateXLinkParserUserPolicy = (
+  userId: string,
+  payload: { enabled: boolean; name?: string | null },
+) =>
+  request<XLinkParserUserPolicyMutation>(
+    `/x-link-parser/policies/users/${encodeURIComponent(userId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    },
+  )
+
+export const resetXLinkParserUserPolicy = (userId: string) =>
+  request<XLinkParserUserPolicyMutation>(
+    `/x-link-parser/policies/users/${encodeURIComponent(userId)}`,
     { method: 'DELETE' },
   )
 
