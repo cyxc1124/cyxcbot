@@ -19,7 +19,7 @@ from shared.notify.message_template import build_message_from_template
 from utils.x_api import TweetItem
 from utils.x_api.models import TweetMediaItem
 
-from .delivery_retry import parse_resume_from
+from .delivery_retry import normalize_batch_start, parse_resume_from
 
 SegmentPart = Union[MessageSegment, str]
 
@@ -123,7 +123,14 @@ class XSender:
             )
             # 固定把 @全体单独成批放在最前，避免挂到视频批，且 resume 下标稳定。
             prepared = [prefix, *batches]
-        start = max(0, min(int(start), len(prepared)))
+        ok, start, stale_error = normalize_batch_start(start, len(prepared))
+        if not ok:
+            logger.warning(
+                "群组 {} 续传下标失效（{}），保留 pending 待重试",
+                group_id,
+                stale_error,
+            )
+            return TargetDelivery("group", group_id, False, stale_error)
         sent = start
         try:
             for index in range(start, len(prepared)):
@@ -188,7 +195,14 @@ class XSender:
         *,
         start: int = 0,
     ) -> TargetDelivery:
-        start = max(0, min(int(start), len(batches)))
+        ok, start, stale_error = normalize_batch_start(start, len(batches))
+        if not ok:
+            logger.warning(
+                "好友 {} 续传下标失效（{}），保留 pending 待重试",
+                user_id,
+                stale_error,
+            )
+            return TargetDelivery("user", user_id, False, stale_error)
         sent = start
         try:
             for index in range(start, len(batches)):
@@ -316,37 +330,39 @@ def _text_image_batches(non_video: Message) -> list[Message]:
 def reply_batches(message: Message) -> list[Message]:
     """对齐抖音：视频必须单独发；文字与图片可同条。
 
-    默认模板文案在前时：先发文字/图，再逐条发视频。
-    自定义模板媒体在前时：先发视频，再发文字/图（同抖音 media→caption）。
+    按模板位置拆成 leading（首个视频前）→ 各视频单独批 → trailing（其后），
+    避免图+视频时把 URL 等后缀文案提前到视频之前。
     """
     if not message:
         return []
 
+    has_video = any(seg.type == "video" for seg in message)
+    if not has_video:
+        cleaned = Message()
+        for seg in message:
+            if seg.type == "text" and not str(seg.data.get("text", "")).strip():
+                continue
+            cleaned.append(seg)
+        return _text_image_batches(cleaned)
+
+    leading = Message()
+    trailing = Message()
     videos: list = []
-    non_video = Message()
-    first_video_at: int | None = None
-    first_non_video_at: int | None = None
-    for index, seg in enumerate(message):
+    seen_video = False
+    for seg in message:
         if seg.type == "video":
-            if first_video_at is None:
-                first_video_at = index
+            seen_video = True
             videos.append(seg)
             continue
         if seg.type == "text" and not str(seg.data.get("text", "")).strip():
             continue
-        if first_non_video_at is None:
-            first_non_video_at = index
-        non_video.append(seg)
+        if not seen_video:
+            leading.append(seg)
+        else:
+            trailing.append(seg)
 
-    video_batches = [Message([seg]) for seg in videos]
-    text_image_batches = _text_image_batches(non_video)
-
-    if not video_batches:
-        return text_image_batches
-    if not text_image_batches:
-        return video_batches
-    if first_non_video_at is not None and (
-        first_video_at is None or first_non_video_at < first_video_at
-    ):
-        return text_image_batches + video_batches
-    return video_batches + text_image_batches
+    batches: list[Message] = []
+    batches.extend(_text_image_batches(leading))
+    batches.extend(Message([seg]) for seg in videos)
+    batches.extend(_text_image_batches(trailing))
+    return batches

@@ -90,3 +90,20 @@ def test_encode_decode_pending_targets_with_resume():
         ("101", 0),
         ("102", 0),
     ]
+
+
+def test_normalize_batch_start_rejects_stale_offset():
+    delivery_retry = _load_delivery_retry()
+    ok, start, err = delivery_retry.normalize_batch_start(2, 2)
+    assert ok is False
+    assert start == 0
+    assert err is not None and err.startswith("resume_from:0:stale_batches:")
+
+    ok, start, err = delivery_retry.normalize_batch_start(5, 3)
+    assert ok is False
+
+    ok, start, err = delivery_retry.normalize_batch_start(1, 3)
+    assert ok is True and start == 1 and err is None
+
+    ok, start, err = delivery_retry.normalize_batch_start(0, 0)
+    assert ok is True and start == 0

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -74,6 +75,7 @@ async def materialize_tweet_media(
 ) -> list[Path]:
     """Download image/video attachments into media_dir; set file_path on items.
 
+    文件名带随机后缀，避免监控与链接解析并发同一 tweet 时互相覆盖 / 误删。
     Returns local paths that should be cleaned up after send.
     """
     paths: list[Path] = []
@@ -81,7 +83,8 @@ async def materialize_tweet_media(
     for index, item in enumerate(tweet.media_items):
         if not item.url:
             continue
-        dest = media_dir / f"x_{tweet.id}_{index}{_suffix_for_item(item)}"
+        unique = secrets.token_hex(4)
+        dest = media_dir / f"x_{tweet.id}_{index}_{unique}{_suffix_for_item(item)}"
         ok = await download_url(session, item.url, dest)
         if not ok:
             logger.warning(
