@@ -75,7 +75,7 @@ async def test_x_bearer(body: XBearerTestRequest, _: AdminUser):
             message="未配置 Bearer Token",
         )
 
-    username = body.username.lstrip("@").strip() or "X"
+    username = body.username.strip().lstrip("@").strip() or "X"
     user = await resolve_x_user(username)
     if not user:
         return XBearerTestResponse(

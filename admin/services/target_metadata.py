@@ -164,7 +164,7 @@ def _x_http_proxy_url(proxy: ProxyConfig) -> str | None:
 
 async def resolve_x_user(username: str) -> Optional[XUser]:
     """Fetch X user by username (without @)."""
-    key = (username or "").lstrip("@").strip()
+    key = (username or "").strip().lstrip("@").strip()
     if not key:
         return None
     proxy, bearer = _x_proxy_and_bearer()

@@ -199,7 +199,7 @@ async def trigger_x_check(username: Optional[str] = None) -> Dict[str, Any]:
 
     snap = get_config_service().get_snapshot()
     if username:
-        key = username.lstrip("@").strip().lower()
+        key = username.strip().lstrip("@").strip().lower()
         if key not in snap.x_monitor_mapping:
             return {
                 "success": False,

@@ -412,7 +412,7 @@ class XMonitor:
 
     async def _persist_user_profile(self, username: str, user: XUser) -> None:
         """Write resolved X user id / display name back to XTarget."""
-        key = (username or "").lstrip("@").strip().lower()
+        key = (username or "").strip().lstrip("@").strip().lower()
         if not key or not user.id:
             return
         display = (user.name or user.username or key).strip() or key
@@ -440,7 +440,7 @@ class XMonitor:
     ) -> Optional[XUser]:
         if not self.client:
             return None
-        key = (username or "").lstrip("@").strip().lower()
+        key = (username or "").strip().lstrip("@").strip().lower()
         if not key:
             return None
 

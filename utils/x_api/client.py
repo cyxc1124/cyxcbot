@@ -54,7 +54,7 @@ class XApiClient:
 
     async def get_user_by_username(self, username: str) -> Optional[XUser]:
         """Resolve username (without @) to XUser."""
-        key = (username or "").lstrip("@").strip().lower()
+        key = (username or "").strip().lstrip("@").strip().lower()
         if not key:
             return None
         cached = self._user_cache.get(key)
@@ -89,7 +89,11 @@ class XApiClient:
 
         user = XUser(
             id=str(data["id"]),
-            username=str(data.get("username") or key).lstrip("@").lower(),
+            username=str(data.get("username") or key)
+            .strip()
+            .lstrip("@")
+            .strip()
+            .lower(),
             name=str(data.get("name") or ""),
         )
         self._user_cache[user.username.lower()] = user
@@ -123,7 +127,7 @@ class XApiClient:
         page_size = 100 if since_id else max_results
         page_limit = max(1, min(20, int(max_pages))) if since_id else 1
 
-        handle = (username or "").lstrip("@")
+        handle = (username or "").strip().lstrip("@").strip()
         display_name = name or handle
         items: List[TweetItem] = []
         pagination_token: str | None = None

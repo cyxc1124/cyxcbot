@@ -94,8 +94,8 @@ def _x_to_response(target: XTarget) -> XTargetResponse:
 
 
 def _normalize_x_username(username: str) -> str:
-    # X handle 大小写不敏感；统一小写避免 Example/example 各建一条
-    return (username or "").lstrip("@").strip().lower()
+    # 先 trim 再去 @，否则 " @Example" 会变成 "@example" 绕过唯一性
+    return (username or "").strip().lstrip("@").strip().lower()
 
 
 async def _find_x_target_by_username(session, username: str):

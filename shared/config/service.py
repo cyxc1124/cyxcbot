@@ -600,7 +600,7 @@ class ConfigService:
         x_user_ids: dict[str, str] = {}
         x_display_names: dict[str, str] = {}
         for target in targets:
-            username = (target.username or "").lstrip("@").strip().lower()
+            username = (target.username or "").strip().lstrip("@").strip().lower()
             if not username:
                 continue
             mapping[username] = [g.group_id for g in target.groups]
