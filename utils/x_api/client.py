@@ -207,6 +207,68 @@ class XApiClient:
             return None
         return payload if isinstance(payload, dict) else {}
 
+    async def get_tweet_by_id(self, tweet_id: str) -> Optional[TweetItem]:
+        """Fetch a single tweet by ID with author + media expansions."""
+        tid = str(tweet_id or "").strip()
+        if not tid:
+            return None
+        if not self.bearer:
+            logger.warning("X API: 未配置 Bearer Token，无法拉取推文")
+            return None
+
+        url = f"{_API_BASE}/tweets/{tid}"
+        params = {
+            "tweet.fields": "created_at,text,attachments,author_id",
+            "expansions": "attachments.media_keys,author_id",
+            "media.fields": "url,preview_image_url,type",
+            "user.fields": "name,username",
+        }
+        try:
+            async with self.session.get(
+                url, params=params, **self._request_kwargs()
+            ) as response:
+                if response.status != 200:
+                    logger.warning(
+                        "X API 拉取单条推文失败: tweet_id={} HTTP {}",
+                        tid,
+                        response.status,
+                    )
+                    return None
+                payload = await response.json()
+        except Exception:
+            logger.opt(exception=True).error("X API 拉取单条推文异常: tweet_id={}", tid)
+            return None
+
+        if not isinstance(payload, dict):
+            return None
+        data = payload.get("data")
+        if not isinstance(data, dict) or not data.get("id"):
+            return None
+
+        includes = (
+            payload.get("includes") if isinstance(payload.get("includes"), dict) else {}
+        )
+        media_by_key = _index_media(includes)
+        users_by_id = _index_users(includes)
+        author_id = str(data.get("author_id") or "").strip()
+        author = users_by_id.get(author_id) or {}
+        handle = str(author.get("username") or "").strip().lstrip("@").strip().lower()
+        display_name = str(author.get("name") or handle)
+        tweet_id_str = str(data["id"])
+        return TweetItem(
+            id=tweet_id_str,
+            text=str(data.get("text") or ""),
+            created_at=str(data.get("created_at") or ""),
+            username=handle,
+            name=display_name,
+            url=(
+                f"https://x.com/{handle}/status/{tweet_id_str}"
+                if handle
+                else f"https://x.com/i/status/{tweet_id_str}"
+            ),
+            media_urls=_media_urls_for_tweet(data, media_by_key),
+        )
+
 
 def build_user_timeline_params(
     *,
@@ -240,6 +302,17 @@ def _index_media(includes: Any) -> Dict[str, dict]:
     for item in media_list:
         if isinstance(item, dict) and item.get("media_key"):
             result[str(item["media_key"])] = item
+    return result
+
+
+def _index_users(includes: Any) -> Dict[str, dict]:
+    if not isinstance(includes, dict):
+        return {}
+    users = includes.get("users") or []
+    result: Dict[str, dict] = {}
+    for item in users:
+        if isinstance(item, dict) and item.get("id"):
+            result[str(item["id"])] = item
     return result
 
 

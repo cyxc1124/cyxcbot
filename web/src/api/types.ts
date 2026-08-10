@@ -65,6 +65,7 @@ export interface Settings {
   link_template_video: string
   link_template_live: string
   link_template_douyin: string
+  link_template_x: string
   x_monitor_interval: number
   x_monitor_use_stagger: boolean
   x_template_push: string
@@ -334,6 +335,40 @@ export interface DouyinLinkParserUserPolicyList {
 
 export interface DouyinLinkParserUserPolicyMutation {
   item: DouyinLinkParserUserPolicyItem
+}
+
+export interface XLinkParserGroupPolicyItem {
+  group_id: string
+  group_name?: string | null
+  member_count?: number | null
+  customized: boolean
+  enabled: boolean
+}
+
+export interface XLinkParserGroupPolicyList {
+  groups: XLinkParserGroupPolicyItem[]
+  group_list_available: boolean
+}
+
+export interface XLinkParserGroupPolicyMutation {
+  item: XLinkParserGroupPolicyItem
+}
+
+export interface XLinkParserUserPolicyItem {
+  user_id: string
+  nickname?: string | null
+  name?: string | null
+  customized: boolean
+  enabled: boolean
+}
+
+export interface XLinkParserUserPolicyList {
+  users: XLinkParserUserPolicyItem[]
+  friend_list_available: boolean
+}
+
+export interface XLinkParserUserPolicyMutation {
+  item: XLinkParserUserPolicyItem
 }
 
 export interface DouyinCookieStatus {

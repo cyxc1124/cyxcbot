@@ -346,6 +346,31 @@ class DouyinLinkParserUserPolicy(Model):
     )
 
 
+class XLinkParserGroupPolicy(Model):
+    """Per-group override for X link parser."""
+
+    __tablename__ = "shared_db_xlinkparsergrouppolicy"
+
+    group_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+
+class XLinkParserUserPolicy(Model):
+    """Per-user override for X link parser."""
+
+    __tablename__ = "shared_db_xlinkparseruserpolicy"
+
+    user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+
 class RustRconBinding(Model):
     """Rust game server RCON endpoint bound to a chat trigger alias."""
 

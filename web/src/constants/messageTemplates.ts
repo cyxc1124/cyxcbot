@@ -12,6 +12,7 @@ export type TemplateKey =
   | 'link_template_video'
   | 'link_template_live'
   | 'link_template_douyin'
+  | 'link_template_x'
   | 'x_template_push'
 
 export type TemplateCategory = 'dynamic' | 'live' | 'link' | 'x'
@@ -48,6 +49,7 @@ export const DEFAULT_MESSAGE_TEMPLATES: Record<TemplateKey, string> = {
   link_template_live:
     '{cover}标题：{title}\n主播：{streamer_name}\n状态：{status}\n开播时间：{live_start_time}\n分区：{area}\n链接：{url}',
   link_template_douyin: '{video}标题：{title}\n作者：{author}\n链接：{url}',
+  link_template_x: '{media}{name} (@{username})\n{time}\n{text}\n{url}',
   x_template_push: '{name} 发布了新推文\n{time}\n{text}\n{media}\n{url}',
 }
 
@@ -225,6 +227,21 @@ const douyinLinkVariables: TemplateVariable[] = [
   { key: 'aweme_id', label: '作品 ID', description: 'aweme_id' },
 ]
 
+const xLinkVariables: TemplateVariable[] = [
+  {
+    key: 'media',
+    label: '媒体',
+    description: '推文附带图片（如有）',
+    segment: true,
+  },
+  { key: 'name', label: '博主名', description: 'X 显示名称' },
+  { key: 'username', label: '用户名', description: '不含 @ 的 handle' },
+  { key: 'time', label: '发布时间', description: '推文发布时间' },
+  { key: 'text', label: '推文正文', description: '推文文本内容' },
+  { key: 'url', label: '推文链接', description: 'x.com 状态链接' },
+  { key: 'tweet_id', label: '推文 ID', description: '推文雪花 ID' },
+]
+
 export const linkTemplateFields: TemplateField[] = [
   {
     key: 'link_template_video',
@@ -249,6 +266,14 @@ export const linkTemplateFields: TemplateField[] = [
     description: '群聊/好友中识别到抖音分享链接时的自动回复内容',
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.link_template_douyin,
     variables: douyinLinkVariables,
+  },
+  {
+    key: 'link_template_x',
+    category: 'link',
+    label: 'X 链接解析',
+    description: '群聊/好友中识别到 X / Twitter 链接时的自动回复内容',
+    defaultValue: DEFAULT_MESSAGE_TEMPLATES.link_template_x,
+    variables: xLinkVariables,
   },
 ]
 
@@ -320,6 +345,7 @@ export const PREVIEW_SAMPLE_VALUES: Record<string, string> = {
   index: '1',
   username: 'elonmusk',
   text: 'Hello from X!',
+  tweet_id: '1234567890',
 }
 
 export function createDefaultTemplateForm(): Record<TemplateKey, string> {

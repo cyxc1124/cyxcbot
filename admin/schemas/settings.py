@@ -11,6 +11,7 @@ from shared.config.message_templates import (
     DYNAMIC_TEMPLATE_KEYS,
     LINK_TEMPLATE_KEYS,
     LIVE_TEMPLATE_KEYS,
+    X_LINK_TEMPLATE_KEYS,
     X_TEMPLATE_KEYS,
 )
 
@@ -72,6 +73,7 @@ class SettingsResponse(BaseModel):
     link_template_douyin: str = Field(
         default=DOUYIN_LINK_TEMPLATE_KEYS["link_template_douyin"]
     )
+    link_template_x: str = Field(default=X_LINK_TEMPLATE_KEYS["link_template_x"])
     x_monitor_interval: int = 120
     x_monitor_use_stagger: bool = True
     x_template_push: str = Field(default=X_TEMPLATE_KEYS["x_template_push"])
@@ -119,6 +121,7 @@ class SettingsUpdateRequest(BaseModel):
     link_template_video: Optional[str] = Field(default=None, max_length=500)
     link_template_live: Optional[str] = Field(default=None, max_length=500)
     link_template_douyin: Optional[str] = Field(default=None, max_length=500)
+    link_template_x: Optional[str] = Field(default=None, max_length=500)
     x_monitor_interval: Optional[int] = Field(default=None, ge=10, le=3600)
     x_monitor_use_stagger: Optional[bool] = None
     x_template_push: Optional[str] = Field(default=None, max_length=500)
