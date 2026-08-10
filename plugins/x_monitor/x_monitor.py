@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 import aiohttp
@@ -16,13 +17,15 @@ from nonebot_plugin_orm import get_session
 from sqlalchemy import select
 
 from shared.config.service import get_config_service
+from shared.config.shared_media import chmod_shared_media_file, ensure_shared_media_dir
 from shared.db.models import XTarget
 from shared.monitor.background_task import spawn_background_task
 from shared.monitor.check_cycle import CheckCycleLogger
 from shared.monitor.concurrency import run_with_concurrency
 from shared.monitor.poll_schedule import compute_dynamic_poll_schedule
 from utils.x_api import TweetItem, XApiClient, XUser, create_session
-from utils.x_api.models import tweet_id_as_int
+from utils.x_api.download import cleanup_media_files, materialize_tweet_media
+from utils.x_api.models import TweetMediaItem, tweet_id_as_int
 
 from .check_logic import (
     collect_new_tweets,
@@ -588,72 +591,92 @@ class XMonitor:
         if not self.sender:
             return False
 
-        message = self.sender.build_tweet_message(tweet)
-        configured_groups = self.config.x_monitor_mapping.get(username, [])
-        configured_users = self.config.x_monitor_user_mapping.get(username, [])
-        pending = self._pending_tweet_delivery.get(username)
-        if pending and pending[0] == tweet.id:
-            configured_group_set = set(configured_groups)
-            configured_user_set = set(configured_users)
-            group_ids = [g for g in pending[1] if g in configured_group_set]
-            user_ids = [u for u in pending[2] if u in configured_user_set]
+        downloaded: list[Path] = []
+        try:
+            if not tweet.media_items and tweet.media_urls:
+                tweet.media_items = [
+                    TweetMediaItem(kind="image", url=url) for url in tweet.media_urls
+                ]
+            if self.session and tweet.media_items:
+                media_dir = ensure_shared_media_dir(
+                    get_config_service().get_snapshot().link_parser_shared_media_dir
+                )
+                downloaded = await materialize_tweet_media(
+                    self.session, tweet, media_dir
+                )
+                for path in downloaded:
+                    chmod_shared_media_file(path)
+
+            message = self.sender.build_tweet_message(tweet)
+            configured_groups = self.config.x_monitor_mapping.get(username, [])
+            configured_users = self.config.x_monitor_user_mapping.get(username, [])
+            pending = self._pending_tweet_delivery.get(username)
+            if pending and pending[0] == tweet.id:
+                configured_group_set = set(configured_groups)
+                configured_user_set = set(configured_users)
+                group_ids = [g for g in pending[1] if g in configured_group_set]
+                user_ids = [u for u in pending[2] if u in configured_user_set]
+                if not group_ids and not user_ids:
+                    # 失败目标已从配置移除，无需再投递
+                    self._pending_tweet_delivery.pop(username, None)
+                    await self._persist_state(
+                        username, check_generation=check_generation
+                    )
+                    return True
+            else:
+                if pending:
+                    self._pending_tweet_delivery.pop(username, None)
+                group_ids = list(configured_groups)
+                user_ids = list(configured_users)
+
             if not group_ids and not user_ids:
-                # 失败目标已从配置移除，无需再投递
+                logger.warning("X 博主 {} 没有配置推送目标", username)
+                return False
+
+            if check_generation is not None and not self._check_still_valid(
+                username, check_generation
+            ):
+                return False
+
+            at_all_enabled = self.config.x_at_all.get(username, False)
+            delivery = await self.sender.send_message(
+                message,
+                group_ids,
+                user_ids,
+                at_all_enabled=at_all_enabled,
+            )
+            if delivery.all_succeeded:
                 self._pending_tweet_delivery.pop(username, None)
-                await self._persist_state(username, check_generation=check_generation)
+                logger.info(
+                    "X 推文通知已推送: username={} tweet_id={} groups={} users={}",
+                    username,
+                    tweet.id,
+                    len(group_ids),
+                    len(user_ids),
+                )
                 return True
-        else:
-            if pending:
-                self._pending_tweet_delivery.pop(username, None)
-            group_ids = list(configured_groups)
-            user_ids = list(configured_users)
 
-        if not group_ids and not user_ids:
-            logger.warning("X 博主 {} 没有配置推送目标", username)
-            return False
-
-        if check_generation is not None and not self._check_still_valid(
-            username, check_generation
-        ):
-            return False
-
-        at_all_enabled = self.config.x_at_all.get(username, False)
-        delivery = await self.sender.send_message(
-            message,
-            group_ids,
-            user_ids,
-            at_all_enabled=at_all_enabled,
-        )
-        if delivery.all_succeeded:
-            self._pending_tweet_delivery.pop(username, None)
-            logger.info(
-                "X 推文通知已推送: username={} tweet_id={} groups={} users={}",
+            failed_groups, failed_users = failed_target_ids(delivery)
+            self._pending_tweet_delivery[username] = (
+                tweet.id,
+                failed_groups,
+                failed_users,
+            )
+            await self._persist_state(username, check_generation=check_generation)
+            failed_targets = [
+                f"{target.target_type}:{target.target_id}"
+                for target in delivery.targets
+                if not target.success
+            ]
+            logger.warning(
+                "X 推文通知投递未全部成功: username={} tweet_id={} failed={}",
                 username,
                 tweet.id,
-                len(group_ids),
-                len(user_ids),
+                failed_targets,
             )
-            return True
-
-        failed_groups, failed_users = failed_target_ids(delivery)
-        self._pending_tweet_delivery[username] = (
-            tweet.id,
-            failed_groups,
-            failed_users,
-        )
-        await self._persist_state(username, check_generation=check_generation)
-        failed_targets = [
-            f"{target.target_type}:{target.target_id}"
-            for target in delivery.targets
-            if not target.success
-        ]
-        logger.warning(
-            "X 推文通知投递未全部成功: username={} tweet_id={} failed={}",
-            username,
-            tweet.id,
-            failed_targets,
-        )
-        return False
+            return False
+        finally:
+            cleanup_media_files(downloaded)
 
 
 async def start_x_monitor():
