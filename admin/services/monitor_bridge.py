@@ -198,7 +198,16 @@ async def trigger_x_check(username: Optional[str] = None) -> Dict[str, Any]:
         return {"success": False, "message": "X monitor is not running"}
 
     snap = get_config_service().get_snapshot()
-    usernames = [username] if username else list(snap.x_monitor_mapping.keys())
+    if username:
+        key = username.lstrip("@").strip().lower()
+        if key not in snap.x_monitor_mapping:
+            return {
+                "success": False,
+                "message": f"X target not found: {username}",
+            }
+        usernames = [key]
+    else:
+        usernames = list(snap.x_monitor_mapping.keys())
     if not usernames:
         return {"success": False, "message": "No X targets configured"}
 

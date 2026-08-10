@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   clearXBearer,
   patchSettings,
@@ -13,6 +13,24 @@ import { useSettingsForm } from './SettingsContext'
 
 const PROXY_SCHEMES = ['http', 'https', 'socks5'] as const
 
+type ProxyDraft = {
+  enabled: boolean
+  scheme: string
+  host: string
+  port: number
+  username: string
+}
+
+function proxyFromSettings(settings: ReturnType<typeof useSettingsForm>['settings']): ProxyDraft {
+  return {
+    enabled: settings?.x_proxy?.enabled ?? false,
+    scheme: settings?.x_proxy?.scheme || 'http',
+    host: settings?.x_proxy?.host || '',
+    port: settings?.x_proxy?.port || 7890,
+    username: settings?.x_proxy?.username || '',
+  }
+}
+
 export function SettingsXAccountPage() {
   const { showToast } = useToast()
   const { settings, setSettings, formDisabled, load } = useSettingsForm()
@@ -22,23 +40,15 @@ export function SettingsXAccountPage() {
   const [testingBearer, setTestingBearer] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
 
-  const [proxyEnabled, setProxyEnabled] = useState(false)
-  const [proxyScheme, setProxyScheme] = useState<string>('http')
-  const [proxyHost, setProxyHost] = useState('')
-  const [proxyPort, setProxyPort] = useState(7890)
-  const [proxyUsername, setProxyUsername] = useState('')
+  // null = 跟随 settings；编辑后写入 draft，避免 effect 内 setState
+  const [proxyDraft, setProxyDraft] = useState<ProxyDraft | null>(null)
   const [proxyPassword, setProxyPassword] = useState('')
   const [savingProxy, setSavingProxy] = useState(false)
 
-  useEffect(() => {
-    if (!settings?.x_proxy) return
-    setProxyEnabled(settings.x_proxy.enabled)
-    setProxyScheme(settings.x_proxy.scheme || 'http')
-    setProxyHost(settings.x_proxy.host || '')
-    setProxyPort(settings.x_proxy.port || 7890)
-    setProxyUsername(settings.x_proxy.username || '')
-    setProxyPassword('')
-  }, [settings?.x_proxy])
+  const proxy = proxyDraft ?? proxyFromSettings(settings)
+  const updateProxy = (patch: Partial<ProxyDraft>) => {
+    setProxyDraft({ ...proxy, ...patch })
+  }
 
   const configured = Boolean(settings?.x_api_bearer?.configured)
 
@@ -88,24 +98,25 @@ export function SettingsXAccountPage() {
   }
 
   const handleSaveProxy = async () => {
-    if (proxyEnabled && !proxyHost.trim()) {
+    if (proxy.enabled && !proxy.host.trim()) {
       showToast('error', '启用代理时请填写主机地址')
       return
     }
     setSavingProxy(true)
     try {
       const payload: Parameters<typeof patchSettings>[0] = {
-        x_proxy_enabled: proxyEnabled,
-        x_proxy_scheme: proxyScheme,
-        x_proxy_host: proxyHost.trim(),
-        x_proxy_port: proxyPort,
-        x_proxy_username: proxyUsername.trim(),
+        x_proxy_enabled: proxy.enabled,
+        x_proxy_scheme: proxy.scheme,
+        x_proxy_host: proxy.host.trim(),
+        x_proxy_port: proxy.port,
+        x_proxy_username: proxy.username.trim(),
       }
       if (proxyPassword.length > 0) {
         payload.x_proxy_password = proxyPassword
       }
       const updated = await patchSettings(payload)
       setSettings(updated)
+      setProxyDraft(null)
       setProxyPassword('')
       showToast('success', '代理设置已保存')
     } catch (err) {
@@ -205,9 +216,9 @@ export function SettingsXAccountPage() {
         <div className="flex items-center gap-4 py-1">
           <span className="min-w-0 flex-1 text-sm text-foreground">启用代理</span>
           <ToggleSwitch
-            checked={proxyEnabled}
+            checked={proxy.enabled}
             disabled={formDisabled || savingProxy}
-            onChange={setProxyEnabled}
+            onChange={(checked) => updateProxy({ enabled: checked })}
           />
         </div>
 
@@ -219,9 +230,9 @@ export function SettingsXAccountPage() {
             <select
               id="x-proxy-scheme"
               className="input"
-              value={proxyScheme}
+              value={proxy.scheme}
               disabled={formDisabled || savingProxy}
-              onChange={(e) => setProxyScheme(e.target.value)}
+              onChange={(e) => updateProxy({ scheme: e.target.value })}
             >
               {PROXY_SCHEMES.map((scheme) => (
                 <option key={scheme} value={scheme}>
@@ -240,9 +251,9 @@ export function SettingsXAccountPage() {
               min={1}
               max={65535}
               className="input"
-              value={proxyPort}
+              value={proxy.port}
               disabled={formDisabled || savingProxy}
-              onChange={(e) => setProxyPort(Number(e.target.value))}
+              onChange={(e) => updateProxy({ port: Number(e.target.value) })}
             />
           </div>
           <div className="sm:col-span-2">
@@ -253,9 +264,9 @@ export function SettingsXAccountPage() {
               id="x-proxy-host"
               className="input"
               placeholder="127.0.0.1"
-              value={proxyHost}
+              value={proxy.host}
               disabled={formDisabled || savingProxy}
-              onChange={(e) => setProxyHost(e.target.value)}
+              onChange={(e) => updateProxy({ host: e.target.value })}
             />
           </div>
           <div>
@@ -265,9 +276,9 @@ export function SettingsXAccountPage() {
             <input
               id="x-proxy-username"
               className="input"
-              value={proxyUsername}
+              value={proxy.username}
               disabled={formDisabled || savingProxy}
-              onChange={(e) => setProxyUsername(e.target.value)}
+              onChange={(e) => updateProxy({ username: e.target.value })}
               autoComplete="off"
             />
           </div>

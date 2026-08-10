@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
 from nonebot_plugin_orm import get_session
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from admin.deps import AdminUser, RequireSetup
@@ -94,7 +94,15 @@ def _x_to_response(target: XTarget) -> XTargetResponse:
 
 
 def _normalize_x_username(username: str) -> str:
-    return (username or "").lstrip("@").strip()
+    # X handle 大小写不敏感；统一小写避免 Example/example 各建一条
+    return (username or "").lstrip("@").strip().lower()
+
+
+async def _find_x_target_by_username(session, username: str):
+    """Case-insensitive lookup for existing X targets."""
+    return await session.scalar(
+        select(XTarget).where(func.lower(XTarget.username) == username.lower())
+    )
 
 
 def _normalize_ids(values: list[str]) -> list[str]:
@@ -642,9 +650,7 @@ async def create_x_target(body: XTargetCreate, _: AdminUser):
 
     async with get_session() as session:
         async with session.begin():
-            existing = await session.scalar(
-                select(XTarget).where(XTarget.username == username)
-            )
+            existing = await _find_x_target_by_username(session, username)
             if existing:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -661,9 +667,7 @@ async def create_x_target(body: XTargetCreate, _: AdminUser):
             )
 
         async with session.begin():
-            existing = await session.scalar(
-                select(XTarget).where(XTarget.username == username)
-            )
+            existing = await _find_x_target_by_username(session, username)
             if existing:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -726,6 +730,7 @@ async def update_x_target(target_id: int, body: XTargetUpdate, _: AdminUser):
                     status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
                 )
             current_username = target.username
+            username_changed = False
             if body.username is not None:
                 username_for_name = _normalize_x_username(body.username)
                 if not username_for_name:
@@ -733,17 +738,18 @@ async def update_x_target(target_id: int, body: XTargetUpdate, _: AdminUser):
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="用户名不能为空",
                     )
-                if username_for_name != current_username:
-                    existing = await session.scalar(
-                        select(XTarget).where(XTarget.username == username_for_name)
+                if username_for_name != _normalize_x_username(current_username):
+                    existing = await _find_x_target_by_username(
+                        session, username_for_name
                     )
-                    if existing:
+                    if existing and existing.id != target_id:
                         raise HTTPException(
                             status_code=status.HTTP_409_CONFLICT,
                             detail="Username already exists",
                         )
+                    username_changed = True
             else:
-                username_for_name = current_username
+                username_for_name = _normalize_x_username(current_username)
             if body.name is not None:
                 pending_name = body.name.strip() or None
             else:
@@ -753,9 +759,7 @@ async def update_x_target(target_id: int, body: XTargetUpdate, _: AdminUser):
         resolved_name: str | None = None
         resolved_user_id: str | None = None
         if not pending_name or body.username is not None:
-            name, user_id = await resolve_x_target_name(
-                username_for_name, pending_name
-            )
+            name, user_id = await resolve_x_target_name(username_for_name, pending_name)
             if not pending_name:
                 if not name:
                     raise HTTPException(
@@ -786,10 +790,8 @@ async def update_x_target(target_id: int, body: XTargetUpdate, _: AdminUser):
             if body.username is not None:
                 new_username = _normalize_x_username(body.username)
                 if new_username != target.username:
-                    existing = await session.scalar(
-                        select(XTarget).where(XTarget.username == new_username)
-                    )
-                    if existing:
+                    existing = await _find_x_target_by_username(session, new_username)
+                    if existing and existing.id != target_id:
                         raise HTTPException(
                             status_code=status.HTTP_409_CONFLICT,
                             detail="Username already exists",
@@ -803,6 +805,9 @@ async def update_x_target(target_id: int, body: XTargetUpdate, _: AdminUser):
                 target.name = resolved_name
             if resolved_user_id is not None:
                 target.user_id = resolved_user_id
+            elif username_changed:
+                # 改名但未能解析到新账号 ID 时清空旧缓存，避免继续拉旧用户推文
+                target.user_id = None
             if body.enabled is not None:
                 target.enabled = body.enabled
             if body.at_all is not None:
@@ -862,6 +867,12 @@ async def refresh_x_target_profile(target_id: int, _: AdminUser):
             if not target:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+                )
+            # 解析期间若已被改名，勿把旧账号资料写到新用户名上
+            if target.username != username:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="目标用户名已变更，请重新刷新",
                 )
             target.name = display_name
             target.user_id = user.id

@@ -54,10 +54,10 @@ class XApiClient:
 
     async def get_user_by_username(self, username: str) -> Optional[XUser]:
         """Resolve username (without @) to XUser."""
-        key = (username or "").lstrip("@").strip()
+        key = (username or "").lstrip("@").strip().lower()
         if not key:
             return None
-        cached = self._user_cache.get(key.lower())
+        cached = self._user_cache.get(key)
         if cached:
             return cached
         if not self.bearer:
@@ -89,7 +89,7 @@ class XApiClient:
 
         user = XUser(
             id=str(data["id"]),
-            username=str(data.get("username") or key).lstrip("@"),
+            username=str(data.get("username") or key).lstrip("@").lower(),
             name=str(data.get("name") or ""),
         )
         self._user_cache[user.username.lower()] = user
@@ -103,11 +103,12 @@ class XApiClient:
         since_id: str | None = None,
         username: str = "",
         name: str = "",
+        max_pages: int = 5,
     ) -> Optional[List[TweetItem]]:
         """Fetch recent tweets for a user id. Returns None on request failure.
 
-        When ``since_id`` is set (X snowflake), only tweets newer than that id
-        are requested — same semantics as twitter-api-v2 ``userTimeline``.
+        When ``since_id`` is set, only newer tweets are requested and pages are
+        followed via ``pagination_token`` until exhausted or ``max_pages``.
         """
         uid = str(user_id or "").strip()
         if not uid:
@@ -116,8 +117,61 @@ class XApiClient:
             logger.warning("X API: 未配置 Bearer Token，无法拉取推文")
             return None
 
-        params = build_user_timeline_params(max_results=max_results, since_id=since_id)
-        url = f"{_API_BASE}/users/{uid}/tweets"
+        # 有 since_id 时拉满页并翻页，避免停机后一次只拿到最新 5 条导致中间帖丢失
+        page_size = 100 if since_id else max_results
+        page_limit = max(1, min(20, int(max_pages))) if since_id else 1
+
+        handle = (username or "").lstrip("@")
+        display_name = name or handle
+        items: List[TweetItem] = []
+        pagination_token: str | None = None
+
+        for _ in range(page_limit):
+            params = build_user_timeline_params(
+                max_results=page_size,
+                since_id=since_id,
+                pagination_token=pagination_token,
+            )
+            payload = await self._get_user_timeline_page(uid, params)
+            if payload is None:
+                return None if not items else items
+
+            media_by_key = _index_media(payload.get("includes"))
+            page_rows = payload.get("data") or []
+            for row in page_rows:
+                if not isinstance(row, dict) or not row.get("id"):
+                    continue
+                tweet_id = str(row["id"])
+                media_urls = _media_urls_for_tweet(row, media_by_key)
+                items.append(
+                    TweetItem(
+                        id=tweet_id,
+                        text=str(row.get("text") or ""),
+                        created_at=str(row.get("created_at") or ""),
+                        username=handle,
+                        name=display_name,
+                        url=(
+                            f"https://x.com/{handle}/status/{tweet_id}"
+                            if handle
+                            else f"https://x.com/i/status/{tweet_id}"
+                        ),
+                        media_urls=media_urls,
+                    )
+                )
+
+            meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+            next_token = str(meta.get("next_token") or "").strip()
+            if not next_token or not page_rows:
+                break
+            pagination_token = next_token
+
+        items.sort(key=lambda t: tweet_id_as_int(t.id), reverse=True)
+        return items
+
+    async def _get_user_timeline_page(
+        self, user_id: str, params: dict[str, str]
+    ) -> Optional[dict]:
+        url = f"{_API_BASE}/users/{user_id}/tweets"
         try:
             async with self.session.get(
                 url, params=params, **self._request_kwargs()
@@ -125,50 +179,22 @@ class XApiClient:
                 if response.status != 200:
                     logger.warning(
                         "X API 拉取推文失败: user_id={} HTTP {}",
-                        uid,
+                        user_id,
                         response.status,
                     )
                     return None
                 payload = await response.json()
         except Exception:
-            logger.opt(exception=True).error("X API 拉取推文异常: user_id={}", uid)
+            logger.opt(exception=True).error("X API 拉取推文异常: user_id={}", user_id)
             return None
-
-        if not isinstance(payload, dict):
-            return []
-
-        media_by_key = _index_media(payload.get("includes"))
-        items: List[TweetItem] = []
-        for row in payload.get("data") or []:
-            if not isinstance(row, dict) or not row.get("id"):
-                continue
-            tweet_id = str(row["id"])
-            handle = (username or "").lstrip("@")
-            media_urls = _media_urls_for_tweet(row, media_by_key)
-            items.append(
-                TweetItem(
-                    id=tweet_id,
-                    text=str(row.get("text") or ""),
-                    created_at=str(row.get("created_at") or ""),
-                    username=handle,
-                    name=name or handle,
-                    url=(
-                        f"https://x.com/{handle}/status/{tweet_id}"
-                        if handle
-                        else f"https://x.com/i/status/{tweet_id}"
-                    ),
-                    media_urls=media_urls,
-                )
-            )
-
-        items.sort(key=lambda t: tweet_id_as_int(t.id), reverse=True)
-        return items
+        return payload if isinstance(payload, dict) else {}
 
 
 def build_user_timeline_params(
     *,
     max_results: int = 5,
     since_id: str | None = None,
+    pagination_token: str | None = None,
 ) -> dict[str, str]:
     """Build GET /2/users/:id/tweets query params (testable without HTTP)."""
     clamped = max(5, min(100, int(max_results)))
@@ -182,6 +208,9 @@ def build_user_timeline_params(
     sid = str(since_id or "").strip()
     if sid and sid != "0" and tweet_id_as_int(sid) > 0:
         params["since_id"] = sid
+    token = str(pagination_token or "").strip()
+    if token:
+        params["pagination_token"] = token
     return params
 
 

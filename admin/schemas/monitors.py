@@ -55,6 +55,7 @@ class XMonitorDetail(BaseModel):
     last_tweet_id: str
     initialized: bool
     group_count: int
+    user_count: int = 0
 
 
 class DynamicMonitorStatusResponse(BaseModel):

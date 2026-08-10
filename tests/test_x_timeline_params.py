@@ -27,6 +27,10 @@ def test_build_params_ignores_zero_since_id():
     assert "since_id" not in params
 
 
-def test_build_params_clamps_max_results():
-    assert build_user_timeline_params(max_results=1)["max_results"] == "5"
-    assert build_user_timeline_params(max_results=500)["max_results"] == "100"
+def test_build_params_with_pagination_token():
+    params = build_user_timeline_params(
+        since_id="10",
+        pagination_token="abc",
+    )
+    assert params["since_id"] == "10"
+    assert params["pagination_token"] == "abc"

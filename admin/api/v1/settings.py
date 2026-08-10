@@ -84,7 +84,9 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
     if body.x_proxy_scheme is not None:
         scheme = body.x_proxy_scheme.strip().lower()
         if scheme not in ("http", "https", "socks5"):
-            raise HTTPException(status_code=400, detail="代理协议仅支持 http/https/socks5")
+            raise HTTPException(
+                status_code=400, detail="代理协议仅支持 http/https/socks5"
+            )
         updates["x_proxy_scheme"] = scheme
     if body.x_proxy_host is not None:
         updates["x_proxy_host"] = body.x_proxy_host.strip()

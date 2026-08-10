@@ -59,6 +59,7 @@ describe('targetMapping types', () => {
           id: 3,
           username: 'elonmusk',
           name: null,
+          x_user_id: null,
           enabled: true,
           at_all: false,
           group_ids: [],
