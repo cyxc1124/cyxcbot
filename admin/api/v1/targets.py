@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, HTTPException, status
 from nonebot_plugin_orm import get_session
 from sqlalchemy import func, select
@@ -96,6 +98,24 @@ def _x_to_response(target: XTarget) -> XTargetResponse:
 def _normalize_x_username(username: str) -> str:
     # 先 trim 再去 @，否则 " @Example" 会变成 "@example" 绕过唯一性
     return (username or "").strip().lstrip("@").strip().lower()
+
+
+_X_HANDLE_RE = re.compile(r"^[a-z0-9_]{1,15}$")
+
+
+def _parse_x_username(username: str) -> str:
+    """Normalize and reject syntactically invalid X handles."""
+    key = _normalize_x_username(username)
+    if not key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="用户名不能为空"
+        )
+    if not _X_HANDLE_RE.fullmatch(key):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="无效的 X 用户名（1-15 位字母、数字或下划线）",
+        )
+    return key
 
 
 async def _find_x_target_by_username(session, username: str):
@@ -642,11 +662,7 @@ async def list_x_targets(_: AdminUser):
 )
 async def create_x_target(body: XTargetCreate, _: AdminUser):
     _ensure_recipients(body.group_ids, body.user_ids)
-    username = _normalize_x_username(body.username)
-    if not username:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="用户名不能为空"
-        )
+    username = _parse_x_username(body.username)
 
     async with get_session() as session:
         async with session.begin():
@@ -732,12 +748,7 @@ async def update_x_target(target_id: int, body: XTargetUpdate, _: AdminUser):
             current_username = target.username
             username_changed = False
             if body.username is not None:
-                username_for_name = _normalize_x_username(body.username)
-                if not username_for_name:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="用户名不能为空",
-                    )
+                username_for_name = _parse_x_username(body.username)
                 if username_for_name != _normalize_x_username(current_username):
                     existing = await _find_x_target_by_username(
                         session, username_for_name
@@ -788,7 +799,7 @@ async def update_x_target(target_id: int, body: XTargetUpdate, _: AdminUser):
                 )
 
             if body.username is not None:
-                new_username = _normalize_x_username(body.username)
+                new_username = _parse_x_username(body.username)
                 if new_username != target.username:
                     existing = await _find_x_target_by_username(session, new_username)
                     if existing and existing.id != target_id:
