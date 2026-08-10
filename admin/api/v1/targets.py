@@ -809,6 +809,15 @@ async def update_x_target(target_id: int, body: XTargetUpdate, _: AdminUser):
                         )
                     target.username = new_username
 
+            # 解析期间若被改名，勿把旧账号资料写到新用户名上
+            if (
+                resolved_name is not None or resolved_user_id is not None
+            ) and _normalize_x_username(target.username) != username_for_name:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="目标用户名已变更，请重试",
+                )
+
             if body.name is not None:
                 stripped = body.name.strip()
                 target.name = stripped if stripped else None
