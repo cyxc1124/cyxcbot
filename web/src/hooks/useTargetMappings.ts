@@ -11,6 +11,7 @@ import {
   getGroups,
   getLiveTargets,
   getXTargets,
+  refreshXTargetProfile,
   updateDynamicTarget,
   updateLiveTarget,
   updateXTarget,
@@ -55,6 +56,7 @@ export function useTargetMappings({ type, onTargetsChanged }: UseTargetMappingsO
   const [editOriginalId, setEditOriginalId] = useState('')
   const [saving, setSaving] = useState(false)
   const [togglingId, setTogglingId] = useState<number | null>(null)
+  const [refreshingId, setRefreshingId] = useState<number | null>(null)
 
   const { idLabel, targetLabel, nameSource } = targetTypeMeta(type)
 
@@ -246,6 +248,21 @@ export function useTargetMappings({ type, onTargetsChanged }: UseTargetMappingsO
     }
   }
 
+  const refreshProfile = async (target: SubscriptionTarget) => {
+    if (type !== 'x') return
+    setRefreshingId(target.id)
+    try {
+      await refreshXTargetProfile(target.id)
+      showToast('success', '用户资料已更新')
+      await load()
+      await notifyTargetsChanged()
+    } catch (err) {
+      showToast('error', formatApiError(err, '更新用户资料失败'))
+    } finally {
+      setRefreshingId(null)
+    }
+  }
+
   return {
     groups,
     friends,
@@ -262,6 +279,7 @@ export function useTargetMappings({ type, onTargetsChanged }: UseTargetMappingsO
     editOriginalId,
     saving,
     togglingId,
+    refreshingId,
     type,
     idLabel,
     targetLabel,
@@ -275,5 +293,6 @@ export function useTargetMappings({ type, onTargetsChanged }: UseTargetMappingsO
     handleDelete,
     toggleEnabled,
     toggleAtAll,
+    refreshProfile,
   }
 }

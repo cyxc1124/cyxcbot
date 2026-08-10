@@ -83,6 +83,7 @@ def _x_to_response(target: XTarget) -> XTargetResponse:
         id=target.id,
         username=target.username,
         name=target.name,
+        x_user_id=target.user_id,
         enabled=target.enabled,
         at_all=target.at_all,
         group_ids=[g.group_id for g in target.groups],
@@ -821,6 +822,54 @@ async def update_x_target(target_id: int, body: XTargetUpdate, _: AdminUser):
 
     await get_config_service().reload()
 
+    return response
+
+
+@router.post(
+    "/x-targets/{target_id}/refresh-profile",
+    response_model=XTargetResponse,
+)
+async def refresh_x_target_profile(target_id: int, _: AdminUser):
+    """强制向 X API 查询用户资料，并写回 name / x_user_id。"""
+    async with get_session() as session:
+        async with session.begin():
+            target = await session.get(XTarget, target_id)
+            if not target:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+                )
+            username = target.username
+
+    user = await resolve_x_user(username)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="无法获取 X 用户信息，请检查用户名、Bearer Token 与代理设置",
+        )
+
+    display_name = (user.name or user.username or username).strip() or username
+
+    async with get_session() as session:
+        async with session.begin():
+            target = await session.scalar(
+                select(XTarget)
+                .where(XTarget.id == target_id)
+                .options(
+                    selectinload(XTarget.groups),
+                    selectinload(XTarget.users),
+                )
+            )
+            if not target:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Target not found"
+                )
+            target.name = display_name
+            target.user_id = user.id
+            await session.flush()
+            await session.refresh(target, ["groups", "users"])
+            response = _x_to_response(target)
+
+    await get_config_service().reload()
     return response
 
 

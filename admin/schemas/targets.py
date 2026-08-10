@@ -102,6 +102,7 @@ class XTargetResponse(BaseModel):
     id: int
     username: str
     name: Optional[str]
+    x_user_id: Optional[str] = None
     enabled: bool
     at_all: bool
     group_ids: List[str]

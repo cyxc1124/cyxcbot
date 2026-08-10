@@ -21,6 +21,14 @@ class Config(BaseModel):
         default_factory=dict, description="X 用户名-是否@全体成员"
     )
 
+    x_user_ids: Dict[str, str] = Field(
+        default_factory=dict, description="X 用户名-平台数字 ID（DB 缓存）"
+    )
+
+    x_display_names: Dict[str, str] = Field(
+        default_factory=dict, description="X 用户名-显示名（DB 缓存）"
+    )
+
     monitor_interval: int = Field(default=120, description="监控间隔时间（秒）")
 
     use_stagger_poll: bool = Field(
@@ -46,6 +54,8 @@ class Config(BaseModel):
             x_monitor_mapping=snap.x_monitor_mapping,
             x_monitor_user_mapping=snap.x_monitor_user_mapping,
             x_at_all=snap.x_at_all,
+            x_user_ids=snap.x_user_ids,
+            x_display_names=snap.x_display_names,
             monitor_interval=snap.x_monitor_interval,
             use_stagger_poll=snap.x_monitor_use_stagger,
             message_templates=snap.x_message_templates,

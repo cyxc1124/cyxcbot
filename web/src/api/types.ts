@@ -161,11 +161,14 @@ export interface XTarget {
   id: number
   username: string
   name: string | null
+  /** X 平台数字 ID（DB 缓存，轮询优先使用） */
+  x_user_id: string | null
   enabled: boolean
   at_all: boolean
   group_ids: string[]
   user_ids: string[]
   created_at: string
+  updated_at?: string
 }
 
 export interface DynamicTargetCreate {
@@ -199,7 +202,9 @@ export type DynamicTargetUpdate = Partial<
   Omit<DynamicTarget, 'id' | 'created_at'>
 >
 export type LiveTargetUpdate = Partial<Omit<LiveTarget, 'id' | 'created_at'>>
-export type XTargetUpdate = Partial<Omit<XTarget, 'id' | 'created_at'>>
+export type XTargetUpdate = Partial<
+  Omit<XTarget, 'id' | 'created_at' | 'updated_at' | 'x_user_id'>
+>
 
 // Groups
 export interface Group {

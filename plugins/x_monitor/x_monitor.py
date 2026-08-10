@@ -12,9 +12,12 @@ from typing import Dict, List, Optional, Set
 
 import aiohttp
 from nonebot.log import logger
+from nonebot_plugin_orm import get_session
+from sqlalchemy import select
 
 from shared.config.proxy import ProxyConfig
 from shared.config.service import get_config_service
+from shared.db.models import XTarget
 from shared.monitor.background_task import spawn_background_task
 from shared.monitor.check_cycle import CheckCycleLogger
 from shared.monitor.concurrency import run_with_concurrency
@@ -156,6 +159,13 @@ class XMonitor:
     async def init_resources(self):
         await self._rebuild_session()
         self.sender = XSender(templates=self.config.message_templates)
+        self._user_ids.update(
+            {
+                username: uid
+                for username, uid in self.config.x_user_ids.items()
+                if username and uid
+            }
+        )
 
         if not self.config.x_api_bearer:
             logger.warning("X 监控: 未配置 Bearer Token，无法拉取推文")
@@ -236,6 +246,14 @@ class XMonitor:
         if session_changed:
             await self._rebuild_session()
             self._user_ids.clear()
+
+        # 同步 DB 缓存的 user_id（热重载后优先用库内资料，避免重复 User: Read）
+        for username, uid in self.config.x_user_ids.items():
+            if username and uid:
+                self._user_ids[username] = uid
+        for username in list(self._user_ids):
+            if username not in self.config.x_monitor_mapping:
+                self._user_ids.pop(username, None)
 
         new_usernames: list[str] = list(readded)
         for username in self.config.x_monitor_mapping.keys():
@@ -392,16 +410,55 @@ class XMonitor:
 
         return {"checked": checked, "failed": failed}
 
-    async def _resolve_user(self, username: str) -> Optional[XUser]:
+    async def _persist_user_profile(self, username: str, user: XUser) -> None:
+        """Write resolved X user id / display name back to XTarget."""
+        key = (username or "").lstrip("@").strip()
+        if not key or not user.id:
+            return
+        display = (user.name or user.username or key).strip() or key
+        self._user_ids[key] = user.id
+        self.config.x_user_ids[key] = user.id
+        self.config.x_display_names[key] = display
+        try:
+            async with get_session() as session:
+                async with session.begin():
+                    row = await session.scalar(
+                        select(XTarget).where(XTarget.username == key)
+                    )
+                    if row is None:
+                        return
+                    row.user_id = user.id
+                    if display:
+                        row.name = display
+        except Exception:
+            logger.opt(exception=True).warning(
+                "持久化 X 用户资料失败: username={}", key
+            )
+
+    async def _resolve_user(
+        self, username: str, *, force_refresh: bool = False
+    ) -> Optional[XUser]:
         if not self.client:
             return None
-        cached_id = self._user_ids.get(username)
-        user = await self.client.get_user_by_username(username)
+        key = (username or "").lstrip("@").strip()
+        if not key:
+            return None
+
+        if not force_refresh:
+            cached_id = self._user_ids.get(key) or self.config.x_user_ids.get(key)
+            if cached_id:
+                name = self.config.x_display_names.get(key) or key
+                return XUser(id=cached_id, username=key, name=name)
+
+        user = await self.client.get_user_by_username(key)
         if user:
-            self._user_ids[username] = user.id
+            await self._persist_user_profile(key, user)
             return user
+
+        cached_id = self._user_ids.get(key) or self.config.x_user_ids.get(key)
         if cached_id:
-            return XUser(id=cached_id, username=username, name=username)
+            name = self.config.x_display_names.get(key) or key
+            return XUser(id=cached_id, username=key, name=name)
         return None
 
     async def _check_user_tweets(self, username: str) -> bool:

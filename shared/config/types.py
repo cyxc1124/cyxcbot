@@ -118,6 +118,9 @@ class AppConfigSnapshot:
     x_monitor_mapping: Dict[str, List[str]] = field(default_factory=dict)
     x_monitor_user_mapping: Dict[str, List[str]] = field(default_factory=dict)
     x_at_all: Dict[str, bool] = field(default_factory=dict)
+    # username -> X numeric user id / display name（来自 XTarget，避免轮询重复查用户）
+    x_user_ids: Dict[str, str] = field(default_factory=dict)
+    x_display_names: Dict[str, str] = field(default_factory=dict)
     x_monitor_interval: int = 120
     x_monitor_use_stagger: bool = True
     x_message_templates: XMessageTemplates = field(default_factory=XMessageTemplates)

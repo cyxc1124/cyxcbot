@@ -190,6 +190,8 @@ class ConfigService:
                     x_mapping,
                     x_user_mapping,
                     x_at_all,
+                    x_user_ids,
+                    x_display_names,
                 ) = await self._load_x_target_data(session)
                 link_parser_group_policies = (
                     await self._load_link_parser_group_policies(session)
@@ -336,6 +338,8 @@ class ConfigService:
             x_monitor_mapping=x_mapping,
             x_monitor_user_mapping=x_user_mapping,
             x_at_all=x_at_all,
+            x_user_ids=x_user_ids,
+            x_display_names=x_display_names,
             x_monitor_interval=settings.get("x_monitor_interval", 120),
             x_monitor_use_stagger=settings.get("x_monitor_use_stagger", True),
             x_message_templates=x_templates_from_settings(settings),
@@ -573,8 +577,14 @@ class ConfigService:
 
     async def _load_x_target_data(
         self, session
-    ) -> tuple[dict[str, list[str]], dict[str, list[str]], dict[str, bool]]:
-        """One query for enabled X targets; derive monitor mappings."""
+    ) -> tuple[
+        dict[str, list[str]],
+        dict[str, list[str]],
+        dict[str, bool],
+        dict[str, str],
+        dict[str, str],
+    ]:
+        """One query for enabled X targets; derive monitor mappings and profile cache."""
         stmt = (
             select(XTarget)
             .where(XTarget.enabled.is_(True))
@@ -587,6 +597,8 @@ class ConfigService:
         mapping: dict[str, list[str]] = {}
         user_mapping: dict[str, list[str]] = {}
         at_all: dict[str, bool] = {}
+        x_user_ids: dict[str, str] = {}
+        x_display_names: dict[str, str] = {}
         for target in targets:
             username = (target.username or "").lstrip("@").strip()
             if not username:
@@ -594,7 +606,11 @@ class ConfigService:
             mapping[username] = [g.group_id for g in target.groups]
             user_mapping[username] = [u.user_id for u in target.users]
             at_all[username] = target.at_all
-        return mapping, user_mapping, at_all
+            if target.user_id:
+                x_user_ids[username] = str(target.user_id).strip()
+            if target.name and target.name.strip():
+                x_display_names[username] = target.name.strip()
+        return mapping, user_mapping, at_all, x_user_ids, x_display_names
 
     async def _load_link_parser_group_policies(
         self, session

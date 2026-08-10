@@ -1,4 +1,4 @@
-import type { Friend, Group } from '../api/types'
+import type { Friend, Group, XTarget } from '../api/types'
 import { formatDateTime } from '../utils/format'
 import { ToggleSwitch } from './ToggleSwitch'
 import {
@@ -15,11 +15,13 @@ interface TargetDetailProps {
   groups: Group[]
   friends: Friend[]
   rowBusy: boolean
+  refreshing?: boolean
   onClearSelection: () => void
   onToggleEnabled: (target: SubscriptionTarget, enabled: boolean) => void
   onToggleAtAll: (target: SubscriptionTarget, atAll: boolean) => void
   onEdit: (target: SubscriptionTarget) => void
   onDelete: (id: number) => void
+  onRefreshProfile?: (target: SubscriptionTarget) => void
 }
 
 export function TargetDetail({
@@ -29,14 +31,18 @@ export function TargetDetail({
   groups,
   friends,
   rowBusy,
+  refreshing = false,
   onClearSelection,
   onToggleEnabled,
   onToggleAtAll,
   onEdit,
   onDelete,
+  onRefreshProfile,
 }: TargetDetailProps) {
   const targetId = getTargetId(target, type)
   const displayName = getTargetDisplayName(target, type, targetLabel)
+  const xUserId = type === 'x' ? (target as XTarget).x_user_id : null
+  const busy = rowBusy || refreshing
 
   return (
     <div className="flex h-full flex-col">
@@ -52,6 +58,11 @@ export function TargetDetail({
           <h3 className="truncate text-lg font-semibold text-foreground">{displayName}</h3>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className="badge-neutral font-mono text-xs">{targetId}</span>
+            {type === 'x' && (
+              <span className="badge-neutral font-mono text-xs">
+                ID {xUserId || '未缓存'}
+              </span>
+            )}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
             创建于 {formatDateTime(target.created_at)}
@@ -66,7 +77,7 @@ export function TargetDetail({
             </span>
             <ToggleSwitch
               checked={target.enabled}
-              disabled={rowBusy}
+              disabled={busy}
               onChange={(checked) => void onToggleEnabled(target, checked)}
             />
           </div>
@@ -78,14 +89,24 @@ export function TargetDetail({
             </span>
             <ToggleSwitch
               checked={target.at_all}
-              disabled={rowBusy}
+              disabled={busy}
               onChange={(checked) => void onToggleAtAll(target, checked)}
             />
           </div>
+          {type === 'x' && onRefreshProfile ? (
+            <button
+              type="button"
+              className="btn-secondary text-sm"
+              disabled={busy}
+              onClick={() => void onRefreshProfile(target)}
+            >
+              {refreshing ? '更新中…' : '更新用户信息'}
+            </button>
+          ) : null}
           <button
             type="button"
             className="btn-secondary text-sm"
-            disabled={rowBusy}
+            disabled={busy}
             onClick={() => onEdit(target)}
           >
             编辑
@@ -93,7 +114,7 @@ export function TargetDetail({
           <button
             type="button"
             className="btn-secondary text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-            disabled={rowBusy}
+            disabled={busy}
             onClick={() => void onDelete(target.id)}
           >
             删除

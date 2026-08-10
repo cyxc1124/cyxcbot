@@ -313,6 +313,9 @@ export const updateXTarget = (id: number, data: XTargetUpdate) =>
 export const deleteXTarget = (id: number) =>
   request<void>(`/x-targets/${id}`, { method: 'DELETE' })
 
+export const refreshXTargetProfile = (id: number) =>
+  request<XTarget>(`/x-targets/${id}/refresh-profile`, { method: 'POST' })
+
 // Rust RCON bindings
 export const getRustRconBindings = () =>
   request<RustRconBinding[]>('/rust-rcon/bindings')

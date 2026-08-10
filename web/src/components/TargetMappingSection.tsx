@@ -30,6 +30,7 @@ export function TargetMappingSection({ type, onTargetsChanged }: TargetMappingSe
     editOriginalId,
     saving,
     togglingId,
+    refreshingId,
     idLabel,
     targetLabel,
     nameSource,
@@ -42,6 +43,7 @@ export function TargetMappingSection({ type, onTargetsChanged }: TargetMappingSe
     handleDelete,
     toggleEnabled,
     toggleAtAll,
+    refreshProfile,
   } = useTargetMappings({ type, onTargetsChanged })
 
   const showSplit = selectedId !== null || showForm
@@ -152,11 +154,13 @@ export function TargetMappingSection({ type, onTargetsChanged }: TargetMappingSe
                   groups={groups}
                   friends={friends}
                   rowBusy={togglingId === selectedTarget.id}
+                  refreshing={refreshingId === selectedTarget.id}
                   onClearSelection={clearSelection}
                   onToggleEnabled={toggleEnabled}
                   onToggleAtAll={toggleAtAll}
                   onEdit={openEdit}
                   onDelete={handleDelete}
+                  onRefreshProfile={type === 'x' ? refreshProfile : undefined}
                 />
               ) : (
                 <div className="flex h-full min-h-80 items-center justify-center text-sm text-muted-foreground">
