@@ -273,6 +273,10 @@ class XMonitorState(Model):
     username: Mapped[str] = mapped_column(String(64), primary_key=True)
     last_tweet_id: Mapped[str] = mapped_column(String(32), default="0", nullable=False)
     initialized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # 部分投递失败时保留待重试目标，重启后避免对已成功目标重复推送
+    pending_tweet_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    pending_group_ids: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    pending_user_ids: Mapped[str] = mapped_column(Text, default="", nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )

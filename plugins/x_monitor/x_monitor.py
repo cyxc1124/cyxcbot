@@ -193,6 +193,7 @@ class XMonitor:
             usernames=usernames,
             last_tweet_ids=self.last_tweet_ids,
             initialized_usernames=self.initialized_usernames,
+            pending_tweet_delivery=self._pending_tweet_delivery,
         )
 
     async def _persist_state(
@@ -208,6 +209,7 @@ class XMonitor:
             username,
             last_tweet_ids=self.last_tweet_ids,
             initialized_usernames=self.initialized_usernames,
+            pending_tweet_delivery=self._pending_tweet_delivery,
         )
 
     async def reload_config(self):
@@ -485,11 +487,10 @@ class XMonitor:
             return True
 
         last_tweet_id = self.last_tweet_ids.get(username, "0")
-        # 已建基准后用 since_id 只拉增量，减少 Post: Read 计费（对齐 twitter-api-v2）
+        initialized = self.initialized_usernames.get(username, False)
+        # 已建基准后用 since_id 只拉增量；零游标也翻页，避免只拿最新 5 条漏帖
         since_id = None
-        if self.initialized_usernames.get(username, False) and tweet_id_as_int(
-            last_tweet_id
-        ):
+        if initialized and tweet_id_as_int(last_tweet_id):
             since_id = last_tweet_id
 
         tweets = await self.client.fetch_user_tweets(
@@ -497,6 +498,7 @@ class XMonitor:
             username=username,
             name=user.name or username,
             since_id=since_id,
+            paginate=initialized,
         )
         if tweets is None:
             logger.debug("获取 X 博主 {} 推文失败", username)
@@ -599,6 +601,7 @@ class XMonitor:
             if not group_ids and not user_ids:
                 # 失败目标已从配置移除，无需再投递
                 self._pending_tweet_delivery.pop(username, None)
+                await self._persist_state(username, check_generation=check_generation)
                 return True
         else:
             if pending:
@@ -639,6 +642,7 @@ class XMonitor:
             failed_groups,
             failed_users,
         )
+        await self._persist_state(username, check_generation=check_generation)
         failed_targets = [
             f"{target.target_type}:{target.target_id}"
             for target in delivery.targets

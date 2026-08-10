@@ -108,13 +108,14 @@ class XApiClient:
         username: str = "",
         name: str = "",
         max_pages: int = 20,
+        paginate: bool = False,
     ) -> Optional[List[TweetItem]]:
         """Fetch recent tweets for a user id. Returns None on request failure.
 
-        When ``since_id`` is set, only newer tweets are requested and pages are
-        followed via ``pagination_token`` until exhausted. If the page cap is
-        hit while more results remain, returns ``None`` so the cursor is not
-        advanced past unseen tweets.
+        When ``since_id`` is set or ``paginate`` is true, pages are followed via
+        ``pagination_token`` until exhausted. If the page cap is hit while more
+        results remain, returns ``None`` so the cursor is not advanced past
+        unseen tweets.
         """
         uid = str(user_id or "").strip()
         if not uid:
@@ -123,9 +124,10 @@ class XApiClient:
             logger.warning("X API: 未配置 Bearer Token，无法拉取推文")
             return None
 
-        # 有 since_id 时拉满页并翻页，避免停机后一次只拿到最新 5 条导致中间帖丢失
-        page_size = 100 if since_id else max_results
-        page_limit = max(1, min(20, int(max_pages))) if since_id else 1
+        # since_id 增量或已初始化的零游标追赶都需要翻页，避免一次只拿最新 5 条漏帖
+        use_pagination = bool(since_id) or paginate
+        page_size = 100 if use_pagination else max_results
+        page_limit = max(1, min(20, int(max_pages))) if use_pagination else 1
 
         handle = (username or "").strip().lstrip("@").strip()
         display_name = name or handle
@@ -172,8 +174,8 @@ class XApiClient:
                 break
             pagination_token = next_token
         else:
-            # 触顶 page_limit 且仍有下一页：视为不完整，避免推进 since_id 漏帖
-            if since_id:
+            # 触顶 page_limit 且仍有下一页：视为不完整，避免推进游标漏帖
+            if use_pagination:
                 logger.warning(
                     "X API 推文翻页未完成: user_id={} pages={}，下次重试",
                     uid,

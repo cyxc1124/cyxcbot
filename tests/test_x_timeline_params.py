@@ -83,3 +83,33 @@ async def test_fetch_user_tweets_aborts_when_page_cap_leaves_next_token():
 
     assert result is None
     assert client._get_user_timeline_page.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_fetch_user_tweets_paginates_without_since_id_when_requested():
+    client = XApiClient(session=MagicMock(), bearer="token")
+    pages = [
+        {
+            "data": [{"id": "20", "text": "a", "created_at": "2026-01-02T00:00:00Z"}],
+            "meta": {"next_token": "page2"},
+        },
+        {
+            "data": [{"id": "10", "text": "b", "created_at": "2026-01-01T00:00:00Z"}],
+            "meta": {},
+        },
+    ]
+    client._get_user_timeline_page = AsyncMock(side_effect=pages)
+
+    result = await client.fetch_user_tweets(
+        "42",
+        username="demo",
+        paginate=True,
+        max_pages=5,
+    )
+
+    assert result is not None
+    assert [t.id for t in result] == ["20", "10"]
+    assert client._get_user_timeline_page.await_count == 2
+    first_params = client._get_user_timeline_page.await_args_list[0].args[1]
+    assert first_params["max_results"] == "100"
+    assert "since_id" not in first_params
