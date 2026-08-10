@@ -32,7 +32,7 @@ from .check_logic import (
     should_initialize_after_first_poll,
 )
 from .config import Config
-from .delivery_retry import failed_target_ids
+from .delivery_retry import failed_target_ids, resolve_retry_targets
 from .poll_scheduler import register_poll_job, remove_poll_job
 from .sender import XSender
 from .state_store import XMonitorStateStore
@@ -603,21 +603,14 @@ class XMonitor:
         configured_groups = self.config.x_monitor_mapping.get(username, [])
         configured_users = self.config.x_monitor_user_mapping.get(username, [])
         pending = self._pending_tweet_delivery.get(username)
-        if pending and pending[0] == tweet.id:
-            configured_group_set = set(configured_groups)
-            configured_user_set = set(configured_users)
-            group_ids = [g for g in pending[1] if g in configured_group_set]
-            user_ids = [u for u in pending[2] if u in configured_user_set]
-            if not group_ids and not user_ids:
-                # 失败目标已从配置移除，无需再投递
-                self._pending_tweet_delivery.pop(username, None)
-                await self._persist_state(username, check_generation=check_generation)
-                return True
-        else:
-            if pending:
-                self._pending_tweet_delivery.pop(username, None)
-            group_ids = list(configured_groups)
-            user_ids = list(configured_users)
+        group_ids, user_ids, clear_pending = resolve_retry_targets(
+            tweet.id,
+            configured_groups=configured_groups,
+            configured_users=configured_users,
+            pending=pending,
+        )
+        if clear_pending:
+            self._pending_tweet_delivery.pop(username, None)
 
         if not group_ids and not user_ids:
             logger.warning("X 博主 {} 没有配置推送目标", username)

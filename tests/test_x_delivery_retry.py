@@ -61,3 +61,43 @@ def test_encode_decode_pending_ids_roundtrip():
     assert delivery_retry.decode_pending_ids("1,2") == ["1", "2"]
     assert delivery_retry.decode_pending_ids("") == []
     assert delivery_retry.decode_pending_ids(None) == []
+
+
+def test_resolve_retry_targets_uses_pending_intersection():
+    delivery_retry = _load_delivery_retry()
+    groups, users, clear = delivery_retry.resolve_retry_targets(
+        "42",
+        configured_groups=["1", "2"],
+        configured_users=["9"],
+        pending=("42", ["2", "3"], ["9", "8"]),
+    )
+    assert groups == ["2"]
+    assert users == ["9"]
+    assert clear is False
+
+
+def test_resolve_retry_targets_falls_back_when_failed_recipients_replaced():
+    """Full failure then admin replaces recipients must not skip the tweet."""
+    delivery_retry = _load_delivery_retry()
+    groups, users, clear = delivery_retry.resolve_retry_targets(
+        "42",
+        configured_groups=["200"],
+        configured_users=[],
+        pending=("42", ["100"], []),
+    )
+    assert groups == ["200"]
+    assert users == []
+    assert clear is True
+
+
+def test_resolve_retry_targets_clears_stale_pending_for_other_tweet():
+    delivery_retry = _load_delivery_retry()
+    groups, users, clear = delivery_retry.resolve_retry_targets(
+        "99",
+        configured_groups=["1"],
+        configured_users=[],
+        pending=("42", ["1"], []),
+    )
+    assert groups == ["1"]
+    assert users == []
+    assert clear is True
