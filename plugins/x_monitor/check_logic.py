@@ -21,3 +21,8 @@ def compute_first_baseline_last_id(
     if not tweets:
         return None
     return str(max(tweets, key=lambda t: tweet_id_as_int(t.id)).id)
+
+
+def should_initialize_after_first_poll(baseline: Optional[str]) -> bool:
+    """空时间线不得标记已初始化（否则零游标翻页会把历史帖当新帖）。"""
+    return baseline is not None

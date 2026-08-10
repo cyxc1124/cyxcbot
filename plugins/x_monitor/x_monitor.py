@@ -25,7 +25,11 @@ from shared.monitor.poll_schedule import compute_dynamic_poll_schedule
 from utils.x_api import TweetItem, XApiClient, XUser, create_session
 from utils.x_api.models import tweet_id_as_int
 
-from .check_logic import collect_new_tweets, compute_first_baseline_last_id
+from .check_logic import (
+    collect_new_tweets,
+    compute_first_baseline_last_id,
+    should_initialize_after_first_poll,
+)
 from .config import Config
 from .delivery_retry import failed_target_ids
 from .poll_scheduler import register_poll_job, remove_poll_job
@@ -513,16 +517,16 @@ class XMonitor:
             if not self._check_still_valid(username, check_generation):
                 return True
             baseline = compute_first_baseline_last_id(tweets)
-            if tweets:
+            if not should_initialize_after_first_poll(baseline):
+                # 无推文时不标记已初始化，避免下一轮零游标翻页把历史帖当新帖群发
                 logger.info(
-                    "X 博主 {} 首次监控，已记录最新推文 ID: {}", username, baseline
+                    "X 博主 {} 首次监控，当前无推文，等待首条后再建基准", username
                 )
-            else:
-                logger.info("X 博主 {} 首次监控，当前无推文", username)
+                return True
             if not self._check_still_valid(username, check_generation):
                 return True
-            if baseline is not None:
-                self.last_tweet_ids[username] = baseline
+            logger.info("X 博主 {} 首次监控，已记录最新推文 ID: {}", username, baseline)
+            self.last_tweet_ids[username] = baseline
             self.initialized_usernames[username] = True
             await self._persist_state(username, check_generation=check_generation)
             return True

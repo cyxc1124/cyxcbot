@@ -8,6 +8,7 @@ from nonebot_plugin_orm import get_session
 from sqlalchemy import select
 
 from shared.db.models import XMonitorState
+from utils.x_api.models import tweet_id_as_int
 
 from .delivery_retry import decode_pending_ids, encode_pending_ids
 
@@ -43,7 +44,13 @@ class XMonitorStateStore:
                     row = by_username.get(username)
                     if row:
                         last_tweet_ids[username] = row.last_tweet_id or "0"
-                        initialized_usernames[username] = row.initialized
+                        initialized = bool(row.initialized)
+                        # 旧状态：initialized 但游标为 0 → 视为未初始化，避免零游标翻页群发
+                        if initialized and not tweet_id_as_int(
+                            last_tweet_ids[username]
+                        ):
+                            initialized = False
+                        initialized_usernames[username] = initialized
                         tweet_id = (row.pending_tweet_id or "").strip()
                         groups = decode_pending_ids(row.pending_group_ids)
                         users = decode_pending_ids(row.pending_user_ids)

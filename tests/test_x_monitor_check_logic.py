@@ -72,3 +72,9 @@ def test_compute_first_baseline_last_id_returns_max():
     check_logic = _load_check_logic()
     tweets = [_tweet("10"), _tweet("42"), _tweet("7")]
     assert check_logic.compute_first_baseline_last_id(tweets) == "42"
+
+
+def test_should_initialize_after_first_poll_requires_baseline():
+    check_logic = _load_check_logic()
+    assert check_logic.should_initialize_after_first_poll(None) is False
+    assert check_logic.should_initialize_after_first_poll("42") is True
