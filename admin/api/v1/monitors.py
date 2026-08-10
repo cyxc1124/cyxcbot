@@ -13,14 +13,17 @@ from admin.schemas.monitors import (
     ManualCheckResponse,
     MonitorStatusResponse,
     SystemMonitorStatusResponse,
+    XMonitorStatusResponse,
 )
 from admin.services.monitor_bridge import (
     build_dynamic_monitor_status,
     build_live_monitor_status,
+    build_x_monitor_status,
     get_monitor_status,
     get_system_monitor_status,
     trigger_dynamic_check,
     trigger_live_check,
+    trigger_x_check,
 )
 
 router = APIRouter(
@@ -45,6 +48,11 @@ async def live_monitor_status(_: AdminUser):
     return LiveMonitorStatusResponse(**build_live_monitor_status())
 
 
+@router.get("/x", response_model=XMonitorStatusResponse)
+async def x_monitor_status(_: AdminUser):
+    return XMonitorStatusResponse(**build_x_monitor_status())
+
+
 @router.get("/system", response_model=SystemMonitorStatusResponse)
 async def system_monitor_status(_: AdminUser):
     return SystemMonitorStatusResponse(**get_system_monitor_status())
@@ -59,4 +67,10 @@ async def manual_dynamic_check(_: AdminUser, uid: Optional[str] = None):
 @router.post("/live/check", response_model=ManualCheckResponse)
 async def manual_live_check(_: AdminUser, room_id: Optional[str] = None):
     result = await trigger_live_check(room_id)
+    return ManualCheckResponse(**result)
+
+
+@router.post("/x/check", response_model=ManualCheckResponse)
+async def manual_x_check(_: AdminUser, username: Optional[str] = None):
+    result = await trigger_x_check(username)
     return ManualCheckResponse(**result)

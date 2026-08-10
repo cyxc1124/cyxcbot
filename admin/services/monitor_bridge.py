@@ -25,6 +25,12 @@ def get_live_monitor_instance():
     return live_monitor_instance
 
 
+def get_x_monitor_instance():
+    from plugins.x_monitor.x_monitor import x_monitor_instance
+
+    return x_monitor_instance
+
+
 async def reload_dynamic_monitor() -> bool:
     from plugins.dynamic_monitor import dynamic_monitor as dynamic_monitor_mod
 
@@ -75,9 +81,35 @@ async def reload_live_monitor() -> bool:
     return True
 
 
+async def reload_x_monitor() -> bool:
+    from plugins.x_monitor import x_monitor as x_monitor_mod
+
+    snap = get_config_service().get_snapshot()
+    has_targets = bool(snap.x_monitor_mapping)
+    instance_before = x_monitor_mod.x_monitor_instance
+
+    if instance_before is None and not has_targets:
+        return False
+
+    try:
+        await x_monitor_mod.sync_from_config_reload(snap)
+    except Exception:
+        logger.opt(exception=True).error("X 监控热重载失败")
+        return False
+
+    instance_after = x_monitor_mod.x_monitor_instance
+    if instance_before is None and instance_after is not None:
+        logger.info("X 监控已从空配置状态启动")
+    elif instance_before is not None and instance_after is None:
+        logger.info("X 监控目标已清空，监控已停止")
+
+    return True
+
+
 async def reload_all_monitors() -> None:
     await reload_dynamic_monitor()
     await reload_live_monitor()
+    await reload_x_monitor()
 
 
 async def trigger_dynamic_check(uid: Optional[str] = None) -> Dict[str, Any]:
@@ -160,24 +192,62 @@ async def trigger_live_check(room_id: Optional[str] = None) -> Dict[str, Any]:
     }
 
 
+async def trigger_x_check(username: Optional[str] = None) -> Dict[str, Any]:
+    instance = get_x_monitor_instance()
+    if not instance or not instance.is_running:
+        return {"success": False, "message": "X monitor is not running"}
+
+    snap = get_config_service().get_snapshot()
+    usernames = [username] if username else list(snap.x_monitor_mapping.keys())
+    if not usernames:
+        return {"success": False, "message": "No X targets configured"}
+
+    outcome = await instance.run_manual_check(usernames)
+    checked = outcome["checked"]
+    failed = outcome["failed"]
+
+    if not checked and failed:
+        return {
+            "success": False,
+            "message": f"All {len(failed)} check(s) failed",
+            "result": {"checked_usernames": checked, "failed_usernames": failed},
+        }
+
+    message = f"Checked {len(checked)} target(s)"
+    if failed:
+        message += f", {len(failed)} failed"
+
+    return {
+        "success": True,
+        "message": message,
+        "result": {"checked_usernames": checked, "failed_usernames": failed},
+    }
+
+
 def get_monitor_status() -> Dict[str, Any]:
     from shared.runtime import get_uptime_seconds
 
     dynamic = get_dynamic_monitor_instance()
     live = get_live_monitor_instance()
+    x_monitor = get_x_monitor_instance()
     snap = get_config_service().get_snapshot()
     dynamic_running = bool(dynamic and dynamic.is_running)
     live_running = bool(live and live.is_running)
+    x_running = bool(x_monitor and x_monitor.is_running)
     return {
         "running": True,
         "uptime_seconds": get_uptime_seconds(),
         "dynamic_running": dynamic_running,
         "live_running": live_running,
+        "x_running": x_running,
         "dynamic_target_count": len(snap.dynamic_monitor_mapping),
         "live_target_count": len(snap.live_monitor_mapping),
+        "x_target_count": len(snap.x_monitor_mapping),
         "dynamic_checks_total": dynamic.checks_total if dynamic else 0,
         "live_checks_total": live.checks_total if live else 0,
+        "x_checks_total": x_monitor.checks_total if x_monitor else 0,
         "dynamic_new_dynamics_total": dynamic.new_dynamics_total if dynamic else 0,
+        "x_new_tweets_total": x_monitor.new_tweets_total if x_monitor else 0,
     }
 
 
@@ -282,6 +352,50 @@ def get_live_monitor_details() -> List[Dict[str, Any]]:
                 "is_living": is_living,
                 "group_count": len(snap.live_monitor_mapping.get(room_id, [])),
                 "user_count": len(snap.live_monitor_user_mapping.get(room_id, [])),
+            }
+        )
+    return details
+
+
+def build_x_monitor_status() -> Dict[str, Any]:
+    status = get_monitor_status()
+    instance = get_x_monitor_instance()
+    snap = get_config_service().get_snapshot()
+    target_count = len(snap.x_monitor_mapping)
+    poll_schedule = compute_dynamic_poll_schedule(
+        target_count,
+        snap.x_monitor_interval,
+        use_stagger=snap.x_monitor_use_stagger,
+    )
+    return {
+        "enabled": status["x_running"],
+        "interval_seconds": snap.x_monitor_interval,
+        "target_count": target_count,
+        "poll_schedule": poll_schedule,
+        "last_check_at": instance.last_check_at if instance else None,
+        "last_error": None,
+        "checks_total": instance.checks_total if instance else 0,
+        "new_tweets_total": instance.new_tweets_total if instance else 0,
+        "targets": get_x_monitor_details(),
+    }
+
+
+def get_x_monitor_details() -> List[Dict[str, Any]]:
+    instance = get_x_monitor_instance()
+    snap = get_config_service().get_snapshot()
+    details = []
+    for username in snap.x_monitor_mapping:
+        details.append(
+            {
+                "username": username,
+                "last_tweet_id": instance.last_tweet_ids.get(username, "0")
+                if instance
+                else "0",
+                "initialized": instance.initialized_usernames.get(username, False)
+                if instance
+                else False,
+                "group_count": len(snap.x_monitor_mapping.get(username, [])),
+                "user_count": len(snap.x_monitor_user_mapping.get(username, [])),
             }
         )
     return details

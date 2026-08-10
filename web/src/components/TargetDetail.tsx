@@ -5,11 +5,12 @@ import {
   getTargetDisplayName,
   getTargetId,
   type SubscriptionTarget,
+  type TargetType,
 } from './targetMapping/types'
 
 interface TargetDetailProps {
   target: SubscriptionTarget
-  isDynamic: boolean
+  type: TargetType
   targetLabel: string
   groups: Group[]
   friends: Friend[]
@@ -23,7 +24,7 @@ interface TargetDetailProps {
 
 export function TargetDetail({
   target,
-  isDynamic,
+  type,
   targetLabel,
   groups,
   friends,
@@ -34,8 +35,8 @@ export function TargetDetail({
   onEdit,
   onDelete,
 }: TargetDetailProps) {
-  const targetId = getTargetId(target, isDynamic)
-  const displayName = getTargetDisplayName(target, isDynamic, targetLabel)
+  const targetId = getTargetId(target, type)
+  const displayName = getTargetDisplayName(target, type, targetLabel)
 
   return (
     <div className="flex h-full flex-col">

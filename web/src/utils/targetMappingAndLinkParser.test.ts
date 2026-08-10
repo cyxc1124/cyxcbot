@@ -17,11 +17,12 @@ import {
 
 describe('targetMapping types', () => {
   it('emptyForm defaults at_all based on target type', () => {
-    expect(emptyForm(true).at_all).toBe(false)
-    expect(emptyForm(false).at_all).toBe(true)
+    expect(emptyForm('dynamic').at_all).toBe(false)
+    expect(emptyForm('live').at_all).toBe(true)
+    expect(emptyForm('x').at_all).toBe(false)
   })
 
-  it('getTargetId reads uid or room_id', () => {
+  it('getTargetId reads uid, room_id or username', () => {
     expect(
       getTargetId(
         {
@@ -34,7 +35,7 @@ describe('targetMapping types', () => {
           user_ids: [],
           created_at: '',
         },
-        true,
+        'dynamic',
       ),
     ).toBe('123')
     expect(
@@ -49,9 +50,24 @@ describe('targetMapping types', () => {
           user_ids: [],
           created_at: '',
         },
-        false,
+        'live',
       ),
     ).toBe('456')
+    expect(
+      getTargetId(
+        {
+          id: 3,
+          username: 'elonmusk',
+          name: null,
+          enabled: true,
+          at_all: false,
+          group_ids: [],
+          user_ids: [],
+          created_at: '',
+        },
+        'x',
+      ),
+    ).toBe('elonmusk')
   })
 
   it('getTargetDisplayName falls back to label plus id', () => {
@@ -65,8 +81,10 @@ describe('targetMapping types', () => {
       user_ids: [],
       created_at: '',
     }
-    expect(getTargetDisplayName(target, true, 'UP 主')).toBe('UP 主 99')
-    expect(getTargetDisplayName({ ...target, name: 'Alice' }, true, 'UP 主')).toBe('Alice')
+    expect(getTargetDisplayName(target, 'dynamic', 'UP 主')).toBe('UP 主 99')
+    expect(getTargetDisplayName({ ...target, name: 'Alice' }, 'dynamic', 'UP 主')).toBe(
+      'Alice',
+    )
   })
 
   it('formFromTarget copies subscription fields', () => {
@@ -80,7 +98,7 @@ describe('targetMapping types', () => {
       user_ids: ['2'],
       created_at: '',
     }
-    expect(formFromTarget(target, false)).toEqual({
+    expect(formFromTarget(target, 'live')).toEqual({
       id: '100',
       name: 'Room',
       enabled: false,

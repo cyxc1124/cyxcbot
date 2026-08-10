@@ -9,6 +9,7 @@ from shared.notify.message_template import safe_text
 
 LIVE_AT_ALL_FALLBACK = "📢 请关注直播动态！"
 DYNAMIC_AT_ALL_FALLBACK = "📢 新动态提醒！"
+X_AT_ALL_FALLBACK = "📢 新推文提醒！"
 
 
 async def bot_can_at_all(bot: Bot, group_id: str) -> bool:

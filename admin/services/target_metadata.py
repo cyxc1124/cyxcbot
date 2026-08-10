@@ -1,14 +1,18 @@
-"""Resolve Bilibili display names for monitor targets."""
+"""Resolve Bilibili / X display names for monitor targets."""
 
 from __future__ import annotations
+
+from typing import Optional
 
 import aiohttp
 from nonebot.log import logger
 
+from shared.config.proxy import ProxyConfig
 from shared.config.service import get_config_service
-from shared.db.models import DynamicTarget, LiveTarget
+from shared.db.models import DynamicTarget, LiveTarget, XTarget
 from utils.bilibili_api.dynamic_api import DynamicFetcher
 from utils.bilibili_api.live_api import LiveApi
+from utils.x_api import XApiClient, XUser, create_session
 
 
 def _bilibili_cookie() -> str | None:
@@ -145,3 +149,93 @@ async def resolve_missing_live_target_names(
                 target = await db.get(LiveTarget, target_id)
                 if target is not None and not target.name and target.room_id == room_id:
                     target.name = name
+
+
+def _x_proxy_and_bearer() -> tuple[ProxyConfig, str]:
+    snap = get_config_service().get_snapshot()
+    return snap.x_proxy, snap.x_api_bearer
+
+
+def _x_http_proxy_url(proxy: ProxyConfig) -> str | None:
+    if proxy.is_configured and proxy.scheme in ("http", "https"):
+        return proxy.to_url()
+    return None
+
+
+async def resolve_x_user(username: str) -> Optional[XUser]:
+    """Fetch X user by username (without @)."""
+    key = (username or "").lstrip("@").strip()
+    if not key:
+        return None
+    proxy, bearer = _x_proxy_and_bearer()
+    if not bearer:
+        logger.warning("解析 X 用户失败: 未配置 Bearer Token")
+        return None
+    try:
+        session = create_session(proxy)
+        async with session:
+            client = XApiClient(session, bearer, proxy_url=_x_http_proxy_url(proxy))
+            return await client.get_user_by_username(key)
+    except Exception as exc:
+        logger.warning("解析 X 用户 {} 失败: {}", key, exc)
+        return None
+
+
+async def resolve_x_username_display_name(username: str) -> Optional[str]:
+    """Fetch X display name by username."""
+    user = await resolve_x_user(username)
+    if not user:
+        return None
+    return (user.name or user.username or "").strip() or None
+
+
+async def resolve_x_target_name(
+    username: str, manual_name: str | None = None
+) -> tuple[Optional[str], Optional[str]]:
+    """Prefer manual name; also resolve X user_id.
+
+    Returns (display_name, user_id). Display name may come from manual input
+    even when API lookup fails; both None means unusable.
+    """
+    user = await resolve_x_user(username)
+    user_id = user.id if user else None
+    if manual_name and manual_name.strip():
+        return manual_name.strip(), user_id
+    if user:
+        name = (user.name or user.username or "").strip() or None
+        return name, user_id
+    return None, None
+
+
+async def resolve_missing_x_target_names(
+    items: list[tuple[int, str]],
+) -> None:
+    """Background: resolve and persist missing X target display names / user_ids."""
+    if not items:
+        return
+    resolved: list[tuple[int, str, str, str | None]] = []
+    try:
+        for target_id, username in items:
+            user = await resolve_x_user(username)
+            if not user:
+                continue
+            name = (user.name or user.username or "").strip()
+            if name:
+                resolved.append((target_id, username, name, user.id))
+    except Exception as exc:
+        logger.warning("批量解析 X target 名称失败: {}", exc)
+        return
+    if not resolved:
+        return
+    from nonebot_plugin_orm import get_session
+
+    async with get_session() as db:
+        async with db.begin():
+            for target_id, username, name, user_id in resolved:
+                target = await db.get(XTarget, target_id)
+                if target is None or target.username != username:
+                    continue
+                if not target.name:
+                    target.name = name
+                if user_id and not target.user_id:
+                    target.user_id = user_id

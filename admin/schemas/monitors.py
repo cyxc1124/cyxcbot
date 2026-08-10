@@ -28,8 +28,10 @@ class MonitorStatusResponse(BaseModel):
     uptime_seconds: int
     dynamic_running: bool
     live_running: bool
+    x_running: bool = False
     dynamic_target_count: int
     live_target_count: int
+    x_target_count: int = 0
 
 
 class DynamicMonitorDetail(BaseModel):
@@ -45,6 +47,13 @@ class LiveMonitorDetail(BaseModel):
     previous_status: Optional[str]
     streamer_name: Optional[str]
     is_living: Optional[bool]
+    group_count: int
+
+
+class XMonitorDetail(BaseModel):
+    username: str
+    last_tweet_id: str
+    initialized: bool
     group_count: int
 
 
@@ -72,6 +81,18 @@ class LiveMonitorStatusResponse(BaseModel):
     live_rooms: int = 0
     checks_total: int = 0
     targets: List[LiveMonitorDetail] = []
+
+
+class XMonitorStatusResponse(BaseModel):
+    enabled: bool
+    interval_seconds: int
+    target_count: int
+    poll_schedule: MonitorPollSchedule
+    last_check_at: Optional[str] = None
+    last_error: Optional[str] = None
+    checks_total: int = 0
+    new_tweets_total: int = 0
+    targets: List[XMonitorDetail] = []
 
 
 class ManualCheckResponse(BaseModel):

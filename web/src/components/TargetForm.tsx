@@ -3,7 +3,7 @@ import type { Friend, Group } from '../api/types'
 import { FriendSelector } from './FriendSelector'
 import { GroupSelector } from './GroupSelector'
 import { ToggleSwitch } from './ToggleSwitch'
-import type { TargetFormState } from './targetMapping/types'
+import type { TargetFormState, TargetType } from './targetMapping/types'
 
 interface TargetFormProps {
   editingId: number | null
@@ -11,7 +11,8 @@ interface TargetFormProps {
   setForm: React.Dispatch<React.SetStateAction<TargetFormState>>
   editOriginalId: string
   idLabel: string
-  isDynamic: boolean
+  type: TargetType
+  nameSource: string
   groups: Group[]
   friends: Friend[]
   saving: boolean
@@ -25,7 +26,8 @@ export function TargetForm({
   setForm,
   editOriginalId,
   idLabel,
-  isDynamic,
+  type,
+  nameSource,
   groups,
   friends,
   saving,
@@ -53,7 +55,7 @@ export function TargetForm({
                 }))
               }}
               required
-              placeholder="12345678"
+              placeholder={type === 'x' ? 'elonmusk' : '12345678'}
             />
           </div>
           <div>
@@ -62,17 +64,19 @@ export function TargetForm({
               className="input"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="留空将自动从 B 站获取"
+              placeholder={`留空将自动从 ${nameSource} 获取`}
             />
             {!editingId ? (
               <p className="mt-1 text-xs text-muted-foreground">
-                {isDynamic
+                {type === 'dynamic'
                   ? 'UID 无效且未填写名称时无法保存'
-                  : '房间号无效且未填写名称时无法保存'}
+                  : type === 'x'
+                    ? '用户名无效且未填写名称时无法保存'
+                    : '房间号无效且未填写名称时无法保存'}
               </p>
             ) : (
               <p className="mt-1 text-xs text-muted-foreground">
-                修改 {idLabel} 后将清空名称并重新从 B 站获取
+                修改 {idLabel} 后将清空名称并重新从 {nameSource} 获取
               </p>
             )}
           </div>

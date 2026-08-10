@@ -12,8 +12,9 @@ export type TemplateKey =
   | 'link_template_video'
   | 'link_template_live'
   | 'link_template_douyin'
+  | 'x_template_push'
 
-export type TemplateCategory = 'dynamic' | 'live' | 'link'
+export type TemplateCategory = 'dynamic' | 'live' | 'link' | 'x'
 
 export type TemplateVariable = {
   key: string
@@ -47,6 +48,7 @@ export const DEFAULT_MESSAGE_TEMPLATES: Record<TemplateKey, string> = {
   link_template_live:
     '{cover}标题：{title}\n主播：{streamer_name}\n状态：{status}\n开播时间：{live_start_time}\n分区：{area}\n链接：{url}',
   link_template_douyin: '{video}标题：{title}\n作者：{author}\n链接：{url}',
+  x_template_push: '{name} 发布了新推文\n{time}\n{text}\n{media}\n{url}',
 }
 
 const dynamicMediaVariable: TemplateVariable = {
@@ -250,12 +252,43 @@ export const linkTemplateFields: TemplateField[] = [
   },
 ]
 
-export const allTemplateFields = [...dynamicTemplateFields, ...liveTemplateFields, ...linkTemplateFields]
+const xPushVariables: TemplateVariable[] = [
+  { key: 'name', label: '博主名', description: 'X 显示名称' },
+  { key: 'username', label: '用户名', description: '不含 @ 的 handle' },
+  { key: 'time', label: '发布时间', description: '推文发布时间' },
+  { key: 'text', label: '推文正文', description: '推文文本内容' },
+  {
+    key: 'media',
+    label: '媒体',
+    description: '推文附带图片（如有）',
+    segment: true,
+  },
+  { key: 'url', label: '推文链接', description: 'x.com 状态链接' },
+]
+
+export const xTemplateFields: TemplateField[] = [
+  {
+    key: 'x_template_push',
+    category: 'x',
+    label: '新推文推送',
+    description: '检测到 X 博主发布新推文时的完整推送内容',
+    defaultValue: DEFAULT_MESSAGE_TEMPLATES.x_template_push,
+    variables: xPushVariables,
+  },
+]
+
+export const allTemplateFields = [
+  ...dynamicTemplateFields,
+  ...liveTemplateFields,
+  ...linkTemplateFields,
+  ...xTemplateFields,
+]
 
 export const templateCategoryLabels: Record<TemplateCategory, string> = {
   dynamic: '动态模板',
   live: '直播模板',
   link: '链接解析',
+  x: 'X 模板',
 }
 
 export const PREVIEW_SEGMENT_LABELS: Record<string, string> = {
@@ -285,6 +318,8 @@ export const PREVIEW_SAMPLE_VALUES: Record<string, string> = {
   bvid: 'BV1xx411c7mD',
   aid: '170001',
   index: '1',
+  username: 'elonmusk',
+  text: 'Hello from X!',
 }
 
 export function createDefaultTemplateForm(): Record<TemplateKey, string> {

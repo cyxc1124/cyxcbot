@@ -2,10 +2,14 @@ import { useTargetMappings } from '../hooks/useTargetMappings'
 import { LoadErrorBanner } from './LoadErrorBanner'
 import { TargetDetail } from './TargetDetail'
 import { TargetForm } from './TargetForm'
-import { getTargetDisplayName, getTargetId } from './targetMapping/types'
+import {
+  getTargetDisplayName,
+  getTargetId,
+  type TargetType,
+} from './targetMapping/types'
 
 interface TargetMappingSectionProps {
-  type: 'dynamic' | 'live'
+  type: TargetType
   onTargetsChanged?: () => void | Promise<void>
 }
 
@@ -26,9 +30,9 @@ export function TargetMappingSection({ type, onTargetsChanged }: TargetMappingSe
     editOriginalId,
     saving,
     togglingId,
-    isDynamic,
     idLabel,
     targetLabel,
+    nameSource,
     openCreate,
     openEdit,
     selectTarget,
@@ -82,8 +86,8 @@ export function TargetMappingSection({ type, onTargetsChanged }: TargetMappingSe
               </div>
               <ul className="flex-1 overflow-y-auto p-2">
                 {targets.map((target) => {
-                  const targetId = getTargetId(target, isDynamic)
-                  const displayName = getTargetDisplayName(target, isDynamic, targetLabel)
+                  const targetId = getTargetId(target, type)
+                  const displayName = getTargetDisplayName(target, type, targetLabel)
                   const isSelected = selectedId === target.id
                   return (
                     <li key={target.id}>
@@ -132,7 +136,8 @@ export function TargetMappingSection({ type, onTargetsChanged }: TargetMappingSe
                   setForm={setForm}
                   editOriginalId={editOriginalId}
                   idLabel={idLabel}
-                  isDynamic={isDynamic}
+                  type={type}
+                  nameSource={nameSource}
                   groups={groups}
                   friends={friends}
                   saving={saving}
@@ -142,7 +147,7 @@ export function TargetMappingSection({ type, onTargetsChanged }: TargetMappingSe
               ) : selectedTarget ? (
                 <TargetDetail
                   target={selectedTarget}
-                  isDynamic={isDynamic}
+                  type={type}
                   targetLabel={targetLabel}
                   groups={groups}
                   friends={friends}

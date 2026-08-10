@@ -27,6 +27,7 @@ from shared.config.message_templates import MESSAGE_TEMPLATE_KEYS
 from shared.config.rust_rcon import command_aliases_rust_rcon_conflict
 from shared.config.rust_rcon_custom import command_aliases_custom_command_conflict
 from shared.config.service import get_config_service
+from shared.security.crypto import encrypt_value
 
 router = APIRouter(
     prefix="/settings",
@@ -71,6 +72,31 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         updates["live_monitor_use_websocket"] = str(
             body.live_monitor_use_websocket
         ).lower()
+    if body.x_monitor_interval is not None:
+        updates["x_monitor_interval"] = str(body.x_monitor_interval)
+    if body.x_monitor_use_stagger is not None:
+        updates["x_monitor_use_stagger"] = str(body.x_monitor_use_stagger).lower()
+    if body.x_api_bearer is not None:
+        bearer = body.x_api_bearer.strip()
+        updates["x_api_bearer_encrypted"] = encrypt_value(bearer) if bearer else ""
+    if body.x_proxy_enabled is not None:
+        updates["x_proxy_enabled"] = str(body.x_proxy_enabled).lower()
+    if body.x_proxy_scheme is not None:
+        scheme = body.x_proxy_scheme.strip().lower()
+        if scheme not in ("http", "https", "socks5"):
+            raise HTTPException(status_code=400, detail="代理协议仅支持 http/https/socks5")
+        updates["x_proxy_scheme"] = scheme
+    if body.x_proxy_host is not None:
+        updates["x_proxy_host"] = body.x_proxy_host.strip()
+    if body.x_proxy_port is not None:
+        updates["x_proxy_port"] = str(body.x_proxy_port)
+    if body.x_proxy_username is not None:
+        updates["x_proxy_username"] = body.x_proxy_username.strip()
+    if body.x_proxy_password is not None:
+        password = body.x_proxy_password
+        updates["x_proxy_password_encrypted"] = (
+            encrypt_value(password) if password else ""
+        )
     if body.status_check_allowed_qq is not None:
         cleaned = [
             item.strip()

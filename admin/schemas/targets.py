@@ -74,3 +74,37 @@ class LiveTargetResponse(BaseModel):
     user_ids: List[str]
     created_at: datetime
     updated_at: datetime
+
+
+class XTargetBase(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    name: Optional[str] = Field(default=None, max_length=128)
+    enabled: bool = True
+    at_all: bool = False
+    group_ids: List[str] = Field(default_factory=list)
+    user_ids: List[str] = Field(default_factory=list)
+
+
+class XTargetCreate(XTargetBase):
+    pass
+
+
+class XTargetUpdate(BaseModel):
+    username: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    name: Optional[str] = Field(default=None, max_length=128)
+    enabled: Optional[bool] = None
+    at_all: Optional[bool] = None
+    group_ids: Optional[List[str]] = None
+    user_ids: Optional[List[str]] = None
+
+
+class XTargetResponse(BaseModel):
+    id: int
+    username: str
+    name: Optional[str]
+    enabled: bool
+    at_all: bool
+    group_ids: List[str]
+    user_ids: List[str]
+    created_at: datetime
+    updated_at: datetime
