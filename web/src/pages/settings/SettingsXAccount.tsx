@@ -10,6 +10,7 @@ import { ToggleSwitch } from '../../components/ToggleSwitch'
 import { useToast } from '../../contexts/ToastContext'
 import { formatApiError } from '../../utils/apiError'
 import { useSettingsForm } from './SettingsContext'
+import { validateXProxyDraft } from './xProxyForm'
 
 const PROXY_SCHEMES = ['http', 'https', 'socks5'] as const
 
@@ -98,15 +99,9 @@ export function SettingsXAccountPage() {
   }
 
   const handleSaveProxy = async () => {
-    if (proxy.enabled && !proxy.host.trim()) {
-      showToast('error', '启用代理时请填写主机地址')
-      return
-    }
-    if (!proxy.enabled && proxy.host.trim()) {
-      showToast(
-        'error',
-        '已填写代理地址但未打开「启用代理」开关，请先打开开关再保存',
-      )
+    const validationError = validateXProxyDraft(proxy)
+    if (validationError) {
+      showToast('error', validationError)
       return
     }
     setSavingProxy(true)
