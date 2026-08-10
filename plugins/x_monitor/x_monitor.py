@@ -28,6 +28,7 @@ from utils.x_api.models import tweet_id_as_int
 from .check_logic import (
     collect_new_tweets,
     compute_first_baseline_last_id,
+    should_fill_display_name,
     should_initialize_after_first_poll,
 )
 from .config import Config
@@ -428,7 +429,7 @@ class XMonitor:
         display = (user.name or user.username or key).strip() or key
         self._user_ids[key] = user.id
         self.config.x_user_ids[key] = user.id
-        self.config.x_display_names[key] = display
+        kept_name = display
         try:
             async with get_session() as session:
                 async with session.begin():
@@ -438,12 +439,17 @@ class XMonitor:
                     if row is None:
                         return
                     row.user_id = user.id
-                    if display:
+                    current_name = (row.name or "").strip()
+                    if should_fill_display_name(current_name) and display:
                         row.name = display
+                        current_name = display
+                    kept_name = current_name or display
         except Exception:
             logger.opt(exception=True).warning(
                 "持久化 X 用户资料失败: username={}", key
             )
+            return
+        self.config.x_display_names[key] = kept_name
 
     async def _resolve_user(
         self, username: str, *, force_refresh: bool = False

@@ -78,3 +78,11 @@ def test_should_initialize_after_first_poll_requires_baseline():
     check_logic = _load_check_logic()
     assert check_logic.should_initialize_after_first_poll(None) is False
     assert check_logic.should_initialize_after_first_poll("42") is True
+
+
+def test_should_fill_display_name_only_when_empty():
+    check_logic = _load_check_logic()
+    assert check_logic.should_fill_display_name(None) is True
+    assert check_logic.should_fill_display_name("") is True
+    assert check_logic.should_fill_display_name("  ") is True
+    assert check_logic.should_fill_display_name("手动名称") is False

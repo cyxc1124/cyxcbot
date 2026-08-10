@@ -26,3 +26,8 @@ def compute_first_baseline_last_id(
 def should_initialize_after_first_poll(baseline: Optional[str]) -> bool:
     """空时间线不得标记已初始化（否则零游标翻页会把历史帖当新帖）。"""
     return baseline is not None
+
+
+def should_fill_display_name(existing: str | None) -> bool:
+    """轮询回写时仅在显示名为空时填充，不覆盖管理员手动名称。"""
+    return not (existing or "").strip()
