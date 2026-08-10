@@ -134,7 +134,8 @@ class XApiClient:
             )
             payload = await self._get_user_timeline_page(uid, params)
             if payload is None:
-                return None if not items else items
+                # 中途失败时丢弃已拉到的部分结果，避免游标被推到最新 ID 后永久漏帖
+                return None
 
             media_by_key = _index_media(payload.get("includes"))
             page_rows = payload.get("data") or []

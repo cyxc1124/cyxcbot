@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from utils.x_api.client import build_user_timeline_params
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from utils.x_api.client import XApiClient, build_user_timeline_params
 
 
 def test_build_params_without_since_id():
@@ -34,3 +38,23 @@ def test_build_params_with_pagination_token():
     )
     assert params["since_id"] == "10"
     assert params["pagination_token"] == "abc"
+
+
+@pytest.mark.asyncio
+async def test_fetch_user_tweets_aborts_on_mid_pagination_failure():
+    client = XApiClient(session=MagicMock(), bearer="token")
+    first_page = {
+        "data": [{"id": "20", "text": "newer", "created_at": "2026-01-02T00:00:00Z"}],
+        "meta": {"next_token": "page2"},
+    }
+    client._get_user_timeline_page = AsyncMock(side_effect=[first_page, None])
+
+    result = await client.fetch_user_tweets(
+        "42",
+        since_id="10",
+        username="demo",
+        max_pages=5,
+    )
+
+    assert result is None
+    assert client._get_user_timeline_page.await_count == 2
