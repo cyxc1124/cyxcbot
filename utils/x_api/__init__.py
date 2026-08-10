@@ -1,7 +1,7 @@
 """X (Twitter) API helpers."""
 
 from .client import XApiClient, build_user_timeline_params, create_session
-from .models import TweetItem, XUser
+from .models import TweetItem, TweetMediaItem, XUser
 from .url_parser import (
     extract_x_tweet_ids,
     extract_x_urls,
@@ -12,6 +12,7 @@ from .url_parser import (
 __all__ = [
     "XApiClient",
     "TweetItem",
+    "TweetMediaItem",
     "XUser",
     "build_user_timeline_params",
     "create_session",

@@ -9,6 +9,15 @@ from nonebot.log import logger
 
 from shared.config.proxy import ProxyConfig
 
+from .media import (
+    index_media as _index_media,
+)
+from .media import (
+    media_items_for_tweet as _media_items_for_tweet,
+)
+from .media import (
+    media_urls_for_tweet as _media_urls_for_tweet,
+)
 from .models import TweetItem, XUser, tweet_id_as_int
 
 _API_BASE = "https://api.x.com/2"
@@ -153,6 +162,7 @@ class XApiClient:
                     continue
                 tweet_id = str(row["id"])
                 media_urls = _media_urls_for_tweet(row, media_by_key)
+                media_items = _media_items_for_tweet(row, media_by_key)
                 items.append(
                     TweetItem(
                         id=tweet_id,
@@ -166,6 +176,7 @@ class XApiClient:
                             else f"https://x.com/i/status/{tweet_id}"
                         ),
                         media_urls=media_urls,
+                        media_items=media_items,
                     )
                 )
 
@@ -221,7 +232,7 @@ class XApiClient:
         params = {
             "tweet.fields": "created_at,text,attachments,author_id",
             "expansions": "attachments.media_keys,author_id",
-            "media.fields": "url,preview_image_url,type",
+            "media.fields": "url,preview_image_url,type,variants",
             "user.fields": "name,username",
         }
         try:
@@ -268,6 +279,7 @@ class XApiClient:
                 else f"https://x.com/i/status/{tweet_id_str}"
             ),
             media_urls=_media_urls_for_tweet(data, media_by_key),
+            media_items=_media_items_for_tweet(data, media_by_key),
         )
 
 
@@ -284,7 +296,7 @@ def build_user_timeline_params(
         "exclude": "retweets,replies",
         "tweet.fields": "created_at,text,attachments",
         "expansions": "attachments.media_keys",
-        "media.fields": "url,preview_image_url,type",
+        "media.fields": "url,preview_image_url,type,variants",
     }
     sid = str(since_id or "").strip()
     if sid and sid != "0" and tweet_id_as_int(sid) > 0:
@@ -293,17 +305,6 @@ def build_user_timeline_params(
     if token:
         params["pagination_token"] = token
     return params
-
-
-def _index_media(includes: Any) -> Dict[str, dict]:
-    if not isinstance(includes, dict):
-        return {}
-    media_list = includes.get("media") or []
-    result: Dict[str, dict] = {}
-    for item in media_list:
-        if isinstance(item, dict) and item.get("media_key"):
-            result[str(item["media_key"])] = item
-    return result
 
 
 def _index_users(includes: Any) -> Dict[str, dict]:
@@ -315,17 +316,3 @@ def _index_users(includes: Any) -> Dict[str, dict]:
         if isinstance(item, dict) and item.get("id"):
             result[str(item["id"])] = item
     return result
-
-
-def _media_urls_for_tweet(tweet: dict, media_by_key: Dict[str, dict]) -> List[str]:
-    attachments = tweet.get("attachments") or {}
-    keys = attachments.get("media_keys") or []
-    urls: List[str] = []
-    for key in keys:
-        media = media_by_key.get(str(key))
-        if not media:
-            continue
-        url = media.get("url") or media.get("preview_image_url")
-        if url:
-            urls.append(str(url))
-    return urls

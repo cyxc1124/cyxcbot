@@ -7,6 +7,7 @@ X (Twitter) 链接自动解析插件
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 from nonebot import get_driver, on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, PrivateMessageEvent
@@ -15,8 +16,10 @@ from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
 from shared.config.service import get_config_service
+from shared.config.shared_media import chmod_shared_media_file, ensure_shared_media_dir
 from shared.config.x_link_parser_policy import resolve_x_link_parser_policy
 from utils.x_api import XApiClient, create_session, extract_x_tweet_ids, extract_x_urls
+from utils.x_api.download import cleanup_media_files, materialize_tweet_videos
 
 from .config import Config, get_config, reload_config
 from .message_text import collect_message_text
@@ -95,17 +98,28 @@ async def _fetch_and_reply(
 ) -> None:
     session = create_session(config.x_proxy)
     client = XApiClient(session, config.x_api_bearer)
+    downloaded: list[Path] = []
     try:
         tweet_ids = await extract_x_tweet_ids(message_text, session)
         if not tweet_ids:
             logger.debug("X 链接解析：未解析到推文 ID user={}", event.user_id)
             return
 
+        media_dir = ensure_shared_media_dir(
+            get_config_service().get_snapshot().link_parser_shared_media_dir
+        )
+
         for tweet_id in tweet_ids:
             tweet = await client.get_tweet_by_id(tweet_id)
             if tweet is None:
                 logger.warning("X 链接解析：拉取推文失败 tweet_id={}", tweet_id)
                 continue
+
+            # CDN 可能较慢；下载不占发送锁（仍占流水线名额）。
+            paths = await materialize_tweet_videos(session, tweet, media_dir)
+            for path in paths:
+                chmod_shared_media_file(path)
+            downloaded.extend(paths)
 
             if _SEND_SEM.locked():
                 logger.info("X 链接解析：等待前序发送完成 user={}", event.user_id)
@@ -163,6 +177,7 @@ async def _fetch_and_reply(
     except Exception:
         logger.opt(exception=True).error("X 链接解析处理异常")
     finally:
+        cleanup_media_files(downloaded)
         await session.close()
 
 

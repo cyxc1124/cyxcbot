@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import List
+from pathlib import Path
+from typing import List, Literal
 
 
 @dataclass
@@ -14,6 +15,15 @@ class XUser:
     id: str
     username: str
     name: str = ""
+
+
+@dataclass
+class TweetMediaItem:
+    """One media attachment; video/gif need local file for QQ video segment."""
+
+    kind: Literal["image", "video"]
+    url: str
+    file_path: Path | None = None
 
 
 @dataclass
@@ -27,6 +37,7 @@ class TweetItem:
     name: str
     url: str
     media_urls: List[str] = field(default_factory=list)
+    media_items: List[TweetMediaItem] = field(default_factory=list)
 
     def format_time(self) -> str:
         """Format created_at to local-readable string; fall back to raw value."""
