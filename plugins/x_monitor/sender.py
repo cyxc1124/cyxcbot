@@ -1,7 +1,7 @@
 """X 推文消息发送模块。"""
 
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 from nonebot import get_driver
 from nonebot.adapters.onebot.v11 import Bot
@@ -18,6 +18,8 @@ from shared.notify.delivery import (
 from shared.notify.message_template import build_message_from_template
 from utils.x_api import TweetItem
 from utils.x_api.models import TweetMediaItem
+
+from .delivery_retry import parse_resume_from
 
 SegmentPart = Union[MessageSegment, str]
 
@@ -64,6 +66,7 @@ class XSender:
         group_ids: List[str],
         *,
         at_all_enabled: bool = False,
+        start_by_target: Optional[Dict[str, int]] = None,
     ) -> DeliveryResult:
         if not group_ids:
             return empty_delivery_result()
@@ -81,18 +84,23 @@ class XSender:
                 ]
             )
 
+        starts = start_by_target or {}
         targets: List[TargetDelivery] = []
         for group_id in group_ids:
+            start = max(0, int(starts.get(group_id, 0) or 0))
             delivery = TargetDelivery("group", group_id, False, "没有可用的机器人实例")
             for _, bot in valid_bots:
                 delivery = await self._send_group_via_bot(
                     bot,
                     group_id,
                     batches,
+                    start=start,
                     at_all_enabled=at_all_enabled,
                 )
-                if delivery.success or _is_partial_sent(delivery):
+                if delivery.success:
                     break
+                # 换 bot 时从已成功批次继续，避免重复推送
+                start = parse_resume_from(delivery.error)
             targets.append(delivery)
         return DeliveryResult(targets=targets)
 
@@ -102,44 +110,44 @@ class XSender:
         group_id: str,
         batches: List[Message],
         *,
+        start: int = 0,
         at_all_enabled: bool = False,
     ) -> TargetDelivery:
-        sent = 0
+        prepared: list[Message] = list(batches)
+        if at_all_enabled:
+            prefix = await resolve_at_all_prefix(
+                bot,
+                group_id,
+                enabled=True,
+                fallback=X_AT_ALL_FALLBACK,
+            )
+            # 固定把 @全体单独成批放在最前，避免挂到视频批，且 resume 下标稳定。
+            prepared = [prefix, *batches]
+        start = max(0, min(int(start), len(prepared)))
+        sent = start
         try:
-            prefix = Message()
-            if at_all_enabled:
-                prefix = await resolve_at_all_prefix(
-                    bot,
-                    group_id,
-                    enabled=True,
-                    fallback=X_AT_ALL_FALLBACK,
+            for index in range(start, len(prepared)):
+                await bot.send_group_msg(
+                    group_id=int(group_id), message=prepared[index]
                 )
-            for index, batch in enumerate(batches):
-                payload = prefix + batch if index == 0 and prefix else batch
-                await bot.send_group_msg(group_id=int(group_id), message=payload)
-                sent += 1
+                sent = index + 1
             logger.info("X 推文消息已发送到群组 {}", group_id)
             return TargetDelivery("group", group_id, True)
         except Exception as exc:
-            if sent > 0:
-                # 已有批次送达：视为成功，避免换 bot / 待重试整组导致重复推送。
-                logger.opt(exception=True).error(
-                    "发送消息到群组 {} 部分批次失败（已发 {}/{}），停止重试以免重复",
-                    group_id,
-                    sent,
-                    len(batches),
-                )
-                return TargetDelivery(
-                    "group",
-                    group_id,
-                    True,
-                    f"partial_sent:{sent}/{len(batches)}:{exc}",
-                )
-            logger.opt(exception=True).error("发送消息到群组 {} 失败", group_id)
-            return TargetDelivery("group", group_id, False, str(exc))
+            logger.opt(exception=True).error(
+                "发送消息到群组 {} 失败（已发 {}/{}）",
+                group_id,
+                sent,
+                len(prepared),
+            )
+            return TargetDelivery("group", group_id, False, f"resume_from:{sent}:{exc}")
 
     async def send_to_users(
-        self, message: Message, user_ids: List[str]
+        self,
+        message: Message,
+        user_ids: List[str],
+        *,
+        start_by_target: Optional[Dict[str, int]] = None,
     ) -> DeliveryResult:
         if not user_ids:
             return empty_delivery_result()
@@ -157,42 +165,45 @@ class XSender:
                 ]
             )
 
+        starts = start_by_target or {}
         targets: List[TargetDelivery] = []
         for user_id in user_ids:
+            start = max(0, int(starts.get(user_id, 0) or 0))
             delivery = TargetDelivery("user", user_id, False, "没有可用的机器人实例")
             for _, bot in valid_bots:
-                delivery = await self._send_user_via_bot(bot, user_id, batches)
-                if delivery.success or _is_partial_sent(delivery):
+                delivery = await self._send_user_via_bot(
+                    bot, user_id, batches, start=start
+                )
+                if delivery.success:
                     break
+                start = parse_resume_from(delivery.error)
             targets.append(delivery)
         return DeliveryResult(targets=targets)
 
     async def _send_user_via_bot(
-        self, bot: Bot, user_id: str, batches: List[Message]
+        self,
+        bot: Bot,
+        user_id: str,
+        batches: List[Message],
+        *,
+        start: int = 0,
     ) -> TargetDelivery:
-        sent = 0
+        start = max(0, min(int(start), len(batches)))
+        sent = start
         try:
-            for batch in batches:
-                await bot.send_private_msg(user_id=int(user_id), message=batch)
-                sent += 1
+            for index in range(start, len(batches)):
+                await bot.send_private_msg(user_id=int(user_id), message=batches[index])
+                sent = index + 1
             logger.info("X 推文消息已发送到好友 {}", user_id)
             return TargetDelivery("user", user_id, True)
         except Exception as exc:
-            if sent > 0:
-                logger.opt(exception=True).error(
-                    "发送消息到好友 {} 部分批次失败（已发 {}/{}），停止重试以免重复",
-                    user_id,
-                    sent,
-                    len(batches),
-                )
-                return TargetDelivery(
-                    "user",
-                    user_id,
-                    True,
-                    f"partial_sent:{sent}/{len(batches)}:{exc}",
-                )
-            logger.opt(exception=True).error("发送消息到好友 {} 失败", user_id)
-            return TargetDelivery("user", user_id, False, str(exc))
+            logger.opt(exception=True).error(
+                "发送消息到好友 {} 失败（已发 {}/{}）",
+                user_id,
+                sent,
+                len(batches),
+            )
+            return TargetDelivery("user", user_id, False, f"resume_from:{sent}:{exc}")
 
     async def send_message(
         self,
@@ -201,11 +212,18 @@ class XSender:
         user_ids: List[str],
         *,
         at_all_enabled: bool = False,
+        group_starts: Optional[Dict[str, int]] = None,
+        user_starts: Optional[Dict[str, int]] = None,
     ) -> DeliveryResult:
         group_result = await self.send_to_groups(
-            message, group_ids, at_all_enabled=at_all_enabled
+            message,
+            group_ids,
+            at_all_enabled=at_all_enabled,
+            start_by_target=group_starts,
         )
-        user_result = await self.send_to_users(message, user_ids)
+        user_result = await self.send_to_users(
+            message, user_ids, start_by_target=user_starts
+        )
         return group_result.merge(user_result)
 
 
@@ -267,44 +285,68 @@ def _chunk_media(media: Message, *, size: int = MAX_MEDIA_PER_MESSAGE) -> list[M
     return chunks
 
 
-def reply_batches(message: Message) -> list[Message]:
-    """按模板顺序拆批：保留 leading 文案 → 媒体 → trailing 文案。
+def _text_image_batches(non_video: Message) -> list[Message]:
+    """文字 + 图片可同条（对齐抖音图集）；图片过多再拆。"""
+    if not non_video:
+        return []
+    image_count = sum(1 for seg in non_video if seg.type == "image")
+    if image_count <= MAX_MEDIA_PER_MESSAGE:
+        return [non_video]
 
-    纯图且数量未超限时整条原样发送，避免打乱 ``{text}{media}{url}`` 顺序。
-    含视频或图片过多时必须拆条（QQ 不能 video↔text 混排 / 同条图片过多）。
+    images = Message([seg for seg in non_video if seg.type == "image"])
+    caption = Message([seg for seg in non_video if seg.type != "image"])
+    chunks = _chunk_media(images)
+    if not caption:
+        return chunks
+    first_image = next(
+        (i for i, seg in enumerate(non_video) if seg.type == "image"), None
+    )
+    first_caption = next(
+        (i for i, seg in enumerate(non_video) if seg.type != "image"), None
+    )
+    if (
+        first_caption is not None
+        and first_image is not None
+        and first_caption < first_image
+    ):
+        return [caption, *chunks]
+    return [*chunks, caption]
+
+
+def reply_batches(message: Message) -> list[Message]:
+    """对齐抖音：视频必须单独发；文字与图片可同条。
+
+    默认模板文案在前时：先发文字/图，再逐条发视频。
+    自定义模板媒体在前时：先发视频，再发文字/图（同抖音 media→caption）。
     """
     if not message:
         return []
 
-    has_video = any(seg.type == "video" for seg in message)
-    media_count = sum(1 for seg in message if seg.type in _MEDIA_SEG_TYPES)
-    if not has_video and media_count <= MAX_MEDIA_PER_MESSAGE:
-        return [message]
-
-    leading = Message()
-    media = Message()
-    trailing = Message()
-    seen_media = False
-    for seg in message:
-        if seg.type in _MEDIA_SEG_TYPES:
-            seen_media = True
-            media.append(seg)
-        elif seg.type == "text" and not str(seg.data.get("text", "")).strip():
+    videos: list = []
+    non_video = Message()
+    first_video_at: int | None = None
+    first_non_video_at: int | None = None
+    for index, seg in enumerate(message):
+        if seg.type == "video":
+            if first_video_at is None:
+                first_video_at = index
+            videos.append(seg)
             continue
-        elif not seen_media:
-            leading.append(seg)
-        else:
-            trailing.append(seg)
+        if seg.type == "text" and not str(seg.data.get("text", "")).strip():
+            continue
+        if first_non_video_at is None:
+            first_non_video_at = index
+        non_video.append(seg)
 
-    batches: list[Message] = []
-    if leading:
-        batches.append(leading)
-    if media:
-        batches.extend(_chunk_media(media))
-    if trailing:
-        batches.append(trailing)
-    return batches
+    video_batches = [Message([seg]) for seg in videos]
+    text_image_batches = _text_image_batches(non_video)
 
-
-def _is_partial_sent(delivery: TargetDelivery) -> bool:
-    return bool(delivery.error and str(delivery.error).startswith("partial_sent:"))
+    if not video_batches:
+        return text_image_batches
+    if not text_image_batches:
+        return video_batches
+    if first_non_video_at is not None and (
+        first_video_at is None or first_non_video_at < first_video_at
+    ):
+        return text_image_batches + video_batches
+    return video_batches + text_image_batches

@@ -6,17 +6,40 @@ from shared.notify.delivery import DeliveryResult
 
 
 def failed_target_ids(delivery: DeliveryResult) -> tuple[list[str], list[str]]:
-    groups = [
-        target.target_id
-        for target in delivery.targets
-        if target.target_type == "group" and not target.success
-    ]
-    users = [
-        target.target_id
-        for target in delivery.targets
-        if target.target_type == "user" and not target.success
-    ]
+    """Backward-compatible: failed target ids without resume offsets."""
+    groups, users = failed_targets_with_resume(delivery)
+    return [gid for gid, _ in groups], [uid for uid, _ in users]
+
+
+def failed_targets_with_resume(
+    delivery: DeliveryResult,
+) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
+    """Failed targets with batch resume index (0 = from start)."""
+    groups: list[tuple[str, int]] = []
+    users: list[tuple[str, int]] = []
+    for target in delivery.targets:
+        if target.success:
+            continue
+        resume = parse_resume_from(target.error)
+        item = (target.target_id, resume)
+        if target.target_type == "group":
+            groups.append(item)
+        elif target.target_type == "user":
+            users.append(item)
     return groups, users
+
+
+def parse_resume_from(error: str | None) -> int:
+    raw = str(error or "")
+    if not raw.startswith("resume_from:"):
+        return 0
+    rest = raw.split(":", 2)
+    if len(rest) < 2:
+        return 0
+    try:
+        return max(0, int(rest[1]))
+    except ValueError:
+        return 0
 
 
 def encode_pending_ids(ids: list[str]) -> str:
@@ -27,3 +50,34 @@ def decode_pending_ids(raw: str | None) -> list[str]:
     if not raw:
         return []
     return [part for part in str(raw).split(",") if part]
+
+
+def encode_pending_targets(targets: list[tuple[str, int]]) -> str:
+    parts: list[str] = []
+    for target_id, start in targets:
+        tid = str(target_id or "").strip()
+        if not tid:
+            continue
+        try:
+            idx = max(0, int(start))
+        except TypeError, ValueError:
+            idx = 0
+        parts.append(f"{tid}@{idx}" if idx else tid)
+    return ",".join(parts)
+
+
+def decode_pending_targets(raw: str | None) -> list[tuple[str, int]]:
+    result: list[tuple[str, int]] = []
+    for part in decode_pending_ids(raw):
+        if "@" in part:
+            tid, _, idx_raw = part.partition("@")
+            tid = tid.strip()
+            if not tid:
+                continue
+            try:
+                result.append((tid, max(0, int(idx_raw))))
+            except ValueError:
+                result.append((tid, 0))
+        else:
+            result.append((part, 0))
+    return result

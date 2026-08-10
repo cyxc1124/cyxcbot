@@ -34,7 +34,7 @@ from .check_logic import (
     should_initialize_after_first_poll,
 )
 from .config import Config
-from .delivery_retry import failed_target_ids
+from .delivery_retry import failed_targets_with_resume
 from .poll_scheduler import register_poll_job, remove_poll_job
 from .sender import XSender
 from .state_store import XMonitorStateStore
@@ -93,7 +93,9 @@ class XMonitor:
         self._delivery_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._delivery_tasks: Set[asyncio.Task] = set()
         # username -> (tweet_id, failed_groups, failed_users)；部分失败时只重试失败目标
-        self._pending_tweet_delivery: Dict[str, tuple[str, List[str], List[str]]] = {}
+        self._pending_tweet_delivery: Dict[
+            str, tuple[str, List[tuple[str, int]], List[tuple[str, int]]]
+        ] = {}
         self._state_store = XMonitorStateStore()
 
     def _touch_last_check_at(self) -> None:
@@ -610,12 +612,22 @@ class XMonitor:
             message = self.sender.build_tweet_message(tweet)
             configured_groups = self.config.x_monitor_mapping.get(username, [])
             configured_users = self.config.x_monitor_user_mapping.get(username, [])
+            group_starts: dict[str, int] = {}
+            user_starts: dict[str, int] = {}
             pending = self._pending_tweet_delivery.get(username)
             if pending and pending[0] == tweet.id:
                 configured_group_set = set(configured_groups)
                 configured_user_set = set(configured_users)
-                group_ids = [g for g in pending[1] if g in configured_group_set]
-                user_ids = [u for u in pending[2] if u in configured_user_set]
+                group_ids = []
+                for gid, resume in pending[1]:
+                    if gid in configured_group_set:
+                        group_ids.append(gid)
+                        group_starts[gid] = resume
+                user_ids = []
+                for uid, resume in pending[2]:
+                    if uid in configured_user_set:
+                        user_ids.append(uid)
+                        user_starts[uid] = resume
                 if not group_ids and not user_ids:
                     # 失败目标已从配置移除，无需再投递
                     self._pending_tweet_delivery.pop(username, None)
@@ -644,6 +656,8 @@ class XMonitor:
                 group_ids,
                 user_ids,
                 at_all_enabled=at_all_enabled,
+                group_starts=group_starts,
+                user_starts=user_starts,
             )
             if delivery.all_succeeded:
                 self._pending_tweet_delivery.pop(username, None)
@@ -656,7 +670,7 @@ class XMonitor:
                 )
                 return True
 
-            failed_groups, failed_users = failed_target_ids(delivery)
+            failed_groups, failed_users = failed_targets_with_resume(delivery)
             self._pending_tweet_delivery[username] = (
                 tweet.id,
                 failed_groups,

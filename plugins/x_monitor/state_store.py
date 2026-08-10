@@ -10,9 +10,9 @@ from sqlalchemy import select
 from shared.db.models import XMonitorState
 from utils.x_api.models import tweet_id_as_int
 
-from .delivery_retry import decode_pending_ids, encode_pending_ids
+from .delivery_retry import decode_pending_targets, encode_pending_targets
 
-PendingDelivery = Tuple[str, List[str], List[str]]
+PendingDelivery = Tuple[str, List[Tuple[str, int]], List[Tuple[str, int]]]
 
 
 class XMonitorStateStore:
@@ -52,8 +52,8 @@ class XMonitorStateStore:
                             initialized = False
                         initialized_usernames[username] = initialized
                         tweet_id = (row.pending_tweet_id or "").strip()
-                        groups = decode_pending_ids(row.pending_group_ids)
-                        users = decode_pending_ids(row.pending_user_ids)
+                        groups = decode_pending_targets(row.pending_group_ids)
+                        users = decode_pending_targets(row.pending_user_ids)
                         if tweet_id and (groups or users):
                             pending_tweet_delivery[username] = (
                                 tweet_id,
@@ -89,8 +89,8 @@ class XMonitorStateStore:
                 pending = pending_tweet_delivery.get(username)
                 if pending:
                     row.pending_tweet_id = pending[0]
-                    row.pending_group_ids = encode_pending_ids(pending[1])
-                    row.pending_user_ids = encode_pending_ids(pending[2])
+                    row.pending_group_ids = encode_pending_targets(pending[1])
+                    row.pending_user_ids = encode_pending_targets(pending[2])
                 else:
                     row.pending_tweet_id = None
                     row.pending_group_ids = ""

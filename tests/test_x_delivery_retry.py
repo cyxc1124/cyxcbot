@@ -55,9 +55,38 @@ def test_failed_target_ids_splits_groups_and_users():
     assert delivery_retry.failed_target_ids(delivery) == (["2"], ["9"])
 
 
+def test_failed_targets_with_resume_parses_offset():
+    delivery_retry = _load_delivery_retry()
+    delivery = DeliveryResult(
+        targets=[
+            TargetDelivery("group", "1", False, "resume_from:2:timeout"),
+            TargetDelivery("user", "9", False, "nope"),
+        ]
+    )
+    assert delivery_retry.failed_targets_with_resume(delivery) == (
+        [("1", 2)],
+        [("9", 0)],
+    )
+
+
 def test_encode_decode_pending_ids_roundtrip():
     delivery_retry = _load_delivery_retry()
     assert delivery_retry.encode_pending_ids(["1", "", "2"]) == "1,2"
     assert delivery_retry.decode_pending_ids("1,2") == ["1", "2"]
     assert delivery_retry.decode_pending_ids("") == []
     assert delivery_retry.decode_pending_ids(None) == []
+
+
+def test_encode_decode_pending_targets_with_resume():
+    delivery_retry = _load_delivery_retry()
+    encoded = delivery_retry.encode_pending_targets([("101", 0), ("102", 3)])
+    assert encoded == "101,102@3"
+    assert delivery_retry.decode_pending_targets(encoded) == [
+        ("101", 0),
+        ("102", 3),
+    ]
+    # 旧格式无 @offset 时视为从头重试
+    assert delivery_retry.decode_pending_targets("101,102") == [
+        ("101", 0),
+        ("102", 0),
+    ]
