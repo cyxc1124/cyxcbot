@@ -18,7 +18,7 @@ from shared.config.service import get_config_service
 from shared.config.x_link_parser_policy import resolve_x_link_parser_policy
 from utils.x_api import XApiClient, create_session, extract_x_tweet_ids, extract_x_urls
 
-from .config import Config, get_config, proxy_url_for_http, reload_config
+from .config import Config, get_config, reload_config
 from .message_text import collect_message_text
 from .send_result import is_onebot_send_success
 from .sender import build_x_link_message, reply_batches
@@ -94,11 +94,7 @@ async def _fetch_and_reply(
     message_text: str,
 ) -> None:
     session = create_session(config.x_proxy)
-    client = XApiClient(
-        session,
-        config.x_api_bearer,
-        proxy_url=proxy_url_for_http(config.x_proxy),
-    )
+    client = XApiClient(session, config.x_api_bearer)
     try:
         tweet_ids = await extract_x_tweet_ids(message_text, session)
         if not tweet_ids:

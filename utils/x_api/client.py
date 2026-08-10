@@ -15,12 +15,19 @@ _API_BASE = "https://api.x.com/2"
 
 
 def create_session(proxy: ProxyConfig | None = None) -> aiohttp.ClientSession:
-    """Create an aiohttp session; SOCKS5 uses ProxyConnector, else plain TCP."""
-    if proxy is not None and proxy.is_configured and proxy.scheme == "socks5":
-        from aiohttp_socks import ProxyConnector
+    """Create an aiohttp session.
 
+    已配置的 http/https/socks5 代理一律走 ProxyConnector，保证同 session 上的
+    API 与 t.co 解析请求都经代理，避免部分请求直连。
+    """
+    if proxy is not None and proxy.is_configured:
         url = proxy.to_url()
         if url:
+            from aiohttp_socks import ProxyConnector
+
+            # aiohttp_socks 只认 http/socks4/socks5；UI 的 https 按 HTTP 代理处理。
+            if proxy.scheme == "https":
+                url = "http://" + url.removeprefix("https://")
             return aiohttp.ClientSession(connector=ProxyConnector.from_url(url))
     return aiohttp.ClientSession()
 
@@ -32,12 +39,9 @@ class XApiClient:
         self,
         session: aiohttp.ClientSession,
         bearer: str,
-        proxy_url: Optional[str] = None,
     ) -> None:
         self.session = session
         self.bearer = (bearer or "").strip()
-        # http/https 代理走 per-request；socks5 已在 connector 层处理
-        self.proxy_url = proxy_url
         self._user_cache: Dict[str, XUser] = {}
 
     def _headers(self) -> dict[str, str]:
@@ -47,10 +51,7 @@ class XApiClient:
         }
 
     def _request_kwargs(self) -> dict[str, Any]:
-        kwargs: dict[str, Any] = {"headers": self._headers(), "timeout": 30}
-        if self.proxy_url:
-            kwargs["proxy"] = self.proxy_url
-        return kwargs
+        return {"headers": self._headers(), "timeout": 30}
 
     async def get_user_by_username(self, username: str) -> Optional[XUser]:
         """Resolve username (without @) to XUser."""

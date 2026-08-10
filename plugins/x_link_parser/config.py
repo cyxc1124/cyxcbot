@@ -1,7 +1,5 @@
 """X 链接解析插件配置。"""
 
-from typing import Optional
-
 from pydantic import BaseModel, Field
 
 from shared.config.message_templates import XLinkMessageTemplates
@@ -43,9 +41,3 @@ def reload_config() -> Config:
     global _config
     _config = Config.from_service()
     return _config
-
-
-def proxy_url_for_http(proxy: ProxyConfig) -> Optional[str]:
-    if proxy.is_configured and proxy.scheme in ("http", "https"):
-        return proxy.to_url()
-    return None
