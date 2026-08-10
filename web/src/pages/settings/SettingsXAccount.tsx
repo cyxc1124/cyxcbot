@@ -102,6 +102,13 @@ export function SettingsXAccountPage() {
       showToast('error', '启用代理时请填写主机地址')
       return
     }
+    if (!proxy.enabled && proxy.host.trim()) {
+      showToast(
+        'error',
+        '已填写代理地址但未打开「启用代理」开关，请先打开开关再保存',
+      )
+      return
+    }
     setSavingProxy(true)
     try {
       const payload: Parameters<typeof patchSettings>[0] = {
@@ -213,13 +220,29 @@ export function SettingsXAccountPage() {
           访问 X API 时使用的 HTTP/HTTPS/SOCKS5 代理。国内网络通常需要启用。
         </p>
 
-        <div className="flex items-center gap-4 py-1">
-          <span className="min-w-0 flex-1 text-sm text-foreground">启用代理</span>
-          <ToggleSwitch
-            checked={proxy.enabled}
-            disabled={formDisabled || savingProxy}
-            onChange={(checked) => updateProxy({ enabled: checked })}
-          />
+        <div className="flex items-center gap-4 rounded-lg border border-border bg-muted/30 px-3 py-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-foreground">启用代理</div>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              关闭时即使填写了主机/端口也不会走代理（直连 X API）
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span
+              className={`text-xs ${
+                proxy.enabled
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-muted-foreground'
+              }`}
+            >
+              {proxy.enabled ? '已启用' : '已关闭'}
+            </span>
+            <ToggleSwitch
+              checked={proxy.enabled}
+              disabled={formDisabled || savingProxy}
+              onChange={(checked) => updateProxy({ enabled: checked })}
+            />
+          </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">

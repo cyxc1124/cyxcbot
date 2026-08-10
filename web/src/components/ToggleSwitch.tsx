@@ -4,6 +4,7 @@ interface ToggleSwitchProps {
   disabled?: boolean
 }
 
+/** iOS-style switch: systemGreen when on, system gray track when off. */
 export function ToggleSwitch({ checked, onChange, disabled }: ToggleSwitchProps) {
   return (
     <button
@@ -15,15 +16,19 @@ export function ToggleSwitch({ checked, onChange, disabled }: ToggleSwitchProps)
         event.stopPropagation()
         if (!disabled) onChange(!checked)
       }}
-      className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
-        checked ? 'bg-primary' : 'bg-input'
+      className={`relative inline-flex h-[31px] w-[51px] shrink-0 items-center rounded-full transition-colors duration-200 ease-out focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#34C759]/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+        checked ? 'bg-[#34C759]' : 'bg-[#E9E9EB] dark:bg-[#39393D]'
       } ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
     >
       <span
         aria-hidden
-        className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-background shadow transition-transform ${
-          checked ? 'translate-x-5' : 'translate-x-0'
+        className={`pointer-events-none absolute top-1/2 left-[2px] size-[27px] -translate-y-1/2 rounded-full bg-white transition-transform duration-200 ease-out ${
+          checked ? 'translate-x-[20px]' : 'translate-x-0'
         }`}
+        style={{
+          boxShadow:
+            '0 3px 8px rgba(0, 0, 0, 0.15), 0 3px 1px rgba(0, 0, 0, 0.06), inset 0 0 0 0.5px rgba(0, 0, 0, 0.04)',
+        }}
       />
     </button>
   )
