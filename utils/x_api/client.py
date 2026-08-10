@@ -103,12 +103,14 @@ class XApiClient:
         since_id: str | None = None,
         username: str = "",
         name: str = "",
-        max_pages: int = 5,
+        max_pages: int = 20,
     ) -> Optional[List[TweetItem]]:
         """Fetch recent tweets for a user id. Returns None on request failure.
 
         When ``since_id`` is set, only newer tweets are requested and pages are
-        followed via ``pagination_token`` until exhausted or ``max_pages``.
+        followed via ``pagination_token`` until exhausted. If the page cap is
+        hit while more results remain, returns ``None`` so the cursor is not
+        advanced past unseen tweets.
         """
         uid = str(user_id or "").strip()
         if not uid:
@@ -165,6 +167,15 @@ class XApiClient:
             if not next_token or not page_rows:
                 break
             pagination_token = next_token
+        else:
+            # 触顶 page_limit 且仍有下一页：视为不完整，避免推进 since_id 漏帖
+            if since_id:
+                logger.warning(
+                    "X API 推文翻页未完成: user_id={} pages={}，下次重试",
+                    uid,
+                    page_limit,
+                )
+                return None
 
         items.sort(key=lambda t: tweet_id_as_int(t.id), reverse=True)
         return items

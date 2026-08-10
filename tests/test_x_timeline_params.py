@@ -58,3 +58,28 @@ async def test_fetch_user_tweets_aborts_on_mid_pagination_failure():
 
     assert result is None
     assert client._get_user_timeline_page.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_fetch_user_tweets_aborts_when_page_cap_leaves_next_token():
+    client = XApiClient(session=MagicMock(), bearer="token")
+    pages = [
+        {
+            "data": [
+                {"id": str(30 - i), "text": "t", "created_at": "2026-01-02T00:00:00Z"}
+            ],
+            "meta": {"next_token": f"page{i + 1}"},
+        }
+        for i in range(2)
+    ]
+    client._get_user_timeline_page = AsyncMock(side_effect=pages)
+
+    result = await client.fetch_user_tweets(
+        "42",
+        since_id="10",
+        username="demo",
+        max_pages=2,
+    )
+
+    assert result is None
+    assert client._get_user_timeline_page.await_count == 2
