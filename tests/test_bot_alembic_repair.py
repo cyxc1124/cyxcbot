@@ -347,3 +347,31 @@ def test_infer_revision_detects_send_video_enabled_column() -> None:
         )
     assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "u1v2w3x4y5z6"
     engine.dispose()
+
+
+def test_infer_revision_detects_widened_pending_tweet_id() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE shared_db_xmonitorstate ("
+                "username TEXT PRIMARY KEY, "
+                "pending_tweet_id VARCHAR(255))"
+            )
+        )
+    assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "y5z6a7b8c9d0"
+    engine.dispose()
+
+
+def test_infer_revision_pending_tweet_id_32_is_w3() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE shared_db_xmonitorstate ("
+                "username TEXT PRIMARY KEY, "
+                "pending_tweet_id VARCHAR(32))"
+            )
+        )
+    assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "w3x4y5z6a7b8"
+    engine.dispose()

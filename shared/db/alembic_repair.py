@@ -42,6 +42,8 @@ class SchemaProbe(Protocol):
 
     def index_exists(self, table: str, index_name: str) -> bool: ...
 
+    def column_string_length(self, table: str, column: str) -> int | None: ...
+
 
 class _InspectorProbe:
     def __init__(self, inspector: Inspector) -> None:
@@ -61,6 +63,16 @@ class _InspectorProbe:
         return index_name in {
             index["name"] for index in self._inspector.get_indexes(table)
         }
+
+    def column_string_length(self, table: str, column: str) -> int | None:
+        if not self.table_exists(table):
+            return None
+        for col in self._inspector.get_columns(table):
+            if col["name"] != column:
+                continue
+            length = getattr(col["type"], "length", None)
+            return int(length) if length is not None else None
+        return None
 
 
 def sync_database_url(url: str) -> str:
@@ -106,6 +118,12 @@ def infer_alembic_revision(probe: SchemaProbe) -> str:
     （例如 h8 的 dynamic_enabled 列）。因此新增会改表结构的 migration 时，仍需
     在此登记其可唯一识别的表/列特征，否则 upgrade 会因重复建表/加列而启动失败。
     """
+    # y5：pending_tweet_id 加宽到 255（容纳 tweet_id#fingerprint）
+    pending_len = probe.column_string_length(
+        "shared_db_xmonitorstate", "pending_tweet_id"
+    )
+    if pending_len is not None and pending_len >= 255:
+        return "y5z6a7b8c9d0"
     if probe.table_exists("shared_db_xlinkparsergrouppolicy"):
         return "x4y5z6a7b8c9"
     if probe.column_exists("shared_db_xmonitorstate", "pending_tweet_id"):
