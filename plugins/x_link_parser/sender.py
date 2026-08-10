@@ -34,11 +34,16 @@ def _video_parts(file_path: Path) -> Iterable[SegmentPart]:
         return []
 
 
-def _image_parts_from_url(url: str) -> Iterable[SegmentPart]:
+def _image_parts(file_path: Path) -> Iterable[SegmentPart]:
+    if not file_path.exists():
+        return []
     try:
-        return [MessageSegment.image(url)]
+        if file_path.stat().st_size <= 0:
+            logger.warning("X 图片文件为空: {}", file_path)
+            return []
+        return [MessageSegment.image(file_path.resolve())]
     except Exception:
-        logger.opt(exception=True).warning("添加推文图片失败: {}", url)
+        logger.opt(exception=True).warning("添加推文图片失败: {}", file_path)
         return []
 
 
@@ -49,12 +54,12 @@ def _media_parts(tweet: TweetItem) -> Iterable[SegmentPart]:
 
     parts: List[SegmentPart] = []
     for item in items:
-        if item.kind == "video":
-            if item.file_path is not None:
-                parts.extend(_video_parts(item.file_path))
+        if item.file_path is None:
             continue
-        if item.url:
-            parts.extend(_image_parts_from_url(item.url))
+        if item.kind == "video":
+            parts.extend(_video_parts(item.file_path))
+        else:
+            parts.extend(_image_parts(item.file_path))
     return parts
 
 

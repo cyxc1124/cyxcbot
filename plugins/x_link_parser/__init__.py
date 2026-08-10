@@ -1,7 +1,7 @@
 """
 X (Twitter) 链接自动解析插件
 
-识别群聊/好友中的 x.com / twitter.com / t.co 链接，拉取推文并以文字+图片回传。
+识别群聊/好友中的 x.com / twitter.com / t.co 链接，拉取推文并以文字+图片/视频回传。
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from shared.config.service import get_config_service
 from shared.config.shared_media import chmod_shared_media_file, ensure_shared_media_dir
 from shared.config.x_link_parser_policy import resolve_x_link_parser_policy
 from utils.x_api import XApiClient, create_session, extract_x_tweet_ids, extract_x_urls
-from utils.x_api.download import cleanup_media_files, materialize_tweet_videos
+from utils.x_api.download import cleanup_media_files, materialize_tweet_media
 
 from .config import Config, get_config, reload_config
 from .message_text import collect_message_text
@@ -28,7 +28,7 @@ from .sender import build_x_link_message, reply_batches
 
 __plugin_meta__ = PluginMetadata(
     name="X 链接解析",
-    description="自动解析群聊/好友中的 X (Twitter) 链接并回传推文文字与图片",
+    description="自动解析群聊/好友中的 X (Twitter) 链接并回传推文文字、图片与视频",
     usage="发送含 x.com / twitter.com / t.co 链接即可触发",
     type="application",
     config=Config,
@@ -116,7 +116,7 @@ async def _fetch_and_reply(
                 continue
 
             # CDN 可能较慢；下载不占发送锁（仍占流水线名额）。
-            paths = await materialize_tweet_videos(session, tweet, media_dir)
+            paths = await materialize_tweet_media(session, tweet, media_dir)
             for path in paths:
                 chmod_shared_media_file(path)
             downloaded.extend(paths)

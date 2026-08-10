@@ -1,9 +1,10 @@
-"""Download X media (video) via the shared aiohttp session (honors proxy)."""
+"""Download X media via the shared aiohttp session (honors proxy)."""
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 import aiohttp
 from nonebot.log import logger
@@ -56,32 +57,52 @@ async def download_url(
         return False
 
 
-async def materialize_tweet_videos(
+def _suffix_for_item(item: TweetMediaItem) -> str:
+    if item.kind == "video":
+        return ".mp4"
+    path = (urlparse(item.url).path or "").lower()
+    for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+        if path.endswith(ext):
+            return ext if ext != ".jpeg" else ".jpg"
+    return ".jpg"
+
+
+async def materialize_tweet_media(
     session: aiohttp.ClientSession,
     tweet: TweetItem,
     media_dir: Path,
 ) -> list[Path]:
-    """Download video/gif attachments into media_dir; set file_path on items.
+    """Download image/video attachments into media_dir; set file_path on items.
 
     Returns local paths that should be cleaned up after send.
     """
     paths: list[Path] = []
     media_dir.mkdir(parents=True, exist_ok=True)
     for index, item in enumerate(tweet.media_items):
-        if item.kind != "video" or not item.url:
+        if not item.url:
             continue
-        dest = media_dir / f"x_{tweet.id}_{index}.mp4"
+        dest = media_dir / f"x_{tweet.id}_{index}{_suffix_for_item(item)}"
         ok = await download_url(session, item.url, dest)
         if not ok:
             logger.warning(
-                "X 视频下载失败 tweet_id={} index={}，回退为跳过该段",
+                "X 媒体下载失败 tweet_id={} kind={} index={}，跳过该段",
                 tweet.id,
+                item.kind,
                 index,
             )
             continue
         item.file_path = dest
         paths.append(dest)
     return paths
+
+
+# 兼容旧名
+async def materialize_tweet_videos(
+    session: aiohttp.ClientSession,
+    tweet: TweetItem,
+    media_dir: Path,
+) -> list[Path]:
+    return await materialize_tweet_media(session, tweet, media_dir)
 
 
 def cleanup_media_files(items: list[TweetMediaItem] | list[Path]) -> None:

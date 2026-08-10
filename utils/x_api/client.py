@@ -34,8 +34,16 @@ def create_session(proxy: ProxyConfig | None = None) -> aiohttp.ClientSession:
         if url:
             from aiohttp_socks import ProxyConnector
 
-            # aiohttp_socks 只认 http/socks4/socks5；UI 的 https 按 HTTP 代理处理。
+            # aiohttp_socks 只认 http/socks4/socks5。
+            # UI 的 https 多为误选（Clash 等本地代理实际是 HTTP CONNECT）；
+            # 真 TLS-to-proxy 会连不上，且账号密码会以明文发往代理主机。
             if proxy.scheme == "https":
+                logger.warning(
+                    "X 代理 scheme=https 不受支持，已按 http://{}:{} 连接；"
+                    "若代理仅接受 TLS，请改用 http/socks5 或升级客户端",
+                    proxy.host,
+                    proxy.port,
+                )
                 url = "http://" + url.removeprefix("https://")
             return aiohttp.ClientSession(connector=ProxyConnector.from_url(url))
     return aiohttp.ClientSession()

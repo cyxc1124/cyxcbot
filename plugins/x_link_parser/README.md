@@ -9,7 +9,7 @@
 - 复用 X 监控的 Bearer Token 与代理（设置 → X 账号）
 - 文案模板键：`link_template_x`（占位符：`{media}` `{name}` `{username}` `{time}` `{text}` `{url}` `{tweet_id}`）
 - 图片过多时按批发送（每条最多 10 张），避免 QQ NT `sendMsg result=34`
-- 视频 / GIF：取 `media.variants` 最高码率 mp4，下载到共享媒体目录后以 `video` 段发送（含视频时与文案拆开发送，同抖音）
+- 视频 / GIF / 图片：经代理下载到共享媒体目录后以本地 `file://` 交给 OneBot（含视频时与文案拆开发送，同抖音）
 
 ## 配置入口
 
