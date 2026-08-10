@@ -107,3 +107,46 @@ def test_normalize_batch_start_rejects_stale_offset():
 
     ok, start, err = delivery_retry.normalize_batch_start(0, 0)
     assert ok is True and start == 0
+
+
+def test_normalize_batch_start_rejects_stale_plan():
+    delivery_retry = _load_delivery_retry()
+    ok, start, err = delivery_retry.normalize_batch_start(
+        1,
+        3,
+        expected_fingerprint="v|i|v",
+        actual_fingerprint="v|v|i",
+    )
+    assert ok is False
+    assert start == 0
+    assert err is not None and err.startswith("resume_from:0:stale_plan:")
+
+    ok, start, err = delivery_retry.normalize_batch_start(
+        1,
+        3,
+        expected_fingerprint="v|i|v",
+        actual_fingerprint="v|i|v",
+    )
+    assert ok is True and start == 1 and err is None
+
+    # 无 expected 时不校验指纹（首次 / 媒体未齐 pending）
+    ok, start, err = delivery_retry.normalize_batch_start(
+        1, 3, expected_fingerprint="", actual_fingerprint="v|i"
+    )
+    assert ok is True and start == 1
+
+
+def test_batch_plan_fingerprint():
+    delivery_retry = _load_delivery_retry()
+    assert delivery_retry.batch_plan_fingerprint(["v", "i", "v"]) == "v|i|v"
+    assert delivery_retry.batch_plan_fingerprint(["v", "i"], at_all=True) == "a|v|i"
+
+
+def test_encode_decode_pending_tweet_ref():
+    delivery_retry = _load_delivery_retry()
+    assert delivery_retry.encode_pending_tweet_ref("123", "v|i") == "123#v|i"
+    assert delivery_retry.decode_pending_tweet_ref("123#v|i") == ("123", "v|i")
+    assert delivery_retry.decode_pending_tweet_ref("123") == ("123", "")
+    assert delivery_retry.encode_pending_tweet_ref("123", "") == "123"
+    # 指纹内 # 会被剥掉，避免破坏分隔
+    assert delivery_retry.encode_pending_tweet_ref("1", "a#b") == "1#ab"

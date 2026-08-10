@@ -42,17 +42,39 @@ def parse_resume_from(error: str | None) -> int:
         return 0
 
 
-def normalize_batch_start(start: int, batch_count: int) -> tuple[bool, int, str | None]:
-    """校验续传下标与当前批次数是否匹配。
+def batch_plan_fingerprint(batch_kinds: list[str], *, at_all: bool = False) -> str:
+    """Stable fingerprint from per-batch kind strings (e.g. ``tti``, ``v``)."""
+    parts: list[str] = []
+    if at_all:
+        parts.append("a")
+    for kind in batch_kinds:
+        parts.append(str(kind or "e"))
+    return "|".join(parts)
+
+
+def normalize_batch_start(
+    start: int,
+    batch_count: int,
+    *,
+    expected_fingerprint: str = "",
+    actual_fingerprint: str = "",
+) -> tuple[bool, int, str | None]:
+    """校验续传下标 / 投递计划指纹。
 
     返回 (可以发送, 起始下标, 失败时的 error)。
-    重试时若媒体变少导致 start 落在末尾之外/恰等于长度，空循环会被当成成功；
-    此时应失败并建议从头重试（resume_from:0）。
     """
     try:
         start = max(0, int(start))
     except TypeError, ValueError:
         start = 0
+    expected = (expected_fingerprint or "").strip()
+    actual = (actual_fingerprint or "").strip()
+    if expected and actual and expected != actual:
+        return (
+            False,
+            0,
+            f"resume_from:0:stale_plan:{expected}->{actual}",
+        )
     if batch_count <= 0:
         return True, 0, None
     if start > 0 and start >= batch_count:
@@ -62,6 +84,26 @@ def normalize_batch_start(start: int, batch_count: int) -> tuple[bool, int, str 
             f"resume_from:0:stale_batches:{start}/{batch_count}",
         )
     return True, start, None
+
+
+def encode_pending_tweet_ref(tweet_id: str, fingerprint: str = "") -> str:
+    tid = str(tweet_id or "").strip()
+    fp = str(fingerprint or "").strip().replace("#", "")
+    if not tid:
+        return ""
+    if not fp:
+        return tid
+    return f"{tid}#{fp}"
+
+
+def decode_pending_tweet_ref(raw: str | None) -> tuple[str, str]:
+    s = str(raw or "").strip()
+    if not s:
+        return "", ""
+    if "#" in s:
+        tid, _, fp = s.partition("#")
+        return tid.strip(), fp.strip()
+    return s, ""
 
 
 def encode_pending_ids(ids: list[str]) -> str:

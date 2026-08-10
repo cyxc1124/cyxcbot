@@ -94,7 +94,7 @@ class XMonitor:
         self._delivery_tasks: Set[asyncio.Task] = set()
         # username -> (tweet_id, failed_groups, failed_users)；部分失败时只重试失败目标
         self._pending_tweet_delivery: Dict[
-            str, tuple[str, List[tuple[str, int]], List[tuple[str, int]]]
+            str, tuple[str, str, List[tuple[str, int]], List[tuple[str, int]]]
         ] = {}
         self._state_store = XMonitorStateStore()
 
@@ -608,23 +608,60 @@ class XMonitor:
                 )
                 for path in downloaded:
                     chmod_shared_media_file(path)
+                missing = [
+                    item
+                    for item in tweet.media_items
+                    if item.url and item.file_path is None
+                ]
+                if missing:
+                    logger.warning(
+                        "X 推文媒体未全部下载 username={} tweet_id={} missing={}/{}，保留待重试",
+                        username,
+                        tweet.id,
+                        len(missing),
+                        len([i for i in tweet.media_items if i.url]),
+                    )
+                    configured_groups = self.config.x_monitor_mapping.get(username, [])
+                    configured_users = self.config.x_monitor_user_mapping.get(
+                        username, []
+                    )
+                    pending = self._pending_tweet_delivery.get(username)
+                    if pending and pending[0] == tweet.id:
+                        # 保留已有续传进度与指纹
+                        await self._persist_state(
+                            username, check_generation=check_generation
+                        )
+                    elif configured_groups or configured_users:
+                        self._pending_tweet_delivery[username] = (
+                            tweet.id,
+                            "",
+                            [(gid, 0) for gid in configured_groups],
+                            [(uid, 0) for uid in configured_users],
+                        )
+                        await self._persist_state(
+                            username, check_generation=check_generation
+                        )
+                    return False
 
             message = self.sender.build_tweet_message(tweet)
+            plan_fp = self.sender.plan_fingerprint(message)
             configured_groups = self.config.x_monitor_mapping.get(username, [])
             configured_users = self.config.x_monitor_user_mapping.get(username, [])
             group_starts: dict[str, int] = {}
             user_starts: dict[str, int] = {}
+            expected_fp = ""
             pending = self._pending_tweet_delivery.get(username)
             if pending and pending[0] == tweet.id:
+                expected_fp = pending[1]
                 configured_group_set = set(configured_groups)
                 configured_user_set = set(configured_users)
                 group_ids = []
-                for gid, resume in pending[1]:
+                for gid, resume in pending[2]:
                     if gid in configured_group_set:
                         group_ids.append(gid)
                         group_starts[gid] = resume
                 user_ids = []
-                for uid, resume in pending[2]:
+                for uid, resume in pending[3]:
                     if uid in configured_user_set:
                         user_ids.append(uid)
                         user_starts[uid] = resume
@@ -658,6 +695,7 @@ class XMonitor:
                 at_all_enabled=at_all_enabled,
                 group_starts=group_starts,
                 user_starts=user_starts,
+                expected_fingerprint=expected_fp,
             )
             if delivery.all_succeeded:
                 self._pending_tweet_delivery.pop(username, None)
@@ -673,6 +711,7 @@ class XMonitor:
             failed_groups, failed_users = failed_targets_with_resume(delivery)
             self._pending_tweet_delivery[username] = (
                 tweet.id,
+                plan_fp,
                 failed_groups,
                 failed_users,
             )

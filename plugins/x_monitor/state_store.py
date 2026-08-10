@@ -10,9 +10,15 @@ from sqlalchemy import select
 from shared.db.models import XMonitorState
 from utils.x_api.models import tweet_id_as_int
 
-from .delivery_retry import decode_pending_targets, encode_pending_targets
+from .delivery_retry import (
+    decode_pending_targets,
+    decode_pending_tweet_ref,
+    encode_pending_targets,
+    encode_pending_tweet_ref,
+)
 
-PendingDelivery = Tuple[str, List[Tuple[str, int]], List[Tuple[str, int]]]
+# tweet_id, fingerprint, [(target_id, resume), ...], [(target_id, resume), ...]
+PendingDelivery = Tuple[str, str, List[Tuple[str, int]], List[Tuple[str, int]]]
 
 
 class XMonitorStateStore:
@@ -51,12 +57,15 @@ class XMonitorStateStore:
                         ):
                             initialized = False
                         initialized_usernames[username] = initialized
-                        tweet_id = (row.pending_tweet_id or "").strip()
+                        tweet_id, fingerprint = decode_pending_tweet_ref(
+                            row.pending_tweet_id
+                        )
                         groups = decode_pending_targets(row.pending_group_ids)
                         users = decode_pending_targets(row.pending_user_ids)
                         if tweet_id and (groups or users):
                             pending_tweet_delivery[username] = (
                                 tweet_id,
+                                fingerprint,
                                 groups,
                                 users,
                             )
@@ -88,9 +97,11 @@ class XMonitorStateStore:
                 row.initialized = initialized_usernames.get(username, False)
                 pending = pending_tweet_delivery.get(username)
                 if pending:
-                    row.pending_tweet_id = pending[0]
-                    row.pending_group_ids = encode_pending_targets(pending[1])
-                    row.pending_user_ids = encode_pending_targets(pending[2])
+                    row.pending_tweet_id = encode_pending_tweet_ref(
+                        pending[0], pending[1]
+                    )
+                    row.pending_group_ids = encode_pending_targets(pending[2])
+                    row.pending_user_ids = encode_pending_targets(pending[3])
                 else:
                     row.pending_tweet_id = None
                     row.pending_group_ids = ""

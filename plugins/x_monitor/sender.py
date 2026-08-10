@@ -19,7 +19,11 @@ from shared.notify.message_template import build_message_from_template
 from utils.x_api import TweetItem
 from utils.x_api.models import TweetMediaItem
 
-from .delivery_retry import normalize_batch_start, parse_resume_from
+from .delivery_retry import (
+    batch_plan_fingerprint,
+    normalize_batch_start,
+    parse_resume_from,
+)
 
 SegmentPart = Union[MessageSegment, str]
 
@@ -53,6 +57,16 @@ class XSender:
             {"media": lambda: _media_parts(tweet)},
         )
 
+    def plan_fingerprint(
+        self, message: Message, *, at_all_enabled: bool = False
+    ) -> str:
+        del at_all_enabled  # 指纹只描述 reply_batches；@全体是发送时额外前缀批
+        batches = reply_batches(message) or ([message] if message else [])
+        return batch_plan_fingerprint(
+            [_batch_kind_key(batch) for batch in batches],
+            at_all=False,
+        )
+
     def _valid_bots(self) -> List[Tuple[str, Bot]]:
         return [
             (bot_id, bot)
@@ -67,6 +81,7 @@ class XSender:
         *,
         at_all_enabled: bool = False,
         start_by_target: Optional[Dict[str, int]] = None,
+        expected_fingerprint: str = "",
     ) -> DeliveryResult:
         if not group_ids:
             return empty_delivery_result()
@@ -74,17 +89,27 @@ class XSender:
         batches = reply_batches(message)
         if not batches:
             batches = [message]
+        plan_fp = batch_plan_fingerprint(
+            [_batch_kind_key(batch) for batch in batches], at_all=False
+        )
+        expected_fp = (expected_fingerprint or "").strip()
 
         valid_bots = self._valid_bots()
+        starts = start_by_target or {}
         if not valid_bots:
             return DeliveryResult(
                 targets=[
-                    TargetDelivery("group", group_id, False, "没有可用的机器人实例")
+                    TargetDelivery(
+                        "group",
+                        group_id,
+                        False,
+                        f"resume_from:{max(0, int(starts.get(group_id, 0) or 0))}:"
+                        f"没有可用的机器人实例",
+                    )
                     for group_id in group_ids
                 ]
             )
 
-        starts = start_by_target or {}
         targets: List[TargetDelivery] = []
         for group_id in group_ids:
             start = max(0, int(starts.get(group_id, 0) or 0))
@@ -96,10 +121,11 @@ class XSender:
                     batches,
                     start=start,
                     at_all_enabled=at_all_enabled,
+                    expected_fingerprint=expected_fp,
+                    actual_fingerprint=plan_fp,
                 )
                 if delivery.success:
                     break
-                # 换 bot 时从已成功批次继续，避免重复推送
                 start = parse_resume_from(delivery.error)
             targets.append(delivery)
         return DeliveryResult(targets=targets)
@@ -112,6 +138,8 @@ class XSender:
         *,
         start: int = 0,
         at_all_enabled: bool = False,
+        expected_fingerprint: str = "",
+        actual_fingerprint: str = "",
     ) -> TargetDelivery:
         prepared: list[Message] = list(batches)
         if at_all_enabled:
@@ -121,12 +149,16 @@ class XSender:
                 enabled=True,
                 fallback=X_AT_ALL_FALLBACK,
             )
-            # 固定把 @全体单独成批放在最前，避免挂到视频批，且 resume 下标稳定。
             prepared = [prefix, *batches]
-        ok, start, stale_error = normalize_batch_start(start, len(prepared))
+        ok, start, stale_error = normalize_batch_start(
+            start,
+            len(prepared),
+            expected_fingerprint=expected_fingerprint,
+            actual_fingerprint=actual_fingerprint,
+        )
         if not ok:
             logger.warning(
-                "群组 {} 续传下标失效（{}），保留 pending 待重试",
+                "群组 {} 续传计划失效（{}），保留 pending 待重试",
                 group_id,
                 stale_error,
             )
@@ -155,6 +187,7 @@ class XSender:
         user_ids: List[str],
         *,
         start_by_target: Optional[Dict[str, int]] = None,
+        expected_fingerprint: str = "",
     ) -> DeliveryResult:
         if not user_ids:
             return empty_delivery_result()
@@ -162,24 +195,39 @@ class XSender:
         batches = reply_batches(message)
         if not batches:
             batches = [message]
+        plan_fp = batch_plan_fingerprint(
+            [_batch_kind_key(batch) for batch in batches], at_all=False
+        )
+        expected_fp = (expected_fingerprint or "").strip()
 
         valid_bots = self._valid_bots()
+        starts = start_by_target or {}
         if not valid_bots:
             return DeliveryResult(
                 targets=[
-                    TargetDelivery("user", user_id, False, "没有可用的机器人实例")
+                    TargetDelivery(
+                        "user",
+                        user_id,
+                        False,
+                        f"resume_from:{max(0, int(starts.get(user_id, 0) or 0))}:"
+                        f"没有可用的机器人实例",
+                    )
                     for user_id in user_ids
                 ]
             )
 
-        starts = start_by_target or {}
         targets: List[TargetDelivery] = []
         for user_id in user_ids:
             start = max(0, int(starts.get(user_id, 0) or 0))
             delivery = TargetDelivery("user", user_id, False, "没有可用的机器人实例")
             for _, bot in valid_bots:
                 delivery = await self._send_user_via_bot(
-                    bot, user_id, batches, start=start
+                    bot,
+                    user_id,
+                    batches,
+                    start=start,
+                    expected_fingerprint=expected_fp,
+                    actual_fingerprint=plan_fp,
                 )
                 if delivery.success:
                     break
@@ -194,11 +242,18 @@ class XSender:
         batches: List[Message],
         *,
         start: int = 0,
+        expected_fingerprint: str = "",
+        actual_fingerprint: str = "",
     ) -> TargetDelivery:
-        ok, start, stale_error = normalize_batch_start(start, len(batches))
+        ok, start, stale_error = normalize_batch_start(
+            start,
+            len(batches),
+            expected_fingerprint=expected_fingerprint,
+            actual_fingerprint=actual_fingerprint,
+        )
         if not ok:
             logger.warning(
-                "好友 {} 续传下标失效（{}），保留 pending 待重试",
+                "好友 {} 续传计划失效（{}），保留 pending 待重试",
                 user_id,
                 stale_error,
             )
@@ -228,15 +283,20 @@ class XSender:
         at_all_enabled: bool = False,
         group_starts: Optional[Dict[str, int]] = None,
         user_starts: Optional[Dict[str, int]] = None,
+        expected_fingerprint: str = "",
     ) -> DeliveryResult:
         group_result = await self.send_to_groups(
             message,
             group_ids,
             at_all_enabled=at_all_enabled,
             start_by_target=group_starts,
+            expected_fingerprint=expected_fingerprint,
         )
         user_result = await self.send_to_users(
-            message, user_ids, start_by_target=user_starts
+            message,
+            user_ids,
+            start_by_target=user_starts,
+            expected_fingerprint=expected_fingerprint,
         )
         return group_result.merge(user_result)
 
@@ -330,39 +390,42 @@ def _text_image_batches(non_video: Message) -> list[Message]:
 def reply_batches(message: Message) -> list[Message]:
     """对齐抖音：视频必须单独发；文字与图片可同条。
 
-    按模板位置拆成 leading（首个视频前）→ 各视频单独批 → trailing（其后），
-    避免图+视频时把 URL 等后缀文案提前到视频之前。
+    单次扫描保序：遇到视频先冲刷已有文字/图，再发该视频批，避免
+    ``video, image, video`` 被重排成 ``video, video, image``。
     """
     if not message:
         return []
 
-    has_video = any(seg.type == "video" for seg in message)
-    if not has_video:
-        cleaned = Message()
-        for seg in message:
-            if seg.type == "text" and not str(seg.data.get("text", "")).strip():
-                continue
-            cleaned.append(seg)
-        return _text_image_batches(cleaned)
+    batches: list[Message] = []
+    pending = Message()
 
-    leading = Message()
-    trailing = Message()
-    videos: list = []
-    seen_video = False
+    def flush_pending() -> None:
+        nonlocal pending
+        if pending:
+            batches.extend(_text_image_batches(pending))
+            pending = Message()
+
     for seg in message:
         if seg.type == "video":
-            seen_video = True
-            videos.append(seg)
+            flush_pending()
+            batches.append(Message([seg]))
             continue
         if seg.type == "text" and not str(seg.data.get("text", "")).strip():
             continue
-        if not seen_video:
-            leading.append(seg)
-        else:
-            trailing.append(seg)
-
-    batches: list[Message] = []
-    batches.extend(_text_image_batches(leading))
-    batches.extend(Message([seg]) for seg in videos)
-    batches.extend(_text_image_batches(trailing))
+        pending.append(seg)
+    flush_pending()
     return batches
+
+
+def _batch_kind_key(batch: Message) -> str:
+    kinds: list[str] = []
+    for seg in batch:
+        if seg.type == "video":
+            kinds.append("v")
+        elif seg.type == "image":
+            kinds.append("i")
+        elif seg.type == "text":
+            kinds.append("t")
+        else:
+            kinds.append("x")
+    return "".join(kinds) or "e"
