@@ -91,7 +91,7 @@ class XSender:
                     batches,
                     at_all_enabled=at_all_enabled,
                 )
-                if delivery.success:
+                if delivery.success or _is_partial_sent(delivery):
                     break
             targets.append(delivery)
         return DeliveryResult(targets=targets)
@@ -104,6 +104,7 @@ class XSender:
         *,
         at_all_enabled: bool = False,
     ) -> TargetDelivery:
+        sent = 0
         try:
             prefix = Message()
             if at_all_enabled:
@@ -116,9 +117,24 @@ class XSender:
             for index, batch in enumerate(batches):
                 payload = prefix + batch if index == 0 and prefix else batch
                 await bot.send_group_msg(group_id=int(group_id), message=payload)
+                sent += 1
             logger.info("X 推文消息已发送到群组 {}", group_id)
             return TargetDelivery("group", group_id, True)
         except Exception as exc:
+            if sent > 0:
+                # 已有批次送达：视为成功，避免换 bot / 待重试整组导致重复推送。
+                logger.opt(exception=True).error(
+                    "发送消息到群组 {} 部分批次失败（已发 {}/{}），停止重试以免重复",
+                    group_id,
+                    sent,
+                    len(batches),
+                )
+                return TargetDelivery(
+                    "group",
+                    group_id,
+                    True,
+                    f"partial_sent:{sent}/{len(batches)}:{exc}",
+                )
             logger.opt(exception=True).error("发送消息到群组 {} 失败", group_id)
             return TargetDelivery("group", group_id, False, str(exc))
 
@@ -146,7 +162,7 @@ class XSender:
             delivery = TargetDelivery("user", user_id, False, "没有可用的机器人实例")
             for _, bot in valid_bots:
                 delivery = await self._send_user_via_bot(bot, user_id, batches)
-                if delivery.success:
+                if delivery.success or _is_partial_sent(delivery):
                     break
             targets.append(delivery)
         return DeliveryResult(targets=targets)
@@ -154,12 +170,27 @@ class XSender:
     async def _send_user_via_bot(
         self, bot: Bot, user_id: str, batches: List[Message]
     ) -> TargetDelivery:
+        sent = 0
         try:
             for batch in batches:
                 await bot.send_private_msg(user_id=int(user_id), message=batch)
+                sent += 1
             logger.info("X 推文消息已发送到好友 {}", user_id)
             return TargetDelivery("user", user_id, True)
         except Exception as exc:
+            if sent > 0:
+                logger.opt(exception=True).error(
+                    "发送消息到好友 {} 部分批次失败（已发 {}/{}），停止重试以免重复",
+                    user_id,
+                    sent,
+                    len(batches),
+                )
+                return TargetDelivery(
+                    "user",
+                    user_id,
+                    True,
+                    f"partial_sent:{sent}/{len(batches)}:{exc}",
+                )
             logger.opt(exception=True).error("发送消息到好友 {} 失败", user_id)
             return TargetDelivery("user", user_id, False, str(exc))
 
@@ -220,19 +251,6 @@ def _media_parts(tweet: TweetItem) -> Iterable[SegmentPart]:
     return parts
 
 
-def split_media_and_caption(message: Message) -> tuple[Message, Message]:
-    media = Message()
-    caption = Message()
-    for seg in message:
-        if seg.type in _MEDIA_SEG_TYPES:
-            media.append(seg)
-        elif seg.type == "text" and not str(seg.data.get("text", "")).strip():
-            continue
-        else:
-            caption.append(seg)
-    return media, caption
-
-
 def _chunk_media(media: Message, *, size: int = MAX_MEDIA_PER_MESSAGE) -> list[Message]:
     chunks: list[Message] = []
     current = Message()
@@ -250,30 +268,43 @@ def _chunk_media(media: Message, *, size: int = MAX_MEDIA_PER_MESSAGE) -> list[M
 
 
 def reply_batches(message: Message) -> list[Message]:
-    """Split for QQ limits: video↔text 不可混；同条图片过多会 sendMsg result=34。"""
+    """按模板顺序拆批：保留 leading 文案 → 媒体 → trailing 文案。
+
+    纯图且数量未超限时整条原样发送，避免打乱 ``{text}{media}{url}`` 顺序。
+    含视频或图片过多时必须拆条（QQ 不能 video↔text 混排 / 同条图片过多）。
+    """
     if not message:
         return []
-    media, caption = split_media_and_caption(message)
-    if not media:
-        return [caption] if caption else []
 
-    has_video = any(seg.type == "video" for seg in media)
-    media_chunks = _chunk_media(media)
+    has_video = any(seg.type == "video" for seg in message)
+    media_count = sum(1 for seg in message if seg.type in _MEDIA_SEG_TYPES)
+    if not has_video and media_count <= MAX_MEDIA_PER_MESSAGE:
+        return [message]
 
-    if (
-        not has_video
-        and len(media_chunks) == 1
-        and caption
-        and len(media_chunks[0]) <= MAX_MEDIA_PER_MESSAGE
-    ):
-        combined = Message()
-        for seg in media_chunks[0]:
-            combined.append(seg)
-        for seg in caption:
-            combined.append(seg)
-        return [combined]
+    leading = Message()
+    media = Message()
+    trailing = Message()
+    seen_media = False
+    for seg in message:
+        if seg.type in _MEDIA_SEG_TYPES:
+            seen_media = True
+            media.append(seg)
+        elif seg.type == "text" and not str(seg.data.get("text", "")).strip():
+            continue
+        elif not seen_media:
+            leading.append(seg)
+        else:
+            trailing.append(seg)
 
-    batches = list(media_chunks)
-    if caption:
-        batches.append(caption)
+    batches: list[Message] = []
+    if leading:
+        batches.append(leading)
+    if media:
+        batches.extend(_chunk_media(media))
+    if trailing:
+        batches.append(trailing)
     return batches
+
+
+def _is_partial_sent(delivery: TargetDelivery) -> bool:
+    return bool(delivery.error and str(delivery.error).startswith("partial_sent:"))
