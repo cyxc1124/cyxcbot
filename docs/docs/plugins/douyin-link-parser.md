@@ -34,8 +34,7 @@ sidebar_position: 5
 |------|------|
 | **群组 → 抖音链接** | 按群开关 |
 | **好友 → 抖音链接** | 按好友开关 |
-| **设置 → 抖音 → 账号** | 扫码登录（Playwright）或粘贴 Cookie；与 B 站账号相互独立 |
-| **抖音 → 消息模板** | `link_template_douyin` |
+| **设置 → 抖音账号** | 扫码登录（Playwright）或粘贴 Cookie；与 B 站账号相互独立 |
 
 Cookie **非硬性必填**：未配置时仍会尝试游客态解析（日志中有提示）。建议配置登录态（如含 `ttwid` / `odin_tt` / `passport_csrf_token`）；`msToken` 可缺省并由程序自动生成。
 
@@ -43,7 +42,7 @@ Cookie **非硬性必填**：未配置时仍会尝试游客态解析（日志中
 
 ## 消息模板
 
-在 **抖音 → 消息模板** 中编辑 `link_template_douyin`，可用占位符：
+在 **消息模板** 中编辑 `link_template_douyin`，可用占位符：
 
 | 占位符 | 说明 |
 |--------|------|

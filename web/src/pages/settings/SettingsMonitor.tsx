@@ -41,18 +41,21 @@ function SettingToggleRow({
   )
 }
 
-export function SettingsBilibiliMonitorPage() {
+export function SettingsMonitorPage() {
   const { settings, setSettings, formDisabled, saving, handleSubmit } = useSettingsForm()
   const [dynamicTargetCount, setDynamicTargetCount] = useState(0)
   const [liveTargetCount, setLiveTargetCount] = useState(0)
+  const [xTargetCount, setXTargetCount] = useState(0)
 
   const loadTargetCounts = useCallback(async () => {
-    const [dynamicStatus, liveStatus] = await Promise.all([
+    const [dynamicStatus, liveStatus, xStatus] = await Promise.all([
       getDynamicMonitorStatus(),
       getLiveMonitorStatus(),
+      getXMonitorStatus(),
     ])
     setDynamicTargetCount(dynamicStatus.target_count)
     setLiveTargetCount(liveStatus.target_count)
+    setXTargetCount(xStatus.target_count)
   }, [])
 
   useMountAsync(loadTargetCounts)
@@ -84,6 +87,16 @@ export function SettingsBilibiliMonitorPage() {
     settings?.live_monitor_interval,
     settings?.live_monitor_use_websocket,
   ])
+
+  const xSchedule = useMemo(() => {
+    const interval = settings?.x_monitor_interval
+    if (!interval || interval < 10) return null
+    return computeDynamicPollSchedule(
+      xTargetCount,
+      interval,
+      settings?.x_monitor_use_stagger ?? true,
+    )
+  }, [xTargetCount, settings?.x_monitor_interval, settings?.x_monitor_use_stagger])
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -188,36 +201,6 @@ export function SettingsBilibiliMonitorPage() {
         </div>
       </div>
 
-      <button type="submit" className="btn-primary" disabled={saving || formDisabled}>
-        {saving ? '保存中…' : '保存设置'}
-      </button>
-    </form>
-  )
-}
-
-export function SettingsXMonitorPage() {
-  const { settings, setSettings, formDisabled, saving, handleSubmit } = useSettingsForm()
-  const [xTargetCount, setXTargetCount] = useState(0)
-
-  const loadTargetCounts = useCallback(async () => {
-    const xStatus = await getXMonitorStatus()
-    setXTargetCount(xStatus.target_count)
-  }, [])
-
-  useMountAsync(loadTargetCounts)
-
-  const xSchedule = useMemo(() => {
-    const interval = settings?.x_monitor_interval
-    if (!interval || interval < 10) return null
-    return computeDynamicPollSchedule(
-      xTargetCount,
-      interval,
-      settings?.x_monitor_use_stagger ?? true,
-    )
-  }, [xTargetCount, settings?.x_monitor_interval, settings?.x_monitor_use_stagger])
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-6">
       <div className="card space-y-4">
         <h3 className="font-semibold text-foreground">X 监控</h3>
         <div className="max-w-xs">

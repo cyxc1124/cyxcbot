@@ -6,8 +6,6 @@ sidebar_position: 1
 
 Web Admin 是机器草的浏览器管理界面，基于 React + TypeScript + Tailwind CSS 构建，对接后端 `/api/v1` API。
 
-侧栏按平台与能力分组（B 站 / X / 抖音 / 会话 / 游戏 / 系统）；消息模板挂在各平台下。抖音账号仍在 **设置 → 抖音**。页面细节见 [页面说明](./pages)。
-
 ## 访问地址
 
 - 生产环境：`http://<主机>:8081`

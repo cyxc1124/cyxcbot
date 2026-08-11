@@ -139,7 +139,7 @@ export function AboutPage() {
                 </a>
               )}
             </h3>
-            <p className="text-sm text-muted-foreground">多平台监控管理界面</p>
+            <p className="text-sm text-muted-foreground">Bilibili 监控机器人管理界面</p>
           </div>
         </div>
 

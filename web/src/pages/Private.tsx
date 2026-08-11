@@ -60,10 +60,10 @@ export function PrivatePage() {
 
   const tabLabels: Record<PrivateTab, string> = {
     message: '好友消息',
-    status: '状态查询',
-    'link-users': 'B 站链接',
+    'link-users': '好友链接解析',
     'douyin-link-users': '抖音链接',
     'x-link-users': 'X 链接',
+    status: '状态查询',
   }
 
   const allUserIds = useMemo(() => users.map((u) => u.user_id), [users])

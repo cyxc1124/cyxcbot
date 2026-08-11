@@ -115,7 +115,7 @@ export function LinkParserGroupPolicyTab() {
     updateItem: (id, payload) => updateLinkParserGroupPolicy(id, payload),
     resetItem: resetLinkParserGroupPolicy,
     toggleAllSuccessMessage: (enabled) =>
-      enabled ? '已为全部群组启用 B 站链接解析' : '已为全部群组关闭 B 站链接解析',
+      enabled ? '已为全部群组启用链接解析' : '已为全部群组关闭链接解析',
     toggleAllSendVideoSuccessMessage: (enabled) =>
       enabled ? '已为全部群组启用发送视频' : '已为全部群组关闭发送视频',
   })
@@ -225,7 +225,7 @@ export function LinkParserUserPolicyTab() {
       }),
     resetItem: resetLinkParserUserPolicy,
     toggleAllSuccessMessage: (enabled) =>
-      enabled ? '已为全部好友启用 B 站链接解析' : '已为全部好友关闭 B 站链接解析',
+      enabled ? '已为全部好友启用链接解析' : '已为全部好友关闭链接解析',
     toggleAllSendVideoSuccessMessage: (enabled) =>
       enabled ? '已为全部好友启用发送视频' : '已为全部好友关闭发送视频',
   })
