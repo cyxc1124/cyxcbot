@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { Navigate, useParams } from 'react-router-dom'
 import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
 import { useMountAsync } from '../hooks/useMountAsync'
@@ -233,9 +233,16 @@ export function MessageTemplatesPage() {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [unsavedPrompt, setUnsavedPrompt] = useState<UnsavedPrompt | null>(null)
+  const [selectionPlatform, setSelectionPlatform] = useState<TemplateCategory | null>(null)
 
   const platform = isTemplatePlatform(platformParam) ? platformParam : null
   const platformFields = platform ? PLATFORM_FIELDS[platform] : []
+
+  if (platform !== selectionPlatform) {
+    setSelectionPlatform(platform)
+    setSelectedKey(null)
+    setUnsavedPrompt(null)
+  }
 
   const load = useCallback(async () => {
     try {
@@ -255,11 +262,6 @@ export function MessageTemplatesPage() {
   const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
 
   useMountAsync(load)
-
-  useEffect(() => {
-    setSelectedKey(null)
-    setUnsavedPrompt(null)
-  }, [platform])
 
   const getCurrentValue = (key: TemplateKey) => draftValues[key] ?? form[key]
 

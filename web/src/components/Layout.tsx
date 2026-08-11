@@ -108,25 +108,20 @@ export function Layout() {
     }
   }, [])
 
-  // 当前路由所在分组保持展开，避免折叠后找不到当前位置
-  useEffect(() => {
-    const active = navSections.find((group) =>
-      pathInSection(location.pathname, group.items),
-    )
-    if (!active) return
-    setCollapsedSections((prev) => {
-      if (!prev.has(active.section)) return prev
-      const next = new Set(prev)
-      next.delete(active.section)
-      persistCollapsedSections(next)
-      return next
-    })
-  }, [location.pathname])
-
   if (location.pathname !== prevPathname) {
     setPrevPathname(location.pathname)
     setNavHoverExpanded(false)
     setNavCollapsed(false)
+    // 当前路由所在分组保持展开，避免折叠后找不到当前位置
+    const active = navSections.find((group) =>
+      pathInSection(location.pathname, group.items),
+    )
+    if (active && collapsedSections.has(active.section)) {
+      const next = new Set(collapsedSections)
+      next.delete(active.section)
+      persistCollapsedSections(next)
+      setCollapsedSections(next)
+    }
   }
 
   const toggleSection = (section: string) => {

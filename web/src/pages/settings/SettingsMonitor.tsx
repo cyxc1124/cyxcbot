@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type FormEvent } from 'react'
 import { MonitorPollScheduleCard } from '../../components/MonitorPollScheduleCard'
 import { ToggleSwitch } from '../../components/ToggleSwitch'
 import { useMountAsync } from '../../hooks/useMountAsync'
@@ -42,9 +42,22 @@ function SettingToggleRow({
 }
 
 export function SettingsBilibiliMonitorPage() {
-  const { settings, setSettings, formDisabled, saving, handleSubmit } = useSettingsForm()
+  const { settings, setSettings, formDisabled, saving, savePartial } = useSettingsForm()
   const [dynamicTargetCount, setDynamicTargetCount] = useState(0)
   const [liveTargetCount, setLiveTargetCount] = useState(0)
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault()
+    if (!settings) return
+    void savePartial({
+      dynamic_monitor_interval: settings.dynamic_monitor_interval,
+      dynamic_monitor_use_stagger: settings.dynamic_monitor_use_stagger,
+      dynamic_enable_screenshot: settings.dynamic_enable_screenshot,
+      live_monitor_interval: settings.live_monitor_interval,
+      live_monitor_include_info: settings.live_monitor_include_info,
+      live_monitor_use_websocket: settings.live_monitor_use_websocket,
+    })
+  }
 
   const loadTargetCounts = useCallback(async () => {
     const [dynamicStatus, liveStatus] = await Promise.all([
@@ -196,8 +209,17 @@ export function SettingsBilibiliMonitorPage() {
 }
 
 export function SettingsXMonitorPage() {
-  const { settings, setSettings, formDisabled, saving, handleSubmit } = useSettingsForm()
+  const { settings, setSettings, formDisabled, saving, savePartial } = useSettingsForm()
   const [xTargetCount, setXTargetCount] = useState(0)
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault()
+    if (!settings) return
+    void savePartial({
+      x_monitor_interval: settings.x_monitor_interval,
+      x_monitor_use_stagger: settings.x_monitor_use_stagger,
+    })
+  }
 
   const loadTargetCounts = useCallback(async () => {
     const xStatus = await getXMonitorStatus()
