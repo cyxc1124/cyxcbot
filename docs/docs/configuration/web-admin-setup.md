@@ -49,7 +49,7 @@ OneBot **不在** Web Admin 面板里填写地址。请将协议端（如 NapCat
 
 ## 8. 自定义消息模板与命令
 
-- **消息模板**（`/templates`）：开播、下播、动态推送 / 置顶变更、B 站 / 抖音链接解析等
+- **消息模板**：各平台侧栏下的「消息模板」（如 `/templates/bilibili`、`/templates/x`、`/templates/douyin`）
 - **设置 → 命令**：核心命令触发词与习惯性前缀（Rust 群管命令在 `/rust-rcon`）
 
 ## 9. （可选）配置 Rust 群管

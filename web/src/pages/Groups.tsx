@@ -62,11 +62,11 @@ export function GroupsPage() {
 
   const tabLabels: Record<GroupsTab, string> = {
     message: '群消息',
-    'link-groups': '群链接解析',
-    'douyin-link-groups': '抖音链接',
-    'x-link-groups': 'X 链接',
     status: '状态查询',
     'special-title': '群头衔',
+    'link-groups': 'B 站链接',
+    'douyin-link-groups': '抖音链接',
+    'x-link-groups': 'X 链接',
   }
 
   const allGroupIds = useMemo(() => groups.map((g) => g.group_id), [groups])

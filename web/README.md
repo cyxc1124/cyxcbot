@@ -43,15 +43,21 @@ npm run build
 | `/setup` | 首次初始化管理员账户 |
 | `/login` | 登录 |
 | `/` | 仪表盘 |
-| `/dynamic` | 动态监控（运行状态 + UP 主映射 CRUD） |
-| `/live` | 直播监控（运行状态 + 房间映射 CRUD） |
-| `/groups` | 群组管理（守卫、链接解析、状态查询策略） |
-| `/private` | 好友管理（守卫、链接解析、状态查询策略） |
-| `/templates` | 消息模板（动态 / 直播 / 链接解析） |
-| `/settings/monitor` | 监控参数（间隔、WebSocket、截图等） |
+| `/dynamic` | B 站动态订阅 |
+| `/live` | B 站直播订阅 |
+| `/x` | X 推文订阅 |
+| `/groups` | 群组（守卫、状态查询、B 站/抖音/X 链接等） |
+| `/private` | 好友（同上） |
+| `/templates/bilibili` | B 站消息模板 |
+| `/templates/x` | X 消息模板 |
+| `/templates/douyin` | 抖音消息模板 |
+| `/settings/bilibili-monitor` | B 站监控参数（间隔、WebSocket、截图等） |
+| `/settings/x-monitor` | X 监控参数 |
 | `/settings/account` | B 站账号（扫码登录 / Cookie） |
+| `/settings/douyin-account` | 抖音账号 |
+| `/settings/x-account` | X 账号与代理 |
 | `/settings/bot` | 机器人（超级用户、状态查询白名单） |
 | `/logs` | 实时运行日志（WebSocket） |
 | `/about` | 版本与构建信息 |
 
-旧路径 `/mappings`、`/settings/templates`、`/audit`、`/events` 会自动重定向到新位置。
+旧路径 `/mappings`、`/settings/monitor`、`/settings/templates`、`/audit`、`/events` 会自动重定向到新位置。
