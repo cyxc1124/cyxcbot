@@ -18,7 +18,10 @@ import { SettingsAccountPage } from './pages/settings/SettingsAccount'
 import { SettingsBotPage } from './pages/settings/SettingsBot'
 import { SettingsCommandsPage } from './pages/settings/SettingsCommands'
 import { SettingsDouyinAccountPage } from './pages/settings/SettingsDouyinAccount'
-import { SettingsMonitorPage } from './pages/settings/SettingsMonitor'
+import {
+  SettingsBilibiliMonitorPage,
+  SettingsXMonitorPage,
+} from './pages/settings/SettingsMonitor'
 import { SettingsXAccountPage } from './pages/settings/SettingsXAccount'
 import { XMonitorPage } from './pages/XMonitor'
 import { RustRconPage } from './pages/RustRcon'
@@ -46,12 +49,15 @@ export default function App() {
                 <Route path="live" element={<LiveMonitorPage />} />
                 <Route path="x" element={<XMonitorPage />} />
                 <Route path="rust-rcon" element={<RustRconPage />} />
-                <Route path="templates" element={<MessageTemplatesPage />} />
+                <Route path="templates" element={<Navigate to="/templates/bilibili" replace />} />
+                <Route path="templates/:platform" element={<MessageTemplatesPage />} />
                 <Route path="groups" element={<GroupsPage />} />
                 <Route path="private" element={<PrivatePage />} />
                 <Route path="settings" element={<SettingsLayout />}>
-                  <Route index element={<Navigate to="monitor" replace />} />
-                  <Route path="monitor" element={<SettingsMonitorPage />} />
+                  <Route index element={<Navigate to="bilibili-monitor" replace />} />
+                  <Route path="bilibili-monitor" element={<SettingsBilibiliMonitorPage />} />
+                  <Route path="x-monitor" element={<SettingsXMonitorPage />} />
+                  <Route path="monitor" element={<Navigate to="/settings/bilibili-monitor" replace />} />
                   <Route path="account" element={<SettingsAccountPage />} />
                   <Route path="douyin-account" element={<SettingsDouyinAccountPage />} />
                   <Route path="x-account" element={<SettingsXAccountPage />} />
@@ -61,10 +67,10 @@ export default function App() {
                 <Route path="logs" element={<LogsPage />} />
                 <Route path="about" element={<AboutPage />} />
                 <Route path="mappings" element={<Navigate to="/dynamic" replace />} />
-                <Route path="settings/templates" element={<Navigate to="/templates" replace />} />
+                <Route path="settings/templates" element={<Navigate to="/templates/bilibili" replace />} />
                 <Route path="audit" element={<Navigate to="/" replace />} />
                 <Route path="events" element={<Navigate to="/" replace />} />
-                <Route path="settings/data" element={<Navigate to="/settings/monitor" replace />} />
+                <Route path="settings/data" element={<Navigate to="/settings/bilibili-monitor" replace />} />
               </Route>
             </Route>
 

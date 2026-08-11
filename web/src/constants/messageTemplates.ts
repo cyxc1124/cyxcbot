@@ -15,7 +15,7 @@ export type TemplateKey =
   | 'link_template_x'
   | 'x_template_push'
 
-export type TemplateCategory = 'dynamic' | 'live' | 'link' | 'x'
+export type TemplateCategory = 'bilibili' | 'x' | 'douyin'
 
 export type TemplateVariable = {
   key: string
@@ -109,7 +109,7 @@ const liveEndVariables: TemplateVariable[] = [
 export const dynamicTemplateFields: TemplateField[] = [
   {
     key: 'dynamic_template_push',
-    category: 'dynamic',
+    category: 'bilibili',
     label: '新动态推送',
     description: '检测到 UP 主发布新动态时的完整推送内容',
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.dynamic_template_push,
@@ -117,7 +117,7 @@ export const dynamicTemplateFields: TemplateField[] = [
   },
   {
     key: 'dynamic_template_pinned',
-    category: 'dynamic',
+    category: 'bilibili',
     label: '置顶动态变更',
     description: 'UP 主置顶动态变更时的完整推送内容',
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.dynamic_template_pinned,
@@ -125,7 +125,7 @@ export const dynamicTemplateFields: TemplateField[] = [
   },
   {
     key: 'dynamic_template_query_latest',
-    category: 'dynamic',
+    category: 'bilibili',
     label: '最新动态查询',
     description: '群命令查询最新动态时的完整回复内容',
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.dynamic_template_query_latest,
@@ -133,7 +133,7 @@ export const dynamicTemplateFields: TemplateField[] = [
   },
   {
     key: 'dynamic_template_query_pinned',
-    category: 'dynamic',
+    category: 'bilibili',
     label: '置顶动态查询',
     description: '群命令查询置顶动态时的完整回复内容',
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.dynamic_template_query_pinned,
@@ -141,7 +141,7 @@ export const dynamicTemplateFields: TemplateField[] = [
   },
   {
     key: 'dynamic_template_extract',
-    category: 'dynamic',
+    category: 'bilibili',
     label: '动态图片提取',
     description: '发送 #提取/#获取{动态ID} 成功提取到图片时的完整回复内容',
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.dynamic_template_extract,
@@ -149,7 +149,7 @@ export const dynamicTemplateFields: TemplateField[] = [
   },
   {
     key: 'dynamic_template_extract_empty',
-    category: 'dynamic',
+    category: 'bilibili',
     label: '动态图片提取（无图）',
     description: '动态中未找到可提取图片时的回复内容',
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.dynamic_template_extract_empty,
@@ -157,7 +157,7 @@ export const dynamicTemplateFields: TemplateField[] = [
   },
   {
     key: 'dynamic_template_extract_failed',
-    category: 'dynamic',
+    category: 'bilibili',
     label: '动态图片提取（失败）',
     description: '拉取动态详情失败时的回复内容',
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.dynamic_template_extract_failed,
@@ -165,7 +165,7 @@ export const dynamicTemplateFields: TemplateField[] = [
   },
   {
     key: 'dynamic_template_extract_image_label',
-    category: 'dynamic',
+    category: 'bilibili',
     label: '动态图片提取（单图标签）',
     description: '每张图片前的标签文字，会按序号重复插入',
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.dynamic_template_extract_image_label,
@@ -176,7 +176,7 @@ export const dynamicTemplateFields: TemplateField[] = [
 export const liveTemplateFields: TemplateField[] = [
   {
     key: 'live_template_start',
-    category: 'live',
+    category: 'bilibili',
     label: '开播通知',
     description: '检测到主播开播时的完整推送内容',
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.live_template_start,
@@ -184,7 +184,7 @@ export const liveTemplateFields: TemplateField[] = [
   },
   {
     key: 'live_template_end',
-    category: 'live',
+    category: 'bilibili',
     label: '下播通知',
     description: '检测到主播下播时的完整推送内容',
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.live_template_end,
@@ -242,10 +242,10 @@ const xLinkVariables: TemplateVariable[] = [
   { key: 'tweet_id', label: '推文 ID', description: '推文雪花 ID' },
 ]
 
-export const linkTemplateFields: TemplateField[] = [
+export const bilibiliLinkTemplateFields: TemplateField[] = [
   {
     key: 'link_template_video',
-    category: 'link',
+    category: 'bilibili',
     label: '视频链接解析',
     description: '群聊/好友中识别到 B 站视频链接时的自动回复内容',
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.link_template_video,
@@ -253,28 +253,41 @@ export const linkTemplateFields: TemplateField[] = [
   },
   {
     key: 'link_template_live',
-    category: 'link',
+    category: 'bilibili',
     label: '直播链接解析',
     description: '群聊/好友中识别到 B 站直播间链接时的自动回复内容',
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.link_template_live,
     variables: linkLiveVariables,
   },
+]
+
+export const douyinTemplateFields: TemplateField[] = [
   {
     key: 'link_template_douyin',
-    category: 'link',
+    category: 'douyin',
     label: '抖音链接解析',
     description: '群聊/好友中识别到抖音分享链接时的自动回复内容',
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.link_template_douyin,
     variables: douyinLinkVariables,
   },
+]
+
+export const xLinkTemplateFields: TemplateField[] = [
   {
     key: 'link_template_x',
-    category: 'link',
+    category: 'x',
     label: 'X 链接解析',
     description: '群聊/好友中识别到 X / Twitter 链接时的自动回复内容',
     defaultValue: DEFAULT_MESSAGE_TEMPLATES.link_template_x,
     variables: xLinkVariables,
   },
+]
+
+/** @deprecated Prefer platform-specific field lists. */
+export const linkTemplateFields: TemplateField[] = [
+  ...bilibiliLinkTemplateFields,
+  ...douyinTemplateFields,
+  ...xLinkTemplateFields,
 ]
 
 const xPushVariables: TemplateVariable[] = [
@@ -291,7 +304,7 @@ const xPushVariables: TemplateVariable[] = [
   { key: 'url', label: '推文链接', description: 'x.com 状态链接' },
 ]
 
-export const xTemplateFields: TemplateField[] = [
+export const xPushTemplateFields: TemplateField[] = [
   {
     key: 'x_template_push',
     category: 'x',
@@ -302,18 +315,27 @@ export const xTemplateFields: TemplateField[] = [
   },
 ]
 
-export const allTemplateFields = [
+export const bilibiliTemplateFields: TemplateField[] = [
   ...dynamicTemplateFields,
   ...liveTemplateFields,
-  ...linkTemplateFields,
+  ...bilibiliLinkTemplateFields,
+]
+
+export const xTemplateFields: TemplateField[] = [
+  ...xPushTemplateFields,
+  ...xLinkTemplateFields,
+]
+
+export const allTemplateFields = [
+  ...bilibiliTemplateFields,
   ...xTemplateFields,
+  ...douyinTemplateFields,
 ]
 
 export const templateCategoryLabels: Record<TemplateCategory, string> = {
-  dynamic: '动态模板',
-  live: '直播模板',
-  link: '链接解析',
-  x: 'X 模板',
+  bilibili: 'B 站',
+  x: 'X',
+  douyin: '抖音',
 }
 
 export const PREVIEW_SEGMENT_LABELS: Record<string, string> = {

@@ -8,6 +8,7 @@ import {
   getLiveMonitorStatus,
   getMonitorStatus,
   getSystemMonitorStatus,
+  getXMonitorStatus,
 } from '../api/client'
 import type {
   BilibiliConnectionStatus,
@@ -16,6 +17,7 @@ import type {
   LiveMonitorStatus,
   QqConnectionStatus,
   SystemMonitorStatus,
+  XMonitorStatus,
 } from '../api/types'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
@@ -89,15 +91,17 @@ export function DashboardPage() {
   const [connections, setConnections] = useState<ConnectionsStatus | null>(null)
   const [dynamicMonitor, setDynamicMonitor] = useState<DynamicMonitorStatus | null>(null)
   const [liveMonitor, setLiveMonitor] = useState<LiveMonitorStatus | null>(null)
+  const [xMonitor, setXMonitor] = useState<XMonitorStatus | null>(null)
 
   const load = useCallback(async () => {
     try {
-      const [status, sys, conn, dynamic, live] = await Promise.all([
+      const [status, sys, conn, dynamic, live, x] = await Promise.all([
         getMonitorStatus(),
         getSystemMonitorStatus(),
         getConnectionsStatus(),
         getDynamicMonitorStatus(),
         getLiveMonitorStatus(),
+        getXMonitorStatus(),
       ])
       setRunning(status.running)
       setUptime(status.uptime_seconds)
@@ -105,6 +109,7 @@ export function DashboardPage() {
       setConnections(conn)
       setDynamicMonitor(dynamic)
       setLiveMonitor(live)
+      setXMonitor(x)
       setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
@@ -212,6 +217,32 @@ export function DashboardPage() {
             title="当前开播"
             value={formatCount(liveMonitor?.live_rooms)}
             subtitle="正在直播的房间数"
+          />
+          <StatCard
+            title="X 监控"
+            value={monitorRunningLabel(xMonitor?.enabled)}
+            subtitle={[
+              xMonitor ? `${xMonitor.target_count} 个博主` : undefined,
+              xMonitor?.last_check_at
+                ? `最近检查 ${formatDateTime(xMonitor.last_check_at)}`
+                : undefined,
+              <>
+                管理订阅见
+                <Link to="/x" className="font-medium text-primary hover:opacity-80 hover:underline">
+                  推文订阅
+                </Link>
+              </>,
+            ].filter(Boolean)}
+          />
+          <StatCard
+            title="X 检查次数"
+            value={formatCount(xMonitor?.checks_total)}
+            subtitle="每个博主每次轮询计 1 次"
+          />
+          <StatCard
+            title="新推文发现"
+            value={formatCount(xMonitor?.new_tweets_total)}
+            subtitle="不含首次基准初始化"
           />
         </div>
       </section>
