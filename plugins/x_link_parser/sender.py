@@ -115,31 +115,41 @@ def _chunk_media(media: Message, *, size: int = MAX_MEDIA_PER_MESSAGE) -> list[M
 
 
 def reply_batches(message: Message) -> list[Message]:
-    """Split for QQ limits: video↔text 不可混；同条图片过多会 sendMsg result=34。"""
+    """Split for QQ limits: 每个 video 单独一条；同条图片过多会 sendMsg result=34。"""
     if not message:
         return []
     media, caption = split_media_and_caption(message)
     if not media:
         return [caption] if caption else []
 
-    has_video = any(seg.type == "video" for seg in media)
-    media_chunks = _chunk_media(media)
+    videos = Message()
+    images = Message()
+    for seg in media:
+        if seg.type == "video":
+            videos.append(seg)
+        else:
+            images.append(seg)
 
-    # 少量纯图 + 文案可同条
+    batches: list[Message] = []
+    # 每个 video 单独一条，避免同条多 video / 与 image·text 混排被 QQ 吞掉
+    for seg in videos:
+        batches.append(Message([seg]))
+
+    image_chunks = _chunk_media(images)
     if (
-        not has_video
-        and len(media_chunks) == 1
+        len(image_chunks) == 1
         and caption
-        and len(media_chunks[0]) <= MAX_MEDIA_PER_MESSAGE
+        and len(image_chunks[0]) <= MAX_MEDIA_PER_MESSAGE
     ):
         combined = Message()
-        for seg in media_chunks[0]:
+        for seg in image_chunks[0]:
             combined.append(seg)
         for seg in caption:
             combined.append(seg)
-        return [combined]
+        batches.append(combined)
+        return batches
 
-    batches = list(media_chunks)
+    batches.extend(image_chunks)
     if caption:
         batches.append(caption)
     return batches
