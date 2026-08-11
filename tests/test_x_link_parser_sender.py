@@ -78,3 +78,30 @@ def test_reply_batches_keeps_image_caption_together(tmp_path: Path):
     batches = sender.reply_batches(msg)
     assert len(batches) == 1
     assert [seg.type for seg in batches[0]] == ["image", "text"]
+
+
+def test_reply_batches_preserves_interleaved_video_image_order(tmp_path: Path):
+    """video, image, video 不得重排成 video, video, image。"""
+    sender = _load_sender()
+    v1 = tmp_path / "1.mp4"
+    v2 = tmp_path / "2.mp4"
+    img = tmp_path / "a.jpg"
+    v1.write_bytes(b"\x00\x00\x00\x18ftypmp42fake")
+    v2.write_bytes(b"\x00\x00\x00\x18ftypmp42fake")
+    img.write_bytes(b"fakepng")
+
+    msg = Message(
+        [
+            MessageSegment.video(v1.resolve()),
+            MessageSegment.image(img.resolve()),
+            MessageSegment.video(v2.resolve()),
+            MessageSegment.text("caption"),
+        ]
+    )
+    batches = sender.reply_batches(msg)
+    assert [[seg.type for seg in batch] for batch in batches] == [
+        ["video"],
+        ["image"],
+        ["video"],
+        ["text"],
+    ]

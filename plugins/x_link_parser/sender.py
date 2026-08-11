@@ -15,8 +15,6 @@ from utils.x_api.models import TweetMediaItem
 
 SegmentPart = Union[MessageSegment, str]
 
-# QQ / NapCat：同条消息里 video 段常吞掉后续文字；纯图可混排。
-_MEDIA_SEG_TYPES = frozenset({"video", "image"})
 # QQ NT sendMsg 同条图片过多会 result=34；按批拆分。
 MAX_MEDIA_PER_MESSAGE = 10
 
@@ -84,20 +82,6 @@ def build_x_link_message(
     )
 
 
-def split_media_and_caption(message: Message) -> tuple[Message, Message]:
-    """Split into (media, caption). Caption may be empty Message."""
-    media = Message()
-    caption = Message()
-    for seg in message:
-        if seg.type in _MEDIA_SEG_TYPES:
-            media.append(seg)
-        elif seg.type == "text" and not str(seg.data.get("text", "")).strip():
-            continue
-        else:
-            caption.append(seg)
-    return media, caption
-
-
 def _chunk_media(media: Message, *, size: int = MAX_MEDIA_PER_MESSAGE) -> list[Message]:
     chunks: list[Message] = []
     current = Message()
@@ -114,42 +98,59 @@ def _chunk_media(media: Message, *, size: int = MAX_MEDIA_PER_MESSAGE) -> list[M
     return chunks
 
 
+def _text_image_batches(non_video: Message) -> list[Message]:
+    """文字 + 图片可同条；图片过多再拆。"""
+    if not non_video:
+        return []
+    image_count = sum(1 for seg in non_video if seg.type == "image")
+    if image_count <= MAX_MEDIA_PER_MESSAGE:
+        return [non_video]
+
+    images = Message([seg for seg in non_video if seg.type == "image"])
+    caption = Message([seg for seg in non_video if seg.type != "image"])
+    chunks = _chunk_media(images)
+    if not caption:
+        return chunks
+    first_image = next(
+        (i for i, seg in enumerate(non_video) if seg.type == "image"), None
+    )
+    first_caption = next(
+        (i for i, seg in enumerate(non_video) if seg.type != "image"), None
+    )
+    if (
+        first_caption is not None
+        and first_image is not None
+        and first_caption < first_image
+    ):
+        return [caption, *chunks]
+    return [*chunks, caption]
+
+
 def reply_batches(message: Message) -> list[Message]:
-    """Split for QQ limits: 每个 video 单独一条；同条图片过多会 sendMsg result=34。"""
+    """每个 video 单独一条；文字与图片可同条。
+
+    单次扫描保序：遇到视频先冲刷已有文字/图，再发该视频批，避免
+    ``video, image, video`` 被重排成 ``video, video, image``。
+    """
     if not message:
         return []
-    media, caption = split_media_and_caption(message)
-    if not media:
-        return [caption] if caption else []
-
-    videos = Message()
-    images = Message()
-    for seg in media:
-        if seg.type == "video":
-            videos.append(seg)
-        else:
-            images.append(seg)
 
     batches: list[Message] = []
-    # 每个 video 单独一条，避免同条多 video / 与 image·text 混排被 QQ 吞掉
-    for seg in videos:
-        batches.append(Message([seg]))
+    pending = Message()
 
-    image_chunks = _chunk_media(images)
-    if (
-        len(image_chunks) == 1
-        and caption
-        and len(image_chunks[0]) <= MAX_MEDIA_PER_MESSAGE
-    ):
-        combined = Message()
-        for seg in image_chunks[0]:
-            combined.append(seg)
-        for seg in caption:
-            combined.append(seg)
-        batches.append(combined)
-        return batches
+    def flush_pending() -> None:
+        nonlocal pending
+        if pending:
+            batches.extend(_text_image_batches(pending))
+            pending = Message()
 
-    batches.extend(image_chunks)
-    if caption:
-        batches.append(caption)
+    for seg in message:
+        if seg.type == "video":
+            flush_pending()
+            batches.append(Message([seg]))
+            continue
+        if seg.type == "text" and not str(seg.data.get("text", "")).strip():
+            continue
+        pending.append(seg)
+    flush_pending()
     return batches
