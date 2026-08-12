@@ -1,5 +1,6 @@
 """直播监控通知投递编排与 pending 重试逻辑。"""
 
+import asyncio
 from typing import Callable, Optional
 
 from nonebot.log import logger
@@ -41,6 +42,15 @@ class LiveNotificationDelivery:
         self._get_group_mapping = get_group_mapping
         self._get_user_mapping = get_user_mapping
         self._get_at_all = get_at_all
+        # ponytail: per-room lock；短播时 end 须等 in-flight start 写完 pending
+        self._room_locks: dict[str, asyncio.Lock] = {}
+
+    def _lock_for(self, room_id: str) -> asyncio.Lock:
+        lock = self._room_locks.get(room_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._room_locks[room_id] = lock
+        return lock
 
     def supersede_pending_end(self, room_id: str, state: LiveRoomState) -> None:
         """新一轮开播时放弃已过期的待投递下播通知，避免 pending 标志永久滞留。"""
@@ -57,13 +67,14 @@ class LiveNotificationDelivery:
         state: LiveRoomState,
         *,
         user_info: Optional[UserInfo],
+        room_info: Optional[RoomInfo] = None,
         prefetched_images: Optional[PrefetchImages] = None,
     ) -> None:
         """关播前补发仍未投递成功的开播通知，避免短播时首播失败后标志被直接清除。"""
         if not state.pending_start:
             return
 
-        effective_room_info = state.room_info
+        effective_room_info = room_info if room_info is not None else state.room_info
         if effective_room_info is None:
             logger.warning(
                 "房间 {} 关播时仍有待投递开播通知，但缺少房间快照，已放弃", room_id
@@ -104,42 +115,42 @@ class LiveNotificationDelivery:
         必须在任何 await 投递之前把 ``previous_status`` 设为 LIVE，否则
         WebSocket 与 API 轮询会在卡片生成窗口内各自再发一次开播通知。
         """
-        # ponytail: asyncio 单线程下，check→confirm 之间无 await 即可互斥双路径
-        if state.previous_status == LiveStatus.LIVE:
-            return
+        async with self._lock_for(room_id):
+            if state.previous_status == LiveStatus.LIVE:
+                return
 
-        streamer_name = (
-            (user_info or state.user_info).name
-            if (user_info or state.user_info)
-            else f"房间{room_id}"
-        )
-        logger.info("{}: {} (房间 {})", log_label, streamer_name, room_id)
-        self.supersede_pending_end(room_id, state)
-        await confirm_observed_status(
-            room_id,
-            state,
-            room_info,
-            user_info,
-            observed_status,
-            start_time=start_time,
-        )
-        await self.deliver_start(
-            room_id,
-            state,
-            room_info=room_info,
-            user_info=user_info,
-            prefetched_images=prefetched
-            if self._sender.template_uses_card("start")
-            else None,
-        )
-        await retry_pending(
-            room_id,
-            state,
-            room_info,
-            user_info,
-            prefetched_start=prefetched,
-            skip_start=True,
-        )
+            streamer_name = (
+                (user_info or state.user_info).name
+                if (user_info or state.user_info)
+                else f"房间{room_id}"
+            )
+            logger.info("{}: {} (房间 {})", log_label, streamer_name, room_id)
+            self.supersede_pending_end(room_id, state)
+            await confirm_observed_status(
+                room_id,
+                state,
+                room_info,
+                user_info,
+                observed_status,
+                start_time=start_time,
+            )
+            await self.deliver_start(
+                room_id,
+                state,
+                room_info=room_info,
+                user_info=user_info,
+                prefetched_images=prefetched
+                if self._sender.template_uses_card("start")
+                else None,
+            )
+            await retry_pending(
+                room_id,
+                state,
+                room_info,
+                user_info,
+                prefetched_start=prefetched,
+                skip_start=True,
+            )
 
     async def deliver_observed_live_end(
         self,
@@ -157,55 +168,64 @@ class LiveNotificationDelivery:
 
         必须在任何 await 投递之前把 ``previous_status`` 移出 LIVE，否则
         WebSocket 与 API 轮询会在卡片生成窗口内各自再发一次下播通知。
+        与开播共用 per-room lock，避免短播时 end 抢在 in-flight start 写完
+        ``pending_start`` 之前跑完补发检查。
         """
-        # ponytail: asyncio 单线程下，check→confirm 之间无 await 即可互斥双路径
-        if state.previous_status != LiveStatus.LIVE:
-            return
+        async with self._lock_for(room_id):
+            if state.previous_status != LiveStatus.LIVE:
+                return
 
-        resolved_room_info = room_info or state.room_info
-        streamer_name = (
-            (user_info or state.user_info).name
-            if (user_info or state.user_info)
-            else f"房间{room_id}"
-        )
-        logger.info("确认关播: {} (房间 {})", streamer_name, room_id)
-        if resolved_room_info is None:
-            state.previous_status = observed_status
-            logger.warning("房间 {} 关播时缺少房间快照，已更新状态并跳过投递", room_id)
-            return
+            resolved_room_info = room_info or state.room_info
+            streamer_name = (
+                (user_info or state.user_info).name
+                if (user_info or state.user_info)
+                else f"房间{room_id}"
+            )
+            logger.info("确认关播: {} (房间 {})", streamer_name, room_id)
+            if resolved_room_info is None:
+                state.previous_status = observed_status
+                logger.warning(
+                    "房间 {} 关播时缺少房间快照，已更新状态并跳过投递", room_id
+                )
+                return
 
-        await confirm_observed_status(
-            room_id,
-            state,
-            resolved_room_info,
-            user_info,
-            observed_status,
-        )
-        await self.deliver_pending_start_before_end(
-            room_id,
-            state,
-            user_info=user_info,
-            prefetched_images=prefetched
-            if self._sender.template_uses_card("start")
-            else None,
-        )
-        await self.deliver_end(
-            room_id,
-            state,
-            room_info=resolved_room_info,
-            user_info=user_info,
-            prefetched_images=prefetched
-            if self._sender.template_uses_card("end")
-            else None,
-        )
-        await retry_pending(
-            room_id,
-            state,
-            resolved_room_info,
-            user_info,
-            prefetched_end=prefetched,
-            skip_end=True,
-        )
+            # 离线 API 快照常把 live_start_time 清零；补发 start 须用直播中快照
+            pending_start_room_info = state.room_info
+            pending_start_user_info = state.user_info
+
+            await confirm_observed_status(
+                room_id,
+                state,
+                resolved_room_info,
+                user_info,
+                observed_status,
+            )
+            await self.deliver_pending_start_before_end(
+                room_id,
+                state,
+                user_info=user_info or pending_start_user_info,
+                room_info=pending_start_room_info,
+                prefetched_images=prefetched
+                if self._sender.template_uses_card("start")
+                else None,
+            )
+            await self.deliver_end(
+                room_id,
+                state,
+                room_info=resolved_room_info,
+                user_info=user_info,
+                prefetched_images=prefetched
+                if self._sender.template_uses_card("end")
+                else None,
+            )
+            await retry_pending(
+                room_id,
+                state,
+                resolved_room_info,
+                user_info,
+                prefetched_end=prefetched,
+                skip_end=True,
+            )
 
     async def deliver_start(
         self,
