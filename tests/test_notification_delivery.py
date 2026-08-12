@@ -1217,9 +1217,13 @@ async def test_websocket_and_poll_do_not_double_deliver_end(
         await send_started.wait()
         assert state.previous_status == LiveStatus.PREPARING
 
-        await monitor._check_room_status("111")
+        # 轮询可能在 retry_pending 上等待同一把房间锁，须先放行 WS 投递
+        poll_task = asyncio.create_task(monitor._check_room_status("111"))
+        await asyncio.sleep(0)
+        assert send_calls == 1
         release_send.set()
         await ws_task
+        await poll_task
 
     assert send_calls == 1
     assert state.previous_status == LiveStatus.PREPARING
@@ -1285,9 +1289,12 @@ async def test_websocket_and_poll_do_not_double_deliver_start(
         await send_started.wait()
         assert state.previous_status == LiveStatus.LIVE
 
-        await monitor._check_room_status("111")
+        poll_task = asyncio.create_task(monitor._check_room_status("111"))
+        await asyncio.sleep(0)
+        assert send_calls == 1
         release_send.set()
         await ws_task
+        await poll_task
 
     assert send_calls == 1
     assert state.previous_status == LiveStatus.LIVE
@@ -2149,3 +2156,97 @@ async def test_parent_cancel_preserves_partial_start_targets(
     assert state.pending_start is True
     assert state.pending_start_groups == ["1002"]
     assert state.pending_start_users == []
+
+
+@pytest.mark.asyncio
+async def test_stale_retry_pending_serializes_with_end_flush(
+    live_monitor_module,
+) -> None:
+    """过期轮询的 retry_pending 须等关播补发持锁结束，避免重复推送 start。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    live_snapshot = SimpleNamespace(
+        live_status=LiveStatus.LIVE,
+        live_start_time=1000,
+        title="title",
+        cover="",
+    )
+    state = LiveRoomState(
+        room_id=111,
+        previous_status=LiveStatus.LIVE,
+        start_time=1000,
+        room_info=live_snapshot,
+        last_live_room_info=live_snapshot,
+        pending_start=True,
+        pending_start_groups=["1001"],
+    )
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class OfflineRoomInfo:
+        live_status = LiveStatus.PREPARING
+        live_start_time = 0
+        title = "offline"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return False
+
+    flush_entered = asyncio.Event()
+    flush_release = asyncio.Event()
+    statuses: list[str] = []
+
+    async def slow_send(_room_id, status, *_args, **_kwargs):
+        statuses.append(status)
+        if status == "start" and statuses.count("start") == 1:
+            flush_entered.set()
+            await flush_release.wait()
+        return _delivery_succeeded()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(OfflineRoomInfo(), None),
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=slow_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        end_task = asyncio.create_task(
+            monitor._handle_preparing_signal("111", round_status=None)
+        )
+        await flush_entered.wait()
+
+        retry_task = asyncio.create_task(
+            monitor._delivery.retry_pending(
+                "111",
+                state,
+                state.last_live_room_info or live_snapshot,
+                None,
+            )
+        )
+        await asyncio.sleep(0.05)
+        assert statuses == ["start"]
+
+        flush_release.set()
+        await end_task
+        await retry_task
+
+    assert statuses.count("start") == 1
+    assert "end" in statuses
+    assert state.pending_start is False

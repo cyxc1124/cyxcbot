@@ -399,6 +399,32 @@ class LiveNotificationDelivery:
         skip_start: bool = False,
         skip_end: bool = False,
     ) -> None:
+        """重试 pending；与开播/关播投递共用 per-room lock，避免与 transition 交错重发。"""
+        async with self._lock_for(room_id):
+            await self.retry_pending_unlocked(
+                room_id,
+                state,
+                room_info,
+                user_info,
+                prefetched_start=prefetched_start,
+                prefetched_end=prefetched_end,
+                skip_start=skip_start,
+                skip_end=skip_end,
+            )
+
+    async def retry_pending_unlocked(
+        self,
+        room_id: str,
+        state: LiveRoomState,
+        room_info: RoomInfo,
+        user_info: Optional[UserInfo],
+        *,
+        prefetched_start: Optional[PrefetchImages] = None,
+        prefetched_end: Optional[PrefetchImages] = None,
+        skip_start: bool = False,
+        skip_end: bool = False,
+    ) -> None:
+        """已持有房间锁时调用（如 deliver_observed_* 内部）。"""
         if not skip_start and state.pending_start:
             if state.previous_status == LiveStatus.LIVE:
                 # 过期轮询可能传入离线快照；pending start 须用开播快照

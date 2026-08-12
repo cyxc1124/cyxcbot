@@ -520,7 +520,7 @@ class LiveMonitor:
                 observed_status=new_status,
                 start_time=start_time,
                 confirm_observed_status=self._confirm_observed_status,
-                retry_pending=self._delivery.retry_pending,
+                retry_pending=self._delivery.retry_pending_unlocked,
                 log_label="确认开播",
             )
         elif is_live_ended and not stale:
@@ -532,7 +532,7 @@ class LiveMonitor:
                 prefetched=prefetched,
                 observed_status=new_status,
                 confirm_observed_status=self._confirm_observed_status,
-                retry_pending=self._delivery.retry_pending,
+                retry_pending=self._delivery.retry_pending_unlocked,
             )
         elif not stale:
             state.sync_observed_status(
@@ -587,7 +587,7 @@ class LiveMonitor:
                 prefetched=prefetched,
                 observed_status=observed_status,
                 confirm_observed_status=self._confirm_observed_status,
-                retry_pending=self._delivery.retry_pending,
+                retry_pending=self._delivery.retry_pending_unlocked,
             )
 
     async def _handle_room_change(self, room_id: str, data: dict):
@@ -743,7 +743,7 @@ class LiveMonitor:
                     observed_status=new_status,
                     start_time=start_time,
                     confirm_observed_status=self._confirm_observed_status,
-                    retry_pending=self._delivery.retry_pending,
+                    retry_pending=self._delivery.retry_pending_unlocked,
                     log_label="检测到开播",
                 )
             else:
@@ -776,7 +776,7 @@ class LiveMonitor:
                 observed_status=new_status,
                 start_time=start_time,
                 confirm_observed_status=self._confirm_observed_status,
-                retry_pending=self._delivery.retry_pending,
+                retry_pending=self._delivery.retry_pending_unlocked,
                 log_label="检测到开播",
             )
 
@@ -792,7 +792,7 @@ class LiveMonitor:
                 prefetched=prefetched,
                 observed_status=new_status,
                 confirm_observed_status=self._confirm_observed_status,
-                retry_pending=self._delivery.retry_pending,
+                retry_pending=self._delivery.retry_pending_unlocked,
             )
         else:
             await self._confirm_observed_status(
