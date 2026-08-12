@@ -78,7 +78,11 @@ function loadCollapsedSections(): Set<string> {
 }
 
 function persistCollapsedSections(collapsed: Set<string>) {
-  localStorage.setItem(NAV_SECTION_COLLAPSED_KEY, JSON.stringify([...collapsed]))
+  try {
+    localStorage.setItem(NAV_SECTION_COLLAPSED_KEY, JSON.stringify([...collapsed]))
+  } catch {
+    // 隐私模式 / 配额满时仍保留内存态，不影响折叠交互
+  }
 }
 
 /** 展开含当前路由的分组；直达/刷新时也要跑，不能只靠 pathname 变化。 */
