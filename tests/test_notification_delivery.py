@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import sys
 import types
@@ -1153,3 +1154,1099 @@ async def test_pending_end_cleared_when_websocket_live_signal_before_retry(
     assert send_mock.await_count == 2
     assert send_mock.await_args_list[0].args[1] == "end"
     assert send_mock.await_args_list[1].args[1] == "start"
+
+
+@pytest.mark.asyncio
+async def test_websocket_and_poll_do_not_double_deliver_end(
+    live_monitor_module,
+) -> None:
+    """WS 关播投递未完成时轮询不得再发一次下播通知。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.LIVE, start_time=1000)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        live_status = LiveStatus.PREPARING
+        live_start_time = 1000
+        title = "title"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return False
+
+    send_started = asyncio.Event()
+    release_send = asyncio.Event()
+    send_calls = 0
+
+    async def slow_send(*_args, **_kwargs):
+        nonlocal send_calls
+        send_calls += 1
+        send_started.set()
+        await release_send.wait()
+        return _delivery_succeeded()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(FakeRoomInfo(), None),
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=slow_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        ws_task = asyncio.create_task(
+            monitor._handle_preparing_signal("111", round_status=1)
+        )
+        await send_started.wait()
+        assert state.previous_status == LiveStatus.PREPARING
+
+        # 轮询可能在 retry_pending 上等待同一把房间锁，须先放行 WS 投递
+        poll_task = asyncio.create_task(monitor._check_room_status("111"))
+        await asyncio.sleep(0)
+        assert send_calls == 1
+        release_send.set()
+        await ws_task
+        await poll_task
+
+    assert send_calls == 1
+    assert state.previous_status == LiveStatus.PREPARING
+    assert state.pending_end is False
+
+
+@pytest.mark.asyncio
+async def test_websocket_and_poll_do_not_double_deliver_start(
+    live_monitor_module,
+) -> None:
+    """WS 开播投递未完成时轮询不得再发一次开播通知。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.PREPARING)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        live_status = LiveStatus.LIVE
+        live_start_time = 1000
+        title = "title"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return True
+
+    send_started = asyncio.Event()
+    release_send = asyncio.Event()
+    send_calls = 0
+
+    async def slow_send(*_args, **_kwargs):
+        nonlocal send_calls
+        send_calls += 1
+        send_started.set()
+        await release_send.wait()
+        return _delivery_succeeded()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(FakeRoomInfo(), None),
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=slow_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        ws_task = asyncio.create_task(monitor._handle_live_signal("111"))
+        await send_started.wait()
+        assert state.previous_status == LiveStatus.LIVE
+
+        poll_task = asyncio.create_task(monitor._check_room_status("111"))
+        await asyncio.sleep(0)
+        assert send_calls == 1
+        release_send.set()
+        await ws_task
+        await poll_task
+
+    assert send_calls == 1
+    assert state.previous_status == LiveStatus.LIVE
+    assert state.pending_start is False
+
+
+@pytest.mark.asyncio
+async def test_end_waits_for_in_flight_start_before_flushing_pending(
+    live_monitor_module,
+) -> None:
+    """短播关播须等开播投递结束，才能看到 pending_start 并补发。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.PREPARING)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        def __init__(self, status: LiveStatus, *, live_start_time: int = 1000):
+            self.live_status = status
+            self.live_start_time = live_start_time
+            self.title = "title"
+            self.cover = ""
+
+        def is_living(self) -> bool:
+            return self.live_status == LiveStatus.LIVE
+
+    live_room = FakeRoomInfo(LiveStatus.LIVE, live_start_time=12345)
+    end_room = FakeRoomInfo(LiveStatus.PREPARING, live_start_time=0)
+    fetch_results = iter([(live_room, None), (end_room, None)])
+
+    async def fetch_room(*_args, **_kwargs):
+        return next(fetch_results)
+
+    start_started = asyncio.Event()
+    release_start = asyncio.Event()
+    statuses: list[str] = []
+
+    async def gated_send(_room_id, status, *_args, **kwargs):
+        statuses.append(status)
+        if status == "start" and len(statuses) == 1:
+            start_started.set()
+            await release_start.wait()
+            return _delivery_failed()
+        return _delivery_succeeded()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            side_effect=fetch_room,
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=gated_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        start_task = asyncio.create_task(monitor._handle_live_signal("111"))
+        await start_started.wait()
+        assert state.previous_status == LiveStatus.LIVE
+        assert state.pending_start is False
+
+        end_task = asyncio.create_task(
+            monitor._handle_preparing_signal("111", round_status=None)
+        )
+        await asyncio.sleep(0)
+        assert "end" not in statuses
+
+        release_start.set()
+        await start_task
+        await end_task
+
+    assert statuses == ["start", "start", "end"]
+    assert state.pending_start is False
+    assert state.pending_end is False
+    assert state.previous_status == LiveStatus.PREPARING
+
+
+@pytest.mark.asyncio
+async def test_pending_start_flush_keeps_live_snapshot_after_end_confirm(
+    live_monitor_module,
+) -> None:
+    """关播确认用离线快照后，补发 start 仍应使用直播中的 room_info。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    live_snapshot = SimpleNamespace(
+        live_status=LiveStatus.LIVE,
+        live_start_time=12345,
+        title="live-title",
+        cover="cover",
+    )
+    state = LiveRoomState(
+        room_id=111,
+        previous_status=LiveStatus.LIVE,
+        room_info=live_snapshot,
+        start_time=12345,
+        pending_start=True,
+        pending_start_groups=["1001"],
+    )
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class OfflineRoomInfo:
+        live_status = LiveStatus.PREPARING
+        live_start_time = 0
+        title = "offline"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return False
+
+    seen_start_rooms: list[object] = []
+
+    async def capture_send(_room_id, status, *_args, **kwargs):
+        if status == "start":
+            seen_start_rooms.append(kwargs.get("room_info"))
+        return _delivery_succeeded()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(OfflineRoomInfo(), None),
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=capture_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        await monitor._handle_preparing_signal("111", round_status=None)
+
+    assert seen_start_rooms == [live_snapshot]
+    assert getattr(seen_start_rooms[0], "live_start_time") == 12345
+    assert state.pending_start is False
+    assert state.previous_status == LiveStatus.PREPARING
+
+
+@pytest.mark.asyncio
+async def test_start_delivery_exception_marks_pending_for_retry(
+    live_monitor_module,
+) -> None:
+    """confirm 后投递抛异常时须留下 pending_start，否则永远不会重试。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.PREPARING)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        live_status = LiveStatus.LIVE
+        live_start_time = 1000
+        title = "title"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return True
+
+    send_mock = AsyncMock(side_effect=[RuntimeError("boom"), _delivery_succeeded()])
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(FakeRoomInfo(), None),
+        ),
+        patch.object(monitor._delivery, "_send_notification", send_mock),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        await monitor._handle_live_signal("111")
+        assert state.previous_status == LiveStatus.LIVE
+        assert state.pending_start is True
+
+        await monitor._check_room_status("111")
+
+    assert state.pending_start is False
+    assert send_mock.await_count == 2
+    assert all(call.args[1] == "start" for call in send_mock.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_end_delivery_exception_marks_pending_for_retry(
+    live_monitor_module,
+) -> None:
+    """confirm 后下播投递抛异常时须留下 pending_end，否则永远不会重试。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.LIVE, start_time=1000)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        live_status = LiveStatus.PREPARING
+        live_start_time = 0
+        title = "title"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return False
+
+    send_mock = AsyncMock(side_effect=[RuntimeError("boom"), _delivery_succeeded()])
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(FakeRoomInfo(), None),
+        ),
+        patch.object(monitor._delivery, "_send_notification", send_mock),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        await monitor._handle_preparing_signal("111", round_status=None)
+        assert state.previous_status == LiveStatus.PREPARING
+        assert state.pending_end is True
+
+        await monitor._check_room_status("111")
+
+    assert state.pending_end is False
+    assert send_mock.await_count == 2
+    assert all(call.args[1] == "end" for call in send_mock.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_start_delivery_cancellation_marks_pending_then_reraises(
+    live_monitor_module,
+) -> None:
+    """任务取消须在 confirm 后留下 pending_start，并继续向上抛出。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.PREPARING)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        live_status = LiveStatus.LIVE
+        live_start_time = 1000
+        title = "title"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return True
+
+    async def cancel_send(*_args, **_kwargs):
+        raise asyncio.CancelledError()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(FakeRoomInfo(), None),
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=cancel_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await monitor._handle_live_signal("111")
+
+    assert state.previous_status == LiveStatus.LIVE
+    assert state.pending_start is True
+
+
+@pytest.mark.asyncio
+async def test_end_delivery_cancellation_marks_pending_then_reraises(
+    live_monitor_module,
+) -> None:
+    """任务取消须在 confirm 后留下 pending_end，并继续向上抛出。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.LIVE, start_time=1000)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        live_status = LiveStatus.PREPARING
+        live_start_time = 0
+        title = "title"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return False
+
+    async def cancel_send(*_args, **_kwargs):
+        raise asyncio.CancelledError()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(FakeRoomInfo(), None),
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=cancel_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await monitor._handle_preparing_signal("111", round_status=None)
+
+    assert state.previous_status == LiveStatus.PREPARING
+    assert state.pending_end is True
+
+
+@pytest.mark.asyncio
+async def test_stale_poll_snapshot_does_not_end_after_websocket_start(
+    live_monitor_module,
+) -> None:
+    """轮询持有过期 PREPARING 快照时，不得在 WS 开播后再发关播。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.PREPARING)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        def __init__(self, status: LiveStatus):
+            self.live_status = status
+            self.live_start_time = 1000 if status == LiveStatus.LIVE else 0
+            self.title = "title"
+            self.cover = ""
+
+        def is_living(self) -> bool:
+            return self.live_status == LiveStatus.LIVE
+
+    poll_release = asyncio.Event()
+    poll_holding = asyncio.Event()
+    statuses: list[str] = []
+
+    async def fetch_room(*_args, **_kwargs):
+        # 第一次：轮询拿到过期 PREPARING；第二次：WS 拿到 LIVE
+        if not poll_holding.is_set():
+            poll_holding.set()
+            await poll_release.wait()
+            return FakeRoomInfo(LiveStatus.PREPARING), None
+        return FakeRoomInfo(LiveStatus.LIVE), None
+
+    async def record_send(_room_id, status, *_args, **_kwargs):
+        statuses.append(status)
+        return _delivery_succeeded()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            side_effect=fetch_room,
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=record_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        poll_task = asyncio.create_task(monitor._check_room_status("111"))
+        await poll_holding.wait()
+        await monitor._handle_live_signal("111")
+        assert state.previous_status == LiveStatus.LIVE
+        poll_release.set()
+        await poll_task
+
+    assert statuses == ["start"]
+    assert state.previous_status == LiveStatus.LIVE
+    assert state.pending_end is False
+
+
+@pytest.mark.asyncio
+async def test_cancel_during_pre_end_flush_keeps_start_and_end_retryable(
+    live_monitor_module,
+) -> None:
+    """关播 confirm 后补发 start 被取消时，start/end 均应可在后续轮询重试。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    live_snapshot = SimpleNamespace(
+        live_status=LiveStatus.LIVE,
+        live_start_time=12345,
+        title="live-title",
+        cover="cover",
+    )
+    state = LiveRoomState(
+        room_id=111,
+        previous_status=LiveStatus.LIVE,
+        room_info=live_snapshot,
+        start_time=12345,
+        pending_start=True,
+        pending_start_groups=["1001"],
+        last_live_room_info=live_snapshot,
+    )
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class OfflineRoomInfo:
+        live_status = LiveStatus.PREPARING
+        live_start_time = 0
+        title = "offline"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return False
+
+    call_n = 0
+    statuses: list[str] = []
+
+    async def send_side_effect(_room_id, status, *_args, **kwargs):
+        nonlocal call_n
+        call_n += 1
+        statuses.append(status)
+        if call_n == 1:
+            raise asyncio.CancelledError()
+        return _delivery_succeeded()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(OfflineRoomInfo(), None),
+        ),
+        patch.object(
+            monitor._delivery, "_send_notification", side_effect=send_side_effect
+        ),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await monitor._handle_preparing_signal("111", round_status=None)
+
+        assert state.previous_status == LiveStatus.PREPARING
+        assert state.pending_start is True
+        assert state.pending_end is True
+
+        await monitor._check_room_status("111")
+
+    assert statuses == ["start", "start", "end"]
+    assert state.pending_start is False
+    assert state.pending_end is False
+
+
+@pytest.mark.asyncio
+async def test_stale_poll_retry_uses_last_live_snapshot_for_pending_start(
+    live_monitor_module,
+) -> None:
+    """过期轮询触发 pending start 重试时，须用 last_live 快照而非离线 API 快照。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    live_snapshot = SimpleNamespace(
+        live_status=LiveStatus.LIVE,
+        live_start_time=12345,
+        title="live-title",
+        cover="cover",
+    )
+    state = LiveRoomState(
+        room_id=111,
+        previous_status=LiveStatus.LIVE,
+        room_info=live_snapshot,
+        start_time=12345,
+        observation_epoch=1,
+        pending_start=True,
+        pending_start_groups=["1001"],
+        last_live_room_info=live_snapshot,
+    )
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class OfflineRoomInfo:
+        live_status = LiveStatus.PREPARING
+        live_start_time = 0
+        title = "stale-offline"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return False
+
+    seen_rooms: list[object] = []
+
+    async def capture_send(_room_id, status, *_args, **kwargs):
+        if status == "start":
+            seen_rooms.append(kwargs.get("room_info"))
+        return _delivery_succeeded()
+
+    # 人为制造：fetch 前 epoch 被并发 +1，走 stale 分支
+    state.observation_epoch = 1
+    original_epoch = state.observation_epoch
+
+    async def fetch_and_bump(*_args, **_kwargs):
+        state.observation_epoch = original_epoch + 1
+        return OfflineRoomInfo(), None
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            side_effect=fetch_and_bump,
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=capture_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        # check 开始时记下 epoch=1，fetch 中被 bump 到 2 → stale
+        ok = await monitor._check_room_status("111")
+
+    assert ok is True
+    assert seen_rooms == [live_snapshot]
+    assert getattr(seen_rooms[0], "live_start_time") == 12345
+    assert state.pending_start is False
+
+
+@pytest.mark.asyncio
+async def test_websocket_live_after_poll_end_still_delivers_start(
+    live_monitor_module,
+) -> None:
+    """轮询先确认关播抬升 epoch 后，已在途的 WS LIVE 快照仍应开播投递。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.LIVE, start_time=1000)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        def __init__(self, status: LiveStatus, *, live_start_time: int):
+            self.live_status = status
+            self.live_start_time = live_start_time
+            self.title = "title"
+            self.cover = ""
+
+        def is_living(self) -> bool:
+            return self.live_status == LiveStatus.LIVE
+
+    ws_holding = asyncio.Event()
+    ws_release = asyncio.Event()
+    statuses: list[str] = []
+    fetch_n = 0
+
+    async def fetch_room(*_args, **_kwargs):
+        nonlocal fetch_n
+        fetch_n += 1
+        if fetch_n == 1:
+            # WS LIVE 路径先开始 fetch，卡在旧 epoch
+            ws_holding.set()
+            await ws_release.wait()
+            return FakeRoomInfo(LiveStatus.LIVE, live_start_time=2000), None
+        # 轮询拿到关播
+        return FakeRoomInfo(LiveStatus.PREPARING, live_start_time=0), None
+
+    async def record_send(_room_id, status, *_args, **_kwargs):
+        statuses.append(status)
+        return _delivery_succeeded()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            side_effect=fetch_room,
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=record_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        ws_task = asyncio.create_task(monitor._handle_live_signal("111"))
+        await ws_holding.wait()
+        await monitor._check_room_status("111")
+        assert state.previous_status == LiveStatus.PREPARING
+        assert "end" in statuses
+
+        ws_release.set()
+        await ws_task
+
+    assert statuses == ["end", "start"]
+    assert state.previous_status == LiveStatus.LIVE
+
+
+@pytest.mark.asyncio
+async def test_stale_live_snapshot_from_ended_stream_is_rejected(
+    live_monitor_module,
+) -> None:
+    """epoch 变化后，同一场次的滞后 LIVE 快照不得再触发开播。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    live_snapshot = SimpleNamespace(
+        live_status=LiveStatus.LIVE,
+        live_start_time=1000,
+        title="title",
+        cover="",
+    )
+    state = LiveRoomState(
+        room_id=111,
+        previous_status=LiveStatus.LIVE,
+        start_time=1000,
+        room_info=live_snapshot,
+        last_live_room_info=live_snapshot,
+    )
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        def __init__(self, status: LiveStatus, *, live_start_time: int):
+            self.live_status = status
+            self.live_start_time = live_start_time
+            self.title = "title"
+            self.cover = ""
+
+        def is_living(self) -> bool:
+            return self.live_status == LiveStatus.LIVE
+
+    ws_holding = asyncio.Event()
+    ws_release = asyncio.Event()
+    statuses: list[str] = []
+    fetch_n = 0
+
+    async def fetch_room(*_args, **_kwargs):
+        nonlocal fetch_n
+        fetch_n += 1
+        if fetch_n == 1:
+            ws_holding.set()
+            await ws_release.wait()
+            # 滞后快照仍是刚结束那场的 live_start_time
+            return FakeRoomInfo(LiveStatus.LIVE, live_start_time=1000), None
+        return FakeRoomInfo(LiveStatus.PREPARING, live_start_time=0), None
+
+    async def record_send(_room_id, status, *_args, **_kwargs):
+        statuses.append(status)
+        return _delivery_succeeded()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            side_effect=fetch_room,
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=record_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        ws_task = asyncio.create_task(monitor._handle_live_signal("111"))
+        await ws_holding.wait()
+        await monitor._check_room_status("111")
+        assert state.previous_status == LiveStatus.PREPARING
+        assert statuses == ["end"]
+
+        ws_release.set()
+        await ws_task
+
+    assert statuses == ["end"]
+    assert state.previous_status == LiveStatus.PREPARING
+
+
+@pytest.mark.asyncio
+async def test_parent_cancel_preserves_partial_start_targets(
+    live_monitor_module,
+) -> None:
+    """父任务取消时须等投递结束，并只保留 DeliveryResult 中未成功的目标。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001", "1002"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.PREPARING)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        live_status = LiveStatus.LIVE
+        live_start_time = 1000
+        title = "title"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return True
+
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_partial(*_args, **_kwargs):
+        entered.set()
+        await release.wait()
+        return DeliveryResult(
+            targets=[
+                TargetDelivery("group", "1001", True),
+                TargetDelivery("group", "1002", False, "offline"),
+            ]
+        )
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(FakeRoomInfo(), None),
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=slow_partial),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        task = asyncio.create_task(monitor._handle_live_signal("111"))
+        await entered.wait()
+        task.cancel()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    assert state.previous_status == LiveStatus.LIVE
+    assert state.pending_start is True
+    assert state.pending_start_groups == ["1002"]
+    assert state.pending_start_users == []
+
+
+@pytest.mark.asyncio
+async def test_stale_retry_pending_serializes_with_end_flush(
+    live_monitor_module,
+) -> None:
+    """过期轮询的 retry_pending 须等关播补发持锁结束，避免重复推送 start。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    live_snapshot = SimpleNamespace(
+        live_status=LiveStatus.LIVE,
+        live_start_time=1000,
+        title="title",
+        cover="",
+    )
+    state = LiveRoomState(
+        room_id=111,
+        previous_status=LiveStatus.LIVE,
+        start_time=1000,
+        room_info=live_snapshot,
+        last_live_room_info=live_snapshot,
+        pending_start=True,
+        pending_start_groups=["1001"],
+    )
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class OfflineRoomInfo:
+        live_status = LiveStatus.PREPARING
+        live_start_time = 0
+        title = "offline"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return False
+
+    flush_entered = asyncio.Event()
+    flush_release = asyncio.Event()
+    statuses: list[str] = []
+
+    async def slow_send(_room_id, status, *_args, **_kwargs):
+        statuses.append(status)
+        if status == "start" and statuses.count("start") == 1:
+            flush_entered.set()
+            await flush_release.wait()
+        return _delivery_succeeded()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(OfflineRoomInfo(), None),
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=slow_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        end_task = asyncio.create_task(
+            monitor._handle_preparing_signal("111", round_status=None)
+        )
+        await flush_entered.wait()
+
+        retry_task = asyncio.create_task(
+            monitor._delivery.retry_pending(
+                "111",
+                state,
+                state.last_live_room_info or live_snapshot,
+                None,
+            )
+        )
+        await asyncio.sleep(0.05)
+        assert statuses == ["start"]
+
+        flush_release.set()
+        await end_task
+        await retry_task
+
+    assert statuses.count("start") == 1
+    assert "end" in statuses
+    assert state.pending_start is False

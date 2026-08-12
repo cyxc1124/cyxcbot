@@ -34,11 +34,21 @@ DOUYIN_LINK_TEMPLATE_KEYS = {
     "link_template_douyin": "{video}标题：{title}\n作者：{author}\n链接：{url}",
 }
 
+X_LINK_TEMPLATE_KEYS = {
+    "link_template_x": "{media}{name} (@{username})\n{time}\n{text}\n{url}",
+}
+
+X_TEMPLATE_KEYS = {
+    "x_template_push": "{name} 发布了新推文\n{time}\n{text}\n{media}\n{url}",
+}
+
 MESSAGE_TEMPLATE_KEYS = {
     **DYNAMIC_TEMPLATE_KEYS,
     **LIVE_TEMPLATE_KEYS,
     **LINK_TEMPLATE_KEYS,
     **DOUYIN_LINK_TEMPLATE_KEYS,
+    **X_LINK_TEMPLATE_KEYS,
+    **X_TEMPLATE_KEYS,
 }
 
 MAX_TEMPLATE_LENGTH = 500
@@ -73,6 +83,16 @@ class LinkMessageTemplates:
 @dataclass
 class DouyinLinkMessageTemplates:
     video: str = DOUYIN_LINK_TEMPLATE_KEYS["link_template_douyin"]
+
+
+@dataclass
+class XLinkMessageTemplates:
+    tweet: str = X_LINK_TEMPLATE_KEYS["link_template_x"]
+
+
+@dataclass
+class XMessageTemplates:
+    push: str = X_TEMPLATE_KEYS["x_template_push"]
 
 
 def dynamic_templates_from_settings(
@@ -155,4 +175,21 @@ def douyin_link_templates_from_settings(
             "link_template_douyin",
             DOUYIN_LINK_TEMPLATE_KEYS["link_template_douyin"],
         ),
+    )
+
+
+def x_link_templates_from_settings(
+    settings: dict[str, str],
+) -> XLinkMessageTemplates:
+    return XLinkMessageTemplates(
+        tweet=settings.get(
+            "link_template_x",
+            X_LINK_TEMPLATE_KEYS["link_template_x"],
+        ),
+    )
+
+
+def x_templates_from_settings(settings: dict[str, str]) -> XMessageTemplates:
+    return XMessageTemplates(
+        push=settings.get("x_template_push", X_TEMPLATE_KEYS["x_template_push"]),
     )

@@ -11,12 +11,23 @@ from shared.config.message_templates import (
     DYNAMIC_TEMPLATE_KEYS,
     LINK_TEMPLATE_KEYS,
     LIVE_TEMPLATE_KEYS,
+    X_LINK_TEMPLATE_KEYS,
+    X_TEMPLATE_KEYS,
 )
 
 
 class CookieStatusResponse(BaseModel):
     configured: bool
     preview: Optional[str] = None
+
+
+class XProxySettingsResponse(BaseModel):
+    enabled: bool = False
+    scheme: str = "http"
+    host: str = ""
+    port: int = 7890
+    username: str = ""
+    password_configured: bool = False
 
 
 class CommandAliasEntryModel(BaseModel):
@@ -62,8 +73,14 @@ class SettingsResponse(BaseModel):
     link_template_douyin: str = Field(
         default=DOUYIN_LINK_TEMPLATE_KEYS["link_template_douyin"]
     )
+    link_template_x: str = Field(default=X_LINK_TEMPLATE_KEYS["link_template_x"])
+    x_monitor_interval: int = 120
+    x_monitor_use_stagger: bool = True
+    x_template_push: str = Field(default=X_TEMPLATE_KEYS["x_template_push"])
     bilibili_cookie: CookieStatusResponse
     douyin_cookie: CookieStatusResponse
+    x_api_bearer: CookieStatusResponse
+    x_proxy: XProxySettingsResponse
     status_check_allowed_qq: list[str] = Field(default_factory=list)
     nonebot_superusers: list[str] = Field(default_factory=list)
     command_aliases: dict[str, CommandAliasEntryModel] = Field(default_factory=dict)
@@ -104,6 +121,17 @@ class SettingsUpdateRequest(BaseModel):
     link_template_video: Optional[str] = Field(default=None, max_length=500)
     link_template_live: Optional[str] = Field(default=None, max_length=500)
     link_template_douyin: Optional[str] = Field(default=None, max_length=500)
+    link_template_x: Optional[str] = Field(default=None, max_length=500)
+    x_monitor_interval: Optional[int] = Field(default=None, ge=10, le=3600)
+    x_monitor_use_stagger: Optional[bool] = None
+    x_template_push: Optional[str] = Field(default=None, max_length=500)
+    x_api_bearer: Optional[str] = None
+    x_proxy_enabled: Optional[bool] = None
+    x_proxy_scheme: Optional[str] = Field(default=None, max_length=16)
+    x_proxy_host: Optional[str] = Field(default=None, max_length=255)
+    x_proxy_port: Optional[int] = Field(default=None, ge=1, le=65535)
+    x_proxy_username: Optional[str] = Field(default=None, max_length=128)
+    x_proxy_password: Optional[str] = None
     status_check_allowed_qq: Optional[list[str]] = None
     nonebot_superusers: Optional[list[str]] = None
     command_aliases: Optional[dict[str, CommandAliasEntryModel]] = None

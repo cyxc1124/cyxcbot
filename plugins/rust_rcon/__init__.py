@@ -7,6 +7,7 @@ from nonebot.plugin import PluginMetadata
 
 from shared.config.rust_rcon import is_qq_allowed_for_binding, match_rust_rcon_binding
 from shared.config.rust_rcon_custom import (
+    collect_explicit_mention_qq_ids,
     is_qq_allowed_for_custom_command,
     match_rust_rcon_custom_command,
     render_custom_command_template,
@@ -60,17 +61,11 @@ async def _rust_rcon_startup() -> None:
 
 
 def _mentioned_user_ids(event: GroupMessageEvent) -> list[str]:
-    self_id = str(event.self_id)
-    result: list[str] = []
-    for segment in event.message:
-        if segment.type != "at":
-            continue
-        qq = str(segment.data.get("qq", "")).strip()
-        if not qq or qq == "all" or qq == self_id:
-            continue
-        if qq not in result:
-            result.append(qq)
-    return result
+    """Collect explicit @targets; skip reply-auto @ (``[reply][at]``)."""
+    segments = [
+        (segment.type, str(segment.data.get("qq", ""))) for segment in event.message
+    ]
+    return collect_explicit_mention_qq_ids(segments, self_id=str(event.self_id))
 
 
 async def _execute_and_reply(
@@ -144,6 +139,8 @@ async def _handle_custom_command(
             await rust_rcon_cmd.finish(
                 f"请提供目标：{command.name} @群用户 或 {command.name} SteamID64"
             )
+        if kind == "ambiguous_mention":
+            await rust_rcon_cmd.finish("请只 @ 一个目标用户，或直接提供 SteamID64")
         if kind == "invalid_steamid":
             await rust_rcon_cmd.finish(
                 "SteamID 格式无效，请使用 17 位 SteamID64（7656119xxxxxxxxxx）"

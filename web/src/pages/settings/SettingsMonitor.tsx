@@ -1,8 +1,12 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type FormEvent } from 'react'
 import { MonitorPollScheduleCard } from '../../components/MonitorPollScheduleCard'
 import { ToggleSwitch } from '../../components/ToggleSwitch'
 import { useMountAsync } from '../../hooks/useMountAsync'
-import { getDynamicMonitorStatus, getLiveMonitorStatus } from '../../api/client'
+import {
+  getDynamicMonitorStatus,
+  getLiveMonitorStatus,
+  getXMonitorStatus,
+} from '../../api/client'
 import {
   computeDynamicPollSchedule,
   computeLivePollSchedule,
@@ -37,10 +41,23 @@ function SettingToggleRow({
   )
 }
 
-export function SettingsMonitorPage() {
-  const { settings, setSettings, formDisabled, saving, handleSubmit } = useSettingsForm()
+export function SettingsBilibiliMonitorPage() {
+  const { settings, setSettings, formDisabled, saving, savePartial } = useSettingsForm()
   const [dynamicTargetCount, setDynamicTargetCount] = useState(0)
   const [liveTargetCount, setLiveTargetCount] = useState(0)
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault()
+    if (!settings) return
+    void savePartial({
+      dynamic_monitor_interval: settings.dynamic_monitor_interval,
+      dynamic_monitor_use_stagger: settings.dynamic_monitor_use_stagger,
+      dynamic_enable_screenshot: settings.dynamic_enable_screenshot,
+      live_monitor_interval: settings.live_monitor_interval,
+      live_monitor_include_info: settings.live_monitor_include_info,
+      live_monitor_use_websocket: settings.live_monitor_use_websocket,
+    })
+  }
 
   const loadTargetCounts = useCallback(async () => {
     const [dynamicStatus, liveStatus] = await Promise.all([
@@ -179,6 +196,88 @@ export function SettingsMonitorPage() {
             disabled={formDisabled || saving}
             onChange={(checked) =>
               setSettings((s) => (s ? { ...s, live_monitor_use_websocket: checked } : s))
+            }
+          />
+        </div>
+      </div>
+
+      <button type="submit" className="btn-primary" disabled={saving || formDisabled}>
+        {saving ? '保存中…' : '保存设置'}
+      </button>
+    </form>
+  )
+}
+
+export function SettingsXMonitorPage() {
+  const { settings, setSettings, formDisabled, saving, savePartial } = useSettingsForm()
+  const [xTargetCount, setXTargetCount] = useState(0)
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault()
+    if (!settings) return
+    void savePartial({
+      x_monitor_interval: settings.x_monitor_interval,
+      x_monitor_use_stagger: settings.x_monitor_use_stagger,
+    })
+  }
+
+  const loadTargetCounts = useCallback(async () => {
+    const xStatus = await getXMonitorStatus()
+    setXTargetCount(xStatus.target_count)
+  }, [])
+
+  useMountAsync(loadTargetCounts)
+
+  const xSchedule = useMemo(() => {
+    const interval = settings?.x_monitor_interval
+    if (!interval || interval < 10) return null
+    return computeDynamicPollSchedule(
+      xTargetCount,
+      interval,
+      settings?.x_monitor_use_stagger ?? true,
+    )
+  }, [xTargetCount, settings?.x_monitor_interval, settings?.x_monitor_use_stagger])
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="card space-y-4">
+        <h3 className="font-semibold text-foreground">X 监控</h3>
+        <div className="max-w-xs">
+          <label className="label" htmlFor="x_interval">
+            检查间隔（秒）
+          </label>
+          <input
+            id="x_interval"
+            type="number"
+            min={10}
+            max={3600}
+            className="input"
+            value={settings?.x_monitor_interval ?? ''}
+            disabled={formDisabled}
+            onChange={(e) =>
+              setSettings((s) =>
+                s ? { ...s, x_monitor_interval: Number(e.target.value) } : s,
+              )
+            }
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            {settings?.x_monitor_use_stagger ?? true
+              ? '期望每个博主约每 N 秒检查一次；目标较多时会自动分散请求，且单次间隔不低于 3 秒。'
+              : '每 N 秒依次检查全部博主；订阅较多时可能短时集中请求 API。'}
+          </p>
+        </div>
+        {xSchedule ? (
+          <MonitorPollScheduleCard title="API 请求频率预估（X）" schedule={xSchedule} />
+        ) : null}
+        <div className="divide-y divide-border border-t border-border pt-1">
+          <SettingToggleRow
+            label="启用分散检查（推荐）"
+            checked={settings?.x_monitor_use_stagger ?? true}
+            disabled={formDisabled || saving}
+            onChange={(checked) =>
+              setSettings((s) =>
+                s ? { ...s, x_monitor_use_stagger: checked } : s,
+              )
             }
           />
         </div>

@@ -7,6 +7,7 @@ import type { Group } from '../api/types'
 import { GroupSpecialTitlePolicyTab } from '../components/GroupSpecialTitlePolicyTab'
 import { DouyinLinkParserGroupPolicyTab } from '../components/DouyinLinkParserPolicyTabs'
 import { LinkParserGroupPolicyTab } from '../components/LinkParserPolicyTabs'
+import { XLinkParserGroupPolicyTab } from '../components/XLinkParserPolicyTabs'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
 import { SubPageTabs } from '../components/SubPageTabs'
@@ -20,7 +21,13 @@ import {
   isItemEnabled,
 } from '../utils/restrictPolicy'
 
-type GroupsTab = 'message' | 'link-groups' | 'douyin-link-groups' | 'status' | 'special-title'
+type GroupsTab =
+  | 'message'
+  | 'link-groups'
+  | 'douyin-link-groups'
+  | 'x-link-groups'
+  | 'status'
+  | 'special-title'
 
 export function GroupsPage() {
   const { showToast } = useToast()
@@ -55,10 +62,11 @@ export function GroupsPage() {
 
   const tabLabels: Record<GroupsTab, string> = {
     message: '群消息',
-    'link-groups': '群链接解析',
-    'douyin-link-groups': '抖音链接',
     status: '状态查询',
     'special-title': '群头衔',
+    'link-groups': 'B 站链接',
+    'douyin-link-groups': '抖音链接',
+    'x-link-groups': 'X 链接',
   }
 
   const allGroupIds = useMemo(() => groups.map((g) => g.group_id), [groups])
@@ -247,6 +255,12 @@ export function GroupsPage() {
       {tab === 'douyin-link-groups' && (
         <div className="card">
           <DouyinLinkParserGroupPolicyTab />
+        </div>
+      )}
+
+      {tab === 'x-link-groups' && (
+        <div className="card">
+          <XLinkParserGroupPolicyTab />
         </div>
       )}
 

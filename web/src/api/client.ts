@@ -19,6 +19,10 @@ import type {
   DouyinLinkParserGroupPolicyMutation,
   DouyinLinkParserUserPolicyList,
   DouyinLinkParserUserPolicyMutation,
+  XLinkParserGroupPolicyList,
+  XLinkParserGroupPolicyMutation,
+  XLinkParserUserPolicyList,
+  XLinkParserUserPolicyMutation,
   LinkParserGroupPolicyList,
   LinkParserGroupPolicyMutation,
   LinkParserUserPolicyInput,
@@ -38,6 +42,12 @@ import type {
   MonitorActionResult,
   MonitorStatus,
   RecentLogsResponse,
+  XBearerStatus,
+  XBearerTestResult,
+  XMonitorStatus,
+  XTarget,
+  XTargetCreate,
+  XTargetUpdate,
   RustRconBinding,
   RustRconBindingCreate,
   RustRconBindingUpdate,
@@ -294,6 +304,21 @@ export const updateLiveTarget = (id: number, data: LiveTargetUpdate) =>
 
 export const deleteLiveTarget = (id: number) =>
   request<void>(`/live-targets/${id}`, { method: 'DELETE' })
+
+// X Targets
+export const getXTargets = () => request<XTarget[]>('/x-targets')
+
+export const createXTarget = (data: XTargetCreate) =>
+  request<XTarget>('/x-targets', { method: 'POST', body: JSON.stringify(data) })
+
+export const updateXTarget = (id: number, data: XTargetUpdate) =>
+  request<XTarget>(`/x-targets/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+
+export const deleteXTarget = (id: number) =>
+  request<void>(`/x-targets/${id}`, { method: 'DELETE' })
+
+export const refreshXTargetProfile = (id: number) =>
+  request<XTarget>(`/x-targets/${id}/refresh-profile`, { method: 'POST' })
 
 // Rust RCON bindings
 export const getRustRconBindings = () =>
@@ -573,6 +598,48 @@ export const resetDouyinLinkParserUserPolicy = (userId: string) =>
     { method: 'DELETE' },
   )
 
+export const getXLinkParserGroupPolicies = () =>
+  request<XLinkParserGroupPolicyList>('/x-link-parser/policies/groups')
+
+export const updateXLinkParserGroupPolicy = (
+  groupId: string,
+  payload: { enabled: boolean },
+) =>
+  request<XLinkParserGroupPolicyMutation>(
+    `/x-link-parser/policies/groups/${encodeURIComponent(groupId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    },
+  )
+
+export const resetXLinkParserGroupPolicy = (groupId: string) =>
+  request<XLinkParserGroupPolicyMutation>(
+    `/x-link-parser/policies/groups/${encodeURIComponent(groupId)}`,
+    { method: 'DELETE' },
+  )
+
+export const getXLinkParserUserPolicies = () =>
+  request<XLinkParserUserPolicyList>('/x-link-parser/policies/users')
+
+export const updateXLinkParserUserPolicy = (
+  userId: string,
+  payload: { enabled: boolean; name?: string | null },
+) =>
+  request<XLinkParserUserPolicyMutation>(
+    `/x-link-parser/policies/users/${encodeURIComponent(userId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    },
+  )
+
+export const resetXLinkParserUserPolicy = (userId: string) =>
+  request<XLinkParserUserPolicyMutation>(
+    `/x-link-parser/policies/users/${encodeURIComponent(userId)}`,
+    { method: 'DELETE' },
+  )
+
 export const saveDouyinCookie = (cookie: string) =>
   request<DouyinCookieStatus>('/douyin-link-parser/cookie', {
     method: 'PUT',
@@ -652,6 +719,24 @@ export const cancelDouyinQrcodeLogin = (sessionId: string) =>
 export const logoutDouyin = () =>
   request<DouyinLogoutResult>('/douyin/logout', { method: 'POST' })
 
+// X account
+export const getXBearerStatus = () => request<XBearerStatus>('/x/bearer')
+
+export const saveXBearer = (bearer: string) =>
+  request<XBearerStatus>('/x/bearer', {
+    method: 'PUT',
+    body: JSON.stringify({ bearer }),
+  })
+
+export const clearXBearer = () =>
+  request<XBearerStatus>('/x/bearer', { method: 'DELETE' })
+
+export const testXBearer = (username = 'X') =>
+  request<XBearerTestResult>('/x/bearer/test', {
+    method: 'POST',
+    body: JSON.stringify({ username }),
+  })
+
 // Monitors
 export const getMonitorStatus = () => request<MonitorStatus>('/monitors/status')
 
@@ -659,6 +744,8 @@ export const getDynamicMonitorStatus = () =>
   request<DynamicMonitorStatus>('/monitors/dynamic')
 
 export const getLiveMonitorStatus = () => request<LiveMonitorStatus>('/monitors/live')
+
+export const getXMonitorStatus = () => request<XMonitorStatus>('/monitors/x')
 
 export const getSystemMonitorStatus = () =>
   request<SystemMonitorStatus>('/monitors/system')
@@ -673,6 +760,9 @@ export const triggerDynamicCheck = () =>
 
 export const triggerLiveCheck = () =>
   request<MonitorActionResult>('/monitors/live/check', { method: 'POST' })
+
+export const triggerXCheck = () =>
+  request<MonitorActionResult>('/monitors/x/check', { method: 'POST' })
 
 export const getRecentLogs = (params: { limit?: number; min_level?: string } = {}) =>
   request<RecentLogsResponse>(

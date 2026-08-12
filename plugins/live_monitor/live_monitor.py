@@ -481,6 +481,7 @@ class LiveMonitor:
         if not state:
             return
 
+        observation_epoch = state.observation_epoch
         # 获取最新房间信息（卡片素材与 API 并行预取）
         room_info, user_info, prefetched = await self._fetch_room_info_with_prefetch(
             room_id, "start", state
@@ -495,39 +496,34 @@ class LiveMonitor:
         if not self._is_current_room_state(room_id, state):
             return
 
-        # 检查状态变化
+        # 相对当前 previous_status 重检；epoch 变化时仅放行「开播」类更新观测
         is_live_began, is_live_ended, new_status, start_time = (
             state.detect_status_change(room_info)
         )
+        stale = state.observation_epoch != observation_epoch
+        if stale and not is_live_began:
+            logger.debug("房间 {} 观测已过期，忽略本次开播信号", room_id)
+            return
+        if stale and is_live_began and not state.is_newer_live_stream(room_info):
+            logger.debug("房间 {} 观测已过期，忽略同一场次的滞后开播快照", room_id)
+            return
+        if stale:
+            logger.debug("房间 {} 观测代数已变，快照仍为开播，继续投递", room_id)
 
         if is_live_began:
-            streamer_name = user_info.name if user_info else f"房间{room_id}"
-            logger.info("确认开播: {} (房间 {})", streamer_name, room_id)
-            self._delivery.supersede_pending_end(room_id, state)
-            await self._delivery.deliver_start(
+            await self._delivery.deliver_observed_live_start(
                 room_id,
                 state,
                 room_info=room_info,
                 user_info=user_info,
-                prefetched_images=prefetched,
-            )
-            await self._confirm_observed_status(
-                room_id,
-                state,
-                room_info,
-                user_info,
-                new_status,
+                prefetched=prefetched,
+                observed_status=new_status,
                 start_time=start_time,
+                confirm_observed_status=self._confirm_observed_status,
+                retry_pending=self._delivery.retry_pending_unlocked,
+                log_label="确认开播",
             )
-            await self._delivery.retry_pending(
-                room_id,
-                state,
-                room_info,
-                user_info,
-                prefetched_start=prefetched,
-                skip_start=True,
-            )
-        elif is_live_ended:
+        elif is_live_ended and not stale:
             await self._delivery.deliver_observed_live_end(
                 room_id,
                 state,
@@ -536,9 +532,9 @@ class LiveMonitor:
                 prefetched=prefetched,
                 observed_status=new_status,
                 confirm_observed_status=self._confirm_observed_status,
-                retry_pending=self._delivery.retry_pending,
+                retry_pending=self._delivery.retry_pending_unlocked,
             )
-        else:
+        elif not stale:
             state.sync_observed_status(
                 room_info,
                 room_info.live_status,
@@ -560,6 +556,7 @@ class LiveMonitor:
         if not state:
             return
 
+        observation_epoch = state.observation_epoch
         # 获取最新房间信息（卡片素材与 API 并行预取）
         room_info, user_info, prefetched = await self._fetch_room_info_with_prefetch(
             room_id, "end", state
@@ -568,6 +565,9 @@ class LiveMonitor:
         if not self._is_active_room(room_id):
             return
         if not self._is_current_room_state(room_id, state):
+            return
+        if state.observation_epoch != observation_epoch:
+            logger.debug("房间 {} 观测已过期，忽略本次关播信号", room_id)
             return
 
         if room_info:
@@ -587,7 +587,7 @@ class LiveMonitor:
                 prefetched=prefetched,
                 observed_status=observed_status,
                 confirm_observed_status=self._confirm_observed_status,
-                retry_pending=self._delivery.retry_pending,
+                retry_pending=self._delivery.retry_pending_unlocked,
             )
 
     async def _handle_room_change(self, room_id: str, data: dict):
@@ -695,6 +695,7 @@ class LiveMonitor:
         if not state:
             return True
 
+        observation_epoch = state.observation_epoch
         need_start_card = self._sender.template_uses_card("start")
         need_end_card = self._sender.template_uses_card("end")
         prefetch_task = None
@@ -722,72 +723,76 @@ class LiveMonitor:
             return True
         if not self._is_current_room_state(room_id, state):
             return True
-
         # 检测状态变化；观测状态与待投递通知分开跟踪
         is_live_began, is_live_ended, new_status, start_time = (
             state.detect_status_change(room_info)
         )
+        stale = state.observation_epoch != observation_epoch
+        if stale:
+            # 丢弃过期关播类快照；仅当 live_start_time 新于已结束场次时放行开播
+            if is_live_began and state.is_newer_live_stream(room_info):
+                logger.debug(
+                    "房间 {} 观测代数已变，轮询快照为更新场次开播，继续投递", room_id
+                )
+                await self._delivery.deliver_observed_live_start(
+                    room_id,
+                    state,
+                    room_info=room_info,
+                    user_info=user_info,
+                    prefetched=prefetched,
+                    observed_status=new_status,
+                    start_time=start_time,
+                    confirm_observed_status=self._confirm_observed_status,
+                    retry_pending=self._delivery.retry_pending_unlocked,
+                    log_label="检测到开播",
+                )
+            else:
+                if is_live_began:
+                    logger.debug(
+                        "房间 {} 观测已过期，忽略同一场次的滞后开播快照", room_id
+                    )
+                else:
+                    logger.debug("房间 {} 观测已过期，忽略本次轮询变迁", room_id)
+                retry_room = state.last_live_room_info or state.room_info or room_info
+                retry_user = state.last_live_user_info or state.user_info or user_info
+                await self._delivery.retry_pending(
+                    room_id,
+                    state,
+                    retry_room,
+                    retry_user,
+                    prefetched_start=None,
+                    prefetched_end=None,
+                )
+            return True
 
         # 处理开播事件
         if is_live_began:
-            streamer_name = user_info.name if user_info else f"房间{room_id}"
-            logger.info("检测到开播: {} (房间 {})", streamer_name, room_id)
-            self._delivery.supersede_pending_end(room_id, state)
-            await self._delivery.deliver_start(
+            await self._delivery.deliver_observed_live_start(
                 room_id,
                 state,
                 room_info=room_info,
                 user_info=user_info,
-                prefetched_images=prefetched if need_start_card else None,
-            )
-            await self._confirm_observed_status(
-                room_id,
-                state,
-                room_info,
-                user_info,
-                new_status,
+                prefetched=prefetched,
+                observed_status=new_status,
                 start_time=start_time,
-            )
-            await self._delivery.retry_pending(
-                room_id,
-                state,
-                room_info,
-                user_info,
-                prefetched_start=prefetched if need_start_card else None,
-                skip_start=True,
+                confirm_observed_status=self._confirm_observed_status,
+                retry_pending=self._delivery.retry_pending_unlocked,
+                log_label="检测到开播",
             )
 
         # 处理关播事件
         elif is_live_ended:
             streamer_name = user_info.name if user_info else f"房间{room_id}"
             logger.info("检测到关播: {} (房间 {})", streamer_name, room_id)
-            await self._delivery.deliver_pending_start_before_end(
-                room_id,
-                state,
-                user_info=user_info,
-                prefetched_images=prefetched if need_start_card else None,
-            )
-            await self._delivery.deliver_end(
+            await self._delivery.deliver_observed_live_end(
                 room_id,
                 state,
                 room_info=room_info,
                 user_info=user_info,
-                prefetched_images=prefetched if need_end_card else None,
-            )
-            await self._confirm_observed_status(
-                room_id,
-                state,
-                room_info,
-                user_info,
-                new_status,
-            )
-            await self._delivery.retry_pending(
-                room_id,
-                state,
-                room_info,
-                user_info,
-                prefetched_end=prefetched if need_end_card else None,
-                skip_end=True,
+                prefetched=prefetched,
+                observed_status=new_status,
+                confirm_observed_status=self._confirm_observed_status,
+                retry_pending=self._delivery.retry_pending_unlocked,
             )
         else:
             await self._confirm_observed_status(
