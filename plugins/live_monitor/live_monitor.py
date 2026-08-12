@@ -504,6 +504,9 @@ class LiveMonitor:
         if stale and not is_live_began:
             logger.debug("房间 {} 观测已过期，忽略本次开播信号", room_id)
             return
+        if stale and is_live_began and not state.is_newer_live_stream(room_info):
+            logger.debug("房间 {} 观测已过期，忽略同一场次的滞后开播快照", room_id)
+            return
         if stale:
             logger.debug("房间 {} 观测代数已变，快照仍为开播，继续投递", room_id)
 
@@ -726,10 +729,10 @@ class LiveMonitor:
         )
         stale = state.observation_epoch != observation_epoch
         if stale:
-            # 丢弃过期关播类快照；若仍检出开播则是更新的后续变迁，放行
-            if is_live_began:
+            # 丢弃过期关播类快照；仅当 live_start_time 新于已结束场次时放行开播
+            if is_live_began and state.is_newer_live_stream(room_info):
                 logger.debug(
-                    "房间 {} 观测代数已变，轮询快照仍为开播，继续投递", room_id
+                    "房间 {} 观测代数已变，轮询快照为更新场次开播，继续投递", room_id
                 )
                 await self._delivery.deliver_observed_live_start(
                     room_id,
@@ -744,7 +747,12 @@ class LiveMonitor:
                     log_label="检测到开播",
                 )
             else:
-                logger.debug("房间 {} 观测已过期，忽略本次轮询变迁", room_id)
+                if is_live_began:
+                    logger.debug(
+                        "房间 {} 观测已过期，忽略同一场次的滞后开播快照", room_id
+                    )
+                else:
+                    logger.debug("房间 {} 观测已过期，忽略本次轮询变迁", room_id)
                 retry_room = state.last_live_room_info or state.room_info or room_info
                 retry_user = state.last_live_user_info or state.user_info or user_info
                 await self._delivery.retry_pending(

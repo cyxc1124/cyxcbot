@@ -41,6 +41,19 @@ class LiveRoomState:
         self.pending_end_groups = []
         self.pending_end_users = []
 
+    def is_newer_live_stream(self, room_info: RoomInfo) -> bool:
+        """判断 room_info 是否为比最近结束场次更新的一场开播。"""
+        snap_start = int(getattr(room_info, "live_start_time", 0) or 0)
+        if snap_start <= 0:
+            return False
+        prior = int(self.start_time or 0)
+        if self.last_live_room_info is not None:
+            prior = max(
+                prior,
+                int(getattr(self.last_live_room_info, "live_start_time", 0) or 0),
+            )
+        return snap_start > prior
+
     def detect_status_change(
         self, new_room_info: RoomInfo
     ) -> tuple[bool, bool, LiveStatus, int]:

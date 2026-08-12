@@ -74,6 +74,22 @@ class LiveNotificationDelivery:
         state.pending_end_groups = []
         state.pending_end_users = []
 
+    async def _await_send_despite_cancel(
+        self, coro, *, on_exception, on_cancel=None
+    ) -> None:
+        """Caller 被取消时仍等投递跑完，以便按 DeliveryResult 保留未成功目标。"""
+        task = asyncio.create_task(coro)
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            try:
+                await task
+            except asyncio.CancelledError:
+                (on_cancel or on_exception)()
+            except Exception:
+                on_exception()
+            raise
+
     async def deliver_pending_start_before_end(
         self,
         room_id: str,
@@ -151,26 +167,30 @@ class LiveNotificationDelivery:
                 observed_status,
                 start_time=start_time,
             )
-            try:
-                await self.deliver_start(
-                    room_id,
-                    state,
-                    room_info=room_info,
-                    user_info=user_info,
-                    prefetched_images=prefetched
-                    if self._sender.template_uses_card("start")
-                    else None,
-                )
-            except asyncio.CancelledError:
-                # DanmakuClient.stop() 会取消 in-flight 回调；先记账再向上抛
-                self._mark_pending_start_retry(state)
-                raise
-            except Exception:
-                # confirm 已推进状态；无 pending 则后续轮询看不到变迁、永不重试
+
+            def _mark_start_failure() -> None:
                 logger.opt(exception=True).error(
                     "房间 {} 开播通知投递异常，已标记待重试", room_id
                 )
                 self._mark_pending_start_retry(state)
+
+            try:
+                await self._await_send_despite_cancel(
+                    self.deliver_start(
+                        room_id,
+                        state,
+                        room_info=room_info,
+                        user_info=user_info,
+                        prefetched_images=prefetched
+                        if self._sender.template_uses_card("start")
+                        else None,
+                    ),
+                    on_exception=_mark_start_failure,
+                    on_cancel=_mark_start_failure,
+                )
+            except Exception:
+                # confirm 已推进状态；无 pending 则后续轮询看不到变迁、永不重试
+                _mark_start_failure()
             await retry_pending(
                 room_id,
                 state,
@@ -230,45 +250,60 @@ class LiveNotificationDelivery:
                 user_info,
                 observed_status,
             )
-            try:
-                await self.deliver_pending_start_before_end(
-                    room_id,
-                    state,
-                    user_info=user_info or pending_start_user_info,
-                    room_info=pending_start_room_info,
-                    prefetched_images=prefetched
-                    if self._sender.template_uses_card("start")
-                    else None,
-                )
-            except asyncio.CancelledError:
-                # confirm 已离线且 end 未跑：同时保留 start/end，供后续有序重试
-                if not state.pending_start:
-                    self._mark_pending_start_retry(state)
-                self._mark_pending_end_retry(state)
-                raise
-            except Exception:
+
+            def _abandon_pending_start() -> None:
                 logger.opt(exception=True).error(
                     "房间 {} 关播前补发开播通知异常，已放弃待投递标志", room_id
                 )
                 state.clear_pending_start()
-            try:
-                await self.deliver_end(
-                    room_id,
-                    state,
-                    room_info=resolved_room_info,
-                    user_info=user_info,
-                    prefetched_images=prefetched
-                    if self._sender.template_uses_card("end")
-                    else None,
-                )
-            except asyncio.CancelledError:
-                self._mark_pending_end_retry(state)
-                raise
-            except Exception:
+
+            def _mark_start_after_cancel() -> None:
+                # 补发被取消且未留下 DeliveryResult 时，保留 start 供后续有序重试
+                if not state.pending_start:
+                    self._mark_pending_start_retry(state)
+
+            def _mark_end_failure() -> None:
                 logger.opt(exception=True).error(
                     "房间 {} 下播通知投递异常，已标记待重试", room_id
                 )
                 self._mark_pending_end_retry(state)
+
+            try:
+                await self._await_send_despite_cancel(
+                    self.deliver_pending_start_before_end(
+                        room_id,
+                        state,
+                        user_info=user_info or pending_start_user_info,
+                        room_info=pending_start_room_info,
+                        prefetched_images=prefetched
+                        if self._sender.template_uses_card("start")
+                        else None,
+                    ),
+                    on_exception=_abandon_pending_start,
+                    on_cancel=_mark_start_after_cancel,
+                )
+            except asyncio.CancelledError:
+                # confirm 已离线且 end 未跑；start 若已由 shield 内 DeliveryResult 写好则勿整表重映射
+                self._mark_pending_end_retry(state)
+                raise
+            except Exception:
+                _abandon_pending_start()
+            try:
+                await self._await_send_despite_cancel(
+                    self.deliver_end(
+                        room_id,
+                        state,
+                        room_info=resolved_room_info,
+                        user_info=user_info,
+                        prefetched_images=prefetched
+                        if self._sender.template_uses_card("end")
+                        else None,
+                    ),
+                    on_exception=_mark_end_failure,
+                    on_cancel=_mark_end_failure,
+                )
+            except Exception:
+                _mark_end_failure()
             await retry_pending(
                 room_id,
                 state,
