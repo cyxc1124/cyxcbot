@@ -1912,3 +1912,81 @@ async def test_stale_poll_retry_uses_last_live_snapshot_for_pending_start(
     assert seen_rooms == [live_snapshot]
     assert getattr(seen_rooms[0], "live_start_time") == 12345
     assert state.pending_start is False
+
+
+@pytest.mark.asyncio
+async def test_websocket_live_after_poll_end_still_delivers_start(
+    live_monitor_module,
+) -> None:
+    """轮询先确认关播抬升 epoch 后，已在途的 WS LIVE 快照仍应开播投递。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.LIVE, start_time=1000)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        def __init__(self, status: LiveStatus, *, live_start_time: int):
+            self.live_status = status
+            self.live_start_time = live_start_time
+            self.title = "title"
+            self.cover = ""
+
+        def is_living(self) -> bool:
+            return self.live_status == LiveStatus.LIVE
+
+    ws_holding = asyncio.Event()
+    ws_release = asyncio.Event()
+    statuses: list[str] = []
+    fetch_n = 0
+
+    async def fetch_room(*_args, **_kwargs):
+        nonlocal fetch_n
+        fetch_n += 1
+        if fetch_n == 1:
+            # WS LIVE 路径先开始 fetch，卡在旧 epoch
+            ws_holding.set()
+            await ws_release.wait()
+            return FakeRoomInfo(LiveStatus.LIVE, live_start_time=2000), None
+        # 轮询拿到关播
+        return FakeRoomInfo(LiveStatus.PREPARING, live_start_time=0), None
+
+    async def record_send(_room_id, status, *_args, **_kwargs):
+        statuses.append(status)
+        return _delivery_succeeded()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            side_effect=fetch_room,
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=record_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        ws_task = asyncio.create_task(monitor._handle_live_signal("111"))
+        await ws_holding.wait()
+        await monitor._check_room_status("111")
+        assert state.previous_status == LiveStatus.PREPARING
+        assert "end" in statuses
+
+        ws_release.set()
+        await ws_task
+
+    assert statuses == ["end", "start"]
+    assert state.previous_status == LiveStatus.LIVE

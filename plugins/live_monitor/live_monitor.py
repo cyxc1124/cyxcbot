@@ -495,14 +495,17 @@ class LiveMonitor:
             return
         if not self._is_current_room_state(room_id, state):
             return
-        if state.observation_epoch != observation_epoch:
-            logger.debug("房间 {} 观测已过期，忽略本次开播信号", room_id)
-            return
 
-        # 检查状态变化
+        # 相对当前 previous_status 重检；epoch 变化时仅放行「开播」类更新观测
         is_live_began, is_live_ended, new_status, start_time = (
             state.detect_status_change(room_info)
         )
+        stale = state.observation_epoch != observation_epoch
+        if stale and not is_live_began:
+            logger.debug("房间 {} 观测已过期，忽略本次开播信号", room_id)
+            return
+        if stale:
+            logger.debug("房间 {} 观测代数已变，快照仍为开播，继续投递", room_id)
 
         if is_live_began:
             await self._delivery.deliver_observed_live_start(
@@ -517,7 +520,7 @@ class LiveMonitor:
                 retry_pending=self._delivery.retry_pending,
                 log_label="确认开播",
             )
-        elif is_live_ended:
+        elif is_live_ended and not stale:
             await self._delivery.deliver_observed_live_end(
                 room_id,
                 state,
@@ -528,7 +531,7 @@ class LiveMonitor:
                 confirm_observed_status=self._confirm_observed_status,
                 retry_pending=self._delivery.retry_pending,
             )
-        else:
+        elif not stale:
             state.sync_observed_status(
                 room_info,
                 room_info.live_status,
@@ -717,26 +720,42 @@ class LiveMonitor:
             return True
         if not self._is_current_room_state(room_id, state):
             return True
-        if state.observation_epoch != observation_epoch:
-            # 并发路径已 confirm；丢弃过期快照，仍尝试 pending 重试
-            # 勿把过期 room_info/预取素材传给 start 重试（可能 live_start_time=0）
-            logger.debug("房间 {} 观测已过期，忽略本次轮询变迁", room_id)
-            retry_room = state.last_live_room_info or state.room_info or room_info
-            retry_user = state.last_live_user_info or state.user_info or user_info
-            await self._delivery.retry_pending(
-                room_id,
-                state,
-                retry_room,
-                retry_user,
-                prefetched_start=None,
-                prefetched_end=None,
-            )
-            return True
-
         # 检测状态变化；观测状态与待投递通知分开跟踪
         is_live_began, is_live_ended, new_status, start_time = (
             state.detect_status_change(room_info)
         )
+        stale = state.observation_epoch != observation_epoch
+        if stale:
+            # 丢弃过期关播类快照；若仍检出开播则是更新的后续变迁，放行
+            if is_live_began:
+                logger.debug(
+                    "房间 {} 观测代数已变，轮询快照仍为开播，继续投递", room_id
+                )
+                await self._delivery.deliver_observed_live_start(
+                    room_id,
+                    state,
+                    room_info=room_info,
+                    user_info=user_info,
+                    prefetched=prefetched,
+                    observed_status=new_status,
+                    start_time=start_time,
+                    confirm_observed_status=self._confirm_observed_status,
+                    retry_pending=self._delivery.retry_pending,
+                    log_label="检测到开播",
+                )
+            else:
+                logger.debug("房间 {} 观测已过期，忽略本次轮询变迁", room_id)
+                retry_room = state.last_live_room_info or state.room_info or room_info
+                retry_user = state.last_live_user_info or state.user_info or user_info
+                await self._delivery.retry_pending(
+                    room_id,
+                    state,
+                    retry_room,
+                    retry_user,
+                    prefetched_start=None,
+                    prefetched_end=None,
+                )
+            return True
 
         # 处理开播事件
         if is_live_began:
