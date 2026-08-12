@@ -481,6 +481,7 @@ class LiveMonitor:
         if not state:
             return
 
+        observation_epoch = state.observation_epoch
         # 获取最新房间信息（卡片素材与 API 并行预取）
         room_info, user_info, prefetched = await self._fetch_room_info_with_prefetch(
             room_id, "start", state
@@ -493,6 +494,9 @@ class LiveMonitor:
         if not self._is_active_room(room_id):
             return
         if not self._is_current_room_state(room_id, state):
+            return
+        if state.observation_epoch != observation_epoch:
+            logger.debug("房间 {} 观测已过期，忽略本次开播信号", room_id)
             return
 
         # 检查状态变化
@@ -546,6 +550,7 @@ class LiveMonitor:
         if not state:
             return
 
+        observation_epoch = state.observation_epoch
         # 获取最新房间信息（卡片素材与 API 并行预取）
         room_info, user_info, prefetched = await self._fetch_room_info_with_prefetch(
             room_id, "end", state
@@ -554,6 +559,9 @@ class LiveMonitor:
         if not self._is_active_room(room_id):
             return
         if not self._is_current_room_state(room_id, state):
+            return
+        if state.observation_epoch != observation_epoch:
+            logger.debug("房间 {} 观测已过期，忽略本次关播信号", room_id)
             return
 
         if room_info:
@@ -681,6 +689,7 @@ class LiveMonitor:
         if not state:
             return True
 
+        observation_epoch = state.observation_epoch
         need_start_card = self._sender.template_uses_card("start")
         need_end_card = self._sender.template_uses_card("end")
         prefetch_task = None
@@ -707,6 +716,18 @@ class LiveMonitor:
         if not self._is_active_room(room_id):
             return True
         if not self._is_current_room_state(room_id, state):
+            return True
+        if state.observation_epoch != observation_epoch:
+            # 并发路径已 confirm；丢弃过期快照，仍尝试 pending 重试
+            logger.debug("房间 {} 观测已过期，忽略本次轮询变迁", room_id)
+            await self._delivery.retry_pending(
+                room_id,
+                state,
+                room_info,
+                user_info,
+                prefetched_start=prefetched if need_start_card else None,
+                prefetched_end=prefetched if need_end_card else None,
+            )
             return True
 
         # 检测状态变化；观测状态与待投递通知分开跟踪

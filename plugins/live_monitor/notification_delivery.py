@@ -87,7 +87,11 @@ class LiveNotificationDelivery:
         if not state.pending_start:
             return
 
-        effective_room_info = room_info if room_info is not None else state.room_info
+        effective_room_info = (
+            room_info
+            if room_info is not None
+            else (state.last_live_room_info or state.room_info)
+        )
         if effective_room_info is None:
             logger.warning(
                 "房间 {} 关播时仍有待投递开播通知，但缺少房间快照，已放弃", room_id
@@ -100,7 +104,7 @@ class LiveNotificationDelivery:
             room_id,
             state,
             room_info=effective_room_info,
-            user_info=user_info or state.user_info,
+            user_info=user_info or state.last_live_user_info or state.user_info,
             prefetched_images=prefetched_images,
         )
         if state.pending_start:
@@ -207,6 +211,8 @@ class LiveNotificationDelivery:
             )
             logger.info("确认关播: {} (房间 {})", streamer_name, room_id)
             if resolved_room_info is None:
+                if state.previous_status != observed_status:
+                    state.observation_epoch += 1
                 state.previous_status = observed_status
                 logger.warning(
                     "房间 {} 关播时缺少房间快照，已更新状态并跳过投递", room_id
@@ -214,8 +220,8 @@ class LiveNotificationDelivery:
                 return
 
             # 离线 API 快照常把 live_start_time 清零；补发 start 须用直播中快照
-            pending_start_room_info = state.room_info
-            pending_start_user_info = state.user_info
+            pending_start_room_info = state.room_info or state.last_live_room_info
+            pending_start_user_info = state.user_info or state.last_live_user_info
 
             await confirm_observed_status(
                 room_id,
@@ -235,10 +241,10 @@ class LiveNotificationDelivery:
                     else None,
                 )
             except asyncio.CancelledError:
-                # 取消时勿清 pending；关停/重载后若仍存活可再补发
-                if state.pending_start:
-                    raise
-                self._mark_pending_start_retry(state)
+                # confirm 已离线且 end 未跑：同时保留 start/end，供后续有序重试
+                if not state.pending_start:
+                    self._mark_pending_start_retry(state)
+                self._mark_pending_end_retry(state)
                 raise
             except Exception:
                 logger.opt(exception=True).error(
@@ -358,19 +364,25 @@ class LiveNotificationDelivery:
         skip_start: bool = False,
         skip_end: bool = False,
     ) -> None:
-        if (
-            not skip_start
-            and state.pending_start
-            and state.previous_status == LiveStatus.LIVE
-        ):
-            logger.info("重试房间 {} 待投递的开播通知", room_id)
-            await self.deliver_start(
-                room_id,
-                state,
-                room_info=room_info,
-                user_info=user_info,
-                prefetched_images=prefetched_start,
-            )
+        if not skip_start and state.pending_start:
+            if state.previous_status == LiveStatus.LIVE:
+                logger.info("重试房间 {} 待投递的开播通知", room_id)
+                await self.deliver_start(
+                    room_id,
+                    state,
+                    room_info=room_info,
+                    user_info=user_info,
+                    prefetched_images=prefetched_start,
+                )
+            else:
+                # 离线后仍可能有未完成的 start（短播取消等），先于 end 补发
+                await self.deliver_pending_start_before_end(
+                    room_id,
+                    state,
+                    user_info=user_info,
+                    room_info=state.last_live_room_info,
+                    prefetched_images=prefetched_start,
+                )
 
         effective_room_info = room_info or state.room_info
         if (
