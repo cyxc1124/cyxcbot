@@ -501,34 +501,17 @@ class LiveMonitor:
         )
 
         if is_live_began:
-            # ponytail: 先确认观测状态，避免与轮询并发各发一次开播通知
-            if state.previous_status == LiveStatus.LIVE:
-                return
-            streamer_name = user_info.name if user_info else f"房间{room_id}"
-            logger.info("确认开播: {} (房间 {})", streamer_name, room_id)
-            self._delivery.supersede_pending_end(room_id, state)
-            await self._confirm_observed_status(
-                room_id,
-                state,
-                room_info,
-                user_info,
-                new_status,
-                start_time=start_time,
-            )
-            await self._delivery.deliver_start(
+            await self._delivery.deliver_observed_live_start(
                 room_id,
                 state,
                 room_info=room_info,
                 user_info=user_info,
-                prefetched_images=prefetched,
-            )
-            await self._delivery.retry_pending(
-                room_id,
-                state,
-                room_info,
-                user_info,
-                prefetched_start=prefetched,
-                skip_start=True,
+                prefetched=prefetched,
+                observed_status=new_status,
+                start_time=start_time,
+                confirm_observed_status=self._confirm_observed_status,
+                retry_pending=self._delivery.retry_pending,
+                log_label="确认开播",
             )
         elif is_live_ended:
             await self._delivery.deliver_observed_live_end(
@@ -733,42 +716,17 @@ class LiveMonitor:
 
         # 处理开播事件
         if is_live_began:
-            # ponytail: 先确认观测状态，避免与 WebSocket 并发各发一次开播通知
-            if state.previous_status == LiveStatus.LIVE:
-                await self._delivery.retry_pending(
-                    room_id,
-                    state,
-                    room_info,
-                    user_info,
-                    prefetched_start=prefetched if need_start_card else None,
-                    prefetched_end=prefetched if need_end_card else None,
-                )
-                return True
-            streamer_name = user_info.name if user_info else f"房间{room_id}"
-            logger.info("检测到开播: {} (房间 {})", streamer_name, room_id)
-            self._delivery.supersede_pending_end(room_id, state)
-            await self._confirm_observed_status(
-                room_id,
-                state,
-                room_info,
-                user_info,
-                new_status,
-                start_time=start_time,
-            )
-            await self._delivery.deliver_start(
+            await self._delivery.deliver_observed_live_start(
                 room_id,
                 state,
                 room_info=room_info,
                 user_info=user_info,
-                prefetched_images=prefetched if need_start_card else None,
-            )
-            await self._delivery.retry_pending(
-                room_id,
-                state,
-                room_info,
-                user_info,
-                prefetched_start=prefetched if need_start_card else None,
-                skip_start=True,
+                prefetched=prefetched,
+                observed_status=new_status,
+                start_time=start_time,
+                confirm_observed_status=self._confirm_observed_status,
+                retry_pending=self._delivery.retry_pending,
+                log_label="检测到开播",
             )
 
         # 处理关播事件

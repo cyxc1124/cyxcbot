@@ -85,6 +85,62 @@ class LiveNotificationDelivery:
             )
             state.clear_pending_start()
 
+    async def deliver_observed_live_start(
+        self,
+        room_id: str,
+        state: LiveRoomState,
+        *,
+        room_info: RoomInfo,
+        user_info: Optional[UserInfo],
+        prefetched,
+        observed_status,
+        start_time: int,
+        confirm_observed_status,
+        retry_pending,
+        log_label: str = "确认开播",
+    ) -> None:
+        """确认开播：先同步观测状态，再投递开播通知。
+
+        必须在任何 await 投递之前把 ``previous_status`` 设为 LIVE，否则
+        WebSocket 与 API 轮询会在卡片生成窗口内各自再发一次开播通知。
+        """
+        # ponytail: asyncio 单线程下，check→confirm 之间无 await 即可互斥双路径
+        if state.previous_status == LiveStatus.LIVE:
+            return
+
+        streamer_name = (
+            (user_info or state.user_info).name
+            if (user_info or state.user_info)
+            else f"房间{room_id}"
+        )
+        logger.info("{}: {} (房间 {})", log_label, streamer_name, room_id)
+        self.supersede_pending_end(room_id, state)
+        await confirm_observed_status(
+            room_id,
+            state,
+            room_info,
+            user_info,
+            observed_status,
+            start_time=start_time,
+        )
+        await self.deliver_start(
+            room_id,
+            state,
+            room_info=room_info,
+            user_info=user_info,
+            prefetched_images=prefetched
+            if self._sender.template_uses_card("start")
+            else None,
+        )
+        await retry_pending(
+            room_id,
+            state,
+            room_info,
+            user_info,
+            prefetched_start=prefetched,
+            skip_start=True,
+        )
+
     async def deliver_observed_live_end(
         self,
         room_id: str,
