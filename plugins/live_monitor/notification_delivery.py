@@ -97,7 +97,15 @@ class LiveNotificationDelivery:
         confirm_observed_status,
         retry_pending,
     ) -> None:
-        """WebSocket 路径确认关播：补发 pending start、投递关播、同步观测状态。"""
+        """确认关播：先同步观测状态，再补发 pending start 并投递关播。
+
+        必须在任何 await 投递之前把 ``previous_status`` 移出 LIVE，否则
+        WebSocket 与 API 轮询会在卡片生成窗口内各自再发一次下播通知。
+        """
+        # ponytail: asyncio 单线程下，check→confirm 之间无 await 即可互斥双路径
+        if state.previous_status != LiveStatus.LIVE:
+            return
+
         resolved_room_info = room_info or state.room_info
         streamer_name = (
             (user_info or state.user_info).name
@@ -105,6 +113,18 @@ class LiveNotificationDelivery:
             else f"房间{room_id}"
         )
         logger.info("确认关播: {} (房间 {})", streamer_name, room_id)
+        if resolved_room_info is None:
+            state.previous_status = observed_status
+            logger.warning("房间 {} 关播时缺少房间快照，已更新状态并跳过投递", room_id)
+            return
+
+        await confirm_observed_status(
+            room_id,
+            state,
+            resolved_room_info,
+            user_info,
+            observed_status,
+        )
         await self.deliver_pending_start_before_end(
             room_id,
             state,
@@ -118,14 +138,9 @@ class LiveNotificationDelivery:
             state,
             room_info=resolved_room_info,
             user_info=user_info,
-            prefetched_images=prefetched,
-        )
-        await confirm_observed_status(
-            room_id,
-            state,
-            resolved_room_info,
-            user_info,
-            observed_status,
+            prefetched_images=prefetched
+            if self._sender.template_uses_card("end")
+            else None,
         )
         await retry_pending(
             room_id,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import sys
 import types
@@ -1153,3 +1154,73 @@ async def test_pending_end_cleared_when_websocket_live_signal_before_retry(
     assert send_mock.await_count == 2
     assert send_mock.await_args_list[0].args[1] == "end"
     assert send_mock.await_args_list[1].args[1] == "start"
+
+
+@pytest.mark.asyncio
+async def test_websocket_and_poll_do_not_double_deliver_end(
+    live_monitor_module,
+) -> None:
+    """WS 关播投递未完成时轮询不得再发一次下播通知。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.LIVE, start_time=1000)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        live_status = LiveStatus.PREPARING
+        live_start_time = 1000
+        title = "title"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return False
+
+    send_started = asyncio.Event()
+    release_send = asyncio.Event()
+    send_calls = 0
+
+    async def slow_send(*_args, **_kwargs):
+        nonlocal send_calls
+        send_calls += 1
+        send_started.set()
+        await release_send.wait()
+        return _delivery_succeeded()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(FakeRoomInfo(), None),
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=slow_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        ws_task = asyncio.create_task(
+            monitor._handle_preparing_signal("111", round_status=1)
+        )
+        await send_started.wait()
+        assert state.previous_status == LiveStatus.PREPARING
+
+        await monitor._check_room_status("111")
+        release_send.set()
+        await ws_task
+
+    assert send_calls == 1
+    assert state.previous_status == LiveStatus.PREPARING
+    assert state.pending_end is False
