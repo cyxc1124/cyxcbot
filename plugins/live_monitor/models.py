@@ -25,6 +25,11 @@ class LiveRoomState:
     pending_start_users: List[str] = field(default_factory=list)
     pending_end_groups: List[str] = field(default_factory=list)
     pending_end_users: List[str] = field(default_factory=list)
+    # 观测代数：状态变迁 confirm 时递增，用于丢弃并发路径上的过期 API 快照
+    observation_epoch: int = 0
+    # 最近一次开播快照，供离线后补发 pending start 使用
+    last_live_room_info: Optional[RoomInfo] = None
+    last_live_user_info: Optional[UserInfo] = None
 
     def clear_pending_start(self) -> None:
         self.pending_start = False
@@ -35,6 +40,19 @@ class LiveRoomState:
         self.pending_end = False
         self.pending_end_groups = []
         self.pending_end_users = []
+
+    def is_newer_live_stream(self, room_info: RoomInfo) -> bool:
+        """判断 room_info 是否为比最近结束场次更新的一场开播。"""
+        snap_start = int(getattr(room_info, "live_start_time", 0) or 0)
+        if snap_start <= 0:
+            return False
+        prior = int(self.start_time or 0)
+        if self.last_live_room_info is not None:
+            prior = max(
+                prior,
+                int(getattr(self.last_live_room_info, "live_start_time", 0) or 0),
+            )
+        return snap_start > prior
 
     def detect_status_change(
         self, new_room_info: RoomInfo
@@ -69,12 +87,17 @@ class LiveRoomState:
         start_time: Optional[int] = None,
     ) -> None:
         """同步房间观测状态，与通知投递结果解耦。"""
+        if self.previous_status != new_status:
+            self.observation_epoch += 1
         self.previous_status = new_status
         self.room_info = new_room_info
         if new_user_info:
             self.user_info = new_user_info
         if start_time is not None:
             self.start_time = start_time
+        if new_status == LiveStatus.LIVE:
+            self.last_live_room_info = new_room_info
+            self.last_live_user_info = new_user_info or self.user_info
 
     def update_status(
         self, new_room_info: RoomInfo, new_user_info: Optional[UserInfo] = None
