@@ -14,22 +14,86 @@ import {
   type ThemeMode,
 } from '../lib/theme'
 
-const navItems = [
-  { to: '/', label: '仪表盘' },
-  { to: '/dynamic', label: '动态订阅' },
-  { to: '/live', label: '直播订阅' },
-  { to: '/x', label: 'X 订阅' },
-  { to: '/rust-rcon', label: 'Rust 群管' },
-  { to: '/templates', label: '消息模板' },
-  { to: '/groups', label: '群组' },
-  { to: '/private', label: '好友' },
-  { to: '/settings', label: '系统设置' },
-  { to: '/logs', label: '运行日志' },
-  { to: '/about', label: '关于' },
+type NavItem = { to: string; label: string }
+type NavSection = { section: string; items: NavItem[] }
+
+const navSections: NavSection[] = [
+  { section: '概览', items: [{ to: '/', label: '仪表盘' }] },
+  {
+    section: 'B 站',
+    items: [
+      { to: '/dynamic', label: '动态订阅' },
+      { to: '/live', label: '直播订阅' },
+      { to: '/templates/bilibili', label: '消息模板' },
+    ],
+  },
+  {
+    section: 'X',
+    items: [
+      { to: '/x', label: '推文订阅' },
+      { to: '/templates/x', label: '消息模板' },
+    ],
+  },
+  { section: '抖音', items: [{ to: '/templates/douyin', label: '消息模板' }] },
+  {
+    section: '会话',
+    items: [
+      { to: '/groups', label: '群组' },
+      { to: '/private', label: '好友' },
+    ],
+  },
+  { section: '游戏', items: [{ to: '/rust-rcon', label: 'Rust 群管' }] },
+  {
+    section: '系统',
+    items: [
+      { to: '/settings', label: '系统设置' },
+      { to: '/logs', label: '运行日志' },
+      { to: '/about', label: '关于' },
+    ],
+  },
 ]
 
 const RAIL_WIDTH_CLASS = 'w-12'
 const SIDEBAR_WIDTH_CLASS = 'w-64'
+const NAV_SECTION_COLLAPSED_KEY = 'cyxcbot.navSectionCollapsed'
+
+function pathInSection(pathname: string, items: NavItem[]): boolean {
+  return items.some((item) =>
+    item.to === '/'
+      ? pathname === '/'
+      : pathname === item.to || pathname.startsWith(`${item.to}/`),
+  )
+}
+
+function loadCollapsedSections(): Set<string> {
+  try {
+    const raw = localStorage.getItem(NAV_SECTION_COLLAPSED_KEY)
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return new Set()
+    return new Set(parsed.filter((v): v is string => typeof v === 'string'))
+  } catch {
+    return new Set()
+  }
+}
+
+function persistCollapsedSections(collapsed: Set<string>) {
+  try {
+    localStorage.setItem(NAV_SECTION_COLLAPSED_KEY, JSON.stringify([...collapsed]))
+  } catch {
+    // 隐私模式 / 配额满时仍保留内存态，不影响折叠交互
+  }
+}
+
+/** 展开含当前路由的分组；直达/刷新时也要跑，不能只靠 pathname 变化。 */
+function expandActiveSection(collapsed: Set<string>, pathname: string): Set<string> {
+  const active = navSections.find((group) => pathInSection(pathname, group.items))
+  if (!active || !collapsed.has(active.section)) return collapsed
+  const next = new Set(collapsed)
+  next.delete(active.section)
+  persistCollapsedSections(next)
+  return next
+}
 
 export function Layout() {
   const { user, logout } = useAuth()
@@ -42,6 +106,9 @@ export function Layout() {
   const [navHoverExpanded, setNavHoverExpanded] = useState(false)
   const [prevPathname, setPrevPathname] = useState(location.pathname)
   const [about, setAbout] = useState<AboutInfo | null>(null)
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() =>
+    expandActiveSection(loadCollapsedSections(), location.pathname),
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -61,6 +128,19 @@ export function Layout() {
     setPrevPathname(location.pathname)
     setNavHoverExpanded(false)
     setNavCollapsed(false)
+    // 当前路由所在分组保持展开，避免折叠后找不到当前位置
+    const next = expandActiveSection(collapsedSections, location.pathname)
+    if (next !== collapsedSections) setCollapsedSections(next)
+  }
+
+  const toggleSection = (section: string) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev)
+      if (next.has(section)) next.delete(section)
+      else next.add(section)
+      persistCollapsedSections(next)
+      return next
+    })
   }
 
   const showFullNav = !navCollapsed || navHoverExpanded
@@ -182,23 +262,54 @@ export function Layout() {
 
         {showFullNav ? (
           <>
-            <nav className="flex-1 space-y-1 overflow-y-auto p-4">
-              {navItems.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === '/'}
-                  onClick={() => {
-                    setSidebarOpen(false)
-                    setNavHoverExpanded(false)
-                  }}
-                  className={({ isActive }) =>
-                    isActive ? 'nav-link nav-link-active' : 'nav-link'
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              ))}
+            <nav className="flex-1 space-y-2 overflow-y-auto p-4">
+              {navSections.map((group) => {
+                const expanded = !collapsedSections.has(group.section)
+                const panelId = `nav-section-${group.section}`
+                return (
+                  <div key={group.section} className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => toggleSection(group.section)}
+                      aria-expanded={expanded}
+                      aria-controls={panelId}
+                      className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-left text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
+                    >
+                      <span>{group.section}</span>
+                      <span
+                        className={`text-xs font-normal text-muted-foreground transition-transform ${
+                          expanded ? 'rotate-90' : ''
+                        }`}
+                        aria-hidden
+                      >
+                        ›
+                      </span>
+                    </button>
+                    {expanded && (
+                      <div id={panelId} className="space-y-0.5 pl-1">
+                        {group.items.map((item) => (
+                          <NavLink
+                            key={item.to}
+                            to={item.to}
+                            end={item.to === '/'}
+                            onClick={() => {
+                              setSidebarOpen(false)
+                              setNavHoverExpanded(false)
+                            }}
+                            className={({ isActive }) =>
+                              isActive
+                                ? 'nav-link nav-link-active text-[13px]'
+                                : 'nav-link text-[13px]'
+                            }
+                          >
+                            {item.label}
+                          </NavLink>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </nav>
 
             <div className="shrink-0 border-t border-sidebar-border p-4">

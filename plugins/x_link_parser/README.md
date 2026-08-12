@@ -19,4 +19,4 @@
 | 好友管理 → X 链接 | 按好友开关 |
 | 设置 → X 账号 | Bearer Token / 代理（与 `x_monitor` 共用） |
 | 设置 → 机器人 | 共享媒体目录（视频需协议端可读） |
-| 消息模板 → 链接解析 | `link_template_x` |
+| X → 消息模板 | `link_template_x` |

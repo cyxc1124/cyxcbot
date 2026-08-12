@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
+import { Navigate, useParams } from 'react-router-dom'
 import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
 import { useMountAsync } from '../hooks/useMountAsync'
 import { createRetryHandler } from '../utils/retryLoad'
@@ -8,20 +9,36 @@ import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
 import {
   allTemplateFields,
-  dynamicTemplateFields,
-  linkTemplateFields,
-  liveTemplateFields,
+  bilibiliTemplateFields,
+  douyinTemplateFields,
   xTemplateFields,
   PREVIEW_SAMPLE_VALUES,
   PREVIEW_SEGMENT_LABELS,
   templateCategoryLabels,
   templatesFromSettings,
+  type TemplateCategory,
   type TemplateField,
   type TemplateKey,
 } from '../constants/messageTemplates'
 import { useToast } from '../contexts/ToastContext'
 import { formatApiError } from '../utils/apiError'
 import { insertIntoTextarea, renderStrictTemplatePreview } from '../utils/messageTemplate'
+
+const PLATFORM_FIELDS: Record<TemplateCategory, TemplateField[]> = {
+  bilibili: bilibiliTemplateFields,
+  x: xTemplateFields,
+  douyin: douyinTemplateFields,
+}
+
+const PLATFORM_DESCRIPTIONS: Record<TemplateCategory, string> = {
+  bilibili: '自定义动态、直播推送与 B 站链接解析文案',
+  x: '自定义推文推送与 X 链接解析文案',
+  douyin: '自定义抖音链接解析文案',
+}
+
+function isTemplatePlatform(value: string | undefined): value is TemplateCategory {
+  return value === 'bilibili' || value === 'x' || value === 'douyin'
+}
 
 function VariablePanel({
   field,
@@ -99,7 +116,8 @@ function TemplateDetailPanel({
       base.text = 'Hello from X!'
       base.tweet_id = '1234567890'
     } else if (
-      field.category === 'live' ||
+      field.key === 'live_template_start' ||
+      field.key === 'live_template_end' ||
       field.key === 'link_template_live'
     ) {
       base.url = 'https://live.bilibili.com/12345'
@@ -205,6 +223,7 @@ type UnsavedPrompt =
   | { kind: 'back'; label: string }
 
 export function MessageTemplatesPage() {
+  const { platform: platformParam } = useParams<{ platform: string }>()
   const { showToast } = useToast()
   const [form, setForm] = useState(templatesFromSettings(null))
   const [savedForm, setSavedForm] = useState(templatesFromSettings(null))
@@ -214,6 +233,16 @@ export function MessageTemplatesPage() {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [unsavedPrompt, setUnsavedPrompt] = useState<UnsavedPrompt | null>(null)
+  const [selectionPlatform, setSelectionPlatform] = useState<TemplateCategory | null>(null)
+
+  const platform = isTemplatePlatform(platformParam) ? platformParam : null
+  const platformFields = platform ? PLATFORM_FIELDS[platform] : []
+
+  if (platform !== selectionPlatform) {
+    setSelectionPlatform(platform)
+    setSelectedKey(null)
+    setUnsavedPrompt(null)
+  }
 
   const load = useCallback(async () => {
     try {
@@ -323,16 +352,25 @@ export function MessageTemplatesPage() {
     setDraftValues((current) => ({ ...current, [selectedKey]: field.defaultValue }))
   }
 
-  const selectedField = selectedKey ? allTemplateFields.find((item) => item.key === selectedKey) : null
+  const selectedField = selectedKey
+    ? platformFields.find((item) => item.key === selectedKey) ?? null
+    : null
   const showSplit = selectedKey !== null
   const listHiddenOnMobile = showSplit && selectedField
+
+  if (!platform) {
+    return <Navigate to="/templates/bilibili" replace />
+  }
+
+  const pageTitle = `${templateCategoryLabels[platform]}消息模板`
+  const pageDescription = PLATFORM_DESCRIPTIONS[platform]
 
   if (loading && !error) {
     return (
       <div className="flex h-[calc(100dvh-4rem-2rem)] flex-col gap-6 overflow-hidden lg:h-[calc(100dvh-4rem-4rem)]">
         <div className="shrink-0">
-          <h2 className="text-2xl font-bold text-foreground">消息模板</h2>
-          <p className="mt-1 text-sm text-muted-foreground">自定义动态、直播推送与链接解析的文本内容</p>
+          <h2 className="text-2xl font-bold text-foreground">{pageTitle}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{pageDescription}</p>
         </div>
         <PageLoading />
       </div>
@@ -342,8 +380,8 @@ export function MessageTemplatesPage() {
   return (
     <div className="flex h-[calc(100dvh-4rem-2rem)] flex-col gap-6 overflow-hidden lg:h-[calc(100dvh-4rem-4rem)]">
       <div className="shrink-0">
-        <h2 className="text-2xl font-bold text-foreground">消息模板</h2>
-        <p className="mt-1 text-sm text-muted-foreground">选择模板进行编辑，支持变量插入与效果预览</p>
+        <h2 className="text-2xl font-bold text-foreground">{pageTitle}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{pageDescription}</p>
       </div>
 
       {error && (
@@ -367,52 +405,38 @@ export function MessageTemplatesPage() {
               <p className="text-xs font-medium text-muted-foreground">模板列表</p>
             </div>
             <nav className="min-h-0 flex-1 overflow-y-auto p-2">
-              {(
-                [
-                  ['dynamic', dynamicTemplateFields],
-                  ['live', liveTemplateFields],
-                  ['x', xTemplateFields],
-                  ['link', linkTemplateFields],
-                ] as const
-              ).map(([category, fields]) => (
-                <div key={category} className="mb-3 last:mb-0">
-                  <p className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    {templateCategoryLabels[category]}
-                  </p>
-                  <ul>
-                    {fields.map((field) => {
-                      const isSelected = selectedKey === field.key
-                      const dirty = isDirty(field.key)
-                      return (
-                        <li key={field.key}>
-                          <button
-                            type="button"
-                            onClick={() => selectTemplate(field.key)}
-                            className={`mb-1 w-full rounded-lg px-3 py-2.5 text-left transition-colors ${
-                              isSelected
-                                ? 'bg-sidebar-accent text-sidebar-primary'
-                                : 'hover:bg-accent'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <p className="text-sm font-medium">{field.label}</p>
-                              {dirty && (
-                                <span
-                                  className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-500"
-                                  title="有未保存的修改"
-                                />
-                              )}
-                            </div>
-                            <p className="mt-0.5 line-clamp-2 font-mono text-xs text-muted-foreground">
-                              {getCurrentValue(field.key)}
-                            </p>
-                          </button>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </div>
-              ))}
+              <ul>
+                {platformFields.map((field) => {
+                  const isSelected = selectedKey === field.key
+                  const dirty = isDirty(field.key)
+                  return (
+                    <li key={field.key}>
+                      <button
+                        type="button"
+                        onClick={() => selectTemplate(field.key)}
+                        className={`mb-1 w-full rounded-lg px-3 py-2.5 text-left transition-colors ${
+                          isSelected
+                            ? 'bg-sidebar-accent text-sidebar-primary'
+                            : 'hover:bg-accent'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm font-medium">{field.label}</p>
+                          {dirty && (
+                            <span
+                              className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-500"
+                              title="有未保存的修改"
+                            />
+                          )}
+                        </div>
+                        <p className="mt-0.5 line-clamp-2 font-mono text-xs text-muted-foreground">
+                          {getCurrentValue(field.key)}
+                        </p>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
             </nav>
           </div>
         </aside>

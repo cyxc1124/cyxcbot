@@ -4,7 +4,6 @@ import {
   useContext,
   useMemo,
   useState,
-  type FormEvent,
   type ReactNode,
 } from 'react'
 import { useLoadingOnKeyChange } from '../../hooks/useLoadingOnKeyChange'
@@ -40,6 +39,8 @@ function formatVerifyToastMessage(result: {
   return profile ? `${result.message} · ${profile}` : result.message
 }
 
+type SettingsPatch = Parameters<typeof patchSettings>[0]
+
 interface SettingsContextValue {
   settings: Settings | null
   setSettings: React.Dispatch<React.SetStateAction<Settings | null>>
@@ -50,7 +51,8 @@ interface SettingsContextValue {
   retryLoad: () => void
   saving: boolean
   formDisabled: boolean
-  handleSubmit: (e: FormEvent) => Promise<void>
+  /** 仅提交传入字段，避免跨设置页脏数据互相覆盖 */
+  savePartial: (payload: SettingsPatch) => Promise<void>
   testing: boolean
   handleTestLogin: () => Promise<void>
   loggingOut: boolean
@@ -89,21 +91,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
 
-  const handleSubmit = useCallback(async (e: FormEvent) => {
-    e.preventDefault()
-    if (!settings) return
+  const savePartial = useCallback(async (payload: SettingsPatch) => {
     setSaving(true)
     try {
-      const payload: Parameters<typeof patchSettings>[0] = {
-        dynamic_monitor_interval: settings.dynamic_monitor_interval,
-        dynamic_monitor_use_stagger: settings.dynamic_monitor_use_stagger,
-        dynamic_enable_screenshot: settings.dynamic_enable_screenshot,
-        live_monitor_interval: settings.live_monitor_interval,
-        live_monitor_include_info: settings.live_monitor_include_info,
-        live_monitor_use_websocket: settings.live_monitor_use_websocket,
-        x_monitor_interval: settings.x_monitor_interval,
-        x_monitor_use_stagger: settings.x_monitor_use_stagger,
-      }
       const updated = await patchSettings(payload)
       setSettings(updated)
       showToast('success', '设置已保存')
@@ -112,7 +102,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     } finally {
       setSaving(false)
     }
-  }, [settings, showToast])
+  }, [showToast])
 
   const handleTestLogin = useCallback(async () => {
     setTesting(true)
@@ -152,7 +142,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       retryLoad,
       saving,
       formDisabled: !settings,
-      handleSubmit,
+      savePartial,
       testing,
       handleTestLogin,
       loggingOut,
@@ -168,7 +158,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       load,
       retryLoad,
       saving,
-      handleSubmit,
+      savePartial,
       testing,
       handleTestLogin,
       loggingOut,
