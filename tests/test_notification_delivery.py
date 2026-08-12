@@ -1829,3 +1829,86 @@ async def test_cancel_during_pre_end_flush_keeps_start_and_end_retryable(
     assert statuses == ["start", "start", "end"]
     assert state.pending_start is False
     assert state.pending_end is False
+
+
+@pytest.mark.asyncio
+async def test_stale_poll_retry_uses_last_live_snapshot_for_pending_start(
+    live_monitor_module,
+) -> None:
+    """过期轮询触发 pending start 重试时，须用 last_live 快照而非离线 API 快照。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    live_snapshot = SimpleNamespace(
+        live_status=LiveStatus.LIVE,
+        live_start_time=12345,
+        title="live-title",
+        cover="cover",
+    )
+    state = LiveRoomState(
+        room_id=111,
+        previous_status=LiveStatus.LIVE,
+        room_info=live_snapshot,
+        start_time=12345,
+        observation_epoch=1,
+        pending_start=True,
+        pending_start_groups=["1001"],
+        last_live_room_info=live_snapshot,
+    )
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class OfflineRoomInfo:
+        live_status = LiveStatus.PREPARING
+        live_start_time = 0
+        title = "stale-offline"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return False
+
+    seen_rooms: list[object] = []
+
+    async def capture_send(_room_id, status, *_args, **kwargs):
+        if status == "start":
+            seen_rooms.append(kwargs.get("room_info"))
+        return _delivery_succeeded()
+
+    # 人为制造：fetch 前 epoch 被并发 +1，走 stale 分支
+    state.observation_epoch = 1
+    original_epoch = state.observation_epoch
+
+    async def fetch_and_bump(*_args, **_kwargs):
+        state.observation_epoch = original_epoch + 1
+        return OfflineRoomInfo(), None
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            side_effect=fetch_and_bump,
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=capture_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        # check 开始时记下 epoch=1，fetch 中被 bump 到 2 → stale
+        ok = await monitor._check_room_status("111")
+
+    assert ok is True
+    assert seen_rooms == [live_snapshot]
+    assert getattr(seen_rooms[0], "live_start_time") == 12345
+    assert state.pending_start is False

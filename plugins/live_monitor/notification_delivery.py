@@ -366,12 +366,15 @@ class LiveNotificationDelivery:
     ) -> None:
         if not skip_start and state.pending_start:
             if state.previous_status == LiveStatus.LIVE:
+                # 过期轮询可能传入离线快照；pending start 须用开播快照
+                start_room = state.last_live_room_info or room_info
+                start_user = state.last_live_user_info or user_info
                 logger.info("重试房间 {} 待投递的开播通知", room_id)
                 await self.deliver_start(
                     room_id,
                     state,
-                    room_info=room_info,
-                    user_info=user_info,
+                    room_info=start_room,
+                    user_info=start_user,
                     prefetched_images=prefetched_start,
                 )
             else:
@@ -379,7 +382,7 @@ class LiveNotificationDelivery:
                 await self.deliver_pending_start_before_end(
                     room_id,
                     state,
-                    user_info=user_info,
+                    user_info=state.last_live_user_info or user_info,
                     room_info=state.last_live_room_info,
                     prefetched_images=prefetched_start,
                 )

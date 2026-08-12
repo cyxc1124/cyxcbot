@@ -719,14 +719,17 @@ class LiveMonitor:
             return True
         if state.observation_epoch != observation_epoch:
             # 并发路径已 confirm；丢弃过期快照，仍尝试 pending 重试
+            # 勿把过期 room_info/预取素材传给 start 重试（可能 live_start_time=0）
             logger.debug("房间 {} 观测已过期，忽略本次轮询变迁", room_id)
+            retry_room = state.last_live_room_info or state.room_info or room_info
+            retry_user = state.last_live_user_info or state.user_info or user_info
             await self._delivery.retry_pending(
                 room_id,
                 state,
-                room_info,
-                user_info,
-                prefetched_start=prefetched if need_start_card else None,
-                prefetched_end=prefetched if need_end_card else None,
+                retry_room,
+                retry_user,
+                prefetched_start=None,
+                prefetched_end=None,
             )
             return True
 
