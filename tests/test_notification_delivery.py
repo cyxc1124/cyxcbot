@@ -1449,3 +1449,117 @@ async def test_pending_start_flush_keeps_live_snapshot_after_end_confirm(
     assert getattr(seen_start_rooms[0], "live_start_time") == 12345
     assert state.pending_start is False
     assert state.previous_status == LiveStatus.PREPARING
+
+
+@pytest.mark.asyncio
+async def test_start_delivery_exception_marks_pending_for_retry(
+    live_monitor_module,
+) -> None:
+    """confirm 后投递抛异常时须留下 pending_start，否则永远不会重试。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.PREPARING)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        live_status = LiveStatus.LIVE
+        live_start_time = 1000
+        title = "title"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return True
+
+    send_mock = AsyncMock(side_effect=[RuntimeError("boom"), _delivery_succeeded()])
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(FakeRoomInfo(), None),
+        ),
+        patch.object(monitor._delivery, "_send_notification", send_mock),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        await monitor._handle_live_signal("111")
+        assert state.previous_status == LiveStatus.LIVE
+        assert state.pending_start is True
+
+        await monitor._check_room_status("111")
+
+    assert state.pending_start is False
+    assert send_mock.await_count == 2
+    assert all(call.args[1] == "start" for call in send_mock.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_end_delivery_exception_marks_pending_for_retry(
+    live_monitor_module,
+) -> None:
+    """confirm 后下播投递抛异常时须留下 pending_end，否则永远不会重试。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.LIVE, start_time=1000)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        live_status = LiveStatus.PREPARING
+        live_start_time = 0
+        title = "title"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return False
+
+    send_mock = AsyncMock(side_effect=[RuntimeError("boom"), _delivery_succeeded()])
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(FakeRoomInfo(), None),
+        ),
+        patch.object(monitor._delivery, "_send_notification", send_mock),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        await monitor._handle_preparing_signal("111", round_status=None)
+        assert state.previous_status == LiveStatus.PREPARING
+        assert state.pending_end is True
+
+        await monitor._check_room_status("111")
+
+    assert state.pending_end is False
+    assert send_mock.await_count == 2
+    assert all(call.args[1] == "end" for call in send_mock.await_args_list)

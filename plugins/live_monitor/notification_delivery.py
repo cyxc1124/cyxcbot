@@ -61,6 +61,19 @@ class LiveNotificationDelivery:
         )
         state.clear_pending_end()
 
+    @staticmethod
+    def _mark_pending_start_retry(state: LiveRoomState) -> None:
+        """投递抛异常时标记待重试；空目标列表表示下次走完整 mapping。"""
+        state.pending_start = True
+        state.pending_start_groups = []
+        state.pending_start_users = []
+
+    @staticmethod
+    def _mark_pending_end_retry(state: LiveRoomState) -> None:
+        state.pending_end = True
+        state.pending_end_groups = []
+        state.pending_end_users = []
+
     async def deliver_pending_start_before_end(
         self,
         room_id: str,
@@ -134,15 +147,22 @@ class LiveNotificationDelivery:
                 observed_status,
                 start_time=start_time,
             )
-            await self.deliver_start(
-                room_id,
-                state,
-                room_info=room_info,
-                user_info=user_info,
-                prefetched_images=prefetched
-                if self._sender.template_uses_card("start")
-                else None,
-            )
+            try:
+                await self.deliver_start(
+                    room_id,
+                    state,
+                    room_info=room_info,
+                    user_info=user_info,
+                    prefetched_images=prefetched
+                    if self._sender.template_uses_card("start")
+                    else None,
+                )
+            except Exception:
+                # confirm 已推进状态；无 pending 则后续轮询看不到变迁、永不重试
+                logger.opt(exception=True).error(
+                    "房间 {} 开播通知投递异常，已标记待重试", room_id
+                )
+                self._mark_pending_start_retry(state)
             await retry_pending(
                 room_id,
                 state,
@@ -200,24 +220,36 @@ class LiveNotificationDelivery:
                 user_info,
                 observed_status,
             )
-            await self.deliver_pending_start_before_end(
-                room_id,
-                state,
-                user_info=user_info or pending_start_user_info,
-                room_info=pending_start_room_info,
-                prefetched_images=prefetched
-                if self._sender.template_uses_card("start")
-                else None,
-            )
-            await self.deliver_end(
-                room_id,
-                state,
-                room_info=resolved_room_info,
-                user_info=user_info,
-                prefetched_images=prefetched
-                if self._sender.template_uses_card("end")
-                else None,
-            )
+            try:
+                await self.deliver_pending_start_before_end(
+                    room_id,
+                    state,
+                    user_info=user_info or pending_start_user_info,
+                    room_info=pending_start_room_info,
+                    prefetched_images=prefetched
+                    if self._sender.template_uses_card("start")
+                    else None,
+                )
+            except Exception:
+                logger.opt(exception=True).error(
+                    "房间 {} 关播前补发开播通知异常，已放弃待投递标志", room_id
+                )
+                state.clear_pending_start()
+            try:
+                await self.deliver_end(
+                    room_id,
+                    state,
+                    room_info=resolved_room_info,
+                    user_info=user_info,
+                    prefetched_images=prefetched
+                    if self._sender.template_uses_card("end")
+                    else None,
+                )
+            except Exception:
+                logger.opt(exception=True).error(
+                    "房间 {} 下播通知投递异常，已标记待重试", room_id
+                )
+                self._mark_pending_end_retry(state)
             await retry_pending(
                 room_id,
                 state,
