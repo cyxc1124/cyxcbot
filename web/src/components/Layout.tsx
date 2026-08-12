@@ -81,6 +81,16 @@ function persistCollapsedSections(collapsed: Set<string>) {
   localStorage.setItem(NAV_SECTION_COLLAPSED_KEY, JSON.stringify([...collapsed]))
 }
 
+/** 展开含当前路由的分组；直达/刷新时也要跑，不能只靠 pathname 变化。 */
+function expandActiveSection(collapsed: Set<string>, pathname: string): Set<string> {
+  const active = navSections.find((group) => pathInSection(pathname, group.items))
+  if (!active || !collapsed.has(active.section)) return collapsed
+  const next = new Set(collapsed)
+  next.delete(active.section)
+  persistCollapsedSections(next)
+  return next
+}
+
 export function Layout() {
   const { user, logout } = useAuth()
   const { navCollapsed, setNavCollapsed } = useSidebar()
@@ -92,7 +102,9 @@ export function Layout() {
   const [navHoverExpanded, setNavHoverExpanded] = useState(false)
   const [prevPathname, setPrevPathname] = useState(location.pathname)
   const [about, setAbout] = useState<AboutInfo | null>(null)
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(loadCollapsedSections)
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() =>
+    expandActiveSection(loadCollapsedSections(), location.pathname),
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -113,15 +125,8 @@ export function Layout() {
     setNavHoverExpanded(false)
     setNavCollapsed(false)
     // 当前路由所在分组保持展开，避免折叠后找不到当前位置
-    const active = navSections.find((group) =>
-      pathInSection(location.pathname, group.items),
-    )
-    if (active && collapsedSections.has(active.section)) {
-      const next = new Set(collapsedSections)
-      next.delete(active.section)
-      persistCollapsedSections(next)
-      setCollapsedSections(next)
-    }
+    const next = expandActiveSection(collapsedSections, location.pathname)
+    if (next !== collapsedSections) setCollapsedSections(next)
   }
 
   const toggleSection = (section: string) => {
