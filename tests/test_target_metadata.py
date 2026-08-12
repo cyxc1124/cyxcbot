@@ -276,6 +276,147 @@ async def test_create_dynamic_target_rejects_missing_recipients_before_bilibili(
 
 
 @pytest.mark.asyncio
+async def test_create_dynamic_target_rejects_whitespace_recipients_before_bilibili(
+    monkeypatch,
+):
+    """空白-only 收件人归一化后应为空，须在名称解析前 400（issue #153）。"""
+    from fastapi import HTTPException
+
+    import admin.api.v1.targets as targets_api
+    from admin.schemas.targets import DynamicTargetCreate
+
+    body = DynamicTargetCreate(uid="123", group_ids=[" "], user_ids=["  "])
+
+    resolve_mock = AsyncMock(return_value="昵称")
+    monkeypatch.setattr(targets_api, "resolve_dynamic_target_name", resolve_mock)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await targets_api.create_dynamic_target(body, MagicMock())
+
+    assert exc_info.value.status_code == 400
+    assert "群组或好友" in str(exc_info.value.detail)
+    resolve_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_dynamic_target_strips_uid_and_recipients(monkeypatch):
+    """create 须用 strip 后的 uid/group_ids 查重、解析与入库（issue #153）。"""
+    import admin.api.v1.targets as targets_api
+    from admin.schemas.targets import DynamicTargetCreate
+
+    body = DynamicTargetCreate(uid=" 123 ", group_ids=[" 1 "], user_ids=[])
+    synced: dict = {}
+
+    async def capture_groups(_session, target, group_ids):
+        synced["groups"] = list(group_ids)
+        target.groups = [MagicMock(group_id=gid) for gid in group_ids]
+
+    async def capture_users(_session, target, user_ids):
+        synced["users"] = list(user_ids)
+        target.users = [MagicMock(user_id=uid) for uid in user_ids]
+
+    from datetime import datetime, timezone
+
+    mock_session = mock_async_session()
+    mock_session.scalar = AsyncMock(return_value=None)
+    mock_session.flush = AsyncMock()
+    added: list = []
+    mock_session.add = MagicMock(side_effect=lambda obj: added.append(obj))
+
+    async def fake_refresh(obj, _attrs=None):
+        obj.id = 1
+        obj.created_at = obj.updated_at = datetime.now(timezone.utc)
+
+    mock_session.refresh = AsyncMock(side_effect=fake_refresh)
+
+    resolve_mock = AsyncMock(return_value="昵称")
+    cfg = MagicMock()
+    cfg.reload = AsyncMock()
+    monkeypatch.setattr(targets_api, "get_session", get_session_provider(mock_session))
+    monkeypatch.setattr(targets_api, "resolve_dynamic_target_name", resolve_mock)
+    monkeypatch.setattr(targets_api, "_sync_groups_dynamic", capture_groups)
+    monkeypatch.setattr(targets_api, "_sync_users_dynamic", capture_users)
+    monkeypatch.setattr(targets_api, "get_config_service", lambda: cfg)
+
+    result = await targets_api.create_dynamic_target(body, MagicMock())
+
+    assert added[0].uid == "123"
+    assert synced["groups"] == ["1"]
+    assert synced["users"] == []
+    assert result.uid == "123"
+    assert result.group_ids == ["1"]
+    resolve_mock.assert_awaited_once_with("123", None)
+
+
+@pytest.mark.asyncio
+async def test_create_live_target_rejects_whitespace_recipients_before_bilibili(
+    monkeypatch,
+):
+    from fastapi import HTTPException
+
+    import admin.api.v1.targets as targets_api
+    from admin.schemas.targets import LiveTargetCreate
+
+    body = LiveTargetCreate(room_id="123", group_ids=[" "], user_ids=[])
+
+    resolve_mock = AsyncMock(return_value="主播")
+    monkeypatch.setattr(targets_api, "resolve_live_target_name", resolve_mock)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await targets_api.create_live_target(body, MagicMock())
+
+    assert exc_info.value.status_code == 400
+    resolve_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_live_target_strips_room_id_and_recipients(monkeypatch):
+    import admin.api.v1.targets as targets_api
+    from admin.schemas.targets import LiveTargetCreate
+
+    body = LiveTargetCreate(room_id=" 888 ", group_ids=[" 1 "], user_ids=[])
+    synced: dict = {}
+
+    async def capture_groups(_session, target, group_ids):
+        synced["groups"] = list(group_ids)
+        target.groups = [MagicMock(group_id=gid) for gid in group_ids]
+
+    async def capture_users(_session, target, user_ids):
+        synced["users"] = list(user_ids)
+        target.users = [MagicMock(user_id=uid) for uid in user_ids]
+
+    from datetime import datetime, timezone
+
+    mock_session = mock_async_session()
+    mock_session.scalar = AsyncMock(return_value=None)
+    mock_session.flush = AsyncMock()
+    added: list = []
+    mock_session.add = MagicMock(side_effect=lambda obj: added.append(obj))
+
+    async def fake_refresh(obj, _attrs=None):
+        obj.id = 1
+        obj.created_at = obj.updated_at = datetime.now(timezone.utc)
+
+    mock_session.refresh = AsyncMock(side_effect=fake_refresh)
+
+    resolve_mock = AsyncMock(return_value="主播")
+    cfg = MagicMock()
+    cfg.reload = AsyncMock()
+    monkeypatch.setattr(targets_api, "get_session", get_session_provider(mock_session))
+    monkeypatch.setattr(targets_api, "resolve_live_target_name", resolve_mock)
+    monkeypatch.setattr(targets_api, "_sync_groups_live", capture_groups)
+    monkeypatch.setattr(targets_api, "_sync_users_live", capture_users)
+    monkeypatch.setattr(targets_api, "get_config_service", lambda: cfg)
+
+    result = await targets_api.create_live_target(body, MagicMock())
+
+    assert added[0].room_id == "888"
+    assert synced["groups"] == ["1"]
+    assert result.room_id == "888"
+    resolve_mock.assert_awaited_once_with("888", None)
+
+
+@pytest.mark.asyncio
 async def test_create_live_target_rejects_duplicate_before_bilibili(monkeypatch):
     from fastapi import HTTPException
 
