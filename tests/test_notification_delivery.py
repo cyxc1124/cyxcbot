@@ -1563,3 +1563,111 @@ async def test_end_delivery_exception_marks_pending_for_retry(
     assert state.pending_end is False
     assert send_mock.await_count == 2
     assert all(call.args[1] == "end" for call in send_mock.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_start_delivery_cancellation_marks_pending_then_reraises(
+    live_monitor_module,
+) -> None:
+    """任务取消须在 confirm 后留下 pending_start，并继续向上抛出。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.PREPARING)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        live_status = LiveStatus.LIVE
+        live_start_time = 1000
+        title = "title"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return True
+
+    async def cancel_send(*_args, **_kwargs):
+        raise asyncio.CancelledError()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(FakeRoomInfo(), None),
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=cancel_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await monitor._handle_live_signal("111")
+
+    assert state.previous_status == LiveStatus.LIVE
+    assert state.pending_start is True
+
+
+@pytest.mark.asyncio
+async def test_end_delivery_cancellation_marks_pending_then_reraises(
+    live_monitor_module,
+) -> None:
+    """任务取消须在 confirm 后留下 pending_end，并继续向上抛出。"""
+    from utils.bilibili_api import LiveStatus
+
+    LiveMonitor = live_monitor_module.LiveMonitor
+    LiveRoomState = sys.modules["plugins.live_monitor.models"].LiveRoomState
+
+    config = SimpleNamespace(
+        live_monitor_mapping={"111": ["1001"]},
+        live_monitor_user_mapping={},
+        live_at_all={},
+        bilibili_cookie="",
+        include_room_info=True,
+        message_templates=SimpleNamespace(
+            start="{streamer_name}", end="{streamer_name}"
+        ),
+        monitor_interval=60,
+        use_websocket=True,
+    )
+    monitor = LiveMonitor(config)
+    state = LiveRoomState(room_id=111, previous_status=LiveStatus.LIVE, start_time=1000)
+    monitor.room_states["111"] = state
+    monitor.initialized_rooms["111"] = True
+
+    class FakeRoomInfo:
+        live_status = LiveStatus.PREPARING
+        live_start_time = 0
+        title = "title"
+        cover = ""
+
+        def is_living(self) -> bool:
+            return False
+
+    async def cancel_send(*_args, **_kwargs):
+        raise asyncio.CancelledError()
+
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+            return_value=(FakeRoomInfo(), None),
+        ),
+        patch.object(monitor._delivery, "_send_notification", side_effect=cancel_send),
+        patch.object(monitor, "_persist_state", AsyncMock()),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await monitor._handle_preparing_signal("111", round_status=None)
+
+    assert state.previous_status == LiveStatus.PREPARING
+    assert state.pending_end is True

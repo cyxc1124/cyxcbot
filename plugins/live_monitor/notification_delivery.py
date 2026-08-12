@@ -157,6 +157,10 @@ class LiveNotificationDelivery:
                     if self._sender.template_uses_card("start")
                     else None,
                 )
+            except asyncio.CancelledError:
+                # DanmakuClient.stop() 会取消 in-flight 回调；先记账再向上抛
+                self._mark_pending_start_retry(state)
+                raise
             except Exception:
                 # confirm 已推进状态；无 pending 则后续轮询看不到变迁、永不重试
                 logger.opt(exception=True).error(
@@ -230,6 +234,12 @@ class LiveNotificationDelivery:
                     if self._sender.template_uses_card("start")
                     else None,
                 )
+            except asyncio.CancelledError:
+                # 取消时勿清 pending；关停/重载后若仍存活可再补发
+                if state.pending_start:
+                    raise
+                self._mark_pending_start_retry(state)
+                raise
             except Exception:
                 logger.opt(exception=True).error(
                     "房间 {} 关播前补发开播通知异常，已放弃待投递标志", room_id
@@ -245,6 +255,9 @@ class LiveNotificationDelivery:
                     if self._sender.template_uses_card("end")
                     else None,
                 )
+            except asyncio.CancelledError:
+                self._mark_pending_end_retry(state)
+                raise
             except Exception:
                 logger.opt(exception=True).error(
                     "房间 {} 下播通知投递异常，已标记待重试", room_id
