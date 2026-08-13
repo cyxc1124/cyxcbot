@@ -152,6 +152,27 @@ def _normalize_user_ids(user_ids: list[str]) -> list[str]:
     return _normalize_ids(user_ids)
 
 
+def _require_stripped_id(value: str, *, empty_detail: str) -> str:
+    """Strip identity fields before uniqueness / resolve / persist."""
+    normalized = value.strip()
+    if not normalized:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=empty_detail,
+        )
+    return normalized
+
+
+def _normalized_recipients(
+    group_ids: list[str], user_ids: list[str]
+) -> tuple[list[str], list[str]]:
+    """Normalize then require at least one recipient (issue #153)."""
+    groups = _normalize_group_ids(group_ids)
+    users = _normalize_user_ids(user_ids)
+    _ensure_recipients(groups, users)
+    return groups, users
+
+
 async def _sync_groups_dynamic(
     session, target: DynamicTarget, group_ids: list[str]
 ) -> None:
@@ -233,19 +254,20 @@ async def list_dynamic_targets(_: AdminUser):
     status_code=status.HTTP_201_CREATED,
 )
 async def create_dynamic_target(body: DynamicTargetCreate, _: AdminUser):
-    _ensure_recipients(body.group_ids, body.user_ids)
+    uid = _require_stripped_id(body.uid, empty_detail="UID 不能为空")
+    group_ids, user_ids = _normalized_recipients(body.group_ids, body.user_ids)
 
     async with get_session() as session:
         async with session.begin():
             existing = await session.scalar(
-                select(DynamicTarget).where(DynamicTarget.uid == body.uid)
+                select(DynamicTarget).where(DynamicTarget.uid == uid)
             )
             if existing:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT, detail="UID already exists"
                 )
 
-        resolved_name = await resolve_dynamic_target_name(body.uid, body.name)
+        resolved_name = await resolve_dynamic_target_name(uid, body.name)
         if not resolved_name:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -254,7 +276,7 @@ async def create_dynamic_target(body: DynamicTargetCreate, _: AdminUser):
 
         async with session.begin():
             existing = await session.scalar(
-                select(DynamicTarget).where(DynamicTarget.uid == body.uid)
+                select(DynamicTarget).where(DynamicTarget.uid == uid)
             )
             if existing:
                 raise HTTPException(
@@ -262,13 +284,13 @@ async def create_dynamic_target(body: DynamicTargetCreate, _: AdminUser):
                 )
 
             target = DynamicTarget(
-                uid=body.uid,
+                uid=uid,
                 name=resolved_name,
                 enabled=body.enabled,
                 at_all=body.at_all,
             )
-            await _sync_groups_dynamic(session, target, body.group_ids)
-            await _sync_users_dynamic(session, target, body.user_ids)
+            await _sync_groups_dynamic(session, target, group_ids)
+            await _sync_users_dynamic(session, target, user_ids)
             session.add(target)
             await session.flush()
             await session.refresh(target, ["groups", "users"])
@@ -447,19 +469,20 @@ async def list_live_targets(_: AdminUser):
     status_code=status.HTTP_201_CREATED,
 )
 async def create_live_target(body: LiveTargetCreate, _: AdminUser):
-    _ensure_recipients(body.group_ids, body.user_ids)
+    room_id = _require_stripped_id(body.room_id, empty_detail="房间号不能为空")
+    group_ids, user_ids = _normalized_recipients(body.group_ids, body.user_ids)
 
     async with get_session() as session:
         async with session.begin():
             existing = await session.scalar(
-                select(LiveTarget).where(LiveTarget.room_id == body.room_id)
+                select(LiveTarget).where(LiveTarget.room_id == room_id)
             )
             if existing:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT, detail="Room already exists"
                 )
 
-        resolved_name = await resolve_live_target_name(body.room_id, body.name)
+        resolved_name = await resolve_live_target_name(room_id, body.name)
         if not resolved_name:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -468,7 +491,7 @@ async def create_live_target(body: LiveTargetCreate, _: AdminUser):
 
         async with session.begin():
             existing = await session.scalar(
-                select(LiveTarget).where(LiveTarget.room_id == body.room_id)
+                select(LiveTarget).where(LiveTarget.room_id == room_id)
             )
             if existing:
                 raise HTTPException(
@@ -476,13 +499,13 @@ async def create_live_target(body: LiveTargetCreate, _: AdminUser):
                 )
 
             target = LiveTarget(
-                room_id=body.room_id,
+                room_id=room_id,
                 name=resolved_name,
                 enabled=body.enabled,
                 at_all=body.at_all,
             )
-            await _sync_groups_live(session, target, body.group_ids)
-            await _sync_users_live(session, target, body.user_ids)
+            await _sync_groups_live(session, target, group_ids)
+            await _sync_users_live(session, target, user_ids)
             session.add(target)
             await session.flush()
             await session.refresh(target, ["groups", "users"])
@@ -661,7 +684,7 @@ async def list_x_targets(_: AdminUser):
     status_code=status.HTTP_201_CREATED,
 )
 async def create_x_target(body: XTargetCreate, _: AdminUser):
-    _ensure_recipients(body.group_ids, body.user_ids)
+    group_ids, user_ids = _normalized_recipients(body.group_ids, body.user_ids)
     username = _parse_x_username(body.username)
 
     async with get_session() as session:
@@ -697,8 +720,8 @@ async def create_x_target(body: XTargetCreate, _: AdminUser):
                 enabled=body.enabled,
                 at_all=body.at_all,
             )
-            await _sync_groups_x(session, target, body.group_ids)
-            await _sync_users_x(session, target, body.user_ids)
+            await _sync_groups_x(session, target, group_ids)
+            await _sync_users_x(session, target, user_ids)
             session.add(target)
             await session.flush()
             await session.refresh(target, ["groups", "users"])
