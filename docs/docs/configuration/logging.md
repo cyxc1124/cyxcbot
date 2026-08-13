@@ -24,6 +24,8 @@ sidebar_position: 4
 
 Uvicorn（Web Admin）的服务级日志（启动、错误）经同一管道汇入；HTTP **access** 日志默认关闭，不会刷屏 Web `/logs`。
 
+NoneBot 每条入站事件会打一条 SUCCESS dump，并为每个命中的 Matcher 打「will be handled / running complete」。这些**只保留在终端和磁盘日志**，不进入 Web `/logs` 环形缓冲，避免群聊刷屏干扰排障。
+
 ## 环境变量
 
 完整列表见 [环境变量](./env-vars#日志)。常用项：
@@ -99,6 +101,7 @@ docker compose logs -f cyxcbot
 - 实时 WebSocket 推送，支持按 `DEBUG` / `INFO` / `WARNING` / `ERROR` 筛选（**默认 `INFO`**）。
 - 打开页面时先拉取约 **500** 条历史，浏览器最多展示约 **1500** 条。
 - 服务端缓冲收录 `DEBUG` 及以上（终端在 `LOG_LEVEL=INFO` 时不显示 `DEBUG`）；要在页面上看 `DEBUG`，需将级别下拉框改为 `DEBUG`。
+- 入站事件 dump 与 Matcher 调度行只出现在终端 / 磁盘，不进入本页。
 - 需管理员登录；重启后 Web 缓冲清空。查历史请用磁盘文件或 `docker compose logs`。
 
 详见 [页面说明 — 日志](../web-admin/pages#日志-logs)。

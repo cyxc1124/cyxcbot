@@ -156,6 +156,7 @@ logger.error(f"错误: {traceback.format_exc()}")
 - Web Admin `/logs` 通过 `install_log_broadcast()` 注册的 sink 固定为 `DEBUG` 级别：即使 `LOG_LEVEL=INFO/WARNING`，终端不显示 DEBUG，Web 日志页仍会缓冲并推送 DEBUG 及以上。
 - `bot.py` 的 `configure_logging()` 仅调节 stdlib 第三方库（如 `aiohttp`、`playwright`）噪声，**不**改变 `nonebot.log.logger` 的过滤级别。
 - 第三方 stdlib 日志经 `bot.py` 中的 `LoguruHandler` 汇入 NoneBot/loguru 管道，再进入 Web 广播。Uvicorn 启动时使用 `log_config=None`、`access_log=False` 并调用 `bridge_uvicorn_loggers()`（仅桥接 `uvicorn`/`uvicorn.error`/`uvicorn.asgi`，`uvicorn.access` 不进入 Web /logs），勿在 `broadcast.py` 重复挂载 uvicorn handler。
+- NoneBot 入站事件 SUCCESS dump（如 OneBot 群消息）与 Matcher 调度 INFO（`Event will be handled` / `running complete`）由 `web_broadcast_filter` 排除，只出现在终端与磁盘日志，不进入 Web `/logs`。
 - 磁盘持久化由 `shared/logging/file_sink.py` 的 `install_file_log_sink()` 注册 file sink：每次启动写入 `{stem}.{timestamp}.log`，会话内按 `LOG_FILE_ROTATION`（默认 10 MB）切分，启动时清理超过 `LOG_FILE_RETENTION`（默认 7 天）的旧文件；与 Web 环形缓冲独立，级别由 `LOG_FILE_LEVEL` 控制。
 
 ### 敏感信息

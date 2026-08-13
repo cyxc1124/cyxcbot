@@ -163,7 +163,7 @@ sidebar_position: 2
 |------|------|
 | 级别筛选 | `DEBUG` / `INFO` / `WARNING` / `ERROR`（**默认 `INFO`**） |
 | 历史缓冲 | 服务端内存约 2000 条（`DEBUG`+）；打开页面先拉约 500 条 |
-| 与终端差异 | 缓冲含 `DEBUG`，但默认筛选为 `INFO`；要看 `DEBUG` 需手动改级别 |
+| 与终端差异 | 缓冲含 `DEBUG`，但默认筛选为 `INFO`；要看 `DEBUG` 需手动改级别。入站事件 dump 与 Matcher 调度行仅终端 / 磁盘有 |
 | 持久化 | **不**替代磁盘日志；重启后缓冲清空 |
 
 排障、跨天查日志请使用 `data/logs/` 下文件或容器 `docker compose logs`。详见 [日志配置](../configuration/logging)。

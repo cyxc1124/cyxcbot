@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import heapq
 import logging
+import re
 import threading
 import uuid
 from collections import deque
@@ -35,6 +36,10 @@ LEVEL_RANK = {
     "CRITICAL": 50,
 }
 _INFO_RANK = LEVEL_RANK["INFO"]
+
+# nonebot.message.handle_event SUCCESS dump, with or without color tags:
+# "<m>OneBot V11 123</m> | [message.group.normal]: Message ..."
+_ADAPTER_EVENT_DUMP_RE = re.compile(r"^(?:<m>)?[^<\n]+(?:</m>)? \| \[[\w.]+\]: ")
 
 
 @dataclass(frozen=True)
@@ -176,6 +181,36 @@ def get_log_hub() -> LogBroadcastHub:
     return _hub
 
 
+def _level_name(record: dict[str, Any]) -> str:
+    level = record["level"]
+    return str(getattr(level, "name", level))
+
+
+def _source_path(record: dict[str, Any]) -> str:
+    file_info = record.get("file")
+    path = getattr(file_info, "path", "") if file_info is not None else ""
+    return str(path).replace("\\", "/")
+
+
+def web_broadcast_filter(record: dict[str, Any]) -> bool:
+    """Keep this record in Web /logs.
+
+    NoneBot inbound event SUCCESS dumps and Matcher dispatch INFO stay on
+    console and the file sink; a busy group otherwise floods /logs.
+    """
+    message = str(record["message"])
+    if message.startswith("Event will be handled by Matcher("):
+        return False
+    if message.startswith("Matcher(") and message.endswith(" running complete"):
+        return False
+    if _level_name(record) == "SUCCESS" and (
+        _source_path(record).endswith("/nonebot/message.py")
+        or _ADAPTER_EVENT_DUMP_RE.match(message)
+    ):
+        return False
+    return True
+
+
 def _loguru_sink(message: Any) -> None:
     entry = LogEntry.from_loguru_record(message.record)
     get_log_hub().publish(entry)
@@ -211,6 +246,9 @@ def install_log_broadcast() -> None:
     Stdlib logs (e.g. uvicorn) reach this sink via LoguruHandler in bot.py.
     Uvicorn must use ``log_config=None`` plus ``bridge_uvicorn_loggers()`` so its
     loggers propagate to root; do not attach separate stdlib handlers here.
+
+    NoneBot inbound event dumps and Matcher dispatch lines are filtered out so
+    they remain on stdout / file logs only.
     """
     global _installed
     if _installed:
@@ -222,6 +260,7 @@ def install_log_broadcast() -> None:
         _loguru_sink,
         format="{message}",
         level="DEBUG",
+        filter=web_broadcast_filter,
         enqueue=True,
         catch=True,
     )
