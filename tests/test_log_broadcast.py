@@ -13,6 +13,7 @@ from shared.logging.broadcast import (
     LogEntry,
     bridge_uvicorn_loggers,
     install_log_broadcast,
+    web_broadcast_filter,
 )
 
 
@@ -215,3 +216,74 @@ def test_bridge_uvicorn_loggers_after_default_config() -> None:
     assert access_logger.propagate is False
 
     assert isinstance(root.handlers[0], LoguruHandler)
+
+
+class _Level:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+class _File:
+    def __init__(self, path: str) -> None:
+        self.path = path
+        self.name = path.rsplit("/", 1)[-1]
+
+
+def _record(
+    message: str,
+    *,
+    level: str = "INFO",
+    file_path: str = "/app/plugins/live_monitor.py",
+) -> dict:
+    return {
+        "message": message,
+        "level": _Level(level),
+        "file": _File(file_path),
+        "name": "nonebot",
+    }
+
+
+def test_web_filter_drops_matcher_dispatch_info() -> None:
+    handled = (
+        "Event will be handled by Matcher(type='message', "
+        "module=plugins.douyin_link_parser, lineno=45)"
+    )
+    complete = (
+        "Matcher(type='message', module=plugins.douyin_link_parser, "
+        "lineno=46) running complete"
+    )
+    assert web_broadcast_filter(_record(handled)) is False
+    assert web_broadcast_filter(_record(complete)) is False
+
+
+def test_web_filter_drops_inbound_adapter_event_success() -> None:
+    colored = (
+        "<m>OneBot V11 2706064252</m> | [message.group.normal]: "
+        "Message 1767735156 from 120674547@[群:1011952309] '[image]'"
+    )
+    plain = (
+        "OneBot V11 2706064252 | [message.group.normal]: "
+        "Message 1767735156 from 120674547@[群:1011952309] '[image]'"
+    )
+    by_file = _record(
+        "ignored body",
+        level="SUCCESS",
+        file_path="/site-packages/nonebot/message.py",
+    )
+    assert web_broadcast_filter(_record(colored, level="SUCCESS")) is False
+    assert web_broadcast_filter(_record(plain, level="SUCCESS")) is False
+    assert web_broadcast_filter(by_file) is False
+
+
+def test_web_filter_keeps_business_and_startup_logs() -> None:
+    assert web_broadcast_filter(_record("NoneBot is initializing...", level="SUCCESS"))
+    assert web_broadcast_filter(
+        _record("直播开播通知已发送到群组 1011952309", level="SUCCESS")
+    )
+    assert web_broadcast_filter(
+        _record("Running Matcher(type='message') failed.", level="ERROR")
+    )
+    assert web_broadcast_filter(_record("文件日志已启用: data/logs/cyxcbot.log"))
+    assert web_broadcast_filter(
+        _record("Checking for matchers in priority 1...", level="DEBUG")
+    )
