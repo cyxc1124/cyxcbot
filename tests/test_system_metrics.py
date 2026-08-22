@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from unittest.mock import MagicMock
 
@@ -480,7 +481,9 @@ def test_detect_container_environment_kubernetes(monkeypatch):
 def test_detect_container_environment_docker_env_var(monkeypatch):
     monkeypatch.setattr(system_metrics, "_DOCKERENV_PATH", "/does/not/exist")
     monkeypatch.setattr(system_metrics, "_PROC_1_CGROUP_PATH", "/does/not/exist")
-    monkeypatch.delenv("KUBERNETES_SERVICE_HOST", raising=False)
+    for key in list(os.environ):
+        if key.startswith(("KUBERNETES_", "KUBE_")):
+            monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("DOCKER_CONTAINER", "true")
 
     env = system_metrics.detect_container_environment()
@@ -492,7 +495,9 @@ def test_detect_container_environment_bare_metal(monkeypatch):
     monkeypatch.setattr(system_metrics, "_DOCKERENV_PATH", "/does/not/exist")
     monkeypatch.setattr(system_metrics, "_PROC_1_CGROUP_PATH", "/does/not/exist")
     monkeypatch.delenv("DOCKER_CONTAINER", raising=False)
-    monkeypatch.delenv("KUBERNETES_SERVICE_HOST", raising=False)
+    for key in list(os.environ):
+        if key.startswith(("KUBERNETES_", "KUBE_")):
+            monkeypatch.delenv(key, raising=False)
 
     env = system_metrics.detect_container_environment()
     assert env["is_container"] is False
