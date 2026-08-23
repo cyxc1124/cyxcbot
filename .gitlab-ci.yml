@@ -1,5 +1,5 @@
-# 对齐 GitHub PR 检查。镜像 / Windows 包仍由 GitHub Actions 构建：
-# 这台 Runner 是 K8s，没有 Docker daemon。
+# 检查对齐 GitHub PR。镜像用 Kaniko 推 GitLab Registry（K8s Runner 没有 Docker daemon）。
+# Windows 包仍由 GitHub Actions 构建。
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -20,6 +20,7 @@ variables:
 
 stages:
   - test
+  - build
 
 python:
   stage: test
@@ -52,3 +53,67 @@ web:
     - npm run lint --prefix web
     - npm run test --prefix web
     - npm run build --prefix web
+
+# 无 Docker daemon：Kaniko 一次构建，推 GitLab Registry 与 Harbor。
+# Harbor 凭据用 CI 变量 HARBOR_USER / HARBOR_PASSWORD（可选 HARBOR_REGISTRY、HARBOR_IMAGE）。
+build:
+  stage: build
+  image:
+    name: martizih/kaniko:v1.28.3-debug
+    entrypoint: [""]
+  interruptible: false
+  timeout: 1h
+  variables:
+    HARBOR_REGISTRY: harbor.cyxc.club
+    HARBOR_IMAGE: harbor.cyxc.club/cyxc1124/cyxcbot
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: never
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_TAG =~ /^v.+/
+  script:
+    - |
+      add_dest() {
+        dest="$$dest --destination $$1:${CI_COMMIT_SHORT_SHA}"
+        if [ -n "${CI_COMMIT_TAG}" ]; then
+          dest="$$dest --destination $$1:${CI_COMMIT_TAG}"
+        else
+          dest="$$dest --destination $$1:${CI_COMMIT_REF_SLUG}"
+        fi
+        if [ "${CI_COMMIT_BRANCH}" = "${CI_DEFAULT_BRANCH}" ]; then
+          dest="$$dest --destination $$1:latest"
+        fi
+      }
+
+      mkdir -p /kaniko/.docker
+      dest=""
+      add_dest "${CI_REGISTRY_IMAGE}"
+      auths="\"${CI_REGISTRY}\":{\"username\":\"${CI_REGISTRY_USER}\",\"password\":\"${CI_REGISTRY_PASSWORD}\"}"
+
+      if [ -n "${HARBOR_USER}" ] && [ -n "${HARBOR_PASSWORD}" ]; then
+        add_dest "${HARBOR_IMAGE}"
+        auths="$${auths},\"${HARBOR_REGISTRY}\":{\"username\":\"${HARBOR_USER}\",\"password\":\"${HARBOR_PASSWORD}\"}"
+      else
+        echo "HARBOR_USER / HARBOR_PASSWORD unset, skip Harbor"
+      fi
+      echo "{\"auths\":{$${auths}}}" > /kaniko/.docker/config.json
+
+      react_version=$$(grep -A2 '"node_modules/react":' web/package-lock.json | grep '"version"' | head -n1 | sed 's/.*: "\([^"]*\)".*/\1/' || true)
+      tailwind_version=$$(grep -A2 '"node_modules/tailwindcss":' web/package-lock.json | grep '"version"' | head -n1 | sed 's/.*: "\([^"]*\)".*/\1/' || true)
+
+      echo "Destinations:$$dest"
+      /kaniko/executor \
+        --context "${CI_PROJECT_DIR}" \
+        --dockerfile "${CI_PROJECT_DIR}/Dockerfile" \
+        --build-arg "GIT_TAG=${CI_COMMIT_TAG}" \
+        --build-arg "GIT_COMMIT=${CI_COMMIT_SHA}" \
+        --build-arg "GIT_BRANCH=${CI_COMMIT_BRANCH}" \
+        --build-arg "BUILD_TIME=$$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --build-arg "BUILD_NUMBER=${CI_PIPELINE_IID}" \
+        --build-arg "REACT_VERSION=$$react_version" \
+        --build-arg "TAILWIND_VERSION=$$tailwind_version" \
+        --cache=true \
+        --cache-repo="${CI_REGISTRY_IMAGE}/cache" \
+        --compressed-caching=false \
+        $$dest
