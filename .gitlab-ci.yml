@@ -55,7 +55,8 @@ web:
     - npm run build --prefix web
 
 # 无 Docker daemon：Kaniko 一次构建，推 GitLab Registry 与 Harbor。
-# Harbor 凭据用 CI 变量 HARBOR_USER / HARBOR_PASSWORD（可选 HARBOR_REGISTRY、HARBOR_IMAGE）。
+# Harbor 凭据：HARBOR_USER / HARBOR_PASSWORD（可选 HARBOR_REGISTRY、HARBOR_IMAGE）。
+# 构建代理：HTTP_PROXY / HTTPS_PROXY / NO_PROXY（不设则与 GitHub 一样直连）。
 build:
   stage: build
   image:
