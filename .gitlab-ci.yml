@@ -1,5 +1,6 @@
 # 检查对齐 GitHub PR。镜像用 Kaniko 推 GitLab Registry（K8s Runner 没有 Docker daemon）。
 # Windows 包仍由 GitHub Actions 构建。
+# 作业拉基础镜像走 Harbor 代理 harbor.cyxc.club（集群现网 chart 同样拉 harbor.cyxc.club/cyxc1124/cyxcbot）。
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
