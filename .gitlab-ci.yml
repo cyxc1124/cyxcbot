@@ -1,5 +1,7 @@
-# 对齐 GitHub PR 检查。镜像 / Windows 包仍由 GitHub Actions 构建：
-# 这台 Runner 是 K8s，没有 Docker daemon。
+# 检查对齐 GitHub PR。镜像用 Kaniko 推 GitLab Registry（K8s Runner 没有 Docker daemon）。
+# Windows 包仍由 GitHub Actions 构建。
+# 作业拉 Docker Hub 镜像走 Harbor 代理：harbor.cyxc.club/dockerhub/library/<官方镜像>
+# 或 harbor.cyxc.club/dockerhub/<org>/<镜像>。现网 chart 拉 registry.gitlab.cyxc.club/cyxc1124/cyxcbot。
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -20,10 +22,11 @@ variables:
 
 stages:
   - test
+  - build
 
 python:
   stage: test
-  image: python:3.14
+  image: harbor.cyxc.club/dockerhub/library/python:3.14
   cache:
     key:
       files:
@@ -39,7 +42,7 @@ python:
 
 web:
   stage: test
-  image: node:22
+  image: harbor.cyxc.club/dockerhub/library/node:22
   cache:
     key:
       files:
@@ -52,3 +55,21 @@ web:
     - npm run lint --prefix web
     - npm run test --prefix web
     - npm run build --prefix web
+
+# 无 Docker daemon：Kaniko 推 GitLab Registry。
+# 构建代理：HTTP_PROXY / HTTPS_PROXY / NO_PROXY（不设则与 GitHub 一样直连）。
+build:
+  stage: build
+  image:
+    name: harbor.cyxc.club/dockerhub/martizih/kaniko:v1.28.3-debug
+    entrypoint: [""]
+  interruptible: false
+  timeout: 1h
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: never
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_COMMIT_TAG =~ /^v.+/
+  script:
+    - /busybox/sh scripts/kaniko-build.sh

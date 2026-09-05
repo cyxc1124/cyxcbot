@@ -1,6 +1,24 @@
+# 构建期代理（可选）。GitHub 不传则为空；只 ARG 不 ENV，避免运行时走 CI 代理。
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ARG ALL_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG no_proxy
+ARG all_proxy
+
 # Web Admin 前端构建阶段
 FROM node:22-slim AS web-builder
 
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ARG ALL_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG no_proxy
+ARG all_proxy
 ARG GIT_TAG=""
 ARG GIT_COMMIT=""
 ARG GIT_BRANCH=""
@@ -19,7 +37,15 @@ RUN npm run build
 # Python 运行时镜像
 FROM python:3.14-slim
 
-# 构建参数（由GitHub Action传入）
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ARG ALL_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG no_proxy
+ARG all_proxy
+# 构建参数（由 CI 传入）
 ARG GIT_TAG=""
 ARG GIT_COMMIT=""
 ARG GIT_BRANCH=""

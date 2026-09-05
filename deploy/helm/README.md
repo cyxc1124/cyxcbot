@@ -137,7 +137,7 @@ Web Admin → 设置 → 机器人 →「链接解析共享媒体目录」设为
 ```yaml
 # my-values.yaml
 image:
-  tag: "v2.9.0"
+  tag: "v2.11.7"
 
 secret:
   name: cyxcbot-secret
