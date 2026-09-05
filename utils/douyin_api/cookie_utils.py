@@ -43,3 +43,8 @@ def parse_cookie_header(cookie_header: str) -> Dict[str, str]:
             continue
         parsed[key] = value.strip()
     return parsed
+
+
+def cookie_header(cookies: Mapping[Any, Any]) -> str:
+    sanitized = sanitize_cookies(cookies)
+    return "; ".join(f"{key}={value}" for key, value in sanitized.items() if value)

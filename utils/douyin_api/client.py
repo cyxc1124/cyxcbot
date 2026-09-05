@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import random
 import re
 from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -12,7 +11,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import aiohttp
 from nonebot.log import logger
 
-from .cookie_utils import sanitize_cookies
+from .cookie_utils import cookie_header, sanitize_cookies
 from .ms_token import MsTokenManager
 from .xbogus import XBogus
 
@@ -24,16 +23,18 @@ except Exception:  # pragma: no cover - optional dependency
 
 _LOGIN_REQUIRED_STATUS_CODES = {2483}
 
-_USER_AGENT_POOL = [
-    (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
-    ),
-    (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
-    ),
-]
+# 与 _default_query 里 Windows / Chrome 139 指纹对齐；随机 Mac UA 会和 query 打架。
+_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
+)
+
+# 403 是抖音 WAF 拒这次签名，不是登录失败；换 a_bogus 再试经常能过。
+_RETRYABLE_HTTP_STATUSES = frozenset({403, 429})
+
+
+def _should_retry_http_status(status: int) -> bool:
+    return status >= 500 or status in _RETRYABLE_HTTP_STATUSES
 
 
 class LoginRequiredError(Exception):
@@ -86,7 +87,7 @@ class DouyinAPIClient:
         self.cookies = sanitize_cookies(cookies or {})
         self.proxy = str(proxy or "").strip()
         self._session: Optional[aiohttp.ClientSession] = None
-        selected_ua = random.choice(_USER_AGENT_POOL)
+        selected_ua = _USER_AGENT
         self.headers = {
             "User-Agent": selected_ua,
             "Referer": "https://www.douyin.com/?recommend=1",
@@ -112,7 +113,7 @@ class DouyinAPIClient:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
                 headers=self.headers,
-                cookies=self.cookies,
+                cookie_jar=aiohttp.DummyCookieJar(),
                 timeout=aiohttp.ClientTimeout(total=30),
                 raise_for_status=False,
             )
@@ -137,8 +138,6 @@ class DouyinAPIClient:
         self._ms_token = token.strip()
         if self._ms_token:
             self.cookies["msToken"] = self._ms_token
-            if self._session and not self._session.closed:
-                self._session.cookie_jar.update_cookies({"msToken": self._ms_token})
         return self._ms_token
 
     async def _default_query(self) -> dict[str, Any]:
@@ -242,6 +241,9 @@ class DouyinAPIClient:
                 signing_kwargs["request_data"] = data
             signed_url, ua = self.build_signed_path(path, params, **signing_kwargs)
             headers = {**self.headers, **(request_headers or {}), "User-Agent": ua}
+            cookie = cookie_header(self.cookies)
+            if cookie:
+                headers["Cookie"] = cookie
             request = self._session.post if method == "POST" else self._session.get
             request_kwargs: dict[str, Any] = {
                 "headers": headers,
@@ -288,7 +290,7 @@ class DouyinAPIClient:
                                 path,
                             )
                         return result
-                    if response.status < 500 and response.status != 429:
+                    if not _should_retry_http_status(response.status):
                         log_fn = logger.info if suppress_error else logger.error
                         log_fn(
                             "抖音 API HTTP 失败 path={} status={} attempt={}/{}",
@@ -365,9 +367,14 @@ class DouyinAPIClient:
         try:
             await self._ensure_session()
             assert self._session is not None
+            headers: dict[str, str] = {}
+            cookie = cookie_header(self.cookies)
+            if cookie:
+                headers["Cookie"] = cookie
             async with self._session.get(
                 short_url,
                 allow_redirects=True,
+                headers=headers or None,
                 timeout=aiohttp.ClientTimeout(total=timeout_seconds),
                 proxy=self.proxy or None,
             ) as response:
