@@ -48,3 +48,26 @@ def parse_cookie_header(cookie_header: str) -> Dict[str, str]:
 def cookie_header(cookies: Mapping[Any, Any]) -> str:
     sanitized = sanitize_cookies(cookies)
     return "; ".join(f"{key}={value}" for key, value in sanitized.items() if value)
+
+
+def cookies_from_morsels(cookies: object) -> Dict[str, str]:
+    if not cookies:
+        return {}
+    try:
+        items = cookies.items()
+    except AttributeError, TypeError:
+        return {}
+    collected: Dict[str, str] = {}
+    for name, value in items:
+        if not isinstance(name, str):
+            continue
+        raw = getattr(value, "value", value)
+        collected[name] = "" if raw is None else str(raw)
+    return sanitize_cookies(collected)
+
+
+def cookies_from_http_response(response: object) -> Dict[str, str]:
+    incoming: Dict[str, str] = {}
+    for hop in (*(getattr(response, "history", None) or ()), response):
+        incoming.update(cookies_from_morsels(getattr(hop, "cookies", None)))
+    return incoming

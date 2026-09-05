@@ -10,8 +10,14 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import aiohttp
 from nonebot.log import logger
+from yarl import URL
 
-from .cookie_utils import cookie_header, sanitize_cookies
+from .cookie_utils import (
+    cookie_header,
+    cookies_from_http_response,
+    cookies_from_morsels,
+    sanitize_cookies,
+)
 from .ms_token import MsTokenManager
 from .xbogus import XBogus
 
@@ -109,11 +115,41 @@ class DouyinAPIClient:
     async def __aexit__(self, exc_type, exc, tb):
         await self.close()
 
+    def _seed_cookie_jar(self) -> aiohttp.CookieJar:
+        jar = aiohttp.CookieJar()
+        if self.cookies:
+            jar.update_cookies(self.cookies, response_url=URL(f"{self.BASE_URL}/"))
+        return jar
+
+    def _request_cookie_header(self, url: str | None = None) -> str:
+        merged = dict(self.cookies)
+        jar = getattr(self._session, "cookie_jar", None) if self._session else None
+        if jar is not None:
+            merged.update(
+                cookies_from_morsels(
+                    jar.filter_cookies(URL(url or f"{self.BASE_URL}/"))
+                )
+            )
+        return cookie_header(merged)
+
+    def _merge_response_cookies(self, response: object) -> None:
+        incoming = cookies_from_http_response(response)
+        if not incoming:
+            return
+        self.cookies.update(incoming)
+        if incoming.get("msToken"):
+            self._ms_token = incoming["msToken"]
+        jar = getattr(self._session, "cookie_jar", None) if self._session else None
+        if jar is None:
+            return
+        raw_url = str(getattr(response, "url", "") or "")
+        jar.update_cookies(incoming, response_url=URL(raw_url or f"{self.BASE_URL}/"))
+
     async def _ensure_session(self):
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
                 headers=self.headers,
-                cookie_jar=aiohttp.DummyCookieJar(),
+                cookie_jar=self._seed_cookie_jar(),
                 timeout=aiohttp.ClientTimeout(total=30),
                 raise_for_status=False,
             )
@@ -138,6 +174,12 @@ class DouyinAPIClient:
         self._ms_token = token.strip()
         if self._ms_token:
             self.cookies["msToken"] = self._ms_token
+            jar = getattr(self._session, "cookie_jar", None) if self._session else None
+            if jar is not None:
+                jar.update_cookies(
+                    {"msToken": self._ms_token},
+                    response_url=URL(f"{self.BASE_URL}/"),
+                )
         return self._ms_token
 
     async def _default_query(self) -> dict[str, Any]:
@@ -241,7 +283,7 @@ class DouyinAPIClient:
                 signing_kwargs["request_data"] = data
             signed_url, ua = self.build_signed_path(path, params, **signing_kwargs)
             headers = {**self.headers, **(request_headers or {}), "User-Agent": ua}
-            cookie = cookie_header(self.cookies)
+            cookie = self._request_cookie_header(signed_url)
             if cookie:
                 headers["Cookie"] = cookie
             request = self._session.post if method == "POST" else self._session.get
@@ -253,6 +295,7 @@ class DouyinAPIClient:
                 request_kwargs["data"] = data or {}
             try:
                 async with request(signed_url, **request_kwargs) as response:
+                    self._merge_response_cookies(response)
                     if response.status == 200:
                         body = await response.read()
                         if not body:
@@ -368,7 +411,7 @@ class DouyinAPIClient:
             await self._ensure_session()
             assert self._session is not None
             headers: dict[str, str] = {}
-            cookie = cookie_header(self.cookies)
+            cookie = self._request_cookie_header(short_url)
             if cookie:
                 headers["Cookie"] = cookie
             async with self._session.get(
@@ -378,6 +421,7 @@ class DouyinAPIClient:
                 timeout=aiohttp.ClientTimeout(total=timeout_seconds),
                 proxy=self.proxy or None,
             ) as response:
+                self._merge_response_cookies(response)
                 final_url = str(response.url)
                 if response.status >= 400:
                     logger.warning(
