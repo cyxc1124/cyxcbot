@@ -1,5 +1,7 @@
 # 检查对齐 GitHub PR。镜像用 Kaniko 推 GitLab Registry（K8s Runner 没有 Docker daemon）。
 # Windows 包仍由 GitHub Actions 构建。
+# 作业拉 Docker Hub 镜像走 Harbor 代理：harbor.cyxc.club/dockerhub/library/<官方镜像>
+# 或 harbor.cyxc.club/dockerhub/<org>/<镜像>。现网 chart 拉 registry.gitlab.cyxc.club/cyxc1124/cyxcbot。
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -24,7 +26,7 @@ stages:
 
 python:
   stage: test
-  image: python:3.14
+  image: harbor.cyxc.club/dockerhub/library/python:3.14
   cache:
     key:
       files:
@@ -40,7 +42,7 @@ python:
 
 web:
   stage: test
-  image: node:22
+  image: harbor.cyxc.club/dockerhub/library/node:22
   cache:
     key:
       files:
@@ -59,7 +61,7 @@ web:
 build:
   stage: build
   image:
-    name: martizih/kaniko:v1.28.3-debug
+    name: harbor.cyxc.club/dockerhub/martizih/kaniko:v1.28.3-debug
     entrypoint: [""]
   interruptible: false
   timeout: 1h
