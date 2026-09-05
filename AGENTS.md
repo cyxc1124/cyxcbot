@@ -125,7 +125,7 @@ chore: 更新环境变量示例
 
 `v*` tag 会触发 GitHub 推 GHCR 镜像与 Windows 包（GitHub Release），以及 GitLab 推 Registry 镜像。`origin` 同时 push GitHub 与 GitLab 时，打一次 tag 两边都会到。
 
-发版必须同步 Helm 版本：仓内 `deploy/helm` 的 `appVersion` / `image.tag`（公开默认仍是 GHCR），以及仓外现网 chart `../helm-chart/cyxcbot-chart` 的 `appVersion` / `image.tag`（与发行 tag 同一号，如 `v2.11.7`）。现网 `image.repository` 用 `harbor.cyxc.club/cyxc1124/cyxcbot`（Harbor 代理拉 GitLab 已构建镜像），不要写 `ghcr.io/...`。GitLab CI 拉基础镜像（python / node / kaniko 等）同样走 `harbor.cyxc.club`。现网 overlay 含拉取密钥，不要把密钥拷回本仓。模板改动先改仓内 `deploy/helm`，再同步到现网（不含密钥）。
+发版必须同步 Helm 版本：仓内 `deploy/helm` 的 `appVersion` / `image.tag`（公开默认仍是 GHCR），以及仓外现网 chart `../helm-chart/cyxcbot-chart` 的 `appVersion` / `image.tag`（与发行 tag 同一号，如 `v2.11.7`）。现网 `image.repository` 用 `registry.gitlab.cyxc.club/cyxc1124/cyxcbot`（与 Kaniko 推送的 GitLab Registry 一致），不要写 `ghcr.io/...` 或 Harbor。GitLab CI 拉基础镜像（python / node / kaniko 等）可走 `harbor.cyxc.club` 代理。现网 overlay 含拉取密钥，不要把密钥拷回本仓。模板改动先改仓内 `deploy/helm`，再同步到现网（不含密钥）。
 
 ## 日志规范（NoneBot / loguru）
 
@@ -217,6 +217,6 @@ logger.error(f"错误: {traceback.format_exc()}")
 | 截图 | `utils/screenshot/` |
 | 前端页面 | `web/src/pages/` |
 | Helm（仓内） | `deploy/helm/` |
-| Helm（现网，发版改版本） | `../helm-chart/cyxcbot-chart`（相对本仓根；镜像 `harbor.cyxc.club/cyxc1124/cyxcbot`，勿提交密钥） |
+| Helm（现网，发版改版本） | `../helm-chart/cyxcbot-chart`（相对本仓根；镜像 `registry.gitlab.cyxc.club/cyxc1124/cyxcbot`，勿提交密钥） |
 
 插件细节见各 `plugins/*/README.md`；前端见 [web/README.md](web/README.md)；部署见 [deploy/README.md](deploy/README.md)。
