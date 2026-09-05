@@ -93,7 +93,37 @@ deploy/             # Docker Compose / Helm
 - **注释**：仅解释非显而易见的业务/技术细节；不自解释代码。
 - **测试**：非平凡逻辑留最小可运行检查（`tests/` 里 pytest）；一行能搞定的不用框架。
 - **安全**：JWT 密钥、Cookie、数据库凭证等**不得**写入日志或硬编码。
-- **提交**：仅在用户明确要求时 `git commit`；不主动 push。
+- **提交**：仅在用户明确要求时 `git commit`；不主动 push。格式见下方。
+
+## 提交
+
+`<type>: <中文说明>`，可加范围：`feat(auth): ...`。必须保留 type 前缀，不要只写中文。
+
+- `feat` 新功能
+- `fix` 修缺陷
+- `docs` 文档
+- `style` 格式（不影响行为）
+- `refactor` 重构
+- `perf` 性能
+- `test` 测试
+- `build` 构建与依赖
+- `ci` CI / 工作流
+- `chore` 脚手架、杂项
+- `revert` 回滚
+
+```
+feat: 支持抖音图集解析回传
+fix: 抖音详情接口 403 后换签重试
+docs: 扩充提交前缀
+ci: 增加 GitLab 流水线检查
+chore: 更新环境变量示例
+```
+
+## 发布
+
+功能改动从功能分支开 PR / MR 合进 `develop`，不要直接推 `develop` 或 `main`。要发版本时：`develop` 开 PR / MR 到 `main`，**合并后再打** annotated tag（`v1.0.1`）并 `git push origin v1.0.1`。不要在 `develop` 上直接打发行 tag。只改 CI 不用打 tag；运行时依赖或业务改动才打。
+
+`v*` tag 会触发 GitHub 推 GHCR 镜像与 Windows 包（GitHub Release），以及 GitLab 推 Registry 镜像。`origin` 同时 push GitHub 与 GitLab 时，打一次 tag 两边都会到。发版若需同步 Helm，一并改 `deploy/helm` 的 `appVersion` / `image.tag`。
 
 ## 日志规范（NoneBot / loguru）
 
