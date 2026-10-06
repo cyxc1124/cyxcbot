@@ -9,8 +9,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
-from tests.db_test_helpers import ensure_real_db_modules, shared_sqlite_url
+from tests.db_test_helpers import ensure_real_db_modules
 
 if "nonebot_plugin_orm" not in sys.modules:
     sys.modules["nonebot_plugin_orm"] = MagicMock(get_session=MagicMock())
@@ -39,13 +40,16 @@ async def _seed_steam_binding(
 
 
 @pytest.fixture
-async def rust_player_store():
+async def rust_player_store(tmp_path):
     ensure_real_db_modules()
     import nonebot_plugin_orm
 
     from shared.db.base import Model
 
-    engine = create_async_engine(shared_sqlite_url())
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'rust.db'}",
+        poolclass=NullPool,
+    )
     async with engine.begin() as conn:
         await conn.run_sync(Model.metadata.create_all)
 
