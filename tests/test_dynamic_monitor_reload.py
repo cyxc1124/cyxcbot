@@ -115,9 +115,7 @@ async def test_partial_delivery_retry_skips_successful_targets(
     monitor = _make_monitor(Config, DynamicMonitor, ["111"])
     monitor.config.dynamic_monitor_mapping["111"] = ["g1", "g2"]
     monitor.config.dynamic_monitor_user_mapping["111"] = ["u1"]
-    dynamic = SimpleNamespace(
-        id=200, uid="111", get_type_description=lambda: "text"
-    )
+    dynamic = SimpleNamespace(id=200, uid="111", get_type_description=lambda: "text")
     monitor._resolve_author_name = AsyncMock(return_value="author")
     monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
     partial = DeliveryResult(
