@@ -2,7 +2,7 @@
 
 使用 GHCR 预构建镜像，在单机 / NAS 上快速部署 [机器草 cyxcbot](https://github.com/cyxc1124/cyxcbot)。
 
-业务配置（监控、B 站 Cookie 等）在 Web Admin 面板中管理；启动前必须设置足够长的随机 `WEB_SECRET_KEY`（Compose 未设置会直接失败）。
+业务配置（监控、B 站 Cookie、官方 Bot 凭证等）在 Web Admin 面板中管理；启动前必须设置足够长的随机 `WEB_SECRET_KEY`（Compose 未设置会直接失败）。官方 Bot 默认使用 Webhook：公网 HTTPS `/qq/webhook` 须转发到机器人端口 8080，而非管理面板 8081。`DRIVER` 默认带 `httpx`+`websockets`，用于官方 API 并兼容旧版 WebSocket。
 
 ## 快速开始
 

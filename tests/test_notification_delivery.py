@@ -161,6 +161,129 @@ def live_monitor_module():
     )
 
 
+@pytest.fixture
+def x_monitor_module(dynamic_monitor_module):
+    root = PLUGINS_ROOT / "x_monitor"
+    _ensure_package("plugins.x_monitor", root)
+    return _load_module("plugins.x_monitor.x_monitor", root, "x_monitor.py")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["dynamic", "x"])
+async def test_official_monitor_targets_skip_without_retry_or_blocking_onebot(
+    kind, dynamic_monitor_module, x_monitor_module
+):
+    cls = (
+        dynamic_monitor_module.DynamicMonitor
+        if kind == "dynamic"
+        else x_monitor_module.XMonitor
+    )
+    monitor = object.__new__(cls)
+    groups = ["official-group"]
+    monitor.config = SimpleNamespace(
+        **{
+            f"{kind}_monitor_mapping": {"target": groups},
+            f"{kind}_monitor_user_mapping": {"target": ["official-user"]},
+            f"{kind}_at_all": {},
+            "enable_screenshot": False,
+        }
+    )
+    monitor.sender = SimpleNamespace(
+        build_dynamic_message=MagicMock(return_value=Message("result")),
+        build_tweet_message=MagicMock(return_value=Message("result")),
+        plan_fingerprint=MagicMock(return_value="plan"),
+        send_message=AsyncMock(return_value=_delivery_succeeded()),
+    )
+    monitor._pending_tweet_delivery = {
+        "target": ("tweet", "", [("official-group", 0)], [])
+    }
+    monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
+    monitor._resolve_author_name = AsyncMock(return_value="author")
+    monitor.session = None
+    item = SimpleNamespace(
+        id="new-item",
+        name="author",
+        media_items=[],
+        media_urls=[],
+        get_type_description=lambda: "text",
+    )
+    send = (
+        monitor._send_dynamic_notification
+        if kind == "dynamic"
+        else monitor._send_tweet_notification
+    )
+    assert await send("target", item)
+    monitor.sender.send_message.assert_not_awaited()
+    if kind == "x":
+        assert not monitor._pending_tweet_delivery
+    groups.append("1001")
+    assert await send("target", item)
+    assert monitor.sender.send_message.await_args.args[1:3] == (["1001"], [])
+
+
+@pytest.mark.asyncio
+async def test_live_official_targets_clear_pending_and_keep_onebot(live_monitor_module):
+    from plugins.live_monitor.models import LiveRoomState
+    from plugins.live_monitor.notification_delivery import LiveNotificationDelivery
+
+    groups = ["official-group"]
+    sender = SimpleNamespace(
+        send_notification=AsyncMock(return_value=_delivery_succeeded())
+    )
+    delivery = LiveNotificationDelivery(
+        sender,
+        get_group_mapping=lambda: {"1": groups},
+        get_user_mapping=lambda: {"1": ["official-user"]},
+        get_at_all=lambda: {},
+    )
+    state = LiveRoomState(room_id=1)
+    state.pending_start = True
+    state.pending_start_groups = ["official-group"]
+    assert await delivery.deliver_start("1", state, room_info=None, user_info=None)
+    assert not state.pending_start
+    sender.send_notification.assert_not_awaited()
+    groups.append("1001")
+    assert await delivery.deliver_start("1", state, room_info=None, user_info=None)
+    assert sender.send_notification.await_args.kwargs["target_groups"] == ["1001"]
+    assert sender.send_notification.await_args.kwargs["target_users"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["get_latest_dynamic", "get_pinned_dynamic"])
+@pytest.mark.parametrize("has_dynamic", [False, True])
+async def test_dynamic_query_returns_message_for_event_reply(
+    method, has_dynamic, dynamic_monitor_module
+):
+    monitor = object.__new__(dynamic_monitor_module.DynamicMonitor)
+    monitor.config = SimpleNamespace(bilibili_cookie="", enable_screenshot=False)
+    dynamic = SimpleNamespace(
+        id=1,
+        uid="123",
+        timestamp=1,
+        is_pinned=False,
+        type=1,
+        get_type_description=lambda: "text",
+    )
+    monitor.fetcher = SimpleNamespace(
+        fetch_user_dynamics=AsyncMock(
+            return_value=([dynamic], 1) if has_dynamic else ([], None)
+        )
+    )
+    reply = Message("query result")
+    monitor.sender = SimpleNamespace(
+        build_dynamic_message=MagicMock(return_value=reply), send_to_groups=AsyncMock()
+    )
+    monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
+    monitor._resolve_author_name = AsyncMock(return_value="author")
+    result = await getattr(monitor, method)("123")
+    assert isinstance(result, Message)
+    if has_dynamic:
+        assert result == reply
+    else:
+        assert "暂无" in str(result)
+    monitor.sender.send_to_groups.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     ("targets", "all_succeeded", "any_succeeded", "all_failed"),
     [
@@ -226,7 +349,7 @@ async def test_dynamic_sender_no_bot_marks_all_targets_failed(
 ) -> None:
     sender = dynamic_sender_module.DynamicSender()
     driver = SimpleNamespace(bots={})
-    with patch("plugins.dynamic_monitor.sender.get_driver", return_value=driver):
+    with patch("nonebot.get_bots", return_value=driver.bots):
         result = await sender.send_message(Message("hi"), ["1001"], ["2002"])
 
     assert result.attempted
@@ -245,7 +368,7 @@ async def test_dynamic_sender_all_targets_succeed(dynamic_sender_module) -> None
     bot.send_private_msg = AsyncMock()
     driver = SimpleNamespace(bots={"bot": bot})
 
-    with patch("plugins.dynamic_monitor.sender.get_driver", return_value=driver):
+    with patch("nonebot.get_bots", return_value=driver.bots):
         result = await sender.send_message(Message("hi"), ["1001"], ["2002"])
 
     assert result.all_succeeded
@@ -263,7 +386,7 @@ async def test_dynamic_sender_partial_failure(dynamic_sender_module) -> None:
     bot.send_private_msg = AsyncMock()
     driver = SimpleNamespace(bots={"bot": bot})
 
-    with patch("plugins.dynamic_monitor.sender.get_driver", return_value=driver):
+    with patch("nonebot.get_bots", return_value=driver.bots):
         result = await sender.send_message(Message("hi"), ["1001"], ["2002"])
 
     assert result.any_succeeded
@@ -285,7 +408,7 @@ async def test_dynamic_sender_any_bot_success_counts_as_delivered(
     succeeding_bot.send_group_msg = AsyncMock()
     driver = SimpleNamespace(bots={"a": failing_bot, "b": succeeding_bot})
 
-    with patch("plugins.dynamic_monitor.sender.get_driver", return_value=driver):
+    with patch("nonebot.get_bots", return_value=driver.bots):
         result = await sender.send_to_groups(Message("hi"), ["1001"])
 
     assert len(result.targets) == 1
@@ -307,7 +430,7 @@ async def test_dynamic_sender_does_not_duplicate_when_first_bot_succeeds(
     second_bot.send_group_msg = AsyncMock()
     driver = SimpleNamespace(bots={"a": first_bot, "b": second_bot})
 
-    with patch("plugins.dynamic_monitor.sender.get_driver", return_value=driver):
+    with patch("nonebot.get_bots", return_value=driver.bots):
         result = await sender.send_to_groups(Message("hi"), ["1001"])
 
     assert result.all_succeeded
@@ -320,7 +443,7 @@ async def test_live_sender_no_bot_marks_targets_failed(live_sender_module) -> No
     sender = live_sender_module.LiveNotificationSender()
     driver = SimpleNamespace(bots={})
 
-    with patch("plugins.live_monitor.sender.get_driver", return_value=driver):
+    with patch("nonebot.get_bots", return_value=driver.bots):
         result = await sender.send_notification(
             status="start",
             streamer_name="tester",
@@ -344,7 +467,7 @@ async def test_live_sender_partial_failure(live_sender_module) -> None:
     driver = SimpleNamespace(bots={"bot": bot})
 
     with (
-        patch("plugins.live_monitor.sender.get_driver", return_value=driver),
+        patch("nonebot.get_bots", return_value=driver.bots),
         patch.object(sender, "_generate_card_if_needed", AsyncMock(return_value=None)),
         patch.object(
             sender,
@@ -382,7 +505,7 @@ async def test_live_sender_any_bot_success_counts_as_delivered(
     driver = SimpleNamespace(bots={"fail": bot_fail, "ok": bot_ok})
 
     with (
-        patch("plugins.live_monitor.sender.get_driver", return_value=driver),
+        patch("nonebot.get_bots", return_value=driver.bots),
         patch.object(sender, "_generate_card_if_needed", AsyncMock(return_value=None)),
         patch.object(
             sender,
@@ -420,7 +543,7 @@ async def test_live_sender_does_not_duplicate_when_first_bot_succeeds(
     driver = SimpleNamespace(bots={"a": first_bot, "b": second_bot})
 
     with (
-        patch("plugins.live_monitor.sender.get_driver", return_value=driver),
+        patch("nonebot.get_bots", return_value=driver.bots),
         patch.object(sender, "_generate_card_if_needed", AsyncMock(return_value=None)),
         patch.object(
             sender,

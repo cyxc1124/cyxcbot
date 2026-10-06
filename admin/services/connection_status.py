@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 import aiohttp
-from nonebot import get_bots
 from nonebot.log import logger
 
+from shared.adapter.bots import iter_official_bots, iter_onebot_bots
 from shared.config.service import get_config_service
 
 _NAV_URL = "https://api.bilibili.com/x/web-interface/nav"
@@ -110,7 +110,7 @@ async def get_bilibili_connection_status() -> Dict[str, Any]:
 
 
 async def get_qq_connection_status() -> Dict[str, Any]:
-    bots = get_bots()
+    bots = iter_onebot_bots()
     if not bots:
         return {
             "connected": False,
@@ -120,7 +120,8 @@ async def get_qq_connection_status() -> Dict[str, Any]:
         }
 
     bot_infos: List[Dict[str, Any]] = []
-    for self_id, bot in bots.items():
+    for bot in bots:
+        self_id = getattr(bot, "self_id", "")
         qq = str(self_id)
         nickname: str | None = None
         try:
@@ -147,7 +148,31 @@ async def get_qq_connection_status() -> Dict[str, Any]:
     }
 
 
+async def get_official_qq_connection_status() -> Dict[str, Any]:
+    snap = get_config_service().get_snapshot()
+    app_id = (snap.official_qq_app_id or "").strip()
+    configured = bool(app_id and snap.official_qq_app_secret_set)
+    connected = bool(iter_official_bots())
+    if not configured:
+        message = "未配置官方 Bot，请在系统设置中填写 AppID 与 AppSecret"
+    elif connected:
+        message = f"官方 Bot 已连接 AppID {app_id}"
+    elif snap.official_qq_use_websocket:
+        message = "已配置官方 Bot，等待 WebSocket 连接"
+    else:
+        message = "已配置官方 Bot，等待首次有效 Webhook 事件"
+    return {
+        "configured": configured,
+        "connected": connected,
+        "app_id": app_id,
+        "is_sandbox": snap.official_qq_is_sandbox,
+        "use_websocket": snap.official_qq_use_websocket,
+        "message": message,
+    }
+
+
 async def get_connections_status() -> Dict[str, Any]:
     bilibili = await get_bilibili_connection_status()
     qq = await get_qq_connection_status()
-    return {"bilibili": bilibili, "qq": qq}
+    official_qq = await get_official_qq_connection_status()
+    return {"bilibili": bilibili, "qq": qq, "official_qq": official_qq}

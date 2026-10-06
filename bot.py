@@ -7,6 +7,7 @@ from pathlib import Path
 import nonebot
 from nonebot.adapters.console import Adapter as ConsoleAdapter  # 避免重复命名
 from nonebot.adapters.onebot.v11 import Adapter as OneBotAdapter  # 添加OneBot适配器
+from nonebot.adapters.qq import Adapter as QQAdapter
 from nonebot.log import LoguruHandler, logger
 
 from shared.security.database_url import mask_database_url
@@ -61,7 +62,14 @@ def log_startup_config() -> None:
         logger.info("本地配置文件: {}", env_file.resolve())
 
     startup_vars = {
-        "NoneBot": ["HOST", "PORT", "COMMAND_START", "COMMAND_SEP", "LOG_LEVEL"],
+        "NoneBot": [
+            "HOST",
+            "PORT",
+            "DRIVER",
+            "COMMAND_START",
+            "COMMAND_SEP",
+            "LOG_LEVEL",
+        ],
         "日志文件": [
             "LOG_FILE_ENABLED",
             "LOG_FILE_PATH",
@@ -157,6 +165,9 @@ if _env_path.exists():
 if not os.getenv("SQLALCHEMY_DATABASE_URL"):
     os.environ["SQLALCHEMY_DATABASE_URL"] = "sqlite+aiosqlite:///data/cyxcbot.db"
 
+# 官方 Bot 凭证在 Web Admin 保存后才热连接，DRIVER 必须启动时带 HTTP+WS 客户端
+os.environ.setdefault("DRIVER", "~fastapi+~httpx+~websockets")
+
 _db_url = os.getenv("SQLALCHEMY_DATABASE_URL", "sqlite+aiosqlite:///data/cyxcbot.db")
 _ensure_sqlite_parent_dir(_db_url)
 _app_base = (
@@ -204,6 +215,7 @@ nonebot.get_driver().config.console_headless_mode = True
 driver = nonebot.get_driver()
 driver.register_adapter(ConsoleAdapter)
 driver.register_adapter(OneBotAdapter)
+driver.register_adapter(QQAdapter)
 
 # 加载插件
 try:

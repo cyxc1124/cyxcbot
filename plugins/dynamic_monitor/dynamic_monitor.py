@@ -12,6 +12,7 @@ import aiohttp
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.log import logger
 
+from shared.adapter.ids import onebot_target_ids
 from shared.config.service import get_config_service
 from shared.monitor.background_task import spawn_background_task
 from shared.monitor.check_cycle import CheckCycleLogger
@@ -676,11 +677,22 @@ class DynamicMonitor:
         *,
         check_generation: Optional[int] = None,
     ) -> bool:
-        """发送动态通知，全部目标投递成功时返回 True。"""
+        """发送动态通知；没有可主动推送的目标时跳过并推进游标。"""
         if check_generation is not None and not self._check_still_valid(
             uid, check_generation
         ):
             return False
+
+        configured_groups = self.config.dynamic_monitor_mapping.get(uid, [])
+        configured_users = self.config.dynamic_monitor_user_mapping.get(uid, [])
+        if not configured_groups and not configured_users:
+            logger.warning("UP主 {} 没有配置推送目标", uid)
+            return False
+        group_ids = onebot_target_ids(configured_groups)
+        user_ids = onebot_target_ids(configured_users)
+        if not group_ids and not user_ids:
+            logger.debug("UP主 {} 仅配置官方会话，跳过主动推送", uid)
+            return True
 
         # 获取真实的用户名（feed / 缓存 / API）
         dynamic.name = await self._resolve_author_name(dynamic)
@@ -708,18 +720,19 @@ class DynamicMonitor:
             ),
         )
 
-        # 获取需要推送的群组与好友
-        group_ids = self.config.dynamic_monitor_mapping.get(uid, [])
-        user_ids = self.config.dynamic_monitor_user_mapping.get(uid, [])
-        if not group_ids and not user_ids:
-            logger.warning("UP主 {} 没有配置推送目标", uid)
-            return False
-
         if check_generation is not None and not self._check_still_valid(
             uid, check_generation
         ):
             return False
 
+        # 截图期间可能热更新订阅，发送前重新取当前目标。
+        group_ids = onebot_target_ids(self.config.dynamic_monitor_mapping.get(uid, []))
+        user_ids = onebot_target_ids(
+            self.config.dynamic_monitor_user_mapping.get(uid, [])
+        )
+        if not group_ids and not user_ids:
+            logger.debug("UP主 {} 已无 OneBot 推送目标，跳过主动推送", uid)
+            return True
         at_all_enabled = self.config.dynamic_at_all.get(uid, False)
         delivery = await self.sender.send_message(
             message,
@@ -751,8 +764,8 @@ class DynamicMonitor:
         )
         return False
 
-    async def get_latest_dynamic(self, uid: str, group_id: str):
-        """获取并发送指定UP主的最新动态"""
+    async def get_latest_dynamic(self, uid: str) -> Message:
+        """构建最新动态查询结果，由调用方沿原事件回复。"""
         logger.info("主动获取UP主 {} 的最新动态", uid)
 
         # 获取用户的动态列表
@@ -770,18 +783,14 @@ class DynamicMonitor:
 
         if not dynamics:
             logger.info("UP主 {} 没有动态", uid)
-            await self.sender.send_to_groups(Message("该UP主暂无动态"), [group_id])
-            return
+            return Message("该UP主暂无动态")
 
         # 过滤掉置顶动态和直播动态，获取最新的动态（按时间戳排序）
         # 注意：直播动态已经在fetcher中被过滤，这里主要过滤置顶动态
         filtered_dynamics = [d for d in dynamics if not d.is_pinned and d.type != 16]
         if not filtered_dynamics:
             logger.info("UP主 {} 没有非置顶非直播动态", uid)
-            await self.sender.send_to_groups(
-                Message("该UP主暂无非置顶的动态"), [group_id]
-            )
-            return
+            return Message("该UP主暂无非置顶的动态")
 
         latest_dynamic = max(filtered_dynamics, key=lambda x: x.timestamp)
         logger.debug(
@@ -811,14 +820,10 @@ class DynamicMonitor:
             ),
         )
 
-        logger.debug("主动查询消息构建完成，开始发送到群组 {}", group_id)
+        return message
 
-        # 发送到指定群组
-        await self.sender.send_to_groups(message, [group_id])
-        logger.info("已发送UP主 {} 的最新动态查询结果到群组 {}", uid, group_id)
-
-    async def get_pinned_dynamic(self, uid: str, group_id: str):
-        """获取并发送指定UP主的置顶动态"""
+    async def get_pinned_dynamic(self, uid: str) -> Message:
+        """构建置顶动态查询结果，由调用方沿原事件回复。"""
         logger.info("主动获取UP主 {} 的置顶动态", uid)
 
         # 获取用户的动态列表
@@ -835,8 +840,7 @@ class DynamicMonitor:
 
         if not pinned_id:
             logger.info("UP主 {} 没有置顶动态", uid)
-            await self.sender.send_to_groups(Message("该UP主暂无置顶动态"), [group_id])
-            return
+            return Message("该UP主暂无置顶动态")
 
         # 查找置顶动态
         pinned_dynamic = next((d for d in dynamics if d.id == pinned_id), None)
@@ -864,11 +868,7 @@ class DynamicMonitor:
             ),
         )
 
-        logger.debug("置顶动态主动查询消息构建完成，开始发送到群组 {}", group_id)
-
-        # 发送到指定群组
-        await self.sender.send_to_groups(message, [group_id])
-        logger.info("已发送UP主 {} 的置顶动态查询结果到群组 {}", uid, group_id)
+        return message
 
 
 # 插件启动和关闭函数

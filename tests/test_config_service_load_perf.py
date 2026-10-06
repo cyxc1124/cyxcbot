@@ -493,3 +493,66 @@ async def test_shielded_shared_task_not_cancelled_by_waiter() -> None:
     callback_release.set()
     await leader
     assert load_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_official_settings_permissions_and_friend_cache_round_trip(
+    db_context, monkeypatch
+):
+    from fastapi import HTTPException
+    from sqlalchemy import select
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+    from shared.adapter import sessions
+    from shared.config.nonebot_superusers import apply_nonebot_superusers
+    from shared.db.models import OfficialQQSession
+
+    _, factory, ConfigService, *_, SystemSetting = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    monkeypatch.setattr(nonebot.get_driver().config, "superusers", set())
+    assert not (await service.load()).official_qq_use_websocket
+    users = ["12345", "USER_OPENID_123"]
+    updated = await settings_api.update_settings(
+        SettingsUpdateRequest(
+            nonebot_superusers=users,
+            status_check_allowed_qq=users,
+            official_qq_app_id="test-app",
+            official_qq_app_secret="test-only-app-secret",
+        ),
+        None,
+    )
+    assert updated.nonebot_superusers == users
+    assert updated.status_check_allowed_qq == users
+    assert updated.official_qq.secret.configured
+    assert "test-only-app-secret" not in updated.model_dump_json()
+    assert service.get_snapshot().official_qq_app_secret == "test-only-app-secret"
+    apply_nonebot_superusers(service.get_snapshot().nonebot_superusers)
+    assert nonebot.get_driver().config.superusers == set(users)
+    async with factory() as session:
+        stored = await session.get(SystemSetting, "official_qq_app_secret_encrypted")
+        assert stored.value and stored.value != "test-only-app-secret"
+    with pytest.raises(HTTPException) as exc:
+        await settings_api.update_settings(
+            SettingsUpdateRequest(nonebot_superusers=["invalid id!"]), None
+        )
+    assert exc.value.status_code == 400
+    assert service.get_snapshot().nonebot_superusers == users
+
+    monkeypatch.setattr(sessions, "_orm_session", lambda: factory())
+    monkeypatch.setattr(sessions, "_session_model", lambda: OfficialQQSession)
+    await sessions.upsert_session("USER_OPENID_123", "c2c")
+    assert [row.openid for row in await sessions.list_sessions("c2c")] == [
+        "USER_OPENID_123"
+    ]
+    await sessions.delete_session("USER_OPENID_123")
+    async with factory() as session:
+        assert not (await session.scalars(select(OfficialQQSession))).all()
+
+    cleared = await settings_api.update_settings(
+        SettingsUpdateRequest(official_qq_app_id="", official_qq_app_secret=""), None
+    )
+    assert not cleared.official_qq.secret.configured
+    assert not service.get_snapshot().official_qq_app_secret

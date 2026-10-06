@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Any
 
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, PrivateMessageEvent
 from nonebot.adapters.onebot.v11.exception import ActionFailed
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.log import logger
 
+from shared.adapter.inbound import user_id_of
+from shared.adapter.outbound import send_event_message
 from shared.config.message_templates import LinkMessageTemplates
 from utils.bilibili_api import VideoInfo
 
@@ -29,27 +31,13 @@ def any_send_ok(send_results: list[object] | None) -> bool:
     )
 
 
-async def send_batches(
-    bot: Bot,
-    event: GroupMessageEvent | PrivateMessageEvent,
-    batches: list[Message],
-) -> list[object]:
-    send_results: list[object] = []
-    for batch in batches:
-        if isinstance(event, GroupMessageEvent):
-            send_results.append(
-                await bot.send_group_msg(group_id=event.group_id, message=batch)
-            )
-        else:
-            send_results.append(
-                await bot.send_private_msg(user_id=event.user_id, message=batch)
-            )
-    return send_results
+async def send_batches(bot: Any, event: Any, batches: list[Message]) -> list[object]:
+    return [await send_event_message(bot, event, batch) for batch in batches]
 
 
 async def send_video_with_cover_fallback(
-    bot: Bot,
-    event: GroupMessageEvent | PrivateMessageEvent,
+    bot: Any,
+    event: Any,
     *,
     video: VideoInfo,
     video_path: Path,
@@ -71,13 +59,13 @@ async def send_video_with_cover_fallback(
         )
         logger.warning(
             "B 站链接解析视频发送失败 user={} retcode={} detail={!r}，降级为封面+文字",
-            event.user_id,
+            user_id_of(event),
             getattr(exc, "retcode", None),
             detail[:200],
         )
     except Exception:
         logger.opt(exception=True).warning(
-            "B 站链接解析视频发送异常 user={}，降级为封面+文字", event.user_id
+            "B 站链接解析视频发送异常 user={}，降级为封面+文字", user_id_of(event)
         )
 
     if all_sends_ok(send_results):

@@ -34,6 +34,16 @@ class QqConnectionStatus(BaseModel):
     message: str
 
 
+class OfficialQqConnectionStatus(BaseModel):
+    configured: bool
+    connected: bool
+    app_id: str = ""
+    is_sandbox: bool = False
+    use_websocket: bool = False
+    message: str
+
+
 class ConnectionsStatusResponse(BaseModel):
     bilibili: BilibiliConnectionStatus
     qq: QqConnectionStatus
+    official_qq: OfficialQqConnectionStatus

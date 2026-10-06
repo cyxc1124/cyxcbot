@@ -16,6 +16,7 @@ sidebar_position: 1
 | `PORT` | `8080` | 机器人监听端口 |
 | `COMMAND_START` | `["/"]` | 命令起始字符 |
 | `COMMAND_SEP` | `["."]` | 命令分隔字符 |
+| `DRIVER` | `~fastapi+~httpx+~websockets` | NoneBot 驱动。官方 Bot 默认 Webhook，`httpx` 用于调用官方 API，`websockets` 兼容旧连接方式；`bot.py` 未设置时会补上 |
 
 ## Web Admin
 
@@ -70,7 +71,7 @@ SQLALCHEMY_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/cyxcbo
 
 ## 业务配置不在环境变量中
 
-监控映射、B 站 / 抖音 Cookie、群策略、消息模板、**Rust 群管**（RCON 绑定、签到奖励、商城等）均存数据库，经 Web Admin 管理，无对应启动环境变量。
+监控映射、B 站 / 抖音 Cookie、**官方 QQ Bot AppID/Secret**、群策略、消息模板、**Rust 群管**（RCON 绑定、签到奖励、商城等）均存数据库，经 Web Admin 管理，无对应启动环境变量。
 
 ## 已弃用的业务环境变量
 

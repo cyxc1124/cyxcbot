@@ -6,13 +6,15 @@
 
 import asyncio
 from datetime import datetime
-from typing import Dict, Iterable, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Union
 
-from nonebot import get_driver
 from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.log import logger
 
+from shared.adapter.bots import iter_onebot_bots, messaging_bots
+from shared.adapter.ids import is_numeric_qq_id
+from shared.adapter.outbound import send_group, send_user
 from shared.config.message_templates import LiveMessageTemplates
 from shared.notify.at_all import LIVE_AT_ALL_FALLBACK, bot_can_at_all
 from shared.notify.delivery import (
@@ -240,16 +242,12 @@ class LiveNotificationSender:
 
     async def _send_group_message(
         self,
-        bot: Bot,
         group_id: str,
         message: Message,
         status: str,
     ) -> TargetDelivery:
         try:
-            await bot.send_group_msg(
-                group_id=int(group_id),
-                message=message,
-            )
+            await send_group(group_id, message)
             logger.success("直播{}通知已发送到群组 {}", status, group_id)
             return TargetDelivery("group", group_id, True)
         except Exception as exc:
@@ -260,16 +258,12 @@ class LiveNotificationSender:
 
     async def _send_private_message(
         self,
-        bot: Bot,
         user_id: str,
         message: Message,
         status: str,
     ) -> TargetDelivery:
         try:
-            await bot.send_private_msg(
-                user_id=int(user_id),
-                message=message,
-            )
+            await send_user(user_id, message)
             logger.success("直播{}通知已发送到好友 {}", status, user_id)
             return TargetDelivery("user", user_id, True)
         except Exception as exc:
@@ -302,9 +296,7 @@ class LiveNotificationSender:
             target_users,
         )
 
-        bots = get_driver().bots
-
-        if not bots:
+        if not messaging_bots():
             logger.warning("没有可用的机器人实例")
             return DeliveryResult(
                 targets=[
@@ -317,25 +309,8 @@ class LiveNotificationSender:
                 ]
             )
 
-        valid_bots: List[Tuple[str, Bot]] = [
-            (bot_id, bot) for bot_id, bot in bots.items() if isinstance(bot, Bot)
-        ]
-        if not valid_bots:
-            logger.warning("没有可用的 OneBot 机器人实例")
-            return DeliveryResult(
-                targets=[
-                    TargetDelivery(
-                        "group", group_id, False, "没有可用的 OneBot 机器人实例"
-                    )
-                    for group_id in target_groups
-                ]
-                + [
-                    TargetDelivery(
-                        "user", user_id, False, "没有可用的 OneBot 机器人实例"
-                    )
-                    for user_id in target_users
-                ]
-            )
+        onebot_bots = iter_onebot_bots()
+        numeric_groups = [gid for gid in target_groups if is_numeric_qq_id(gid)]
 
         parallel_tasks: List = [
             self._generate_card_if_needed(
@@ -347,11 +322,11 @@ class LiveNotificationSender:
                 prefetched_images,
             )
         ]
-        for _, bot in valid_bots:
+        for bot in onebot_bots:
             parallel_tasks.append(
                 self._resolve_at_all_map(
                     bot,
-                    target_groups,
+                    numeric_groups,
                     status=status,
                     at_all_enabled=at_all_enabled,
                 )
@@ -370,41 +345,28 @@ class LiveNotificationSender:
         for result in parallel_results[1:]:
             if isinstance(result, Exception):
                 logger.error("查询 @全体 权限失败: {}", result)
-                at_all_maps.append({group_id: False for group_id in target_groups})
+                at_all_maps.append({group_id: False for group_id in numeric_groups})
             else:
                 at_all_maps.append(result)
 
-        # 按 Bot 顺序 failover：同一目标只投递给首个成功的 Bot，避免多 Bot 同群/同好友重复推送。
         targets: List[TargetDelivery] = []
         for group_id in target_groups:
-            delivery = TargetDelivery("group", group_id, False, "没有可用的机器人实例")
-            for index, (_, bot) in enumerate(valid_bots):
-                at_all_map = (
-                    at_all_maps[index]
-                    if index < len(at_all_maps)
-                    else {group_id: False for group_id in target_groups}
+            can_at_all = any(item.get(group_id, False) for item in at_all_maps)
+            if status == "start":
+                message = self.build_start_message(
+                    streamer_name=streamer_name,
+                    room_info=room_info,
+                    card_image=card_image,
+                    at_all_enabled=at_all_enabled,
+                    can_at_all=can_at_all,
                 )
-                if status == "start":
-                    message = self.build_start_message(
-                        streamer_name=streamer_name,
-                        room_info=room_info,
-                        card_image=card_image,
-                        at_all_enabled=at_all_enabled,
-                        can_at_all=at_all_map.get(group_id, False),
-                    )
-                else:
-                    message = self.build_end_message(
-                        streamer_name=streamer_name,
-                        card_image=card_image,
-                        duration_seconds=duration_seconds,
-                    )
-
-                delivery = await self._send_group_message(
-                    bot, group_id, message, status
+            else:
+                message = self.build_end_message(
+                    streamer_name=streamer_name,
+                    card_image=card_image,
+                    duration_seconds=duration_seconds,
                 )
-                if delivery.success:
-                    break
-            targets.append(delivery)
+            targets.append(await self._send_group_message(group_id, message, status))
 
         for user_id in target_users:
             if status == "start":
@@ -421,15 +383,7 @@ class LiveNotificationSender:
                     card_image=card_image,
                     duration_seconds=duration_seconds,
                 )
-
-            delivery = TargetDelivery("user", user_id, False, "没有可用的机器人实例")
-            for _, bot in valid_bots:
-                delivery = await self._send_private_message(
-                    bot, user_id, message, status
-                )
-                if delivery.success:
-                    break
-            targets.append(delivery)
+            targets.append(await self._send_private_message(user_id, message, status))
 
         if not targets:
             return empty_delivery_result()

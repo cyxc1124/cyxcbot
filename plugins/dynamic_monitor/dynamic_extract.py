@@ -7,15 +7,17 @@ from typing import Literal
 
 import aiohttp
 from nonebot import on_message
-from nonebot.adapters.onebot.v11 import (
-    Bot,
-    GroupMessageEvent,
-    Message,
-    MessageSegment,
-    PrivateMessageEvent,
-)
+from nonebot.adapters import Bot, Event
+from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.log import logger
 
+from shared.adapter.inbound import (
+    group_id_of,
+    is_group_event,
+    is_private_event,
+    user_id_of,
+)
+from shared.adapter.outbound import send_event_message
 from shared.config.command_aliases import (
     CommandAliasEntry,
     prefix_alternation,
@@ -134,30 +136,22 @@ async def _fetch_dynamic_images(dynamic_id: str, cookie: str | None) -> list[str
         return dynamic.images
 
 
-async def _send_reply(
-    bot: Bot,
-    event: GroupMessageEvent | PrivateMessageEvent,
-    message: Message | str,
-) -> None:
-    if isinstance(event, GroupMessageEvent):
-        await bot.send_group_msg(group_id=event.group_id, message=message)
-    else:
-        await bot.send_private_msg(user_id=event.user_id, message=message)
+async def _send_reply(bot: Bot, event: Event, message: Message | str) -> None:
+    payload = message if isinstance(message, Message) else Message(str(message))
+    await send_event_message(bot, event, payload)
 
 
-def _subscription_allowed(event: GroupMessageEvent | PrivateMessageEvent) -> bool:
+def _subscription_allowed(event: Event) -> bool:
     snap = get_config_service().get_snapshot()
-    if isinstance(event, GroupMessageEvent):
-        return is_group_dynamic_subscribed(str(event.group_id), snap)
-    return is_user_dynamic_subscribed(str(event.user_id), snap)
+    if is_group_event(event):
+        group_id = group_id_of(event)
+        return bool(group_id) and is_group_dynamic_subscribed(group_id, snap)
+    return is_user_dynamic_subscribed(user_id_of(event), snap)
 
 
-async def _handle_extract(
-    bot: Bot, event: GroupMessageEvent | PrivateMessageEvent
-) -> None:
-    if isinstance(event, GroupMessageEvent) and str(event.user_id) == str(
-        event.self_id
-    ):
+async def _handle_extract(bot: Bot, event: Event) -> None:
+    user_id = user_id_of(event)
+    if is_group_event(event) and user_id == str(getattr(bot, "self_id", "")):
         return
 
     message_text = event.get_plaintext().strip()
@@ -167,14 +161,14 @@ async def _handle_extract(
         return
 
     if not _subscription_allowed(event):
-        scope = "群" if isinstance(event, GroupMessageEvent) else "好友"
+        scope = "群" if is_group_event(event) else "好友"
         target = (
-            f"group={event.group_id}"
-            if isinstance(event, GroupMessageEvent)
-            else f"user={event.user_id}"
+            f"group={group_id_of(event)}"
+            if is_group_event(event)
+            else f"user={user_id}"
         )
         logger.warning(
-            f"拒绝提取动态图片: id={dynamic_id} user={event.user_id} {target} "
+            f"拒绝提取动态图片: id={dynamic_id} user={user_id} {target} "
             f"scope={scope} reason=no_subscription"
         )
         return
@@ -185,7 +179,7 @@ async def _handle_extract(
     if not cookie:
         logger.warning("提取动态图片：未配置 Cookie，部分动态可能无法访问")
 
-    logger.info(f"提取动态图片: id={dynamic_id} user={event.user_id}")
+    logger.info(f"提取动态图片: id={dynamic_id} user={user_id}")
 
     try:
         images = await _fetch_dynamic_images(dynamic_id, cookie)
@@ -207,10 +201,14 @@ async def _handle_extract(
 
 
 @group_dynamic_extract.handle()
-async def handle_group_dynamic_extract(bot: Bot, event: GroupMessageEvent):
+async def handle_group_dynamic_extract(bot: Bot, event: Event):
+    if not is_group_event(event):
+        return
     await _handle_extract(bot, event)
 
 
 @private_dynamic_extract.handle()
-async def handle_private_dynamic_extract(bot: Bot, event: PrivateMessageEvent):
+async def handle_private_dynamic_extract(bot: Bot, event: Event):
+    if not is_private_event(event):
+        return
     await _handle_extract(bot, event)

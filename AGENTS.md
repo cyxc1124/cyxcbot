@@ -31,7 +31,9 @@ tests/              # pytest
 deploy/             # Docker Compose / Helm
 ```
 
-数据流：Web Admin ↔ `admin/` ↔ `shared/db` ↔ 各 `plugins/` ↔ OneBot 协议端。
+数据流：Web Admin ↔ `admin/` ↔ `shared/db` ↔ 各 `plugins/` ↔ OneBot 协议端 / 官方 QQ Bot。官方凭证仅存数据库（`official_qq_*`），经 `shared/adapter/official_runtime.py` 热连接；数字 QQ 号走 OneBot，openid 走官方 Bot。`rust_player` / `rust_rcon` / `group_special_title` 仍仅 OneBot。
+
+官方 Bot 默认使用 Webhook（`/qq/webhook`，机器人端口默认 8080），只支持群/C2C 被动回复；平台已停止主动推送。监控通知只投递数字 OneBot 目标，官方会话的订阅映射保留给命令查询。命令回复走 `send_event_message()`，由 QQ 适配器维护事件回复序号，不能改走不带事件的 `send_group()` / `send_user()`。
 
 ### 插件
 
@@ -47,7 +49,7 @@ deploy/             # Docker Compose / Helm
 | `rust_rcon` | 群/私聊 WebRCON 远控（触发词 + QQ 白名单；会话开关默认关） |
 | `rust_player` | 群内签到、SteamID 绑定、积分查询与商城兑换（仅群聊） |
 | `group_special_title` | 群成员自助设置 QQ 专属头衔（须群主、白名单；`/头衔`） |
-| `group_guard` / `private_guard` | 入站消息总开关（不影响监控主动推送） |
+| `group_guard` / `private_guard` | 入站消息总开关（OneBot + 官方 Bot；不影响监控主动推送） |
 | `status_check` | `/status` 运行状态查询与权限控制 |
 
 ### Admin ↔ Plugin 边界
@@ -206,7 +208,8 @@ logger.error(f"错误: {traceback.format_exc()}")
 | 消息模板默认值 | `shared/config/message_templates.py` |
 | 链接解析策略 | `shared/config/link_parser_policy.py` |
 | 群/好友/状态查询策略 | `shared/group_policy.py`、`private_policy.py`、`status_check_policy.py` |
-| 通知发送 | `shared/notify/delivery.py` |
+| 通知发送 | `shared/notify/delivery.py`；双栈投递见 `shared/adapter/outbound.py` |
+| 官方 QQ Bot | `shared/adapter/`（凭证热连接 `official_runtime.py`） |
 | B 站扫码登录 | `shared/bilibili/qrcode_login.py` |
 | Cookie 加密 | `shared/security/crypto.py` |
 | Admin↔监控桥接 | `admin/services/monitor_bridge.py` |

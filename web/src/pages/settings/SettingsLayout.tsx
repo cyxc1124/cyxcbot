@@ -52,6 +52,11 @@ const settingsNavSections: SettingsNavSection[] = [
     title: '通用',
     items: [
       {
+        to: '/settings/official-qq',
+        label: '官方 Bot',
+        description: 'QQ 开放平台 AppID / Secret',
+      },
+      {
         to: '/settings/bot',
         label: '机器人',
         description: 'QQ 命令权限与状态查询',

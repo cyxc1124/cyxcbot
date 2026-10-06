@@ -141,3 +141,8 @@ class AppConfigSnapshot:
     x_api_bearer: str = ""
     x_api_bearer_set: bool = False
     x_proxy: ProxyConfig = field(default_factory=ProxyConfig)
+    official_qq_app_id: str = ""
+    official_qq_app_secret: str = ""
+    official_qq_app_secret_set: bool = False
+    official_qq_is_sandbox: bool = False
+    official_qq_use_websocket: bool = False

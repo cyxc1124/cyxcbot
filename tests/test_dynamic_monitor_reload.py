@@ -110,7 +110,7 @@ def _make_monitor(
     uids: list[str],
 ):
     config = Config(
-        dynamic_monitor_mapping={uid: ["group1"] for uid in uids},
+        dynamic_monitor_mapping={uid: ["1001"] for uid in uids},
     )
     monitor = DynamicMonitor(config)
     monitor.is_running = True
@@ -149,7 +149,7 @@ async def test_stale_check_skips_notification_after_disable_reenable_bumps_gener
         await fetch_started.wait()
 
         monitor._remove_uid("111")
-        monitor.config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+        monitor.config = Config(dynamic_monitor_mapping={"111": ["1001"]})
         monitor._bump_check_generation("111")
         monitor.last_dynamic_ids["111"] = 100
         monitor.initialized_uids["111"] = True
@@ -208,7 +208,7 @@ async def test_stale_check_skips_notification_after_disable_reenable_during_send
         await first_notify_started.wait()
 
         monitor._remove_uid("111")
-        monitor.config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+        monitor.config = Config(dynamic_monitor_mapping={"111": ["1001"]})
         monitor._bump_check_generation("111")
         monitor.last_dynamic_ids["111"] = 0
         monitor.initialized_uids["111"] = False
@@ -254,10 +254,10 @@ async def test_stale_check_skips_notification_when_disable_reenable_during_send(
         patch.object(monitor, "_persist_state", AsyncMock()) as persist,
     ):
         stale_task = asyncio.create_task(monitor._check_user_dynamic("111"))
-        await send_started.wait()
+        await asyncio.wait_for(send_started.wait(), timeout=2)
 
         monitor._remove_uid("111")
-        monitor.config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+        monitor.config = Config(dynamic_monitor_mapping={"111": ["1001"]})
         monitor._bump_check_generation("111")
         monitor.last_dynamic_ids["111"] = 0
         monitor.initialized_uids["111"] = False
@@ -316,7 +316,7 @@ async def test_stale_check_skips_pinned_notification_after_disable_reenable_duri
         await pinned_notify_started.wait()
 
         monitor._remove_uid("111")
-        monitor.config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+        monitor.config = Config(dynamic_monitor_mapping={"111": ["1001"]})
         monitor._bump_check_generation("111")
         monitor.pinned_dynamic_ids["111"] = 42
         monitor.last_dynamic_ids["111"] = 100
@@ -337,7 +337,7 @@ async def test_reload_config_removes_deleted_uid_runtime_state(
     monitor = _make_monitor(Config, DynamicMonitor, ["111", "222"])
 
     reduced_config = Config(
-        dynamic_monitor_mapping={"222": ["group1"]},
+        dynamic_monitor_mapping={"222": ["1001"]},
     )
 
     with (
@@ -367,7 +367,7 @@ async def test_reenabled_uid_treated_as_new_after_reload_removal(
     monitor = _make_monitor(Config, DynamicMonitor, ["111"])
 
     disabled_config = Config(dynamic_monitor_mapping={})
-    reenabled_config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+    reenabled_config = Config(dynamic_monitor_mapping={"111": ["1001"]})
 
     with (
         patch(
@@ -456,7 +456,7 @@ async def _run_stale_check_during_disable_reenable_via_reload_config(
 ) -> tuple[AsyncMock, AsyncMock]:
     """在 fetch 进行中通过 reload_config 模拟停用→重启用，等待过期检查完成。"""
     disabled_config = Config(dynamic_monitor_mapping={})
-    reenabled_config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+    reenabled_config = Config(dynamic_monitor_mapping={"111": ["1001"]})
 
     fetch_started = asyncio.Event()
     release_fetch = asyncio.Event()
@@ -568,7 +568,7 @@ async def test_reenabled_uid_reset_after_stale_inflight_check_repollutes_memory(
     monitor = _make_monitor(Config, DynamicMonitor, ["111"])
 
     disabled_config = Config(dynamic_monitor_mapping={})
-    reenabled_config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+    reenabled_config = Config(dynamic_monitor_mapping={"111": ["1001"]})
 
     with (
         patch(
@@ -620,7 +620,7 @@ async def test_reload_config_deletes_persisted_state_for_removed_uid(
     monitor = _make_monitor(Config, DynamicMonitor, ["111", "222"])
 
     reduced_config = Config(
-        dynamic_monitor_mapping={"222": ["group1"]},
+        dynamic_monitor_mapping={"222": ["1001"]},
     )
 
     with (
@@ -648,7 +648,7 @@ async def test_start_dynamic_monitor_registers_config_reload_once(
     monitor_mod._config_reload_registered = False
     monitor_mod.dynamic_monitor_instance = None
 
-    config = _Config(dynamic_monitor_mapping={"111": ["group1"]})
+    config = _Config(dynamic_monitor_mapping={"111": ["1001"]})
     fake_monitor = AsyncMock()
     fake_monitor.start_monitoring = AsyncMock()
 

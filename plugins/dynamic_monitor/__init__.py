@@ -5,9 +5,12 @@ UP主动态监控插件
 """
 
 from nonebot import get_driver, on_message
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
+from nonebot.adapters import Bot, Event
 from nonebot.log import logger
 
+from shared.adapter.bots import is_console_bot
+from shared.adapter.inbound import group_id_of, is_group_event, is_tome, plaintext_of
+from shared.adapter.outbound import send_event_message, send_event_text
 from shared.config.command_aliases import match_plain
 from shared.config.service import get_config_service
 from shared.onebot.lifecycle import stop_monitor_if_no_bots
@@ -25,6 +28,8 @@ driver = get_driver()
 @driver.on_bot_connect
 async def _(bot):
     """机器人连接后开始监控"""
+    if is_console_bot(bot):
+        return
     logger.info("机器人 {} 已连接，开始初始化动态监控...", bot.self_id)
     try:
         await dynamic_monitor.start_dynamic_monitor()
@@ -64,15 +69,18 @@ dynamic_command = on_message(priority=5, block=False)
 
 
 @dynamic_command.handle()
-async def handle_dynamic_commands(bot: Bot, event: GroupMessageEvent):
+async def handle_dynamic_commands(bot: Bot, event: Event):
     """处理动态查询命令"""
-    message_text = event.get_plaintext().strip()
+    if not is_group_event(event):
+        return
+    message_text = plaintext_of(event)
     logger.debug("收到群消息: {}", message_text)
 
     config = Config.from_service()
 
-    # 获取群组ID
-    group_id = str(event.group_id)
+    group_id = group_id_of(event)
+    if not group_id:
+        return
 
     # 查找该群对应的UP主
     uids = config.get_uids_by_group_id(group_id)
@@ -103,12 +111,12 @@ async def handle_dynamic_commands(bot: Bot, event: GroupMessageEvent):
 
     # 检查是否是动态查询命令（触发词可在 Web Admin 设置 → 命令 中自定义）
     command_aliases = get_config_service().get_snapshot().command_aliases
-    is_tome = event.is_tome()
+    mentioned = is_tome(event)
     is_latest = match_plain(
-        message_text, "dynamic_query_latest", command_aliases, is_tome=is_tome
+        message_text, "dynamic_query_latest", command_aliases, is_tome=mentioned
     )
     is_pinned = match_plain(
-        message_text, "dynamic_query_pinned", command_aliases, is_tome=is_tome
+        message_text, "dynamic_query_pinned", command_aliases, is_tome=mentioned
     )
 
     if not (is_latest or is_pinned):
@@ -124,14 +132,14 @@ async def handle_dynamic_commands(bot: Bot, event: GroupMessageEvent):
             for uid in uids:
                 try:
                     logger.info("为UP主 {} 获取最新动态", uid)
-                    await dynamic_monitor_instance.get_latest_dynamic(uid, group_id)
+                    message = await dynamic_monitor_instance.get_latest_dynamic(uid)
+                    await send_event_message(bot, event, message)
                     logger.info("UP主 {} 最新动态获取完成", uid)
                 except Exception:
                     logger.opt(exception=True).error("获取UP主 {} 最新动态失败", uid)
                     try:
-                        await bot.send_group_msg(
-                            group_id=int(group_id),
-                            message=f"UP主 {uid} 查询失败，请稍后重试",
+                        await send_event_text(
+                            bot, event, f"UP主 {uid} 查询失败，请稍后重试"
                         )
                         logger.info("已发送失败提示消息给UP主 {}", uid)
                     except Exception:
@@ -142,14 +150,14 @@ async def handle_dynamic_commands(bot: Bot, event: GroupMessageEvent):
             for uid in uids:
                 try:
                     logger.info("为UP主 {} 获取置顶动态", uid)
-                    await dynamic_monitor_instance.get_pinned_dynamic(uid, group_id)
+                    message = await dynamic_monitor_instance.get_pinned_dynamic(uid)
+                    await send_event_message(bot, event, message)
                     logger.info("UP主 {} 置顶动态获取完成", uid)
                 except Exception:
                     logger.opt(exception=True).error("获取UP主 {} 置顶动态失败", uid)
                     try:
-                        await bot.send_group_msg(
-                            group_id=int(group_id),
-                            message=f"UP主 {uid} 查询失败，请稍后重试",
+                        await send_event_text(
+                            bot, event, f"UP主 {uid} 查询失败，请稍后重试"
                         )
                         logger.info("已发送失败提示消息给UP主 {}", uid)
                     except Exception:
@@ -160,9 +168,7 @@ async def handle_dynamic_commands(bot: Bot, event: GroupMessageEvent):
     except Exception:
         logger.opt(exception=True).error("处理动态查询命令失败")
         try:
-            await bot.send_group_msg(
-                group_id=int(group_id), message="系统错误，请稍后重试"
-            )
+            await send_event_text(bot, event, "系统错误，请稍后重试")
         except Exception:
             logger.opt(exception=True).error("发送系统错误消息失败")
 

@@ -45,6 +45,13 @@ export interface XProxySettings {
   password_configured: boolean
 }
 
+export interface OfficialQQSettings {
+  app_id: string
+  secret: CookieStatus
+  is_sandbox: boolean
+  use_websocket: boolean
+}
+
 export interface Settings {
   dynamic_monitor_interval: number
   dynamic_monitor_use_stagger: boolean
@@ -73,6 +80,7 @@ export interface Settings {
   douyin_cookie: CookieStatus
   x_api_bearer: CookieStatus
   x_proxy: XProxySettings
+  official_qq: OfficialQQSettings
   status_check_allowed_qq: string[]
   nonebot_superusers: string[]
   command_aliases: Record<string, CommandAliasEntry>
@@ -95,6 +103,7 @@ export type SettingsUpdate = Partial<
     | 'douyin_cookie'
     | 'x_api_bearer'
     | 'x_proxy'
+    | 'official_qq'
     | 'command_prefixes'
     | 'link_parser_shared_media_dir_default'
     | 'link_parser_shared_media_dir_resolved'
@@ -108,6 +117,10 @@ export type SettingsUpdate = Partial<
   x_proxy_username?: string
   /** 明文；undefined=不改；""=清除 */
   x_proxy_password?: string
+  official_qq_app_id?: string
+  official_qq_app_secret?: string
+  official_qq_is_sandbox?: boolean
+  official_qq_use_websocket?: boolean
 }
 
 export interface CookieTestResult {
@@ -212,6 +225,7 @@ export interface Group {
   group_id: string
   group_name: string | null
   member_count?: number | null
+  source?: 'onebot' | 'official'
 }
 
 export interface GroupMessagePolicy {
@@ -224,6 +238,7 @@ export interface GroupMessagePolicy {
 export interface Friend {
   user_id: string
   nickname: string | null
+  source?: 'onebot' | 'official'
 }
 
 export interface PrivateMessagePolicy {
@@ -515,9 +530,19 @@ export interface QqConnectionStatus {
   message: string
 }
 
+export interface OfficialQqConnectionStatus {
+  configured: boolean
+  connected: boolean
+  app_id: string
+  is_sandbox: boolean
+  use_websocket: boolean
+  message: string
+}
+
 export interface ConnectionsStatus {
   bilibili: BilibiliConnectionStatus
   qq: QqConnectionStatus
+  official_qq: OfficialQqConnectionStatus
 }
 
 export interface AboutInfo {

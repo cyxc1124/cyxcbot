@@ -375,3 +375,19 @@ def test_infer_revision_pending_tweet_id_32_is_w3() -> None:
         )
     assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "w3x4y5z6a7b8"
     engine.dispose()
+
+
+def test_infer_revision_detects_official_qq_session() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE shared_db_officialqqsession ("
+                "openid TEXT PRIMARY KEY, "
+                "kind TEXT NOT NULL, "
+                "name TEXT NOT NULL, "
+                "last_seen DATETIME NOT NULL)"
+            )
+        )
+    assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "z6a7b8c9d0e1"
+    engine.dispose()

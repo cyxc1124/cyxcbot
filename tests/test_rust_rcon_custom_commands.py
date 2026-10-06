@@ -157,7 +157,15 @@ def test_custom_command_name_conflict() -> None:
     assert alias_custom_command_conflict("功能10", snap.rust_rcon_custom_commands)
 
 
-def test_custom_command_name_conflict_strips_command_prefix() -> None:
+def test_custom_command_name_conflict_strips_command_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 其它测试初始化 NoneBot 后会读进 .env 的 COMMAND_START（如 "#"），
+    # 本用例只验证斜杠前缀剥离，不跟进程内 driver 绑定。
+    def _no_driver() -> None:
+        raise RuntimeError("driver isolated")
+
+    monkeypatch.setattr("nonebot.get_driver", _no_driver)
     snap = AppConfigSnapshot(
         rust_rcon_bindings=[
             RustRconBindingRecord(

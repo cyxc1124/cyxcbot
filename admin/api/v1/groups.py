@@ -47,7 +47,7 @@ def _group_list_available(status: str) -> bool:
 
 async def _ensure_group_list_complete_for_mutation() -> None:
     _, fetch_status = await get_group_list_with_status()
-    if fetch_status != "ok":
+    if fetch_status == "incomplete":
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="群列表不完整，暂不可修改策略",
