@@ -104,6 +104,46 @@ def dynamic_monitor_modules() -> Iterator[tuple[Any, Any]]:
                 sys.modules[key] = original
 
 
+@pytest.mark.asyncio
+async def test_partial_delivery_retry_skips_successful_targets(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """部分目标失败时，重试只发给还没成功的目标。"""
+    from shared.notify.delivery import DeliveryResult, TargetDelivery
+
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.config.dynamic_monitor_mapping["111"] = ["1001", "1002"]
+    monitor.config.dynamic_monitor_user_mapping["111"] = ["2002"]
+    dynamic = SimpleNamespace(id=200, uid="111", get_type_description=lambda: "text")
+    monitor._resolve_author_name = AsyncMock(return_value="author")
+    monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
+    partial = DeliveryResult(
+        targets=[
+            TargetDelivery("group", "1001", True),
+            TargetDelivery("group", "1002", False, "down"),
+            TargetDelivery("user", "2002", True),
+        ]
+    )
+    success = DeliveryResult(targets=[TargetDelivery("group", "1002", True)])
+    monitor.sender = SimpleNamespace(
+        build_dynamic_message=MagicMock(return_value="msg"),
+        send_message=AsyncMock(side_effect=[partial, success]),
+    )
+
+    assert await monitor._send_dynamic_notification("111", dynamic) is False
+    assert await monitor._send_dynamic_notification("111", dynamic) is True
+
+    first_groups, first_users = monitor.sender.send_message.await_args_list[0].args[1:3]
+    second_groups, second_users = monitor.sender.send_message.await_args_list[1].args[
+        1:3
+    ]
+    assert first_groups == ["1001", "1002"]
+    assert first_users == ["2002"]
+    assert second_groups == ["1002"]
+    assert second_users == []
+
+
 def _make_monitor(
     Config: Any,
     DynamicMonitor: Any,

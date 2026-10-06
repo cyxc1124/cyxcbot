@@ -100,6 +100,10 @@ class DynamicMonitor:
         self._screenshot_semaphore = asyncio.Semaphore(_SCREENSHOT_CONCURRENCY)
         self._screenshot_queue_semaphore = asyncio.Semaphore(_SCREENSHOT_QUEUE_MAX)
         self._state_store = DynamicMonitorStateStore()
+        # uid, dynamic_id, is_pinned -> 尚未成功的群/好友。重试不再发给已成功目标。
+        self._pending_targets: Dict[
+            tuple[str, int | str, bool], tuple[list[str], list[str]]
+        ] = {}
 
     def _touch_last_check_at(self) -> None:
         self.last_check_at = datetime.now().isoformat(timespec="seconds")
@@ -126,6 +130,10 @@ class DynamicMonitor:
         self.initialized_uids.pop(uid, None)
         self.pinned_dynamic_ids.pop(uid, None)
         self._delivery_locks.pop(uid, None)
+        pending_targets = getattr(self, "_pending_targets", None)
+        if pending_targets is not None:
+            for key in [key for key in pending_targets if key[0] == uid]:
+                pending_targets.pop(key, None)
 
     def _spawn_delivery_task(self, coro, *, name: str = "动态投递") -> None:
         spawn_background_task(name, coro, tasks=self._delivery_tasks)
@@ -726,11 +734,21 @@ class DynamicMonitor:
             return False
 
         # 截图期间可能热更新订阅，发送前重新取当前目标。
-        group_ids = onebot_target_ids(self.config.dynamic_monitor_mapping.get(uid, []))
-        user_ids = onebot_target_ids(
-            self.config.dynamic_monitor_user_mapping.get(uid, [])
-        )
-        if not group_ids and not user_ids:
+        configured_groups = list(self.config.dynamic_monitor_mapping.get(uid, []))
+        configured_users = list(self.config.dynamic_monitor_user_mapping.get(uid, []))
+        group_ids = onebot_target_ids(configured_groups)
+        user_ids = onebot_target_ids(configured_users)
+        pending_key = (uid, dynamic.id, is_pinned)
+        pending_targets = self.__dict__.setdefault("_pending_targets", {})
+        pending = pending_targets.get(pending_key)
+        if pending is not None:
+            failed_groups, failed_users = pending
+            group_ids = [gid for gid in group_ids if gid in failed_groups]
+            user_ids = [user_id for user_id in user_ids if user_id in failed_users]
+            if not group_ids and not user_ids:
+                pending_targets.pop(pending_key, None)
+                return True
+        elif not group_ids and not user_ids:
             logger.debug("UP主 {} 已无 OneBot 推送目标，跳过主动推送", uid)
             return True
         at_all_enabled = self.config.dynamic_at_all.get(uid, False)
@@ -741,6 +759,7 @@ class DynamicMonitor:
             at_all_enabled=at_all_enabled,
         )
         if delivery.all_succeeded:
+            pending_targets.pop(pending_key, None)
             logger.info(
                 "动态通知已推送: uid={} dynamic_id={} groups={} users={} pinned={}",
                 uid,
@@ -751,16 +770,23 @@ class DynamicMonitor:
             )
             return True
 
-        failed_targets = [
-            f"{target.target_type}:{target.target_id}"
+        failed_groups = [
+            target.target_id
             for target in delivery.targets
-            if not target.success
+            if target.target_type == "group" and not target.success
         ]
+        failed_users = [
+            target.target_id
+            for target in delivery.targets
+            if target.target_type == "user" and not target.success
+        ]
+        pending_targets[pending_key] = (failed_groups, failed_users)
         logger.warning(
             "动态通知投递未全部成功: uid={} dynamic_id={} failed={}",
             uid,
             dynamic.id,
-            failed_targets,
+            [f"group:{gid}" for gid in failed_groups]
+            + [f"user:{user_id}" for user_id in failed_users],
         )
         return False
 
