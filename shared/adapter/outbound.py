@@ -26,6 +26,7 @@ from shared.adapter.inbound import (
     is_group_event,
     user_id_of,
 )
+from shared.adapter.qq_errors import note_qq_api_error
 from shared.notify.at_all import DYNAMIC_AT_ALL_FALLBACK, resolve_at_all_prefix
 
 _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
@@ -224,6 +225,9 @@ async def _send_official_parts(
                         retries += 1
                         await asyncio.sleep(3 * retries)
                         continue
+                    noted = note_qq_api_error(exc, target=str(target))
+                    if noted is not None:
+                        raise noted from None
                     raise
             seq += 1
             _official_last_sent[target] = time.monotonic()

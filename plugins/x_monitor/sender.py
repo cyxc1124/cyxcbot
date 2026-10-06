@@ -9,6 +9,7 @@ from nonebot.log import logger
 from shared.adapter.bots import iter_onebot_bots, messaging_bots
 from shared.adapter.ids import is_numeric_qq_id
 from shared.adapter.outbound import send_group, send_user
+from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.message_templates import XMessageTemplates
 from shared.notify.at_all import X_AT_ALL_FALLBACK, resolve_at_all_prefix
 from shared.notify.delivery import (
@@ -160,6 +161,8 @@ class XSender:
                 sent = index + 1
             logger.info("X 推文消息已发送到群组 {}", group_id)
             return TargetDelivery("group", group_id, True)
+        except LoggedQQApiError as exc:
+            return TargetDelivery("group", group_id, False, f"resume_from:{sent}:{exc}")
         except Exception as exc:
             logger.opt(exception=True).error(
                 "发送消息到群组 {} 失败（已发 {}/{}）",
@@ -246,6 +249,8 @@ class XSender:
                 sent = index + 1
             logger.info("X 推文消息已发送到好友 {}", user_id)
             return TargetDelivery("user", user_id, True)
+        except LoggedQQApiError as exc:
+            return TargetDelivery("user", user_id, False, f"resume_from:{sent}:{exc}")
         except Exception as exc:
             logger.opt(exception=True).error(
                 "发送消息到好友 {} 失败（已发 {}/{}）",

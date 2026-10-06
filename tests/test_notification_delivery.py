@@ -389,6 +389,55 @@ async def test_dynamic_sender_all_targets_succeed(dynamic_sender_module) -> None
 
 
 @pytest.mark.asyncio
+async def test_official_group_no_permission_logs_info() -> None:
+    from shared.adapter.qq_errors import note_qq_api_error
+
+    class Denied(Exception):
+        code = 40034105
+        message = "主动消息失败，无权限"
+
+    with patch("shared.adapter.qq_errors.logger") as log:
+        noted = note_qq_api_error(Denied(), target="GROUPOPENID")
+
+    assert noted is not None
+    assert noted.code == 40034105
+    log.info.assert_called_once()
+    log.warning.assert_not_called()
+    log.opt.assert_not_called()
+
+
+def test_qq_rate_limit_logs_warning() -> None:
+    from shared.adapter.qq_errors import note_qq_api_error
+
+    class Limited(Exception):
+        code = 40034100
+        message = "主动消息发送超过频控限制"
+
+    with patch("shared.adapter.qq_errors.logger") as log:
+        noted = note_qq_api_error(Limited(), target="GROUPOPENID")
+
+    assert noted is not None
+    log.warning.assert_called_once()
+    log.info.assert_not_called()
+
+
+def test_c2c_user_reject_logs_info() -> None:
+    from shared.adapter.qq_errors import note_qq_api_error
+
+    class Rejected(Exception):
+        code = 40054013
+        message = "用户拒收消息"
+
+    with patch("shared.adapter.qq_errors.logger") as log:
+        noted = note_qq_api_error(Rejected(), target="USEROPENID")
+
+    assert noted is not None
+    assert noted.code == 40054013
+    log.info.assert_called_once()
+    log.warning.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_dynamic_sender_partial_failure(dynamic_sender_module) -> None:
     from nonebot.adapters.onebot.v11 import Bot
 

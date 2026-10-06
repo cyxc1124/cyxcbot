@@ -15,6 +15,7 @@ from nonebot.log import logger
 from shared.adapter.bots import iter_onebot_bots, messaging_bots
 from shared.adapter.ids import is_numeric_qq_id
 from shared.adapter.outbound import send_group, send_user
+from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.message_templates import LiveMessageTemplates
 from shared.notify.at_all import LIVE_AT_ALL_FALLBACK, bot_can_at_all
 from shared.notify.delivery import (
@@ -250,6 +251,8 @@ class LiveNotificationSender:
             await send_group(group_id, message)
             logger.success("直播{}通知已发送到群组 {}", status, group_id)
             return TargetDelivery("group", group_id, True)
+        except LoggedQQApiError as exc:
+            return TargetDelivery("group", group_id, False, str(exc))
         except Exception as exc:
             logger.opt(exception=True).error(
                 "发送通知到群组 {} 失败: {}", group_id, exc
@@ -266,6 +269,8 @@ class LiveNotificationSender:
             await send_user(user_id, message)
             logger.success("直播{}通知已发送到好友 {}", status, user_id)
             return TargetDelivery("user", user_id, True)
+        except LoggedQQApiError as exc:
+            return TargetDelivery("user", user_id, False, str(exc))
         except Exception as exc:
             logger.opt(exception=True).error("发送通知到好友 {} 失败: {}", user_id, exc)
             return TargetDelivery("user", user_id, False, str(exc))

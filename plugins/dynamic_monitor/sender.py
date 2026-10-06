@@ -9,6 +9,7 @@ from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.log import logger
 
 from shared.adapter.outbound import send_group, send_user
+from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.message_templates import DynamicMessageTemplates
 from shared.notify.delivery import (
     DeliveryResult,
@@ -104,6 +105,8 @@ class DynamicSender:
                 await send_group(group_id, message, at_all=at_all_enabled)
                 logger.info("动态消息已发送到群组 {}", group_id)
                 targets.append(TargetDelivery("group", group_id, True))
+            except LoggedQQApiError as exc:
+                targets.append(TargetDelivery("group", group_id, False, str(exc)))
             except Exception as exc:
                 logger.opt(exception=True).error("发送消息到群组 {} 失败", group_id)
                 targets.append(TargetDelivery("group", group_id, False, str(exc)))
@@ -122,6 +125,8 @@ class DynamicSender:
                 await send_user(user_id, message)
                 logger.info("动态消息已发送到好友 {}", user_id)
                 targets.append(TargetDelivery("user", user_id, True))
+            except LoggedQQApiError as exc:
+                targets.append(TargetDelivery("user", user_id, False, str(exc)))
             except Exception as exc:
                 logger.opt(exception=True).error("发送消息到好友 {} 失败", user_id)
                 targets.append(TargetDelivery("user", user_id, False, str(exc)))
