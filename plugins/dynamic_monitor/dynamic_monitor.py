@@ -99,6 +99,10 @@ class DynamicMonitor:
         self._screenshot_semaphore = asyncio.Semaphore(_SCREENSHOT_CONCURRENCY)
         self._screenshot_queue_semaphore = asyncio.Semaphore(_SCREENSHOT_QUEUE_MAX)
         self._state_store = DynamicMonitorStateStore()
+        # uid, dynamic_id, is_pinned -> 尚未成功的群/好友。重试不再发给已成功目标。
+        self._pending_targets: Dict[
+            tuple[str, int, bool], tuple[list[str], list[str]]
+        ] = {}
 
     def _touch_last_check_at(self) -> None:
         self.last_check_at = datetime.now().isoformat(timespec="seconds")
@@ -125,6 +129,8 @@ class DynamicMonitor:
         self.initialized_uids.pop(uid, None)
         self.pinned_dynamic_ids.pop(uid, None)
         self._delivery_locks.pop(uid, None)
+        for key in [key for key in self._pending_targets if key[0] == uid]:
+            self._pending_targets.pop(key, None)
 
     def _spawn_delivery_task(self, coro, *, name: str = "动态投递") -> None:
         spawn_background_task(name, coro, tasks=self._delivery_tasks)
@@ -708,12 +714,25 @@ class DynamicMonitor:
             ),
         )
 
-        # 获取需要推送的群组与好友
-        group_ids = self.config.dynamic_monitor_mapping.get(uid, [])
-        user_ids = self.config.dynamic_monitor_user_mapping.get(uid, [])
-        if not group_ids and not user_ids:
-            logger.warning("UP主 {} 没有配置推送目标", uid)
-            return False
+        configured_groups = list(self.config.dynamic_monitor_mapping.get(uid, []))
+        configured_users = list(self.config.dynamic_monitor_user_mapping.get(uid, []))
+        pending_key = (uid, int(dynamic.id), is_pinned)
+        pending = self._pending_targets.get(pending_key)
+        if pending is not None:
+            failed_groups, failed_users = pending
+            group_ids = [gid for gid in configured_groups if gid in failed_groups]
+            user_ids = [
+                user_id for user_id in configured_users if user_id in failed_users
+            ]
+            if not group_ids and not user_ids:
+                self._pending_targets.pop(pending_key, None)
+                return True
+        else:
+            group_ids = configured_groups
+            user_ids = configured_users
+            if not group_ids and not user_ids:
+                logger.warning("UP主 {} 没有配置推送目标", uid)
+                return False
 
         if check_generation is not None and not self._check_still_valid(
             uid, check_generation
@@ -728,6 +747,7 @@ class DynamicMonitor:
             at_all_enabled=at_all_enabled,
         )
         if delivery.all_succeeded:
+            self._pending_targets.pop(pending_key, None)
             logger.info(
                 "动态通知已推送: uid={} dynamic_id={} groups={} users={} pinned={}",
                 uid,
@@ -738,16 +758,23 @@ class DynamicMonitor:
             )
             return True
 
-        failed_targets = [
-            f"{target.target_type}:{target.target_id}"
+        failed_groups = [
+            target.target_id
             for target in delivery.targets
-            if not target.success
+            if target.target_type == "group" and not target.success
         ]
+        failed_users = [
+            target.target_id
+            for target in delivery.targets
+            if target.target_type == "user" and not target.success
+        ]
+        self._pending_targets[pending_key] = (failed_groups, failed_users)
         logger.warning(
             "动态通知投递未全部成功: uid={} dynamic_id={} failed={}",
             uid,
             dynamic.id,
-            failed_targets,
+            [f"group:{gid}" for gid in failed_groups]
+            + [f"user:{user_id}" for user_id in failed_users],
         )
         return False
 
