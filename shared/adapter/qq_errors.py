@@ -82,6 +82,16 @@ def qq_api_code(exc: BaseException) -> int | None:
     return None
 
 
+def is_terminal_qq_error_text(error: str | None) -> bool:
+    """平台正常拒绝不会在下一轮轮询里变成功，不应卡住游标反复重推。"""
+    if not error:
+        return False
+    head = error.split(maxsplit=1)[0]
+    if not head.isdigit():
+        return False
+    return int(head) in _INFO
+
+
 def note_qq_api_error(exc: BaseException, *, target: str) -> LoggedQQApiError | None:
     code = qq_api_code(exc)
     if code is None:

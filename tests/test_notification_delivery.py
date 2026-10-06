@@ -421,6 +421,15 @@ def test_qq_rate_limit_logs_warning() -> None:
     log.info.assert_not_called()
 
 
+def test_terminal_qq_error_text_matches_documented_rejection() -> None:
+    from shared.adapter.qq_errors import is_terminal_qq_error_text
+
+    assert is_terminal_qq_error_text("40034105 主动消息无权限")
+    assert not is_terminal_qq_error_text("40034100 主动消息超过频控")
+    assert not is_terminal_qq_error_text("down")
+    assert not is_terminal_qq_error_text(None)
+
+
 def test_c2c_user_reject_logs_info() -> None:
     from shared.adapter.qq_errors import note_qq_api_error
 

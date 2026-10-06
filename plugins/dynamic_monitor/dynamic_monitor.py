@@ -12,6 +12,7 @@ import aiohttp
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.log import logger
 
+from shared.adapter.qq_errors import is_terminal_qq_error_text
 from shared.config.service import get_config_service
 from shared.monitor.background_task import spawn_background_task
 from shared.monitor.check_cycle import CheckCycleLogger
@@ -764,16 +765,30 @@ class DynamicMonitor:
             )
             return True
 
-        failed_groups = [
-            target.target_id
-            for target in delivery.targets
-            if target.target_type == "group" and not target.success
-        ]
-        failed_users = [
-            target.target_id
-            for target in delivery.targets
-            if target.target_type == "user" and not target.success
-        ]
+        failed_groups: List[str] = []
+        failed_users: List[str] = []
+        rejected: List[str] = []
+        for target in delivery.targets:
+            if target.success:
+                continue
+            label = f"{target.target_type}:{target.target_id}"
+            if is_terminal_qq_error_text(target.error):
+                rejected.append(label)
+                continue
+            if target.target_type == "group":
+                failed_groups.append(target.target_id)
+            elif target.target_type == "user":
+                failed_users.append(target.target_id)
+        if rejected:
+            logger.info(
+                "动态通知不再重试被平台拒绝的目标: uid={} dynamic_id={} targets={}",
+                uid,
+                dynamic.id,
+                rejected,
+            )
+        if not failed_groups and not failed_users:
+            pending_targets.pop(pending_key, None)
+            return True
         pending_targets[pending_key] = (failed_groups, failed_users)
         logger.warning(
             "动态通知投递未全部成功: uid={} dynamic_id={} failed={}",

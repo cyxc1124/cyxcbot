@@ -28,10 +28,10 @@ export function GroupSelector({ groups, selected, onChange, disabled, helperText
       selected={selected}
       onChange={onChange}
       getId={(group) => group.group_id}
-      getName={(group) => group.source === 'official' ? `${group.group_name}（官方，仅被动回复）` : group.group_name}
+      getName={(group) => group.source === 'official' ? `${group.group_name}（官方）` : group.group_name}
       labels={GROUP_LABELS}
       disabled={disabled}
-      helperText={`${helperText ?? GROUP_LABELS.defaultHelperText}。官方会话仅用于命令查询，不接收监控主动推送。`}
+      helperText={`${helperText ?? GROUP_LABELS.defaultHelperText}。动态监控会向官方群主动推送；直播与 X 仍只推送到数字 QQ。`}
     />
   )
 }

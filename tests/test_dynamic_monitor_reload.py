@@ -144,6 +144,38 @@ async def test_partial_delivery_retry_skips_successful_targets(
     assert second_users == []
 
 
+@pytest.mark.asyncio
+async def test_terminal_qq_rejection_does_not_retry(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """平台拒绝（如主动消息无权限）不再卡住游标，避免重连后把同一条再推一遍。"""
+    from shared.notify.delivery import DeliveryResult, TargetDelivery
+
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.config.dynamic_monitor_mapping["111"] = ["group-openid"]
+    monitor.config.dynamic_monitor_user_mapping["111"] = ["user-openid"]
+    dynamic = SimpleNamespace(id=200, uid="111", get_type_description=lambda: "text")
+    monitor._resolve_author_name = AsyncMock(return_value="author")
+    monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
+    monitor.sender = SimpleNamespace(
+        build_dynamic_message=MagicMock(return_value="msg"),
+        send_message=AsyncMock(
+            return_value=DeliveryResult(
+                targets=[
+                    TargetDelivery(
+                        "group", "group-openid", False, "40034105 主动消息无权限"
+                    ),
+                    TargetDelivery("user", "user-openid", True),
+                ]
+            )
+        ),
+    )
+
+    assert await monitor._send_dynamic_notification("111", dynamic) is True
+    monitor.sender.send_message.assert_awaited_once()
+
+
 def _make_monitor(
     Config: Any,
     DynamicMonitor: Any,
