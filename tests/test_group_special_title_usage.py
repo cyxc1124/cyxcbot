@@ -12,6 +12,7 @@ import nonebot
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 
 def _shared_sqlite_url() -> str:
@@ -56,9 +57,12 @@ def _ensure_real_db_modules():
 
 
 @pytest.fixture
-async def db_context():
+async def db_context(tmp_path):
     Model, GroupSpecialTitleUsage = _ensure_real_db_modules()
-    engine = create_async_engine(_shared_sqlite_url())
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'usage.db'}",
+        poolclass=NullPool,
+    )
     async with engine.begin() as conn:
         await conn.run_sync(Model.metadata.create_all)
 

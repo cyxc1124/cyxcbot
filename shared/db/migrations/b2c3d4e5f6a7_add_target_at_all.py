@@ -22,15 +22,15 @@ def upgrade(name: str = "") -> None:
     if name:
         return
 
+    # Alembic 1.18 起 add_column() 不再接受 **kw，info= 会直接 TypeError。
+    # 单库启动用的是 generic env，运行时不靠 bind_key 选库。
     op.add_column(
         "shared_db_dynamictarget",
         sa.Column("at_all", sa.Boolean(), nullable=False, server_default=sa.false()),
-        info={"bind_key": "shared.db"},
     )
     op.add_column(
         "shared_db_livetarget",
         sa.Column("at_all", sa.Boolean(), nullable=False, server_default=sa.true()),
-        info={"bind_key": "shared.db"},
     )
 
 
@@ -38,5 +38,5 @@ def downgrade(name: str = "") -> None:
     if name:
         return
 
-    op.drop_column("shared_db_livetarget", "at_all", info={"bind_key": "shared.db"})
-    op.drop_column("shared_db_dynamictarget", "at_all", info={"bind_key": "shared.db"})
+    op.drop_column("shared_db_livetarget", "at_all")
+    op.drop_column("shared_db_dynamictarget", "at_all")
