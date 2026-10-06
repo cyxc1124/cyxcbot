@@ -34,7 +34,6 @@ from shared.adapter.official_runtime import _bot_info
 from shared.adapter.outbound import (
     convert_onebot_message,
     send_group,
-    send_user,
     strip_urls,
 )
 
@@ -124,12 +123,24 @@ async def test_send_group_numeric_uses_onebot() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("send", [send_group, send_user])
-async def test_proactive_official_send_is_rejected(send) -> None:
-    with patch.object(outbound, "_send_official_parts", new=AsyncMock()) as send_parts:
-        with pytest.raises(ValueError, match="不支持主动推送"):
-            await send("official-openid", Message("hi"))
-        send_parts.assert_not_awaited()
+async def test_send_group_openid_is_proactive() -> None:
+    bot = MagicMock()
+    bot.send_to_group = AsyncMock()
+    interval = outbound._OFFICIAL_MIN_INTERVAL
+    outbound._OFFICIAL_MIN_INTERVAL = 0
+    outbound._official_last_sent.clear()
+    try:
+        with patch("shared.adapter.outbound.iter_official_bots", return_value=[bot]):
+            await send_group("group-openid", Message("hi"), at_all=True)
+    finally:
+        outbound._OFFICIAL_MIN_INTERVAL = interval
+        outbound._official_last_sent.clear()
+    seqs = [call.kwargs["msg_seq"] for call in bot.send_to_group.await_args_list]
+    assert seqs == [1, 2]
+    assert all(
+        "msg_id" not in call.kwargs for call in bot.send_to_group.await_args_list
+    )
+    assert bot.send_to_group.await_args_list[0].kwargs["group_openid"] == "group-openid"
 
 
 @pytest.mark.asyncio

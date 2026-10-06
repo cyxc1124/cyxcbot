@@ -213,6 +213,18 @@ async def test_official_monitor_targets_skip_without_retry_or_blocking_onebot(
         else monitor._send_tweet_notification
     )
     assert await send("target", item)
+    if kind == "dynamic":
+        assert monitor.sender.send_message.await_args.args[1:3] == (
+            ["official-group"],
+            ["official-user"],
+        )
+        groups.append("1001")
+        assert await send("target", item)
+        assert monitor.sender.send_message.await_args.args[1:3] == (
+            ["official-group", "1001"],
+            ["official-user"],
+        )
+        return
     monitor.sender.send_message.assert_not_awaited()
     if kind == "x":
         assert not monitor._pending_tweet_delivery

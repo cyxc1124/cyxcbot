@@ -12,7 +12,6 @@ import aiohttp
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.log import logger
 
-from shared.adapter.ids import onebot_target_ids
 from shared.config.service import get_config_service
 from shared.monitor.background_task import spawn_background_task
 from shared.monitor.check_cycle import CheckCycleLogger
@@ -696,11 +695,6 @@ class DynamicMonitor:
         if not configured_groups and not configured_users:
             logger.warning("UP主 {} 没有配置推送目标", uid)
             return False
-        group_ids = onebot_target_ids(configured_groups)
-        user_ids = onebot_target_ids(configured_users)
-        if not group_ids and not user_ids:
-            logger.debug("UP主 {} 仅配置官方会话，跳过主动推送", uid)
-            return True
 
         # 获取真实的用户名（feed / 缓存 / API）
         dynamic.name = await self._resolve_author_name(dynamic)
@@ -736,8 +730,8 @@ class DynamicMonitor:
         # 截图期间可能热更新订阅，发送前重新取当前目标。
         configured_groups = list(self.config.dynamic_monitor_mapping.get(uid, []))
         configured_users = list(self.config.dynamic_monitor_user_mapping.get(uid, []))
-        group_ids = onebot_target_ids(configured_groups)
-        user_ids = onebot_target_ids(configured_users)
+        group_ids = configured_groups
+        user_ids = configured_users
         pending_key = (uid, dynamic.id, is_pinned)
         pending_targets = self.__dict__.setdefault("_pending_targets", {})
         pending = pending_targets.get(pending_key)
@@ -749,7 +743,7 @@ class DynamicMonitor:
                 pending_targets.pop(pending_key, None)
                 return True
         elif not group_ids and not user_ids:
-            logger.debug("UP主 {} 已无 OneBot 推送目标，跳过主动推送", uid)
+            logger.debug("UP主 {} 已无推送目标，跳过主动推送", uid)
             return True
         at_all_enabled = self.config.dynamic_at_all.get(uid, False)
         delivery = await self.sender.send_message(

@@ -16,6 +16,7 @@ from nonebot.log import logger
 
 from shared.adapter.bots import (
     is_official_qq_bot,
+    iter_official_bots,
     iter_onebot_bots,
 )
 from shared.adapter.ids import is_numeric_qq_id
@@ -149,29 +150,44 @@ async def _to_official_segment(kind: str, value: Any):
 async def _send_official_once(
     bot: Any,
     *,
-    event: Any,
+    event: Any | None,
+    group_id: str | None,
+    user_id: str | None,
     kind: str,
     value: Any,
+    msg_seq: int,
 ) -> None:
     from nonebot.adapters.qq import Message
 
     segment = await _to_official_segment(kind, value)
     payload = Message(segment)
-    # QQ 适配器在事件上递增 _reply_seq，跨批次和 Matcher 共用回复序号。
-    await bot.send(event, payload)
+    if event is not None:
+        # QQ 适配器在事件上递增 _reply_seq，跨批次和 Matcher 共用回复序号。
+        await bot.send(event, payload)
+        return
+    if group_id:
+        await bot.send_to_group(group_openid=group_id, message=payload, msg_seq=msg_seq)
+        return
+    await bot.send_to_c2c(openid=str(user_id), message=payload, msg_seq=msg_seq)
 
 
 async def _send_official_parts(
     bot: Any,
     parts: list[tuple[str, Any]],
     *,
-    event: Any,
+    event: Any | None = None,
+    group_id: str | None = None,
+    user_id: str | None = None,
 ) -> None:
-    if not event_msg_id(event):
-        raise ValueError("官方 Bot 仅支持带消息上下文的被动回复")
-    target = group_id_of(event) if is_group_event(event) else user_id_of(event)
+    if event is not None:
+        if not event_msg_id(event):
+            raise ValueError("官方 Bot 被动回复缺少消息 ID")
+        target = group_id_of(event) if is_group_event(event) else user_id_of(event)
+    else:
+        target = group_id or user_id
     if not target:
-        raise ValueError("官方 Bot 回复目标为空")
+        raise ValueError("官方 Bot 发送目标为空")
+    seq = 1
     async with _official_lock(target):
         for kind, value in parts:
             now = time.monotonic()
@@ -186,8 +202,11 @@ async def _send_official_parts(
                     await _send_official_once(
                         bot,
                         event=event,
+                        group_id=group_id,
+                        user_id=user_id,
                         kind=kind,
                         value=send_value,
+                        msg_seq=seq,
                     )
                     break
                 except Exception as exc:
@@ -206,6 +225,7 @@ async def _send_official_parts(
                         await asyncio.sleep(3 * retries)
                         continue
                     raise
+            seq += 1
             _official_last_sent[target] = time.monotonic()
 
 
@@ -241,7 +261,22 @@ async def send_group(
                 last_exc = exc
         raise last_exc or RuntimeError("发送群消息失败")
 
-    raise ValueError("官方 Bot 不支持主动推送，请使用 OneBot 或通过命令查询")
+    bots = iter_official_bots()
+    if not bots:
+        raise RuntimeError("没有可用的官方机器人实例")
+    parts = convert_onebot_message(message)
+    if at_all:
+        parts = [("text", at_all_fallback), *parts]
+    if not parts:
+        return
+    last_exc = None
+    for bot in bots:
+        try:
+            await _send_official_parts(bot, parts, group_id=gid)
+            return
+        except Exception as exc:
+            last_exc = exc
+    raise last_exc or RuntimeError("发送官方群消息失败")
 
 
 async def send_user(user_id: str, message: Message) -> None:
@@ -261,7 +296,20 @@ async def send_user(user_id: str, message: Message) -> None:
                 last_exc = exc
         raise last_exc or RuntimeError("发送私聊失败")
 
-    raise ValueError("官方 Bot 不支持主动推送，请使用 OneBot 或通过命令查询")
+    bots = iter_official_bots()
+    if not bots:
+        raise RuntimeError("没有可用的官方机器人实例")
+    parts = convert_onebot_message(message)
+    if not parts:
+        return
+    last_exc = None
+    for bot in bots:
+        try:
+            await _send_official_parts(bot, parts, user_id=uid)
+            return
+        except Exception as exc:
+            last_exc = exc
+    raise last_exc or RuntimeError("发送官方私聊失败")
 
 
 async def send_event_message(bot: Any, event: Any, message: Message) -> Any:
