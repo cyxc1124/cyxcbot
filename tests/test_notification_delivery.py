@@ -421,13 +421,50 @@ def test_qq_rate_limit_logs_warning() -> None:
     log.info.assert_not_called()
 
 
-def test_terminal_qq_error_text_matches_documented_rejection() -> None:
+@pytest.mark.parametrize(
+    "error, terminal",
+    [
+        ("40034105 主动消息无权限", True),
+        ("40034101 机器人不是群成员", True),
+        ("40054003 机器人不是群成员", True),
+        ("40034006 消息内容违规", True),
+        ("40054007 消息长度超限", True),
+        ("304036 无 Markdown 模板权限", True),
+        ("22006 消息类型与内容不匹配", True),
+        ("40034100 主动消息超过频控", False),
+        ("40034004 富媒体转存失败", False),
+        ("304080 文件信息无效", False),
+        ("40054006 验证好友关系失败", False),
+        ("40054016 机器人已下线", False),
+        ("50055001 消息发送异常", False),
+        ("50055002 消息发送异常", False),
+        ("50055006 ARK 消息发送异常", False),
+        ("999999 未知错误", False),
+        ("down", False),
+        (" ", False),
+        (None, False),
+    ],
+)
+def test_terminal_qq_error_text_matches_documented_rejection(error, terminal) -> None:
     from shared.adapter.qq_errors import is_terminal_qq_error_text
 
-    assert is_terminal_qq_error_text("40034105 主动消息无权限")
-    assert not is_terminal_qq_error_text("40034100 主动消息超过频控")
-    assert not is_terminal_qq_error_text("down")
-    assert not is_terminal_qq_error_text(None)
+    assert is_terminal_qq_error_text(error) is terminal
+
+
+def test_terminal_content_rejection_keeps_warning_log() -> None:
+    from shared.adapter.qq_errors import is_terminal_qq_error_text, note_qq_api_error
+
+    class Rejected(Exception):
+        code = 40034006
+        message = "消息内容违规"
+
+    with patch("shared.adapter.qq_errors.logger") as log:
+        noted = note_qq_api_error(Rejected(), target="GROUPOPENID")
+
+    assert noted is not None
+    assert is_terminal_qq_error_text(str(noted))
+    log.warning.assert_called_once()
+    log.info.assert_not_called()
 
 
 def test_c2c_user_reject_logs_info() -> None:

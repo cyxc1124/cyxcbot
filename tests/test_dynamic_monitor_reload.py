@@ -145,35 +145,88 @@ async def test_partial_delivery_retry_skips_successful_targets(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("code", [40034105, 40034101, 40054003, 40034006, 40054007])
 async def test_terminal_qq_rejection_does_not_retry(
     dynamic_monitor_modules: tuple[Any, Any],
+    code: int,
 ) -> None:
-    """平台拒绝（如主动消息无权限）不再卡住游标，避免重连后把同一条再推一遍。"""
+    """确定性拒绝不阻挡游标推进，也不阻挡下一条动态。"""
     from shared.notify.delivery import DeliveryResult, TargetDelivery
 
     Config, DynamicMonitor = dynamic_monitor_modules
     monitor = _make_monitor(Config, DynamicMonitor, ["111"])
     monitor.config.dynamic_monitor_mapping["111"] = ["group-openid"]
     monitor.config.dynamic_monitor_user_mapping["111"] = ["user-openid"]
-    dynamic = SimpleNamespace(id=200, uid="111", get_type_description=lambda: "text")
+    dynamics = [
+        SimpleNamespace(id=dynamic_id, uid="111", get_type_description=lambda: "text")
+        for dynamic_id in (200, 201)
+    ]
     monitor._resolve_author_name = AsyncMock(return_value="author")
     monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
+    monitor._persist_state = AsyncMock()
     monitor.sender = SimpleNamespace(
         build_dynamic_message=MagicMock(return_value="msg"),
         send_message=AsyncMock(
             return_value=DeliveryResult(
                 targets=[
-                    TargetDelivery(
-                        "group", "group-openid", False, "40034105 主动消息无权限"
-                    ),
+                    TargetDelivery("group", "group-openid", False, f"{code} 平台拒绝"),
                     TargetDelivery("user", "user-openid", True),
                 ]
             )
         ),
     )
 
-    assert await monitor._send_dynamic_notification("111", dynamic) is True
-    monitor.sender.send_message.assert_awaited_once()
+    await monitor._deliver_new_dynamics("111", dynamics, check_generation=0)
+
+    assert monitor.last_dynamic_ids["111"] == 201
+    assert monitor.sender.send_message.await_count == 2
+    assert not monitor._pending_targets
+    monitor._persist_state.assert_awaited_once_with("111", check_generation=0)
+
+
+@pytest.mark.asyncio
+async def test_terminal_rejection_only_retries_transient_failed_targets(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    from shared.notify.delivery import DeliveryResult, TargetDelivery
+
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.config.dynamic_monitor_mapping["111"] = ["group-openid", "1001"]
+    monitor.config.dynamic_monitor_user_mapping["111"] = ["user-openid"]
+    dynamic = SimpleNamespace(id=200, uid="111", get_type_description=lambda: "text")
+    monitor._resolve_author_name = AsyncMock(return_value="author")
+    monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
+    monitor._persist_state = AsyncMock()
+    monitor.sender = SimpleNamespace(
+        build_dynamic_message=MagicMock(return_value="msg"),
+        send_message=AsyncMock(
+            side_effect=[
+                DeliveryResult(
+                    targets=[
+                        TargetDelivery(
+                            "group", "group-openid", False, "40054003 不是群成员"
+                        ),
+                        TargetDelivery("group", "1001", True),
+                        TargetDelivery(
+                            "user", "user-openid", False, "50055001 稍后重试"
+                        ),
+                    ]
+                ),
+                DeliveryResult(targets=[TargetDelivery("user", "user-openid", True)]),
+            ]
+        ),
+    )
+
+    await monitor._deliver_new_dynamics("111", [dynamic], check_generation=0)
+    assert monitor.last_dynamic_ids["111"] == 100
+    assert monitor._pending_targets == {("111", 200, False): ([], ["user-openid"])}
+    monitor._persist_state.assert_not_awaited()
+
+    await monitor._deliver_new_dynamics("111", [dynamic], check_generation=0)
+    assert monitor.last_dynamic_ids["111"] == 200
+    assert monitor.sender.send_message.await_args.args[1:3] == ([], ["user-openid"])
+    assert not monitor._pending_targets
 
 
 def _make_monitor(

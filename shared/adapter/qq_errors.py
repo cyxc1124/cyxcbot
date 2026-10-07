@@ -63,6 +63,50 @@ _WARNING = {
     50055006: "ARK 消息发送异常，可稍后重试",
 }
 
+# 当前通知的权限、关系、内容或参数拒绝，原样重试无法解决。
+# 独立于日志级别；频控、离线、转存/服务端异常及未知码仍可重试。
+_TERMINAL = {
+    50059,
+    22006,
+    304004,
+    304036,
+    304061,
+    304062,
+    304064,
+    304103,
+    305007,
+    340069,
+    40034005,
+    40034006,
+    40034008,
+    40034009,
+    40034010,
+    40034011,
+    40034024,
+    40034025,
+    40034026,
+    40034027,
+    40034029,
+    40034101,
+    40034105,
+    40034106,
+    40034108,
+    40034109,
+    40034122,
+    40034123,
+    40034124,
+    40034127,
+    40034128,
+    40054002,
+    40054003,
+    40054004,
+    40054005,
+    40054007,
+    40054010,
+    40054013,
+    40054018,
+}
+
 
 class LoggedQQApiError(Exception):
     """文档中的官方接口错误。日志已经记过，调用方不要再打堆栈。"""
@@ -83,13 +127,12 @@ def qq_api_code(exc: BaseException) -> int | None:
 
 
 def is_terminal_qq_error_text(error: str | None) -> bool:
-    """平台正常拒绝不会在下一轮轮询里变成功，不应卡住游标反复重推。"""
-    if not error:
+    """判断当前通知是否应终止重试，不按日志级别推断。"""
+    try:
+        code = int((error or "").split(maxsplit=1)[0])
+    except ValueError, IndexError:
         return False
-    head = error.split(maxsplit=1)[0]
-    if not head.isdigit():
-        return False
-    return int(head) in _INFO
+    return code in _TERMINAL
 
 
 def note_qq_api_error(exc: BaseException, *, target: str) -> LoggedQQApiError | None:
