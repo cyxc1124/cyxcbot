@@ -6,6 +6,7 @@ import asyncio
 import base64
 import re
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -33,6 +34,7 @@ _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 _OFFICIAL_MIN_INTERVAL = 3.0
 _official_locks: dict[str, asyncio.Lock] = {}
 _official_last_sent: dict[str, float] = {}
+PartProgressCallback = Callable[[int], Awaitable[None]]
 
 
 def _official_lock(target_id: str) -> asyncio.Lock:
@@ -179,6 +181,8 @@ async def _send_official_parts(
     event: Any | None = None,
     group_id: str | None = None,
     user_id: str | None = None,
+    start: int = 0,
+    on_part_sent: PartProgressCallback | None = None,
 ) -> None:
     if event is not None:
         if not event_msg_id(event):
@@ -188,9 +192,11 @@ async def _send_official_parts(
         target = group_id or user_id
     if not target:
         raise ValueError("官方 Bot 发送目标为空")
-    seq = 1
+    if not 0 <= start <= len(parts):
+        raise ValueError("官方消息续传下标超出分段范围")
     async with _official_lock(target):
-        for kind, value in parts:
+        for index in range(start, len(parts)):
+            kind, value = parts[index]
             now = time.monotonic()
             last = _official_last_sent.get(target, 0.0)
             wait = _OFFICIAL_MIN_INTERVAL - (now - last)
@@ -207,7 +213,7 @@ async def _send_official_parts(
                         user_id=user_id,
                         kind=kind,
                         value=send_value,
-                        msg_seq=seq,
+                        msg_seq=index + 1,
                     )
                     break
                 except Exception as exc:
@@ -229,8 +235,52 @@ async def _send_official_parts(
                     if noted is not None:
                         raise noted from None
                     raise
-            seq += 1
             _official_last_sent[target] = time.monotonic()
+            if on_part_sent is not None:
+                await on_part_sent(index + 1)
+
+
+async def _send_official_to_target(
+    parts: list[tuple[str, Any]],
+    *,
+    group_id: str | None = None,
+    user_id: str | None = None,
+    start: int = 0,
+    on_part_sent: PartProgressCallback | None = None,
+) -> None:
+    bots = iter_official_bots()
+    if not bots:
+        raise RuntimeError("没有可用的官方机器人实例")
+    next_part = start
+    checkpoint_failed = False
+
+    async def checkpoint(index: int) -> None:
+        nonlocal next_part, checkpoint_failed
+        next_part = index
+        if on_part_sent is not None:
+            try:
+                await on_part_sent(index)
+            except Exception:
+                checkpoint_failed = True
+                raise
+
+    last_exc: Exception | None = None
+    for bot in bots:
+        try:
+            await _send_official_parts(
+                bot,
+                parts,
+                group_id=group_id,
+                user_id=user_id,
+                start=next_part,
+                on_part_sent=checkpoint,
+            )
+            return
+        except Exception as exc:
+            if checkpoint_failed:
+                raise
+            last_exc = exc
+    raise last_exc or RuntimeError("发送官方消息失败")
 
 
 async def send_group(
@@ -239,11 +289,17 @@ async def send_group(
     *,
     at_all: bool = False,
     at_all_fallback: str = DYNAMIC_AT_ALL_FALLBACK,
+    start: int = 0,
+    on_part_sent: PartProgressCallback | None = None,
 ) -> None:
     gid = str(group_id).strip()
     if not gid:
         raise RuntimeError("群 ID 为空")
     if is_numeric_qq_id(gid):
+        if start not in (0, 1):
+            raise ValueError("OneBot 消息续传下标超出范围")
+        if start == 1:
+            return
         bots = iter_onebot_bots()
         if not bots:
             raise RuntimeError("没有可用的机器人实例")
@@ -260,34 +316,42 @@ async def send_group(
                     )
                     payload = prefix + message
                 await bot.send_group_msg(group_id=int(gid), message=payload)
-                return
             except Exception as exc:
                 last_exc = exc
+                continue
+            if on_part_sent is not None:
+                await on_part_sent(1)
+            return
         raise last_exc or RuntimeError("发送群消息失败")
 
-    bots = iter_official_bots()
-    if not bots:
-        raise RuntimeError("没有可用的官方机器人实例")
     parts = convert_onebot_message(message)
     if at_all:
         parts = [("text", at_all_fallback), *parts]
     if not parts:
         return
-    last_exc = None
-    for bot in bots:
-        try:
-            await _send_official_parts(bot, parts, group_id=gid)
-            return
-        except Exception as exc:
-            last_exc = exc
-    raise last_exc or RuntimeError("发送官方群消息失败")
+    await _send_official_to_target(
+        parts,
+        group_id=gid,
+        start=start,
+        on_part_sent=on_part_sent,
+    )
 
 
-async def send_user(user_id: str, message: Message) -> None:
+async def send_user(
+    user_id: str,
+    message: Message,
+    *,
+    start: int = 0,
+    on_part_sent: PartProgressCallback | None = None,
+) -> None:
     uid = str(user_id).strip()
     if not uid:
         raise RuntimeError("用户 ID 为空")
     if is_numeric_qq_id(uid):
+        if start not in (0, 1):
+            raise ValueError("OneBot 消息续传下标超出范围")
+        if start == 1:
+            return
         bots = iter_onebot_bots()
         if not bots:
             raise RuntimeError("没有可用的机器人实例")
@@ -295,25 +359,23 @@ async def send_user(user_id: str, message: Message) -> None:
         for bot in bots:
             try:
                 await bot.send_private_msg(user_id=int(uid), message=message)
-                return
             except Exception as exc:
                 last_exc = exc
+                continue
+            if on_part_sent is not None:
+                await on_part_sent(1)
+            return
         raise last_exc or RuntimeError("发送私聊失败")
 
-    bots = iter_official_bots()
-    if not bots:
-        raise RuntimeError("没有可用的官方机器人实例")
     parts = convert_onebot_message(message)
     if not parts:
         return
-    last_exc = None
-    for bot in bots:
-        try:
-            await _send_official_parts(bot, parts, user_id=uid)
-            return
-        except Exception as exc:
-            last_exc = exc
-    raise last_exc or RuntimeError("发送官方私聊失败")
+    await _send_official_to_target(
+        parts,
+        user_id=uid,
+        start=start,
+        on_part_sent=on_part_sent,
+    )
 
 
 async def send_event_message(bot: Any, event: Any, message: Message) -> Any:

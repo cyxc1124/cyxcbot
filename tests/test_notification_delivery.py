@@ -234,6 +234,79 @@ async def test_official_monitor_targets_skip_without_retry_or_blocking_onebot(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "user"])
+@pytest.mark.parametrize("is_pinned", [False, True])
+async def test_dynamic_official_partial_retry_keeps_snapshot_and_resumes_parts(
+    scope,
+    is_pinned,
+    dynamic_monitor_module,
+    dynamic_sender_module,
+    monkeypatch,
+):
+    from nonebot.adapters.onebot.v11 import MessageSegment
+
+    from shared.adapter import outbound
+    from shared.adapter.qq_errors import LoggedQQApiError
+
+    monitor = object.__new__(dynamic_monitor_module.DynamicMonitor)
+    monitor.config = SimpleNamespace(
+        dynamic_monitor_mapping={"111": ["group-openid"] if scope == "group" else []},
+        dynamic_monitor_user_mapping={
+            "111": ["user-openid"] if scope == "user" else []
+        },
+        dynamic_at_all={},
+        enable_screenshot=True,
+    )
+    monitor._resolve_author_name = AsyncMock(return_value="author")
+    monitor._fetch_dynamic_screenshot = AsyncMock(return_value=b"original-image")
+    monitor.sender = dynamic_sender_module.DynamicSender()
+    monitor.sender.build_dynamic_message = MagicMock(
+        return_value=Message(
+            [
+                MessageSegment.text("original-caption"),
+                MessageSegment.image(b"original-image"),
+            ]
+        )
+    )
+    accepted = []
+    failed = False
+
+    async def send(**kwargs):
+        nonlocal failed
+        message = kwargs["message"]
+        segment = message[0]
+        if segment.type == "file_image" and not failed:
+            failed = True
+            raise LoggedQQApiError(50055001, "临时发送失败")
+        accepted.append(
+            (
+                segment.type,
+                message.extract_plain_text()
+                if segment.type == "text"
+                else segment.data["content"],
+            )
+        )
+
+    bot = SimpleNamespace(send_to_group=send, send_to_c2c=send)
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [bot])
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    dynamic = SimpleNamespace(id=200, uid="111", get_type_description=lambda: "text")
+    assert not await monitor._send_dynamic_notification("111", dynamic, is_pinned)
+    pending = monitor._pending_targets[("111", 200, is_pinned)]
+    starts = pending.group_starts if scope == "group" else pending.user_starts
+    assert starts[f"{scope}-openid"] == 1
+
+    monitor.config.enable_screenshot = False
+    monitor.config.dynamic_at_all["111"] = True
+    monitor.sender.build_dynamic_message.return_value = Message("changed-template")
+    assert await monitor._send_dynamic_notification("111", dynamic, is_pinned)
+    assert accepted == [("text", "original-caption"), ("file_image", b"original-image")]
+    monitor._fetch_dynamic_screenshot.assert_awaited_once()
+    monitor.sender.build_dynamic_message.assert_called_once()
+    assert not monitor._pending_targets
+
+
+@pytest.mark.asyncio
 async def test_live_official_targets_clear_pending_and_keep_onebot(live_monitor_module):
     from plugins.live_monitor.models import LiveRoomState
     from plugins.live_monitor.notification_delivery import LiveNotificationDelivery

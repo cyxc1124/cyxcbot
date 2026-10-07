@@ -220,7 +220,8 @@ async def test_terminal_rejection_only_retries_transient_failed_targets(
 
     await monitor._deliver_new_dynamics("111", [dynamic], check_generation=0)
     assert monitor.last_dynamic_ids["111"] == 100
-    assert monitor._pending_targets == {("111", 200, False): ([], ["user-openid"])}
+    pending = monitor._pending_targets[("111", 200, False)]
+    assert (pending.groups, pending.users) == ([], ["user-openid"])
     monitor._persist_state.assert_not_awaited()
 
     await monitor._deliver_new_dynamics("111", [dynamic], check_generation=0)

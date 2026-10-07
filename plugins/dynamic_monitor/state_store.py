@@ -1,11 +1,23 @@
 """动态监控运行时状态的 DB 持久化。"""
 
+from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional
 
+from nonebot.adapters.onebot.v11 import Message
 from nonebot_plugin_orm import get_session
 from sqlalchemy import select
 
 from shared.db.models import DynamicMonitorState
+
+
+@dataclass
+class PendingDynamicDelivery:
+    message: Message
+    groups: list[str]
+    users: list[str]
+    at_all: bool = False
+    group_starts: dict[str, int] = field(default_factory=dict)
+    user_starts: dict[str, int] = field(default_factory=dict)
 
 
 class DynamicMonitorStateStore:

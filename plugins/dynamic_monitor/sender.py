@@ -3,6 +3,8 @@
 负责构建和发送动态通知消息
 """
 
+from collections.abc import Awaitable, Callable
+from functools import partial
 from typing import Iterable, List, Optional, Union
 
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
@@ -20,6 +22,7 @@ from shared.notify.message_template import build_message_from_template
 from utils.bilibili_api import DynamicItem
 
 SegmentPart = Union[MessageSegment, str]
+DeliveryProgressCallback = Callable[[str, str, int], Awaitable[None]]
 
 
 class DynamicSender:
@@ -94,6 +97,8 @@ class DynamicSender:
         group_ids: List[str],
         *,
         at_all_enabled: bool = False,
+        starts: dict[str, int] | None = None,
+        on_part_sent: DeliveryProgressCallback | None = None,
     ) -> DeliveryResult:
         """发送消息到多个群组，返回结构化投递结果。"""
         if not group_ids:
@@ -102,7 +107,15 @@ class DynamicSender:
         targets: List[TargetDelivery] = []
         for group_id in group_ids:
             try:
-                await send_group(group_id, message, at_all=at_all_enabled)
+                await send_group(
+                    group_id,
+                    message,
+                    at_all=at_all_enabled,
+                    start=(starts or {}).get(group_id, 0),
+                    on_part_sent=partial(on_part_sent, "group", group_id)
+                    if on_part_sent
+                    else None,
+                )
                 logger.info("动态消息已发送到群组 {}", group_id)
                 targets.append(TargetDelivery("group", group_id, True))
             except LoggedQQApiError as exc:
@@ -113,7 +126,12 @@ class DynamicSender:
         return DeliveryResult(targets=targets)
 
     async def send_to_users(
-        self, message: Message, user_ids: List[str]
+        self,
+        message: Message,
+        user_ids: List[str],
+        *,
+        starts: dict[str, int] | None = None,
+        on_part_sent: DeliveryProgressCallback | None = None,
     ) -> DeliveryResult:
         """发送消息到多个好友，返回结构化投递结果。"""
         if not user_ids:
@@ -122,7 +140,14 @@ class DynamicSender:
         targets: List[TargetDelivery] = []
         for user_id in user_ids:
             try:
-                await send_user(user_id, message)
+                await send_user(
+                    user_id,
+                    message,
+                    start=(starts or {}).get(user_id, 0),
+                    on_part_sent=partial(on_part_sent, "user", user_id)
+                    if on_part_sent
+                    else None,
+                )
                 logger.info("动态消息已发送到好友 {}", user_id)
                 targets.append(TargetDelivery("user", user_id, True))
             except LoggedQQApiError as exc:
@@ -139,10 +164,22 @@ class DynamicSender:
         user_ids: List[str],
         *,
         at_all_enabled: bool = False,
+        group_starts: dict[str, int] | None = None,
+        user_starts: dict[str, int] | None = None,
+        on_part_sent: DeliveryProgressCallback | None = None,
     ) -> DeliveryResult:
         """向群组与好友发送同一条消息，并合并投递结果。"""
         group_result = await self.send_to_groups(
-            message, group_ids, at_all_enabled=at_all_enabled
+            message,
+            group_ids,
+            at_all_enabled=at_all_enabled,
+            starts=group_starts,
+            on_part_sent=on_part_sent,
         )
-        user_result = await self.send_to_users(message, user_ids)
+        user_result = await self.send_to_users(
+            message,
+            user_ids,
+            starts=user_starts,
+            on_part_sent=on_part_sent,
+        )
         return group_result.merge(user_result)

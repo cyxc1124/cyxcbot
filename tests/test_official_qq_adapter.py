@@ -144,6 +144,57 @@ async def test_send_group_openid_is_proactive() -> None:
 
 
 @pytest.mark.asyncio
+async def test_proactive_resume_keeps_at_all_prefix_offset(monkeypatch):
+    from shared.adapter.qq_errors import LoggedQQApiError
+
+    accepted = []
+    failed = False
+
+    async def send(**kwargs):
+        nonlocal failed
+        message = kwargs["message"]
+        if message[0].type == "file_image" and not failed:
+            failed = True
+            raise LoggedQQApiError(50055001, "临时发送失败")
+        accepted.append((message[0].type, kwargs["msg_seq"]))
+
+    bot = SimpleNamespace(send_to_group=send)
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [bot])
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    callback = AsyncMock()
+    message = Message([MessageSegment.text("caption"), MessageSegment.image(b"image")])
+    with pytest.raises(LoggedQQApiError):
+        await send_group("group-openid", message, at_all=True, on_part_sent=callback)
+    assert callback.await_args.args == (2,)
+    await send_group(
+        "group-openid", message, at_all=True, start=2, on_part_sent=callback
+    )
+    assert accepted == [("text", 1), ("text", 2), ("file_image", 3)]
+    assert callback.await_args.args == (3,)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target", ["group", "user"])
+async def test_checkpoint_failure_stops_official_fallback(target, monkeypatch):
+    bots = [
+        SimpleNamespace(send_to_group=AsyncMock(), send_to_c2c=AsyncMock())
+        for _ in range(2)
+    ]
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: bots)
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    send = send_group if target == "group" else outbound.send_user
+    with pytest.raises(RuntimeError, match="checkpoint failed"):
+        await send(
+            f"{target}-openid",
+            Message("caption"),
+            on_part_sent=AsyncMock(side_effect=RuntimeError("checkpoint failed")),
+        )
+    api = "send_to_group" if target == "group" else "send_to_c2c"
+    getattr(bots[0], api).assert_awaited_once()
+    getattr(bots[1], api).assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("scope", ["group", "c2c"])
 async def test_official_batches_share_native_reply_sequence_and_send_bytes(
     scope, monkeypatch
