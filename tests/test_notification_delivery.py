@@ -91,7 +91,7 @@ def live_models_module():
 
 
 @pytest.fixture
-def dynamic_monitor_module():
+def dynamic_monitor_module(monkeypatch):
     _ensure_package("plugins", PLUGINS_ROOT)
     _ensure_package("plugins.dynamic_monitor", DYNAMIC_MONITOR_ROOT)
     sys.modules.setdefault(
@@ -120,11 +120,13 @@ def dynamic_monitor_module():
         DYNAMIC_MONITOR_ROOT,
         "sender.py",
     )
-    return _load_module(
+    module = _load_module(
         "plugins.dynamic_monitor.dynamic_monitor",
         DYNAMIC_MONITOR_ROOT,
         "dynamic_monitor.py",
     )
+    monkeypatch.setattr(module.DynamicMonitorStateStore, "persist", AsyncMock())
+    return module
 
 
 @pytest.fixture
@@ -200,6 +202,7 @@ async def test_official_monitor_targets_skip_without_retry_or_blocking_onebot(
     monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
     monitor._resolve_author_name = AsyncMock(return_value="author")
     monitor.session = None
+    monitor._persist_state = AsyncMock()
     item = SimpleNamespace(
         id="new-item",
         name="author",
@@ -219,6 +222,7 @@ async def test_official_monitor_targets_skip_without_retry_or_blocking_onebot(
             ["official-user"],
         )
         groups.append("1001")
+        item.id = "next-item"
         assert await send("target", item)
         assert monitor.sender.send_message.await_args.args[1:3] == (
             ["official-group", "1001"],
@@ -259,6 +263,7 @@ async def test_dynamic_official_partial_retry_keeps_snapshot_and_resumes_parts(
     )
     monitor._resolve_author_name = AsyncMock(return_value="author")
     monitor._fetch_dynamic_screenshot = AsyncMock(return_value=b"original-image")
+    monitor._persist_state = AsyncMock()
     monitor.sender = dynamic_sender_module.DynamicSender()
     monitor.sender.build_dynamic_message = MagicMock(
         return_value=Message(
@@ -303,7 +308,8 @@ async def test_dynamic_official_partial_retry_keeps_snapshot_and_resumes_parts(
     assert accepted == [("text", "original-caption"), ("file_image", b"original-image")]
     monitor._fetch_dynamic_screenshot.assert_awaited_once()
     monitor.sender.build_dynamic_message.assert_called_once()
-    assert not monitor._pending_targets
+    completed = monitor._pending_targets[("111", 200, is_pinned)]
+    assert not completed.groups and not completed.users
 
 
 @pytest.mark.asyncio
@@ -852,7 +858,8 @@ async def test_dynamic_monitor_does_not_advance_cursor_when_send_fails(
 
     assert ok is True
     assert monitor.last_dynamic_ids["123"] == 10
-    monitor._persist_state.assert_not_awaited()
+    monitor._persist_state.assert_awaited_with("123", check_generation=0)
+    assert monitor._pending_targets[("123", 11, False)].groups == ["1001"]
 
 
 @pytest.mark.asyncio
@@ -896,7 +903,8 @@ async def test_dynamic_monitor_advances_cursor_when_send_succeeds(
 
     assert ok is True
     assert monitor.last_dynamic_ids["123"] == 11
-    monitor._persist_state.assert_awaited_once()
+    monitor._persist_state.assert_awaited_with("123", check_generation=0)
+    assert not monitor._pending_targets
 
 
 @pytest.mark.asyncio

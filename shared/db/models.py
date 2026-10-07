@@ -184,6 +184,7 @@ class DynamicMonitorState(Model):
     last_dynamic_id: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     initialized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     pinned_dynamic_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    pending_deliveries: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )

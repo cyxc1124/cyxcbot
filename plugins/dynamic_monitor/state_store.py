@@ -1,9 +1,10 @@
 """动态监控运行时状态的 DB 持久化。"""
 
+import json
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional
 
-from nonebot.adapters.onebot.v11 import Message
+from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot_plugin_orm import get_session
 from sqlalchemy import select
 
@@ -19,6 +20,29 @@ class PendingDynamicDelivery:
     group_starts: dict[str, int] = field(default_factory=dict)
     user_starts: dict[str, int] = field(default_factory=dict)
 
+    def to_data(self) -> dict:
+        return {
+            "message": [
+                {"type": segment.type, "data": segment.data} for segment in self.message
+            ],
+            "groups": self.groups,
+            "users": self.users,
+            "at_all": self.at_all,
+            "group_starts": self.group_starts,
+            "user_starts": self.user_starts,
+        }
+
+    @classmethod
+    def from_data(cls, data: dict) -> "PendingDynamicDelivery":
+        return cls(
+            message=Message(MessageSegment(**segment) for segment in data["message"]),
+            groups=data["groups"],
+            users=data["users"],
+            at_all=data["at_all"],
+            group_starts=data["group_starts"],
+            user_starts=data["user_starts"],
+        )
+
 
 class DynamicMonitorStateStore:
     """负责 DynamicMonitor 运行时状态的加载、持久化与删除。"""
@@ -30,6 +54,8 @@ class DynamicMonitorStateStore:
         last_dynamic_ids: Dict[str, int],
         initialized_uids: Dict[str, bool],
         pinned_dynamic_ids: Dict[str, Optional[int]],
+        pending_targets: dict[tuple[str, int | str, bool], PendingDynamicDelivery]
+        | None = None,
     ) -> None:
         for uid in uids:
             if uid not in pinned_dynamic_ids:
@@ -50,11 +76,20 @@ class DynamicMonitorStateStore:
                 by_uid = {row.uid: row for row in rows}
 
                 for uid in uids:
+                    if pending_targets is not None:
+                        for key in [key for key in pending_targets if key[0] == uid]:
+                            pending_targets.pop(key)
                     row = by_uid.get(uid)
                     if row:
                         last_dynamic_ids[uid] = row.last_dynamic_id
                         initialized_uids[uid] = row.initialized
                         pinned_dynamic_ids[uid] = row.pinned_dynamic_id
+                        if pending_targets is not None:
+                            for data in json.loads(row.pending_deliveries or "[]"):
+                                key = (uid, data["dynamic_id"], data["is_pinned"])
+                                pending_targets[key] = PendingDynamicDelivery.from_data(
+                                    data
+                                )
                     else:
                         last_dynamic_ids[uid] = 0
                         initialized_uids[uid] = False
@@ -66,6 +101,8 @@ class DynamicMonitorStateStore:
         last_dynamic_ids: Dict[str, int],
         initialized_uids: Dict[str, bool],
         pinned_dynamic_ids: Dict[str, Optional[int]],
+        pending_targets: dict[tuple[str, int | str, bool], PendingDynamicDelivery]
+        | None = None,
         check_still_valid: Optional[Callable[[], bool]] = None,
     ) -> None:
         if check_still_valid is not None and not check_still_valid():
@@ -73,12 +110,27 @@ class DynamicMonitorStateStore:
         async with get_session() as session:
             async with session.begin():
                 row = await session.get(DynamicMonitorState, uid)
+                if check_still_valid is not None and not check_still_valid():
+                    return
                 if not row:
                     row = DynamicMonitorState(uid=uid)
                     session.add(row)
                 row.last_dynamic_id = last_dynamic_ids.get(uid, 0)
                 row.initialized = initialized_uids.get(uid, False)
                 row.pinned_dynamic_id = pinned_dynamic_ids.get(uid)
+                if pending_targets is not None:
+                    row.pending_deliveries = json.dumps(
+                        [
+                            {
+                                "dynamic_id": key[1],
+                                "is_pinned": key[2],
+                                **pending.to_data(),
+                            }
+                            for key, pending in pending_targets.items()
+                            if key[0] == uid
+                        ],
+                        ensure_ascii=False,
+                    )
 
     async def delete(self, uid: str) -> None:
         async with get_session() as session:

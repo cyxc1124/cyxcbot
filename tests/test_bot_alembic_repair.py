@@ -32,6 +32,47 @@ def _create_base_schema(conn) -> None:
     )
 
 
+def test_dynamic_pending_migration_preserves_rows_and_repair_detects_revision():
+    import runpy
+
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    migration = runpy.run_path(
+        str(
+            Path(__file__).resolve().parents[1]
+            / "shared/db/migrations/a7b8c9d0e1f2_add_dynamic_pending_delivery.py"
+        )
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE shared_db_dynamicmonitorstate (uid TEXT PRIMARY KEY, last_dynamic_id INTEGER NOT NULL)"
+            )
+        )
+        conn.execute(
+            text("INSERT INTO shared_db_dynamicmonitorstate VALUES ('111', 100)")
+        )
+        with Operations.context(MigrationContext.configure(conn)):
+            migration["upgrade"]()
+        assert conn.execute(
+            text(
+                "SELECT uid, last_dynamic_id, pending_deliveries FROM shared_db_dynamicmonitorstate"
+            )
+        ).one() == ("111", 100, "[]")
+        assert infer_alembic_revision(_InspectorProbe(inspect(conn))) == "a7b8c9d0e1f2"
+        with Operations.context(MigrationContext.configure(conn)):
+            migration["downgrade"]()
+        assert conn.execute(
+            text("SELECT uid, last_dynamic_id FROM shared_db_dynamicmonitorstate")
+        ).one() == ("111", 100)
+        assert not _InspectorProbe(inspect(conn)).column_exists(
+            "shared_db_dynamicmonitorstate", "pending_deliveries"
+        )
+    engine.dispose()
+
+
 def test_sync_database_url_maps_async_drivers() -> None:
     assert sync_database_url("mysql+aiomysql://u:p@h/db") == (
         "mysql+pymysql://u:p@h/db"

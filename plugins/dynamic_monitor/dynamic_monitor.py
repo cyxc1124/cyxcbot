@@ -6,6 +6,7 @@ UP主动态监控核心模块
 import asyncio
 from collections import defaultdict
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Dict, List, Optional, Set
 
 import aiohttp
@@ -197,6 +198,7 @@ class DynamicMonitor:
             last_dynamic_ids=self.last_dynamic_ids,
             initialized_uids=self.initialized_uids,
             pinned_dynamic_ids=self.pinned_dynamic_ids,
+            pending_targets=self._pending_targets,
         )
 
     async def _persist_state(self, uid: str, *, check_generation: Optional[int] = None):
@@ -212,6 +214,14 @@ class DynamicMonitor:
             last_dynamic_ids=self.last_dynamic_ids,
             initialized_uids=self.initialized_uids,
             pinned_dynamic_ids=self.pinned_dynamic_ids,
+            pending_targets=self._pending_targets,
+            check_still_valid=lambda: (
+                self._is_active_uid(uid)
+                and (
+                    check_generation is None
+                    or self._check_still_valid(uid, check_generation)
+                )
+            ),
         )
 
     async def reload_config(self):
@@ -457,10 +467,30 @@ class DynamicMonitor:
             return True
 
         dynamics, new_pinned_id = result
+        stale_pinned = [
+            key
+            for key in self._pending_targets
+            if key[0] == uid and key[2] and key[1] != new_pinned_id
+        ]
+        for key in stale_pinned:
+            self._pending_targets.pop(key)
 
         # 检查是否有新动态
         last_dynamic_id = self.last_dynamic_ids.get(uid, 0)
         new_dynamics = collect_new_dynamics(dynamics, last_dynamic_id)
+        # feed 可能已翻页或删除动态；已有快照仍应先完成投递。
+        pending_ids = sorted(
+            {
+                key[1]
+                for key in self._pending_targets
+                if key[0] == uid and not key[2] and key[1] > last_dynamic_id
+            }
+        )
+        if pending_ids:
+            new_dynamics = [
+                SimpleNamespace(id=dynamic_id, timestamp=0)
+                for dynamic_id in pending_ids
+            ] + [dynamic for dynamic in new_dynamics if dynamic.id not in pending_ids]
 
         # 首次检查只记录基准状态，不推送（避免启动时刷屏）
         # 注意：不能用 last_dynamic_id == 0 判断，无动态用户的基准 ID 也会一直是 0
@@ -504,6 +534,11 @@ class DynamicMonitor:
             # 只有当前置顶动态ID存在且有变化时，才推送置顶动态通知
             if should_notify_pinned_change(new_pinned_id, current_pinned_id):
                 pinned_dynamic = find_pinned_dynamic(dynamics, new_pinned_id)
+                if (
+                    pinned_dynamic is None
+                    and (uid, new_pinned_id, True) in self._pending_targets
+                ):
+                    pinned_dynamic = SimpleNamespace(id=new_pinned_id)
                 if pinned_dynamic:
                     if not self._check_still_valid(uid, check_generation):
                         return True
@@ -539,7 +574,7 @@ class DynamicMonitor:
                     uid, to_deliver, check_generation, persist_pinned=pinned_updated
                 )
             )
-        elif pinned_updated:
+        elif pinned_updated or stale_pinned:
             if not self._check_still_valid(uid, check_generation):
                 return True
             await self._persist_state(uid, check_generation=check_generation)
@@ -582,6 +617,8 @@ class DynamicMonitor:
             ):
                 if delivered_dynamic_ids:
                     self.last_dynamic_ids[uid] = max(delivered_dynamic_ids)
+                    for dynamic_id in delivered_dynamic_ids:
+                        self._pending_targets.pop((uid, dynamic_id, False), None)
                 await self._persist_state(uid, check_generation=check_generation)
 
     async def _deliver_pinned_change(
@@ -612,6 +649,7 @@ class DynamicMonitor:
             if not self._check_still_valid(uid, check_generation):
                 return
             self.pinned_dynamic_ids[uid] = new_pinned_id
+            self._pending_targets.pop((uid, pinned_dynamic.id, True), None)
             await self._persist_state(uid, check_generation=check_generation)
 
     async def _fetch_dynamic_screenshot(
@@ -744,14 +782,17 @@ class DynamicMonitor:
             if user_id in self.config.dynamic_monitor_user_mapping.get(uid, [])
         ]
         if not pending.groups and not pending.users:
-            pending_targets.pop(pending_key, None)
+            await self._persist_state(uid, check_generation=check_generation)
             return True
+
+        await self._persist_state(uid, check_generation=check_generation)
 
         async def checkpoint(target_type: str, target_id: str, next_part: int) -> None:
             starts = (
                 pending.group_starts if target_type == "group" else pending.user_starts
             )
             starts[target_id] = next_part
+            await self._persist_state(uid, check_generation=check_generation)
 
         delivery = await self.sender.send_message(
             pending.message,
@@ -767,13 +808,16 @@ class DynamicMonitor:
         ):
             return False
         if delivery.all_succeeded:
-            pending_targets.pop(pending_key, None)
+            group_count, user_count = len(pending.groups), len(pending.users)
+            # 先留下完成标记，调用方推进游标时再原子清理。
+            pending.groups, pending.users = [], []
+            await self._persist_state(uid, check_generation=check_generation)
             logger.info(
                 "动态通知已推送: uid={} dynamic_id={} groups={} users={} pinned={}",
                 uid,
                 dynamic.id,
-                len(pending.groups),
-                len(pending.users),
+                group_count,
+                user_count,
                 is_pinned,
             )
             return True
@@ -800,10 +844,12 @@ class DynamicMonitor:
                 rejected,
             )
         if not failed_groups and not failed_users:
-            pending_targets.pop(pending_key, None)
+            pending.groups, pending.users = [], []
+            await self._persist_state(uid, check_generation=check_generation)
             return True
         pending.groups = failed_groups
         pending.users = failed_users
+        await self._persist_state(uid, check_generation=check_generation)
         logger.warning(
             "动态通知投递未全部成功: uid={} dynamic_id={} failed={}",
             uid,

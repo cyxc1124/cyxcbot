@@ -181,7 +181,7 @@ async def test_terminal_qq_rejection_does_not_retry(
     assert monitor.last_dynamic_ids["111"] == 201
     assert monitor.sender.send_message.await_count == 2
     assert not monitor._pending_targets
-    monitor._persist_state.assert_awaited_once_with("111", check_generation=0)
+    monitor._persist_state.assert_awaited_with("111", check_generation=0)
 
 
 @pytest.mark.asyncio
@@ -222,7 +222,7 @@ async def test_terminal_rejection_only_retries_transient_failed_targets(
     assert monitor.last_dynamic_ids["111"] == 100
     pending = monitor._pending_targets[("111", 200, False)]
     assert (pending.groups, pending.users) == ([], ["user-openid"])
-    monitor._persist_state.assert_not_awaited()
+    monitor._persist_state.assert_awaited_with("111", check_generation=0)
 
     await monitor._deliver_new_dynamics("111", [dynamic], check_generation=0)
     assert monitor.last_dynamic_ids["111"] == 200
@@ -239,6 +239,7 @@ def _make_monitor(
         dynamic_monitor_mapping={uid: ["1001"] for uid in uids},
     )
     monitor = DynamicMonitor(config)
+    monitor._state_store.persist = AsyncMock()
     monitor.is_running = True
     for uid in uids:
         monitor.last_dynamic_ids[uid] = 100
