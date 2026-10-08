@@ -1,13 +1,15 @@
 """X 推文消息发送模块。"""
 
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Union
 
-from nonebot import get_driver
-from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.log import logger
 
+from shared.adapter.bots import iter_onebot_bots, messaging_bots
+from shared.adapter.ids import is_numeric_qq_id
+from shared.adapter.outbound import send_group, send_user
+from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.message_templates import XMessageTemplates
 from shared.notify.at_all import X_AT_ALL_FALLBACK, resolve_at_all_prefix
 from shared.notify.delivery import (
@@ -22,7 +24,6 @@ from utils.x_api.models import TweetMediaItem
 from .delivery_retry import (
     batch_plan_fingerprint,
     normalize_batch_start,
-    parse_resume_from,
 )
 
 SegmentPart = Union[MessageSegment, str]
@@ -67,13 +68,6 @@ class XSender:
             at_all=False,
         )
 
-    def _valid_bots(self) -> List[Tuple[str, Bot]]:
-        return [
-            (bot_id, bot)
-            for bot_id, bot in get_driver().bots.items()
-            if isinstance(bot, Bot)
-        ]
-
     async def send_to_groups(
         self,
         message: Message,
@@ -94,9 +88,8 @@ class XSender:
         )
         expected_fp = (expected_fingerprint or "").strip()
 
-        valid_bots = self._valid_bots()
         starts = start_by_target or {}
-        if not valid_bots:
+        if not messaging_bots():
             return DeliveryResult(
                 targets=[
                     TargetDelivery(
@@ -113,10 +106,8 @@ class XSender:
         targets: List[TargetDelivery] = []
         for group_id in group_ids:
             start = max(0, int(starts.get(group_id, 0) or 0))
-            delivery = TargetDelivery("group", group_id, False, "没有可用的机器人实例")
-            for _, bot in valid_bots:
-                delivery = await self._send_group_via_bot(
-                    bot,
+            targets.append(
+                await self._send_group_batches(
                     group_id,
                     batches,
                     start=start,
@@ -124,15 +115,11 @@ class XSender:
                     expected_fingerprint=expected_fp,
                     actual_fingerprint=plan_fp,
                 )
-                if delivery.success:
-                    break
-                start = parse_resume_from(delivery.error)
-            targets.append(delivery)
+            )
         return DeliveryResult(targets=targets)
 
-    async def _send_group_via_bot(
+    async def _send_group_batches(
         self,
-        bot: Bot,
         group_id: str,
         batches: List[Message],
         *,
@@ -143,12 +130,16 @@ class XSender:
     ) -> TargetDelivery:
         prepared: list[Message] = list(batches)
         if at_all_enabled:
-            prefix = await resolve_at_all_prefix(
-                bot,
-                group_id,
-                enabled=True,
-                fallback=X_AT_ALL_FALLBACK,
-            )
+            prefix = Message(f"{X_AT_ALL_FALLBACK} ")
+            if is_numeric_qq_id(group_id):
+                onebot_bots = iter_onebot_bots()
+                if onebot_bots:
+                    prefix = await resolve_at_all_prefix(
+                        onebot_bots[0],
+                        group_id,
+                        enabled=True,
+                        fallback=X_AT_ALL_FALLBACK,
+                    )
             prepared = [prefix, *batches]
         ok, start, stale_error = normalize_batch_start(
             start,
@@ -166,12 +157,12 @@ class XSender:
         sent = start
         try:
             for index in range(start, len(prepared)):
-                await bot.send_group_msg(
-                    group_id=int(group_id), message=prepared[index]
-                )
+                await send_group(group_id, prepared[index])
                 sent = index + 1
             logger.info("X 推文消息已发送到群组 {}", group_id)
             return TargetDelivery("group", group_id, True)
+        except LoggedQQApiError as exc:
+            return TargetDelivery("group", group_id, False, f"resume_from:{sent}:{exc}")
         except Exception as exc:
             logger.opt(exception=True).error(
                 "发送消息到群组 {} 失败（已发 {}/{}）",
@@ -200,9 +191,8 @@ class XSender:
         )
         expected_fp = (expected_fingerprint or "").strip()
 
-        valid_bots = self._valid_bots()
         starts = start_by_target or {}
-        if not valid_bots:
+        if not messaging_bots():
             return DeliveryResult(
                 targets=[
                     TargetDelivery(
@@ -219,25 +209,19 @@ class XSender:
         targets: List[TargetDelivery] = []
         for user_id in user_ids:
             start = max(0, int(starts.get(user_id, 0) or 0))
-            delivery = TargetDelivery("user", user_id, False, "没有可用的机器人实例")
-            for _, bot in valid_bots:
-                delivery = await self._send_user_via_bot(
-                    bot,
+            targets.append(
+                await self._send_user_batches(
                     user_id,
                     batches,
                     start=start,
                     expected_fingerprint=expected_fp,
                     actual_fingerprint=plan_fp,
                 )
-                if delivery.success:
-                    break
-                start = parse_resume_from(delivery.error)
-            targets.append(delivery)
+            )
         return DeliveryResult(targets=targets)
 
-    async def _send_user_via_bot(
+    async def _send_user_batches(
         self,
-        bot: Bot,
         user_id: str,
         batches: List[Message],
         *,
@@ -261,10 +245,12 @@ class XSender:
         sent = start
         try:
             for index in range(start, len(batches)):
-                await bot.send_private_msg(user_id=int(user_id), message=batches[index])
+                await send_user(user_id, batches[index])
                 sent = index + 1
             logger.info("X 推文消息已发送到好友 {}", user_id)
             return TargetDelivery("user", user_id, True)
+        except LoggedQQApiError as exc:
+            return TargetDelivery("user", user_id, False, f"resume_from:{sent}:{exc}")
         except Exception as exc:
             logger.opt(exception=True).error(
                 "发送消息到好友 {} 失败（已发 {}/{}）",

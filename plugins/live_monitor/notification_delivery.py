@@ -5,6 +5,7 @@ from typing import Callable, Optional
 
 from nonebot.log import logger
 
+from shared.adapter.ids import onebot_target_ids
 from shared.notify.delivery import DeliveryResult, empty_delivery_result
 from utils.bilibili_api import LiveStatus, RoomInfo, UserInfo
 
@@ -341,7 +342,7 @@ class LiveNotificationDelivery:
             target_groups=target_groups,
             target_users=target_users,
         )
-        if delivery.all_succeeded:
+        if not delivery.attempted or delivery.all_succeeded:
             state.clear_pending_start()
             return True
 
@@ -377,7 +378,7 @@ class LiveNotificationDelivery:
             target_groups=target_groups,
             target_users=target_users,
         )
-        if delivery.all_succeeded:
+        if not delivery.attempted or delivery.all_succeeded:
             state.clear_pending_end()
             return True
 
@@ -487,8 +488,10 @@ class LiveNotificationDelivery:
         users = (
             target_users if target_users is not None else user_mapping.get(room_id, [])
         )
+        groups = onebot_target_ids(groups)
+        users = onebot_target_ids(users)
         if not groups and not users:
-            logger.warning("房间 {} 没有配置推送目标", room_id)
+            logger.debug("房间 {} 没有 OneBot 推送目标，跳过主动推送", room_id)
             return empty_delivery_result()
 
         effective_room_info = room_info if room_info is not None else state.room_info

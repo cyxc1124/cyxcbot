@@ -13,9 +13,11 @@ B站视频查询插件
 """
 
 from nonebot import get_driver, on_message
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
+from nonebot.adapters import Bot, Event
 from nonebot.log import logger
 
+from shared.adapter.inbound import group_id_of, is_group_event, is_tome, plaintext_of
+from shared.adapter.outbound import send_event_message, send_event_text
 from shared.config.command_aliases import match_plain
 from shared.config.service import get_config_service
 
@@ -69,15 +71,18 @@ _register_config_reload()
 
 
 @video_command.handle()
-async def handle_video_commands(bot: Bot, event: GroupMessageEvent):
+async def handle_video_commands(bot: Bot, event: Event):
     """处理视频查询命令"""
-    message_text = event.get_plaintext().strip()
+    if not is_group_event(event):
+        return
+    message_text = plaintext_of(event)
     logger.debug("收到群消息: {}", message_text)
 
     config = get_cached_config()
 
-    # 获取群组ID
-    group_id = str(event.group_id)
+    group_id = group_id_of(event)
+    if not group_id:
+        return
 
     # 查找该群对应的UP主
     uids = config.get_uids_by_group_id(group_id)
@@ -91,7 +96,7 @@ async def handle_video_commands(bot: Bot, event: GroupMessageEvent):
         message_text,
         "video_query_latest",
         command_aliases,
-        is_tome=event.is_tome(),
+        is_tome=is_tome(event),
     )
 
     if not is_command:
@@ -126,21 +131,21 @@ async def handle_video_commands(bot: Bot, event: GroupMessageEvent):
 
                 if videos:
                     message = video_sender.build_video_message(videos)
-                    await video_sender.send_to_group(group_id, message, bot=bot)
+                    await send_event_message(bot, event, message)
                     logger.info("UP主 {} 最新视频已回复到群 {}", uid, group_id)
                 else:
                     logger.warning("无法获取UP主 {} 的视频", uid)
-                    await bot.send_group_msg(
-                        group_id=int(group_id),
-                        message=f"无法获取UP主 {uid} 的视频，请检查UID是否正确",
+                    await send_event_text(
+                        bot,
+                        event,
+                        f"无法获取UP主 {uid} 的视频，请检查UID是否正确",
                     )
 
             except Exception:
                 logger.opt(exception=True).error("获取UP主 {} 最新视频失败", uid)
                 try:
-                    await bot.send_group_msg(
-                        group_id=int(group_id),
-                        message=f"UP主 {uid} 视频查询失败，请稍后重试",
+                    await send_event_text(
+                        bot, event, f"UP主 {uid} 视频查询失败，请稍后重试"
                     )
                 except Exception:
                     logger.opt(exception=True).error("发送失败提示消息失败")
@@ -148,8 +153,6 @@ async def handle_video_commands(bot: Bot, event: GroupMessageEvent):
     except Exception:
         logger.opt(exception=True).error("处理视频查询命令失败")
         try:
-            await bot.send_group_msg(
-                group_id=int(group_id), message="系统错误，请稍后重试"
-            )
+            await send_event_text(bot, event, "系统错误，请稍后重试")
         except Exception:
             logger.opt(exception=True).error("发送系统错误消息失败")

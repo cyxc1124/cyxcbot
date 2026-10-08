@@ -10,11 +10,18 @@ import asyncio
 from pathlib import Path
 
 from nonebot import get_driver, on_message
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, PrivateMessageEvent
+from nonebot.adapters import Bot, Event
 from nonebot.adapters.onebot.v11.exception import ActionFailed
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
+from shared.adapter.inbound import (
+    group_id_of,
+    is_group_event,
+    is_private_event,
+    user_id_of,
+)
+from shared.adapter.outbound import send_event_message
 from shared.config.service import get_config_service
 from shared.config.shared_media import chmod_shared_media_file, ensure_shared_media_dir
 from shared.config.x_link_parser_policy import resolve_x_link_parser_policy
@@ -32,7 +39,7 @@ __plugin_meta__ = PluginMetadata(
     usage="发送含 x.com / twitter.com / t.co 链接即可触发",
     type="application",
     config=Config,
-    supported_adapters={"~onebot.v11"},
+    supported_adapters={"~onebot.v11", "~qq"},
 )
 
 group_x_link_parser = on_message(priority=4, block=False)
@@ -44,27 +51,28 @@ _PIPELINE_SEM = asyncio.Semaphore(_PIPELINE_LIMIT)
 _SEND_SEM = asyncio.Semaphore(1)
 
 
-async def _handle_x_link_message(
-    bot: Bot, event: GroupMessageEvent | PrivateMessageEvent
-) -> None:
+async def _handle_x_link_message(bot: Bot, event: Event) -> None:
     config = get_config()
     snap = get_config_service().get_snapshot()
+    user_id = user_id_of(event)
 
-    if isinstance(event, PrivateMessageEvent):
+    if is_private_event(event):
         scope = resolve_x_link_parser_policy(
             snap,
-            user_id=str(event.user_id),
+            user_id=user_id,
             is_private=True,
         )
-    else:
-        if str(event.user_id) == str(event.self_id):
+    elif is_group_event(event):
+        if user_id and user_id == str(getattr(bot, "self_id", "")):
             return
         scope = resolve_x_link_parser_policy(
             snap,
-            group_id=str(event.group_id),
-            user_id=str(event.user_id),
+            group_id=group_id_of(event),
+            user_id=user_id,
             is_private=False,
         )
+    else:
+        return
 
     if not scope.enabled:
         return
@@ -79,12 +87,12 @@ async def _handle_x_link_message(
 
     logger.info(
         "X 链接解析：收到消息 user={} text={!r}",
-        event.user_id,
+        user_id,
         message_text[:120],
     )
 
     if _PIPELINE_SEM.locked():
-        logger.info("X 链接解析：等待流水线名额 user={}", event.user_id)
+        logger.info("X 链接解析：等待流水线名额 user={}", user_id)
 
     async with _PIPELINE_SEM:
         await _fetch_and_reply(bot, event, config, message_text)
@@ -92,17 +100,18 @@ async def _handle_x_link_message(
 
 async def _fetch_and_reply(
     bot: Bot,
-    event: GroupMessageEvent | PrivateMessageEvent,
+    event: Event,
     config: Config,
     message_text: str,
 ) -> None:
     session = create_session(config.x_proxy)
     client = XApiClient(session, config.x_api_bearer)
     downloaded: list[Path] = []
+    user_id = user_id_of(event)
     try:
         tweet_ids = await extract_x_tweet_ids(message_text, session)
         if not tweet_ids:
-            logger.debug("X 链接解析：未解析到推文 ID user={}", event.user_id)
+            logger.debug("X 链接解析：未解析到推文 ID user={}", user_id)
             return
 
         media_dir = ensure_shared_media_dir(
@@ -122,44 +131,31 @@ async def _fetch_and_reply(
             downloaded.extend(paths)
 
             if _SEND_SEM.locked():
-                logger.info("X 链接解析：等待前序发送完成 user={}", event.user_id)
+                logger.info("X 链接解析：等待前序发送完成 user={}", user_id)
             async with _SEND_SEM:
                 reply = build_x_link_message(tweet, config.message_templates)
                 batches = reply_batches(reply)
-                send_results: list[object] = []
-                for batch in batches:
-                    if isinstance(event, GroupMessageEvent):
-                        send_results.append(
-                            await bot.send_group_msg(
-                                group_id=event.group_id, message=batch
-                            )
-                        )
-                    else:
-                        send_results.append(
-                            await bot.send_private_msg(
-                                user_id=event.user_id, message=batch
-                            )
-                        )
+                send_results: list[object] = [
+                    await send_event_message(bot, event, batch) for batch in batches
+                ]
 
             if not send_results or not all(
                 is_onebot_send_success(item) for item in send_results
             ):
                 logger.warning(
                     "X 链接解析发送未确认成功 user={} tweet_id={} results={!r}",
-                    event.user_id,
+                    user_id,
                     tweet_id,
                     send_results,
                 )
                 continue
 
             reply_scope = (
-                f"group={event.group_id}"
-                if isinstance(event, GroupMessageEvent)
-                else "private"
+                f"group={group_id_of(event)}" if is_group_event(event) else "private"
             )
             logger.info(
                 "已回复 X 链接解析: user={}, tweet_id={}, message_ids={}, {}",
-                event.user_id,
+                user_id,
                 tweet_id,
                 [_message_id_of(item) for item in send_results],
                 reply_scope,
@@ -170,7 +166,7 @@ async def _fetch_and_reply(
         )
         logger.warning(
             "X 链接解析发送失败 user={} retcode={} detail={!r}",
-            event.user_id,
+            user_id,
             getattr(exc, "retcode", None),
             detail[:200],
         )
@@ -188,12 +184,16 @@ def _message_id_of(send_result: object) -> object:
 
 
 @group_x_link_parser.handle()
-async def handle_group_x_link(bot: Bot, event: GroupMessageEvent):
+async def handle_group_x_link(bot: Bot, event: Event):
+    if not is_group_event(event):
+        return
     await _handle_x_link_message(bot, event)
 
 
 @private_x_link_parser.handle()
-async def handle_private_x_link(bot: Bot, event: PrivateMessageEvent):
+async def handle_private_x_link(bot: Bot, event: Event):
+    if not is_private_event(event):
+        return
     await _handle_x_link_message(bot, event)
 
 

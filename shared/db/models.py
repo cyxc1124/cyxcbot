@@ -85,7 +85,7 @@ class DynamicTargetGroup(Model):
     dynamic_target_id: Mapped[int] = mapped_column(
         ForeignKey("shared_db_dynamictarget.id", ondelete="CASCADE"), nullable=False
     )
-    group_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    group_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
     target: Mapped["DynamicTarget"] = relationship(back_populates="groups")
 
@@ -105,7 +105,7 @@ class DynamicTargetUser(Model):
     dynamic_target_id: Mapped[int] = mapped_column(
         ForeignKey("shared_db_dynamictarget.id", ondelete="CASCADE"), nullable=False
     )
-    user_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
     target: Mapped["DynamicTarget"] = relationship(back_populates="users")
 
@@ -148,7 +148,7 @@ class LiveTargetGroup(Model):
     live_target_id: Mapped[int] = mapped_column(
         ForeignKey("shared_db_livetarget.id", ondelete="CASCADE"), nullable=False
     )
-    group_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    group_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
     target: Mapped["LiveTarget"] = relationship(back_populates="groups")
 
@@ -166,7 +166,7 @@ class LiveTargetUser(Model):
     live_target_id: Mapped[int] = mapped_column(
         ForeignKey("shared_db_livetarget.id", ondelete="CASCADE"), nullable=False
     )
-    user_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
     target: Mapped["LiveTarget"] = relationship(back_populates="users")
 
@@ -184,6 +184,7 @@ class DynamicMonitorState(Model):
     last_dynamic_id: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     initialized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     pinned_dynamic_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    pending_deliveries: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )
@@ -238,7 +239,7 @@ class XTargetGroup(Model):
     x_target_id: Mapped[int] = mapped_column(
         ForeignKey("shared_db_xtarget.id", ondelete="CASCADE"), nullable=False
     )
-    group_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    group_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
     target: Mapped["XTarget"] = relationship(back_populates="groups")
 
@@ -256,7 +257,7 @@ class XTargetUser(Model):
     x_target_id: Mapped[int] = mapped_column(
         ForeignKey("shared_db_xtarget.id", ondelete="CASCADE"), nullable=False
     )
-    user_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
     target: Mapped["XTarget"] = relationship(back_populates="users")
 
@@ -287,7 +288,7 @@ class LinkParserGroupPolicy(Model):
 
     __tablename__ = "shared_db_linkparsergrouppolicy"
 
-    group_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    group_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     video_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     live_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     dynamic_enabled: Mapped[bool] = mapped_column(
@@ -306,7 +307,7 @@ class LinkParserUserPolicy(Model):
 
     __tablename__ = "shared_db_linkparseruserpolicy"
 
-    user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     video_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     live_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -326,7 +327,7 @@ class DouyinLinkParserGroupPolicy(Model):
 
     __tablename__ = "shared_db_douyinlinkparsergrouppolicy"
 
-    group_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    group_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
@@ -338,7 +339,7 @@ class DouyinLinkParserUserPolicy(Model):
 
     __tablename__ = "shared_db_douyinlinkparseruserpolicy"
 
-    user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -351,7 +352,7 @@ class XLinkParserGroupPolicy(Model):
 
     __tablename__ = "shared_db_xlinkparsergrouppolicy"
 
-    group_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    group_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
@@ -363,7 +364,7 @@ class XLinkParserUserPolicy(Model):
 
     __tablename__ = "shared_db_xlinkparseruserpolicy"
 
-    user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -576,6 +577,19 @@ class RustCheckInRecord(Model):
     online_bonus_earned: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+
+class OfficialQQSession(Model):
+    """Cached official QQ group / C2C session (openid, not numeric QQ)."""
+
+    __tablename__ = "shared_db_officialqqsession"
+
+    openid: Mapped[str] = mapped_column(String(64), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(8), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )
 
 

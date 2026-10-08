@@ -118,6 +118,10 @@ def infer_alembic_revision(probe: SchemaProbe) -> str:
     （例如 h8 的 dynamic_enabled 列）。因此新增会改表结构的 migration 时，仍需
     在此登记其可唯一识别的表/列特征，否则 upgrade 会因重复建表/加列而启动失败。
     """
+    if probe.column_exists("shared_db_dynamicmonitorstate", "pending_deliveries"):
+        return "a7b8c9d0e1f2"
+    if probe.table_exists("shared_db_officialqqsession"):
+        return "z6a7b8c9d0e1"
     # y5：pending_tweet_id 加宽到 255（容纳 tweet_id#fingerprint）
     pending_len = probe.column_string_length(
         "shared_db_xmonitorstate", "pending_tweet_id"

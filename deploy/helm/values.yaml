@@ -28,10 +28,11 @@ service:
     targetPort: 8081       # 容器内 Web Admin 监听端口
   loadBalancerIP: ""       # 可选，申请固定 LoadBalancer IP
 
-# NoneBot / OneBot 监听（→ 环境变量 HOST / PORT / COMMAND_*，见 templates/configmap.yaml）
+# NoneBot / OneBot 监听（→ 环境变量 HOST / PORT / DRIVER / COMMAND_*，见 templates/configmap.yaml）
 nonebot:
   host: "0.0.0.0"
   port: 8080
+  driver: "~fastapi+~httpx+~websockets"
   commandStart: ["/"]
   commandSep: ["."]
 

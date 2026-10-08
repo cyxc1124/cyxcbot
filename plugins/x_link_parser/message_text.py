@@ -5,8 +5,6 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
-from nonebot.adapters.onebot.v11 import GroupMessageEvent, PrivateMessageEvent
-
 from utils.x_api.url_parser import extract_x_urls
 
 _URL_IN_TEXT = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
@@ -44,7 +42,7 @@ def _urls_from_payload(payload: object) -> list[str]:
     return found
 
 
-def collect_message_text(event: GroupMessageEvent | PrivateMessageEvent) -> str:
+def collect_message_text(event: Any) -> str:
     parts: list[str] = []
 
     plain = event.get_plaintext().strip()

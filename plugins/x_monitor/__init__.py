@@ -6,6 +6,7 @@ X (Twitter) 监控插件
 from nonebot import get_driver
 from nonebot.log import logger
 
+from shared.adapter.bots import is_console_bot
 from shared.onebot.lifecycle import stop_monitor_if_no_bots
 
 from . import x_monitor
@@ -16,6 +17,8 @@ driver = get_driver()
 @driver.on_bot_connect
 async def _(bot):
     """机器人连接后开始监控"""
+    if is_console_bot(bot):
+        return
     logger.info("机器人 {} 已连接，开始初始化 X 监控...", bot.self_id)
     try:
         await x_monitor.start_x_monitor()

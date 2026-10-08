@@ -339,11 +339,11 @@ export function Layout() {
           navCollapsed ? 'lg:pl-12' : 'lg:pl-64'
         }`}
       >
-        <header className="sticky top-0 z-30 flex h-16 items-center border-b border-border bg-background/80 px-4 backdrop-blur-sm lg:px-8">
+        <header className="sticky top-0 z-30 flex min-h-16 flex-wrap items-center gap-2 border-b border-border bg-background/80 px-4 py-2 backdrop-blur-sm lg:flex-nowrap lg:px-8">
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="btn-ghost text-sm"
+              className="btn-ghost hidden text-sm lg:inline-flex"
               onClick={toggleNavCollapsed}
             >
               {navCollapsed ? '展开导航' : '收起导航'}

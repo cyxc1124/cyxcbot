@@ -21,6 +21,13 @@ class CookieStatusResponse(BaseModel):
     preview: Optional[str] = None
 
 
+class OfficialQQSettingsResponse(BaseModel):
+    app_id: str = ""
+    secret: CookieStatusResponse
+    is_sandbox: bool = False
+    use_websocket: bool = False
+
+
 class XProxySettingsResponse(BaseModel):
     enabled: bool = False
     scheme: str = "http"
@@ -81,6 +88,11 @@ class SettingsResponse(BaseModel):
     douyin_cookie: CookieStatusResponse
     x_api_bearer: CookieStatusResponse
     x_proxy: XProxySettingsResponse
+    official_qq: OfficialQQSettingsResponse = Field(
+        default_factory=lambda: OfficialQQSettingsResponse(
+            secret=CookieStatusResponse(configured=False)
+        )
+    )
     status_check_allowed_qq: list[str] = Field(default_factory=list)
     nonebot_superusers: list[str] = Field(default_factory=list)
     command_aliases: dict[str, CommandAliasEntryModel] = Field(default_factory=dict)
@@ -137,3 +149,7 @@ class SettingsUpdateRequest(BaseModel):
     command_aliases: Optional[dict[str, CommandAliasEntryModel]] = None
     command_extra_prefixes: Optional[list[str]] = None
     link_parser_shared_media_dir: Optional[str] = Field(default=None, max_length=512)
+    official_qq_app_id: Optional[str] = Field(default=None, max_length=64)
+    official_qq_app_secret: Optional[str] = None
+    official_qq_is_sandbox: Optional[bool] = None
+    official_qq_use_websocket: Optional[bool] = None

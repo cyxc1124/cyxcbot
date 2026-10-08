@@ -3,10 +3,8 @@
 负责构建和发送视频通知消息
 """
 
-from typing import List, Optional
+from typing import List
 
-from nonebot import get_driver
-from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.log import logger
 
@@ -66,33 +64,3 @@ class VideoSender:
         message.append(safe_text(f"{video.get_video_url()}"))
 
         return message
-
-    async def send_to_group(
-        self, group_id: str, message: Message, bot: Optional[Bot] = None
-    ):
-        """发送消息到指定群组；优先使用事件 Bot，否则遍历已连接 Bot。"""
-        bots: List[Bot] = []
-        if bot is not None:
-            bots = [bot]
-        else:
-            bots = [
-                item for item in get_driver().bots.values() if isinstance(item, Bot)
-            ]
-
-        if not bots:
-            logger.warning("机器人未连接，跳过发送到群组 {}", group_id)
-            raise RuntimeError(f"机器人未连接，无法发送到群组 {group_id}")
-
-        errors: List[str] = []
-        for candidate in bots:
-            try:
-                await candidate.send_group_msg(group_id=int(group_id), message=message)
-                logger.info("成功发送视频消息到群组 {}", group_id)
-                return
-            except Exception as exc:
-                logger.opt(exception=True).error(
-                    "机器人 {} 发送消息到群组 {} 失败", candidate.self_id, group_id
-                )
-                errors.append(str(exc))
-
-        raise RuntimeError(errors[0] if errors else f"发送到群组 {group_id} 失败")

@@ -4,11 +4,19 @@ from datetime import datetime
 
 import psutil
 from nonebot import on_message
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, PrivateMessageEvent
+from nonebot.adapters import Bot, Event
 from nonebot.exception import FinishedException
 from nonebot.log import logger
 from nonebot.permission import SUPERUSER
 
+from shared.adapter.inbound import (
+    group_id_of,
+    is_group_event,
+    is_private_event,
+    is_tome,
+    plaintext_of,
+    user_id_of,
+)
 from shared.config.command_aliases import match_plain
 from shared.config.service import get_config_service
 from shared.monitor.system_metrics import (
@@ -26,44 +34,41 @@ from shared.status_check_policy import (
 start_time = time.time()
 
 
-# 权限检查函数
-def _get_allowed_qq_numbers() -> set[int]:
-    """从 Web Admin 数据库读取允许查询状态的 QQ 列表"""
+def _allowed_user_ids() -> set[str]:
     try:
-        from shared.config.service import get_config_service
-
-        allowed: set[int] = set()
-        for qq in get_config_service().get_snapshot().status_check_allowed_qq:
-            qq_str = str(qq).strip()
-            if qq_str.isdigit():
-                allowed.add(int(qq_str))
-        return allowed
+        return {
+            str(qq).strip()
+            for qq in get_config_service().get_snapshot().status_check_allowed_qq
+            if str(qq).strip()
+        }
     except Exception:
         logger.opt(exception=True).warning("读取状态查询权限配置失败")
         return set()
 
 
-async def check_status_permission(
-    bot: Bot, event: GroupMessageEvent | PrivateMessageEvent
-) -> bool:
+async def check_status_permission(bot: Bot, event: Event) -> bool:
     """检查用户是否有查询状态的权限"""
-    user_id = event.user_id
+    user_id = user_id_of(event)
 
-    if await SUPERUSER(bot, event):
-        logger.info("NoneBot 超级用户 {} 查询机器人状态", user_id)
-        return True
+    try:
+        if await SUPERUSER(bot, event):
+            logger.info("NoneBot 超级用户 {} 查询机器人状态", user_id)
+            return True
+    except Exception:
+        logger.debug("官方事件无法按 OneBot 超级用户判定，改走白名单")
 
-    if user_id in _get_allowed_qq_numbers():
+    if user_id in _allowed_user_ids():
         logger.info("允许的用户 {} 查询机器人状态", user_id)
         return True
 
     snap = get_config_service().get_snapshot()
-    if isinstance(event, GroupMessageEvent):
-        if is_status_check_enabled_for_group_from_snapshot(str(event.group_id), snap):
-            logger.info("群组 {} 内用户 {} 查询机器人状态", event.group_id, user_id)
+    if is_group_event(event):
+        group_id = group_id_of(event)
+        if group_id and is_status_check_enabled_for_group_from_snapshot(group_id, snap):
+            logger.info("群组 {} 内用户 {} 查询机器人状态", group_id, user_id)
             return True
-    elif isinstance(event, PrivateMessageEvent):
-        if is_status_check_enabled_for_user_from_snapshot(str(user_id), snap):
+    elif is_private_event(event):
+        if is_status_check_enabled_for_user_from_snapshot(user_id, snap):
             logger.info("好友 {} 查询机器人状态", user_id)
             return True
 
@@ -76,18 +81,15 @@ status_cmd = on_message(priority=5, block=False)
 
 
 @status_cmd.handle()
-async def handle_status_command(
-    bot: Bot, event: GroupMessageEvent | PrivateMessageEvent
-):
+async def handle_status_command(bot: Bot, event: Event):
     """处理状态查询命令"""
-    text = event.get_plaintext().strip()
+    if not is_group_event(event) and not is_private_event(event):
+        return
+    text = plaintext_of(event)
     config = get_config_service().get_snapshot()
-    # is_tome 对私聊消息恒为 True（好友消息天然"发给"机器人），若直接传入会让
-    # match_plain 走 @机器人 模糊匹配分支——好友随口一句"状态怎么样"/"请看运行
-    # 状态"就会命中。仅群聊里"被 @/回复"才算模糊匹配场景；私聊强制精确匹配，
-    # 保持迁移前 on_command 的语义（需完整输入触发词，而非包含即命中）。
-    is_tome = isinstance(event, GroupMessageEvent) and event.is_tome()
-    if not match_plain(text, "status", config.command_aliases, is_tome=is_tome):
+    # 仅群聊里"被 @/回复"才算模糊匹配；私聊与官方 C2C 强制精确匹配。
+    mentioned = is_group_event(event) and is_tome(event)
+    if not match_plain(text, "status", config.command_aliases, is_tome=mentioned):
         return
 
     # 检查权限

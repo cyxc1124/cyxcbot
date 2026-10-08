@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -10,6 +10,7 @@ from pydantic import BaseModel
 class FriendInfo(BaseModel):
     user_id: str
     nickname: Optional[str] = None
+    source: Optional[Literal["onebot", "official"]] = None
 
 
 class FriendListResponse(BaseModel):

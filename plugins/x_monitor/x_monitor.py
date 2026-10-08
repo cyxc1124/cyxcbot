@@ -16,6 +16,7 @@ from nonebot.log import logger
 from nonebot_plugin_orm import get_session
 from sqlalchemy import select
 
+from shared.adapter.ids import onebot_target_ids
 from shared.config.service import get_config_service
 from shared.config.shared_media import chmod_shared_media_file, ensure_shared_media_dir
 from shared.db.models import XTarget
@@ -593,6 +594,15 @@ class XMonitor:
         if not self.sender:
             return False
 
+        configured_groups = self.config.x_monitor_mapping.get(username, [])
+        configured_users = self.config.x_monitor_user_mapping.get(username, [])
+        if (configured_groups or configured_users) and not onebot_target_ids(
+            configured_groups + configured_users
+        ):
+            self._pending_tweet_delivery.pop(username, None)
+            logger.debug("X 博主 {} 仅配置官方会话，跳过主动推送", username)
+            return True
+
         downloaded: list[Path] = []
         try:
             if not tweet.media_items and tweet.media_urls:
@@ -621,9 +631,11 @@ class XMonitor:
                         len(missing),
                         len([i for i in tweet.media_items if i.url]),
                     )
-                    configured_groups = self.config.x_monitor_mapping.get(username, [])
-                    configured_users = self.config.x_monitor_user_mapping.get(
-                        username, []
+                    configured_groups = onebot_target_ids(
+                        self.config.x_monitor_mapping.get(username, [])
+                    )
+                    configured_users = onebot_target_ids(
+                        self.config.x_monitor_user_mapping.get(username, [])
                     )
                     pending = self._pending_tweet_delivery.get(username)
                     if pending and pending[0] == tweet.id:
@@ -645,8 +657,12 @@ class XMonitor:
 
             message = self.sender.build_tweet_message(tweet)
             plan_fp = self.sender.plan_fingerprint(message)
-            configured_groups = self.config.x_monitor_mapping.get(username, [])
-            configured_users = self.config.x_monitor_user_mapping.get(username, [])
+            configured_groups = onebot_target_ids(
+                self.config.x_monitor_mapping.get(username, [])
+            )
+            configured_users = onebot_target_ids(
+                self.config.x_monitor_user_mapping.get(username, [])
+            )
             group_starts: dict[str, int] = {}
             user_starts: dict[str, int] = {}
             expected_fp = ""

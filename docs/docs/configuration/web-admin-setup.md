@@ -20,6 +20,25 @@ OneBot **不在** Web Admin 面板里填写地址。请将协议端（如 NapCat
 
 在 **设置 → 机器人** 中配置的是 **超级用户** 与状态查询专用白名单等权限项。
 
+## 3.1 （可选）接入官方 QQ 机器人
+
+与 OneBot 可同时在线。在 **设置 → 官方 Bot** 填写开放平台 AppID / AppSecret（加密存库，保存后立即生效）。默认使用 **Webhook**，凭证不写环境变量。旧版 WebSocket 仅为仍可使用该链路的应用保留，不推荐新部署使用。
+
+1. 将公网 HTTPS 回调地址（例如 `https://bot.example.com/qq/webhook`）转发到 NoneBot 监听端口，默认 **8080**。回调不在 Web Admin 的 8081 端口；Compose 使用映射的机器人端口，Helm 使用 Service 的 `onebot` 端口。
+2. 保存 AppID / AppSecret；开发阶段按开放平台要求开启沙箱并配置测试成员。
+3. 在开放平台配置回调地址并完成验证，订阅 `GROUP_AT_MESSAGE_CREATE`、`C2C_MESSAGE_CREATE` 以及群/好友新增、删除事件；配置部署服务器的出口 IP 白名单。
+4. 在测试群中 @机器人或发送私聊，刷新群组/好友列表，在会话策略中启用所需命令和链接解析。首次有效事件到达后，仪表盘才显示连接状态；仅保存凭证或完成回调验证不代表已经收发成功。
+5. 验证群聊和 C2C 的文字、图片/视频回复，更新或清除凭证后再次检查回调，并确认 OneBot 原有收发仍正常。
+
+- 数字 QQ 号仍走 OneBot；官方群/C2C 的 openid 走官方 Bot
+- 官方会话在机器人进群或收到消息后出现在群组/好友列表
+- 官方好友新增、删除事件会同步好友缓存；官方群移除机器人时删除群缓存
+- **官方 Bot 不支持监控主动推送**；后台动态、直播、X 通知仅发送到 OneBot。官方会话的订阅映射保留用于命令查询（最新动态/置顶动态/最新视频为群聊命令，动态图片提取支持群聊和 C2C）
+- 官方回复受平台限制：群聊回复窗口为 5 分钟、C2C 为 60 分钟，每条用户消息最多回复 5 次。分批图片/视频可能超出额度；请减少单次请求内容
+- 不覆盖频道（Guild）；Rust 群管 / 专属头衔仍仅 OneBot
+
+平台能力依据：[官方消息发送说明](https://github.com/tencent-connect/bot-docs/blob/main/docs/develop/api-v2/server-inter/message/send-receive/send.md)、[官方 SDK 接入提示](https://github.com/tencent-connect/botgo#注意事项)。
+
 ## 4. 配置 B 站账号
 
 在 **设置 → B 站账号** 中登录或填写 Cookie。配置 B 站账号可提高 API 请求成功率，对动态截图、直播监控等功能尤为重要。

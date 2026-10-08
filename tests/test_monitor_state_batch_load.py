@@ -114,6 +114,139 @@ async def db_context():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["recipient", "part", "completed"])
+@pytest.mark.parametrize("is_pinned", [False, True])
+async def test_dynamic_delivery_restart_restores_targets_snapshot_and_part_offset(
+    db_context,
+    monkeypatch,
+    failure,
+    is_pinned,
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from nonebot.adapters.onebot.v11 import Message, MessageSegment
+
+    from plugins.dynamic_monitor import state_store
+    from plugins.dynamic_monitor.config import Config
+    from plugins.dynamic_monitor.dynamic_monitor import DynamicMonitor
+    from plugins.dynamic_monitor.sender import DynamicSender
+    from shared.adapter import outbound
+    from shared.adapter.qq_errors import LoggedQQApiError
+
+    _, factory, DynamicMonitorState, _ = db_context
+    monkeypatch.setattr(state_store, "get_session", lambda: factory())
+    monkeypatch.setattr(state_store, "DynamicMonitorState", DynamicMonitorState)
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    accepted = []
+    failed = False
+
+    async def send(**kwargs):
+        nonlocal failed
+        target = kwargs.get("group_openid") or kwargs.get("openid")
+        segment = kwargs["message"][0]
+        if (
+            target == "group-openid"
+            and not failed
+            and (
+                failure == "recipient"
+                or failure == "part"
+                and segment.type == "file_image"
+            )
+        ):
+            failed = True
+            raise LoggedQQApiError(50055001, "临时发送失败")
+        accepted.append(
+            (
+                target,
+                segment.type,
+                kwargs["message"].extract_plain_text()
+                if segment.type == "text"
+                else segment.data["content"],
+            )
+        )
+
+    monkeypatch.setattr(
+        outbound,
+        "iter_official_bots",
+        lambda: [SimpleNamespace(send_to_group=send, send_to_c2c=send)],
+    )
+
+    def make_monitor():
+        monitor = DynamicMonitor(
+            Config(
+                dynamic_monitor_mapping={"111": ["group-openid"]},
+                dynamic_monitor_user_mapping={
+                    "111": ["user-openid"] if failure == "recipient" else []
+                },
+            )
+        )
+        monitor._state_store = state_store.DynamicMonitorStateStore()
+        monitor.sender = DynamicSender()
+        monitor._resolve_author_name = AsyncMock(return_value="author")
+        monitor._fetch_dynamic_screenshot = AsyncMock(return_value=b"snapshot-image")
+        monitor.sender.build_dynamic_message = MagicMock(
+            return_value=Message(
+                [
+                    MessageSegment.text("snapshot-caption"),
+                    MessageSegment.image(b"snapshot-image"),
+                ]
+            )
+        )
+        return monitor
+
+    original = make_monitor()
+    original.last_dynamic_ids["111"] = 100
+    original.initialized_uids["111"] = True
+    original.pinned_dynamic_ids["111"] = 42
+    dynamic = SimpleNamespace(id=200, uid="111", get_type_description=lambda: "text")
+    assert await original._send_dynamic_notification("111", dynamic, is_pinned) is (
+        failure == "completed"
+    )
+    async with factory() as session:
+        row = await session.get(DynamicMonitorState, "111")
+        assert row.last_dynamic_id == 100
+        assert row.pending_deliveries != "[]"
+
+    restarted = make_monitor()
+    restarted.sender.build_dynamic_message.side_effect = AssertionError(
+        "must use saved snapshot"
+    )
+    await restarted._load_persisted_states()
+    pending = restarted._pending_targets[("111", 200, is_pinned)]
+    if failure == "part":
+        assert pending.group_starts["group-openid"] == 1
+    elif failure == "recipient":
+        assert pending.groups == ["group-openid"] and pending.users == []
+    else:
+        assert not pending.groups and not pending.users
+    # feed 已不含这条动态，仍须用快照完成旧通知。
+    restarted.fetcher = SimpleNamespace(
+        fetch_user_dynamics=AsyncMock(return_value=([], 200 if is_pinned else 42))
+    )
+    assert await restarted._check_user_dynamic("111")
+    await restarted._drain_pending_deliveries()
+    expected = [
+        ("group-openid", "text", "snapshot-caption"),
+        ("group-openid", "file_image", b"snapshot-image"),
+    ]
+    if failure == "recipient":
+        expected = [
+            ("user-openid", "text", "snapshot-caption"),
+            ("user-openid", "file_image", b"snapshot-image"),
+            *expected,
+        ]
+    assert accepted == expected
+    restarted._fetch_dynamic_screenshot.assert_not_awaited()
+    assert not restarted._pending_targets
+    async with factory() as session:
+        row = await session.get(DynamicMonitorState, "111")
+        assert row.pending_deliveries == "[]"
+        assert row.pinned_dynamic_id == (200 if is_pinned else 42)
+        assert row.last_dynamic_id == (100 if is_pinned else 200)
+
+
+@pytest.mark.asyncio
 async def test_dynamic_load_persisted_states_all_exist(
     db_context: tuple[Any, async_sessionmaker[AsyncSession], type, type],
     monkeypatch: pytest.MonkeyPatch,

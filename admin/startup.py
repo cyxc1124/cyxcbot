@@ -14,10 +14,15 @@ driver = get_driver()
 @driver.on_startup
 async def init_shared_services():
     """Load config from DB."""
+    from shared.adapter import sessions as _official_sessions  # noqa: F401
+    from shared.adapter.official_runtime import on_config_reload
     from shared.config.service import get_config_service
 
     try:
-        await get_config_service().load()
+        svc = get_config_service()
+        snapshot = await svc.load()
+        svc.register_reload_callback(on_config_reload)
+        await on_config_reload(snapshot)
         logger.info("共享服务初始化完成")
     except Exception as exc:
         logger.warning("共享服务初始化失败: {}", exc)

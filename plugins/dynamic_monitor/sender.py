@@ -3,15 +3,16 @@
 负责构建和发送动态通知消息
 """
 
-from typing import Iterable, List, Optional, Tuple, Union
+from collections.abc import Awaitable, Callable
+from functools import partial
+from typing import Iterable, List, Optional, Union
 
-from nonebot import get_driver
-from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.log import logger
 
+from shared.adapter.outbound import send_group, send_user
+from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.message_templates import DynamicMessageTemplates
-from shared.notify.at_all import DYNAMIC_AT_ALL_FALLBACK, resolve_at_all_prefix
 from shared.notify.delivery import (
     DeliveryResult,
     TargetDelivery,
@@ -21,6 +22,7 @@ from shared.notify.message_template import build_message_from_template
 from utils.bilibili_api import DynamicItem
 
 SegmentPart = Union[MessageSegment, str]
+DeliveryProgressCallback = Callable[[str, str, int], Awaitable[None]]
 
 
 class DynamicSender:
@@ -89,108 +91,71 @@ class DynamicSender:
             return self.templates.pinned
         return self.templates.push
 
-    def _valid_bots(self) -> List[Tuple[str, Bot]]:
-        return [
-            (bot_id, bot)
-            for bot_id, bot in get_driver().bots.items()
-            if isinstance(bot, Bot)
-        ]
-
     async def send_to_groups(
         self,
         message: Message,
         group_ids: List[str],
         *,
         at_all_enabled: bool = False,
+        starts: dict[str, int] | None = None,
+        on_part_sent: DeliveryProgressCallback | None = None,
     ) -> DeliveryResult:
         """发送消息到多个群组，返回结构化投递结果。"""
         if not group_ids:
             return empty_delivery_result()
 
-        valid_bots = self._valid_bots()
-        if not valid_bots:
-            return DeliveryResult(
-                targets=[
-                    TargetDelivery("group", group_id, False, "没有可用的机器人实例")
-                    for group_id in group_ids
-                ]
-            )
-
         targets: List[TargetDelivery] = []
         for group_id in group_ids:
-            delivery = TargetDelivery("group", group_id, False, "没有可用的机器人实例")
-            for _, bot in valid_bots:
-                delivery = await self._send_group_via_bot(
-                    bot, group_id, message, at_all_enabled=at_all_enabled
+            try:
+                await send_group(
+                    group_id,
+                    message,
+                    at_all=at_all_enabled,
+                    start=(starts or {}).get(group_id, 0),
+                    on_part_sent=partial(on_part_sent, "group", group_id)
+                    if on_part_sent
+                    else None,
                 )
-                if delivery.success:
-                    break
-            targets.append(delivery)
+                logger.info("动态消息已发送到群组 {}", group_id)
+                targets.append(TargetDelivery("group", group_id, True))
+            except LoggedQQApiError as exc:
+                targets.append(TargetDelivery("group", group_id, False, str(exc)))
+            except Exception as exc:
+                logger.opt(exception=True).error("发送消息到群组 {} 失败", group_id)
+                targets.append(TargetDelivery("group", group_id, False, str(exc)))
         return DeliveryResult(targets=targets)
 
-    async def _send_group_via_bot(
-        self,
-        bot: Bot,
-        group_id: str,
-        message: Message,
-        *,
-        at_all_enabled: bool = False,
-    ) -> TargetDelivery:
-        try:
-            if at_all_enabled:
-                prefix = await resolve_at_all_prefix(
-                    bot,
-                    group_id,
-                    enabled=True,
-                    fallback=DYNAMIC_AT_ALL_FALLBACK,
-                )
-                payload = prefix + message
-            else:
-                payload = message
-
-            await bot.send_group_msg(group_id=int(group_id), message=payload)
-            logger.info("动态消息已发送到群组 {}", group_id)
-            return TargetDelivery("group", group_id, True)
-        except Exception as exc:
-            logger.opt(exception=True).error("发送消息到群组 {} 失败", group_id)
-            return TargetDelivery("group", group_id, False, str(exc))
-
     async def send_to_users(
-        self, message: Message, user_ids: List[str]
+        self,
+        message: Message,
+        user_ids: List[str],
+        *,
+        starts: dict[str, int] | None = None,
+        on_part_sent: DeliveryProgressCallback | None = None,
     ) -> DeliveryResult:
         """发送消息到多个好友，返回结构化投递结果。"""
         if not user_ids:
             return empty_delivery_result()
 
-        valid_bots = self._valid_bots()
-        if not valid_bots:
-            return DeliveryResult(
-                targets=[
-                    TargetDelivery("user", user_id, False, "没有可用的机器人实例")
-                    for user_id in user_ids
-                ]
-            )
-
         targets: List[TargetDelivery] = []
         for user_id in user_ids:
-            delivery = TargetDelivery("user", user_id, False, "没有可用的机器人实例")
-            for _, bot in valid_bots:
-                delivery = await self._send_user_via_bot(bot, user_id, message)
-                if delivery.success:
-                    break
-            targets.append(delivery)
+            try:
+                await send_user(
+                    user_id,
+                    message,
+                    start=(starts or {}).get(user_id, 0),
+                    on_part_sent=partial(on_part_sent, "user", user_id)
+                    if on_part_sent
+                    else None,
+                )
+                logger.info("动态消息已发送到好友 {}", user_id)
+                targets.append(TargetDelivery("user", user_id, True))
+            except LoggedQQApiError as exc:
+                targets.append(TargetDelivery("user", user_id, False, str(exc)))
+            except Exception as exc:
+                logger.opt(exception=True).error("发送消息到好友 {} 失败", user_id)
+                targets.append(TargetDelivery("user", user_id, False, str(exc)))
         return DeliveryResult(targets=targets)
-
-    async def _send_user_via_bot(
-        self, bot: Bot, user_id: str, message: Message
-    ) -> TargetDelivery:
-        try:
-            await bot.send_private_msg(user_id=int(user_id), message=message)
-            logger.info("动态消息已发送到好友 {}", user_id)
-            return TargetDelivery("user", user_id, True)
-        except Exception as exc:
-            logger.opt(exception=True).error("发送消息到好友 {} 失败", user_id)
-            return TargetDelivery("user", user_id, False, str(exc))
 
     async def send_message(
         self,
@@ -199,10 +164,22 @@ class DynamicSender:
         user_ids: List[str],
         *,
         at_all_enabled: bool = False,
+        group_starts: dict[str, int] | None = None,
+        user_starts: dict[str, int] | None = None,
+        on_part_sent: DeliveryProgressCallback | None = None,
     ) -> DeliveryResult:
         """向群组与好友发送同一条消息，并合并投递结果。"""
         group_result = await self.send_to_groups(
-            message, group_ids, at_all_enabled=at_all_enabled
+            message,
+            group_ids,
+            at_all_enabled=at_all_enabled,
+            starts=group_starts,
+            on_part_sent=on_part_sent,
         )
-        user_result = await self.send_to_users(message, user_ids)
+        user_result = await self.send_to_users(
+            message,
+            user_ids,
+            starts=user_starts,
+            on_part_sent=on_part_sent,
+        )
         return group_result.merge(user_result)
