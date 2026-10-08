@@ -45,11 +45,12 @@ def _ensure_real_db_modules():
             if _model_column_is_real(
                 DynamicMonitorState, "uid"
             ) and _model_column_is_real(LiveMonitorState, "room_id"):
-                for name in (
-                    "plugins.dynamic_monitor.state_store",
-                    "plugins.live_monitor.state_store",
-                ):
+                for name in _MONITOR_PLUGIN_MODULES:
                     sys.modules.pop(name, None)
+                    parent, attribute = name.rsplit(".", 1)
+                    package = sys.modules.get(parent)
+                    if package is not None:
+                        vars(package).pop(attribute, None)
                 return Model, DynamicMonitorState, LiveMonitorState
 
     for name in (
@@ -576,3 +577,139 @@ async def test_live_load_persisted_states_single_query(
 
     assert counter["select"] == 1
     assert monitor.room_states["119"].start_time == 119
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["start", "end"])
+@pytest.mark.parametrize("target", ["group", "user"])
+@pytest.mark.parametrize("failure", ["recipient", "part"])
+async def test_official_live_retry_restores_snapshot_targets_and_parts(
+    db_context, monkeypatch, status, target, failure
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from plugins.live_monitor import sender, state_store
+    from plugins.live_monitor.config import Config
+    from plugins.live_monitor.live_monitor import LiveMonitor
+    from plugins.live_monitor.models import LiveRoomState
+    from shared.adapter import outbound
+    from shared.adapter.qq_errors import LoggedQQApiError
+    from utils.bilibili_api import RoomInfo, UserInfo
+
+    _, factory, _, LiveMonitorState = db_context
+    monkeypatch.setattr(state_store, "get_session", lambda: factory())
+    monkeypatch.setattr(state_store, "LiveMonitorState", LiveMonitorState)
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    accepted = []
+    failed = False
+    failure_target = f"{target}-openid"
+
+    async def send(**kwargs):
+        nonlocal failed
+        destination = kwargs.get("group_openid") or kwargs.get("openid")
+        segment = kwargs["message"][0]
+        if (
+            destination == failure_target
+            and not failed
+            and (failure == "recipient" or segment.type == "file_image")
+        ):
+            failed = True
+            raise LoggedQQApiError(50055001, "暂时失败")
+        accepted.append(
+            (
+                destination,
+                segment.type,
+                kwargs["message"].extract_plain_text()
+                if segment.type == "text"
+                else segment.data["content"],
+            )
+        )
+
+    onebot = SimpleNamespace(send_group_msg=AsyncMock(), send_private_msg=AsyncMock())
+    official = SimpleNamespace(send_to_group=send, send_to_c2c=send)
+    monkeypatch.setattr(outbound, "iter_onebot_bots", lambda: [onebot])
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [official])
+    monkeypatch.setattr(sender, "messaging_bots", lambda: [onebot, official])
+    live_room = RoomInfo.from_api_data(
+        {
+            "uid": 2,
+            "room_id": 111,
+            "live_status": 1,
+            "live_start_time": 1000,
+            "title": "saved-title",
+        }
+    )
+    room = (
+        live_room
+        if status == "start"
+        else RoomInfo.from_api_data({"uid": 2, "room_id": 111, "live_status": 0})
+    )
+    user = UserInfo(uid=2, name="author", face="")
+
+    def monitor():
+        result = LiveMonitor(
+            Config(
+                live_monitor_mapping={"111": ["1001", "group-openid"]},
+                live_monitor_user_mapping={"111": ["user-openid"]},
+                live_at_all={"111": False},
+                use_websocket=False,
+            )
+        )
+        result._state_store = state_store.LiveMonitorStateStore()
+        result._sender._generate_card_if_needed = AsyncMock(return_value=b"saved-card")
+        result.room_states["111"] = LiveRoomState(
+            room_id=111,
+            room_info=room,
+            user_info=user,
+            previous_status=room.live_status,
+            start_time=1000,
+            last_live_room_info=live_room,
+            last_live_user_info=user,
+        )
+        return result
+
+    first = monitor()
+    state = first.room_states["111"]
+    assert not await getattr(first._delivery, f"deliver_{status}")(
+        "111", state, room_info=room, user_info=user
+    )
+    async with factory() as session:
+        row = await session.get(LiveMonitorState, "111")
+        assert row.pending_notifications != "{}"
+    restarted = monitor()
+    restarted._sender._generate_card_if_needed.side_effect = AssertionError(
+        "must reuse snapshot"
+    )
+    await restarted._load_persisted_states()
+    restored = restarted.room_states["111"]
+    snapshot = getattr(restored, f"pending_{status}_delivery")
+    if failure == "part":
+        starts = snapshot.group_starts if target == "group" else snapshot.user_starts
+        assert starts[failure_target] == 1
+    monkeypatch.setattr(
+        "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
+        AsyncMock(return_value=(room, user)),
+    )
+    assert await restarted._initialize_room("111")
+    assert getattr(restored, f"pending_{status}")
+    await restarted._delivery.retry_pending(
+        "111", restored, room_info=room, user_info=user
+    )
+    assert not getattr(restored, f"pending_{status}")
+    expected = [
+        (kind, value if kind == "text" else b"saved-card")
+        for kind, value in outbound.convert_onebot_message(snapshot.message)
+    ]
+    for destination in ("group-openid", "user-openid"):
+        assert [
+            ("image" if kind == "file_image" else kind, value)
+            for peer, kind, value in accepted
+            if peer == destination
+        ] == expected
+    onebot.send_group_msg.assert_awaited_once()
+    restarted._sender._generate_card_if_needed.assert_not_awaited()
+    async with factory() as session:
+        assert (
+            await session.get(LiveMonitorState, "111")
+        ).pending_notifications == "{}"

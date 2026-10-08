@@ -1,12 +1,17 @@
 """直播监控通知投递编排与 pending 重试逻辑。"""
 
 import asyncio
+from collections.abc import Awaitable
 from typing import Callable, Optional
 
 from nonebot.log import logger
 
-from shared.adapter.ids import onebot_target_ids
-from shared.notify.delivery import DeliveryResult, empty_delivery_result
+from shared.adapter.qq_errors import is_terminal_qq_error_text
+from shared.notify.delivery import (
+    DeliveryResult,
+    PendingDelivery,
+    empty_delivery_result,
+)
 from utils.bilibili_api import LiveStatus, RoomInfo, UserInfo
 
 from .card_generator import PrefetchImages
@@ -18,12 +23,16 @@ def failed_target_ids(delivery: DeliveryResult) -> tuple[list[str], list[str]]:
     groups = [
         target.target_id
         for target in delivery.targets
-        if target.target_type == "group" and not target.success
+        if target.target_type == "group"
+        and not target.success
+        and not is_terminal_qq_error_text(target.error)
     ]
     users = [
         target.target_id
         for target in delivery.targets
-        if target.target_type == "user" and not target.success
+        if target.target_type == "user"
+        and not target.success
+        and not is_terminal_qq_error_text(target.error)
     ]
     return groups, users
 
@@ -38,13 +47,33 @@ class LiveNotificationDelivery:
         get_group_mapping: Callable[[], dict[str, list[str]]],
         get_user_mapping: Callable[[], dict[str, list[str]]],
         get_at_all: Callable[[], dict[str, bool]],
+        persist_state: Callable[[str], Awaitable[None]] | None = None,
     ):
         self._sender = sender
         self._get_group_mapping = get_group_mapping
         self._get_user_mapping = get_user_mapping
         self._get_at_all = get_at_all
+        self._persist_state = persist_state
         # ponytail: per-room lock；短播时 end 须等 in-flight start 写完 pending
         self._room_locks: dict[str, asyncio.Lock] = {}
+
+    async def _persist(self, room_id: str) -> None:
+        if self._persist_state is not None:
+            await self._persist_state(room_id)
+
+    async def _finish(self, room_id: str, state: LiveRoomState, status: str) -> None:
+        attributes = [
+            f"pending_{status}{suffix}"
+            for suffix in ("", "_groups", "_users", "_delivery")
+        ]
+        saved = {name: getattr(state, name) for name in attributes}
+        getattr(state, f"clear_pending_{status}")()
+        try:
+            await self._persist(room_id)
+        except BaseException:
+            for name, value in saved.items():
+                setattr(state, name, value)
+            raise
 
     def _lock_for(self, room_id: str) -> asyncio.Lock:
         lock = self._room_locks.get(room_id)
@@ -66,14 +95,16 @@ class LiveNotificationDelivery:
     def _mark_pending_start_retry(state: LiveRoomState) -> None:
         """投递抛异常时标记待重试；空目标列表表示下次走完整 mapping。"""
         state.pending_start = True
-        state.pending_start_groups = []
-        state.pending_start_users = []
+        pending = state.pending_start_delivery
+        state.pending_start_groups = pending.groups if pending else []
+        state.pending_start_users = pending.users if pending else []
 
     @staticmethod
     def _mark_pending_end_retry(state: LiveRoomState) -> None:
         state.pending_end = True
-        state.pending_end_groups = []
-        state.pending_end_users = []
+        pending = state.pending_end_delivery
+        state.pending_end_groups = pending.groups if pending else []
+        state.pending_end_users = pending.users if pending else []
 
     async def _await_send_despite_cancel(
         self, coro, *, on_exception, on_cancel=None
@@ -109,7 +140,7 @@ class LiveNotificationDelivery:
             if room_info is not None
             else (state.last_live_room_info or state.room_info)
         )
-        if effective_room_info is None:
+        if effective_room_info is None and state.pending_start_delivery is None:
             logger.warning(
                 "房间 {} 关播时仍有待投递开播通知，但缺少房间快照，已放弃", room_id
             )
@@ -160,6 +191,7 @@ class LiveNotificationDelivery:
             )
             logger.info("{}: {} (房间 {})", log_label, streamer_name, room_id)
             self.supersede_pending_end(room_id, state)
+            self._mark_pending_start_retry(state)
             await confirm_observed_status(
                 room_id,
                 state,
@@ -192,6 +224,7 @@ class LiveNotificationDelivery:
             except Exception:
                 # confirm 已推进状态；无 pending 则后续轮询看不到变迁、永不重试
                 _mark_start_failure()
+            await self._persist(room_id)
             await retry_pending(
                 room_id,
                 state,
@@ -244,6 +277,7 @@ class LiveNotificationDelivery:
             pending_start_room_info = state.room_info or state.last_live_room_info
             pending_start_user_info = state.user_info or state.last_live_user_info
 
+            self._mark_pending_end_retry(state)
             await confirm_observed_status(
                 room_id,
                 state,
@@ -305,6 +339,7 @@ class LiveNotificationDelivery:
                 )
             except Exception:
                 _mark_end_failure()
+            await self._persist(room_id)
             await retry_pending(
                 room_id,
                 state,
@@ -342,14 +377,18 @@ class LiveNotificationDelivery:
             target_groups=target_groups,
             target_users=target_users,
         )
-        if not delivery.attempted or delivery.all_succeeded:
-            state.clear_pending_start()
+        failed_groups, failed_users = failed_target_ids(delivery)
+        if not delivery.attempted or not failed_groups and not failed_users:
+            await self._finish(room_id, state, "start")
             return True
 
-        failed_groups, failed_users = failed_target_ids(delivery)
         state.pending_start = True
         state.pending_start_groups = failed_groups
         state.pending_start_users = failed_users
+        if state.pending_start_delivery is not None:
+            state.pending_start_delivery.groups = failed_groups
+            state.pending_start_delivery.users = failed_users
+        await self._persist(room_id)
         return False
 
     async def deliver_end(
@@ -378,14 +417,18 @@ class LiveNotificationDelivery:
             target_groups=target_groups,
             target_users=target_users,
         )
-        if not delivery.attempted or delivery.all_succeeded:
-            state.clear_pending_end()
+        failed_groups, failed_users = failed_target_ids(delivery)
+        if not delivery.attempted or not failed_groups and not failed_users:
+            await self._finish(room_id, state, "end")
             return True
 
-        failed_groups, failed_users = failed_target_ids(delivery)
         state.pending_end = True
         state.pending_end_groups = failed_groups
         state.pending_end_users = failed_users
+        if state.pending_end_delivery is not None:
+            state.pending_end_delivery.groups = failed_groups
+            state.pending_end_delivery.users = failed_users
+        await self._persist(room_id)
         return False
 
     async def retry_pending(
@@ -488,10 +531,10 @@ class LiveNotificationDelivery:
         users = (
             target_users if target_users is not None else user_mapping.get(room_id, [])
         )
-        groups = onebot_target_ids(groups)
-        users = onebot_target_ids(users)
+        groups = [gid for gid in groups if gid in group_mapping.get(room_id, [])]
+        users = [uid for uid in users if uid in user_mapping.get(room_id, [])]
         if not groups and not users:
-            logger.debug("房间 {} 没有 OneBot 推送目标，跳过主动推送", room_id)
+            logger.debug("房间 {} 没有推送目标，跳过投递", room_id)
             return empty_delivery_result()
 
         effective_room_info = room_info if room_info is not None else state.room_info
@@ -503,6 +546,26 @@ class LiveNotificationDelivery:
 
         duration_seconds = state.get_duration_seconds() if status == "end" else 0
 
+        setattr(state, f"pending_{status}", True)
+        await self._persist(room_id)
+
+        async def prepared(pending: PendingDelivery) -> None:
+            pending.groups = [
+                gid
+                for gid in pending.groups
+                if gid in self._get_group_mapping().get(room_id, [])
+            ]
+            pending.users = [
+                uid
+                for uid in pending.users
+                if uid in self._get_user_mapping().get(room_id, [])
+            ]
+            setattr(state, f"pending_{status}_delivery", pending)
+            await self._persist(room_id)
+
+        async def checkpoint(_kind: str, _target: str, _next_part: int) -> None:
+            await self._persist(room_id)
+
         delivery = await self._sender.send_notification(
             status=status,
             streamer_name=streamer_name,
@@ -513,6 +576,9 @@ class LiveNotificationDelivery:
             duration_seconds=duration_seconds,
             at_all_enabled=self._get_at_all().get(room_id, True),
             prefetched_images=prefetched_images,
+            pending=getattr(state, f"pending_{status}_delivery"),
+            on_prepared=prepared,
+            on_part_sent=checkpoint,
         )
         if delivery.all_succeeded:
             return delivery

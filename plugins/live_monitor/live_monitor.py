@@ -105,6 +105,7 @@ class LiveMonitor:
             get_group_mapping=lambda: self.config.live_monitor_mapping,
             get_user_mapping=lambda: self.config.live_monitor_user_mapping,
             get_at_all=lambda: self.config.live_at_all,
+            persist_state=lambda room_id: self._persist_state(room_id),
         )
         self._cycle_logger = CheckCycleLogger("直播监控")
         self.last_check_at: Optional[str] = None
@@ -182,7 +183,14 @@ class LiveMonitor:
         state = self.room_states.get(room_id)
         if not state:
             return
-        await self._state_store.persist(room_id, state)
+        await self._state_store.persist(
+            room_id,
+            state,
+            check_still_valid=lambda: (
+                self._is_active_room(room_id)
+                and self._is_current_room_state(room_id, state)
+            ),
+        )
 
     async def reload_config(self):
         old_interval = self.config.monitor_interval
@@ -625,6 +633,10 @@ class LiveMonitor:
 
                 state.room_info = room_info
                 state.user_info = user_info
+                if state.pending_start or state.pending_end:
+                    self.initialized_rooms[room_id] = True
+                    logger.info("房间 {} 已恢复待投递直播通知", room_id)
+                    return True
                 state.previous_status = room_info.live_status
                 state.clear_pending_start()
                 state.clear_pending_end()

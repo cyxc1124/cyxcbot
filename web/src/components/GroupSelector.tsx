@@ -31,7 +31,7 @@ export function GroupSelector({ groups, selected, onChange, disabled, helperText
       getName={(group) => group.source === 'official' ? `${group.group_name}（官方）` : group.group_name}
       labels={GROUP_LABELS}
       disabled={disabled}
-      helperText={`${helperText ?? GROUP_LABELS.defaultHelperText}。动态监控会向官方群主动推送；直播与 X 仍只推送到数字 QQ。`}
+      helperText={`${helperText ?? GROUP_LABELS.defaultHelperText}。动态和直播监控支持官方群推送；X 仍只推送到数字 QQ。`}
     />
   )
 }

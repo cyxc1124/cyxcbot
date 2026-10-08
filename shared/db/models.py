@@ -199,6 +199,9 @@ class LiveMonitorState(Model):
     previous_status: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     start_time: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     streamer_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    pending_notifications: Mapped[str] = mapped_column(
+        Text, default="{}", nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )

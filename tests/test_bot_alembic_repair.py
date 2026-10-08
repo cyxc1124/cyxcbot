@@ -432,3 +432,41 @@ def test_infer_revision_detects_official_qq_session() -> None:
         )
     assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "z6a7b8c9d0e1"
     engine.dispose()
+
+
+def test_live_pending_migration_and_revision_repair():
+    import runpy
+
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    migration = runpy.run_path(
+        str(
+            Path(__file__).resolve().parents[1]
+            / "shared/db/migrations/b8c9d0e1f2g3_add_live_pending_notifications.py"
+        )
+    )
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE shared_db_livemonitorstate (room_id TEXT PRIMARY KEY, previous_status TEXT)"
+            )
+        )
+        conn.execute(
+            text("INSERT INTO shared_db_livemonitorstate VALUES ('111', 'LIVE')")
+        )
+        with Operations.context(MigrationContext.configure(conn)):
+            migration["upgrade"]()
+        assert conn.execute(
+            text(
+                "SELECT room_id, previous_status, pending_notifications FROM shared_db_livemonitorstate"
+            )
+        ).one() == ("111", "LIVE", "{}")
+        assert infer_alembic_revision(_InspectorProbe(inspect(conn))) == "b8c9d0e1f2g3"
+        with Operations.context(MigrationContext.configure(conn)):
+            migration["downgrade"]()
+        assert conn.execute(
+            text("SELECT room_id, previous_status FROM shared_db_livemonitorstate")
+        ).one() == ("111", "LIVE")
+    engine.dispose()

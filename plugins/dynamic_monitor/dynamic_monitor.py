@@ -19,6 +19,7 @@ from shared.monitor.background_task import spawn_background_task
 from shared.monitor.check_cycle import CheckCycleLogger
 from shared.monitor.concurrency import run_with_concurrency
 from shared.monitor.poll_schedule import compute_dynamic_poll_schedule
+from shared.notify.delivery import PendingDelivery
 from utils.bilibili_api import DynamicFetcher
 from utils.screenshot import (
     close_screenshot_service,
@@ -35,7 +36,7 @@ from .check_logic import (
 from .config import Config
 from .poll_scheduler import register_poll_job, remove_poll_job
 from .sender import DynamicSender
-from .state_store import DynamicMonitorStateStore, PendingDynamicDelivery
+from .state_store import DynamicMonitorStateStore
 
 # 全局截图并发与排队上限；超出并发时排队等待，不降级跳过
 _SCREENSHOT_CONCURRENCY = 2
@@ -102,9 +103,7 @@ class DynamicMonitor:
         self._screenshot_queue_semaphore = asyncio.Semaphore(_SCREENSHOT_QUEUE_MAX)
         self._state_store = DynamicMonitorStateStore()
         # uid, dynamic_id, is_pinned -> 尚未成功的群/好友。重试不再发给已成功目标。
-        self._pending_targets: Dict[
-            tuple[str, int | str, bool], PendingDynamicDelivery
-        ] = {}
+        self._pending_targets: Dict[tuple[str, int | str, bool], PendingDelivery] = {}
 
     def _touch_last_check_at(self) -> None:
         self.last_check_at = datetime.now().isoformat(timespec="seconds")
@@ -762,7 +761,7 @@ class DynamicMonitor:
                     not self.config.enable_screenshot or screenshot_image is None
                 ),
             )
-            pending = PendingDynamicDelivery(
+            pending = PendingDelivery(
                 Message(message),
                 list(self.config.dynamic_monitor_mapping.get(uid, [])),
                 list(self.config.dynamic_monitor_user_mapping.get(uid, [])),
