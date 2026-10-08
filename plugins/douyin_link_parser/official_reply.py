@@ -51,7 +51,11 @@ async def prepare_official_reply(
     caption = message.extract_plain_text()
     generated = []
     images = [segment for segment in media if segment.type == "image"]
-    if len(images) > 1 and len(media) + bool(caption.strip()) > remaining:
+    if (
+        remaining > 1
+        and len(images) > 1
+        and len(media) + bool(caption.strip()) > remaining
+    ):
         try:
             # 等渲染线程写完再响应取消，让 finally 能清理生成的预览文件。
             render = asyncio.create_task(
@@ -71,15 +75,9 @@ async def prepare_official_reply(
                     logger.warning("取消抖音预览渲染时清理失败")
                 raise
             generated.append(path)
-            preview = MessageSegment.image(path.resolve())
-            combined = []
-            for segment in media:
-                if segment.type != "image":
-                    combined.append(segment)
-                elif preview is not None:
-                    combined.append(preview)
-                    preview = None
-            media = combined
+            media = [MessageSegment.image(path.resolve())] + [
+                segment for segment in media if segment.type != "image"
+            ]
             caption = f"图集共 {len(images)} 张静态图片，已合成预览。\n{caption}"
         except OSError, ValueError, Image.DecompressionBombError:
             logger.warning("抖音图集合成预览失败，将按官方回复预算回传原媒体")

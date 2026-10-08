@@ -38,7 +38,9 @@ def _load(name):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scope", ["group", "c2c"])
-@pytest.mark.parametrize("kind", ["video", "album", "live", "large", "many_live"])
+@pytest.mark.parametrize(
+    "kind", ["video", "album", "live", "large", "many_live", "mixed"]
+)
 @pytest.mark.parametrize("reject", [False, True])
 async def test_native_douyin_reply_and_cleanup(
     scope, kind, reject, tmp_path, monkeypatch
@@ -71,6 +73,8 @@ async def test_native_douyin_reply_and_cleanup(
     count = (
         26
         if kind == "large"
+        else 6
+        if kind == "mixed"
         else 8
         if kind == "many_live"
         else 2
@@ -79,7 +83,13 @@ async def test_native_douyin_reply_and_cleanup(
     )
     items, paths = [], []
     for i in range(count):
-        video = kind in {"video", "many_live"} or kind == "live" and i == 1
+        video = (
+            kind in {"video", "many_live"}
+            or kind == "live"
+            and i == 1
+            or kind == "mixed"
+            and i < 4
+        )
         path = tmp_path / f"{i}.{'mp4' if video else 'jpg'}"
         if video:
             path.write_bytes(b"\x00\x00\x00\x18ftypmp42fake")
@@ -159,7 +169,7 @@ async def test_native_douyin_reply_and_cleanup(
         1
         if reject
         else (5 if scope == "group" else 4)
-        if kind == "many_live"
+        if kind in {"many_live", "mixed"}
         else 3
         if kind == "live"
         else 2
@@ -172,20 +182,53 @@ async def test_native_douyin_reply_and_cleanup(
     if not reject:
         caption = api.await_args_list[-1].kwargs["message"].extract_plain_text()
         assert "caption" in caption
-        if kind == "large":
-            assert "26 张静态图片" in caption
+        if kind in {"large", "mixed"}:
+            assert ("26 张静态图片" if kind == "large" else "2 张静态图片") in caption
             segment = api.await_args_list[0].kwargs["message"][0]
             assert segment.type == "file_image"
             from io import BytesIO
 
             preview = Image.open(BytesIO(segment.data["content"]))
-            assert preview.width == 1280 and preview.height == 2240
+            assert preview.size == ((1280, 2240) if kind == "large" else (640, 320))
+        if kind == "mixed":
+            assert ("另有 1 项媒体" if scope == "group" else "另有 2 项媒体") in caption
+            sent_videos = [
+                call.kwargs["message"][0].data["file_name"]
+                for call in api.await_args_list[1:-1]
+            ]
+            assert sent_videos == [
+                path.name for path in paths[: (3 if scope == "group" else 2)]
+            ]
         if kind == "many_live":
             assert ("另有 4 项媒体" if scope == "group" else "另有 5 项媒体") in caption
     assert not any(path.exists() for path in paths)
     assert not list(tmp_path.glob("douyin_preview_*.jpg"))
     logger.error.assert_not_called()
     logger.opt.return_value.error.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_single_remaining_reply_does_not_claim_unsent_preview(
+    tmp_path, monkeypatch
+):
+    from nonebot.adapters.onebot.v11 import Message, MessageSegment
+
+    module = _load("official_reply")
+    render = MagicMock()
+    monkeypatch.setattr(module, "_album_preview", render)
+    message = Message(
+        [
+            MessageSegment.image(tmp_path / "1.jpg"),
+            MessageSegment.image(tmp_path / "2.jpg"),
+            MessageSegment.text("caption"),
+        ]
+    )
+    reply, generated = await module.prepare_official_reply(message, 1, tmp_path)
+    render.assert_not_called()
+    assert generated == []
+    assert len(reply) == 1 and reply[0].type == "text"
+    assert "2 项媒体" in reply.extract_plain_text()
+    assert "已合成预览" not in reply.extract_plain_text()
 
 
 @pytest.mark.asyncio
