@@ -9,6 +9,10 @@ from typing import List, Optional
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 
+class DeliveryCancelledError(RuntimeError):
+    """监控投递目标在发送前已失效。"""
+
+
 @dataclass(frozen=True)
 class TargetDelivery:
     """Per-target send outcome."""

@@ -1,5 +1,6 @@
 """X 推文消息发送模块。"""
 
+from collections.abc import Callable
 from hashlib import sha256
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Union
@@ -14,6 +15,7 @@ from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.message_templates import XMessageTemplates
 from shared.notify.at_all import X_AT_ALL_FALLBACK, resolve_at_all_prefix
 from shared.notify.delivery import (
+    DeliveryCancelledError,
     DeliveryProgressCallback,
     DeliveryResult,
     TargetDelivery,
@@ -81,6 +83,7 @@ class XSender:
         start_by_target: Optional[Dict[str, int]] = None,
         expected_fingerprint: str = "",
         on_progress: DeliveryProgressCallback | None = None,
+        is_target_active: Callable[[str, str], bool] | None = None,
     ) -> DeliveryResult:
         if not group_ids:
             return empty_delivery_result()
@@ -110,6 +113,8 @@ class XSender:
 
         targets: List[TargetDelivery] = []
         for group_id in group_ids:
+            if is_target_active is not None and not is_target_active("group", group_id):
+                continue
             start = max(0, int(starts.get(group_id, 0) or 0))
             targets.append(
                 await self._send_group_batches(
@@ -120,6 +125,9 @@ class XSender:
                     expected_fingerprint=expected_fp,
                     actual_fingerprint=plan_fp,
                     on_progress=on_progress,
+                    can_send=(lambda target=group_id: is_target_active("group", target))
+                    if is_target_active is not None
+                    else None,
                 )
             )
         return DeliveryResult(targets=targets)
@@ -134,6 +142,7 @@ class XSender:
         expected_fingerprint: str = "",
         actual_fingerprint: str = "",
         on_progress: DeliveryProgressCallback | None = None,
+        can_send: Callable[[], bool] | None = None,
     ) -> TargetDelivery:
         prepared: list[Message] = list(batches)
         if at_all_enabled:
@@ -157,6 +166,7 @@ class XSender:
                 expected_fingerprint=expected_fingerprint,
                 actual_fingerprint=actual_fingerprint,
                 on_progress=on_progress,
+                can_send=can_send,
             )
         ok, start, stale_error = normalize_batch_start(
             start,
@@ -174,13 +184,13 @@ class XSender:
         sent = start
         try:
             for index in range(start, len(prepared)):
-                await send_group(group_id, prepared[index])
+                await send_group(group_id, prepared[index], can_send=can_send)
                 sent = index + 1
                 if on_progress is not None:
                     await on_progress("group", group_id, sent)
             logger.info("X 推文消息已发送到群组 {}", group_id)
             return TargetDelivery("group", group_id, True)
-        except LoggedQQApiError as exc:
+        except (LoggedQQApiError, DeliveryCancelledError) as exc:
             return TargetDelivery("group", group_id, False, f"resume_from:{sent}:{exc}")
         except Exception as exc:
             logger.opt(exception=True).error(
@@ -200,6 +210,7 @@ class XSender:
         expected_fingerprint: str = "",
         at_all_enabled: bool = False,
         on_progress: DeliveryProgressCallback | None = None,
+        is_target_active: Callable[[str, str], bool] | None = None,
     ) -> DeliveryResult:
         if not user_ids:
             return empty_delivery_result()
@@ -229,6 +240,8 @@ class XSender:
 
         targets: List[TargetDelivery] = []
         for user_id in user_ids:
+            if is_target_active is not None and not is_target_active("user", user_id):
+                continue
             start = max(0, int(starts.get(user_id, 0) or 0))
             targets.append(
                 await self._send_user_batches(
@@ -238,6 +251,9 @@ class XSender:
                     expected_fingerprint=expected_fp,
                     actual_fingerprint=plan_fp,
                     on_progress=on_progress,
+                    can_send=(lambda target=user_id: is_target_active("user", target))
+                    if is_target_active is not None
+                    else None,
                 )
             )
         return DeliveryResult(targets=targets)
@@ -251,6 +267,7 @@ class XSender:
         expected_fingerprint: str = "",
         actual_fingerprint: str = "",
         on_progress: DeliveryProgressCallback | None = None,
+        can_send: Callable[[], bool] | None = None,
     ) -> TargetDelivery:
         if not is_numeric_qq_id(user_id):
             return await self._send_official_batches(
@@ -261,6 +278,7 @@ class XSender:
                 expected_fingerprint=expected_fingerprint,
                 actual_fingerprint=actual_fingerprint,
                 on_progress=on_progress,
+                can_send=can_send,
             )
         ok, start, stale_error = normalize_batch_start(
             start,
@@ -278,13 +296,13 @@ class XSender:
         sent = start
         try:
             for index in range(start, len(batches)):
-                await send_user(user_id, batches[index])
+                await send_user(user_id, batches[index], can_send=can_send)
                 sent = index + 1
                 if on_progress is not None:
                     await on_progress("user", user_id, sent)
             logger.info("X 推文消息已发送到好友 {}", user_id)
             return TargetDelivery("user", user_id, True)
-        except LoggedQQApiError as exc:
+        except (LoggedQQApiError, DeliveryCancelledError) as exc:
             return TargetDelivery("user", user_id, False, f"resume_from:{sent}:{exc}")
         except Exception as exc:
             logger.opt(exception=True).error(
@@ -305,6 +323,7 @@ class XSender:
         expected_fingerprint: str,
         actual_fingerprint: str,
         on_progress: DeliveryProgressCallback | None,
+        can_send: Callable[[], bool] | None = None,
     ) -> TargetDelivery:
         message = Message([segment for batch in batches for segment in batch])
         part_count = len(convert_onebot_message(message))
@@ -327,10 +346,16 @@ class XSender:
         try:
             if start < part_count:
                 send = send_group if target_type == "group" else send_user
-                await send(target_id, message, start=start, on_part_sent=checkpoint)
+                await send(
+                    target_id,
+                    message,
+                    start=start,
+                    on_part_sent=checkpoint,
+                    can_send=can_send,
+                )
             logger.info("X 推文消息已发送到官方会话 {}", target_id)
             return TargetDelivery(target_type, target_id, True)
-        except LoggedQQApiError as exc:
+        except (LoggedQQApiError, DeliveryCancelledError) as exc:
             return TargetDelivery(
                 target_type, target_id, False, f"resume_from:{sent}:{exc}"
             )
@@ -351,6 +376,7 @@ class XSender:
         user_starts: Optional[Dict[str, int]] = None,
         expected_fingerprint: str = "",
         on_progress: DeliveryProgressCallback | None = None,
+        is_target_active: Callable[[str, str], bool] | None = None,
     ) -> DeliveryResult:
         group_result = await self.send_to_groups(
             message,
@@ -359,6 +385,7 @@ class XSender:
             start_by_target=group_starts,
             expected_fingerprint=expected_fingerprint,
             on_progress=on_progress,
+            is_target_active=is_target_active,
         )
         user_result = await self.send_to_users(
             message,
@@ -367,6 +394,7 @@ class XSender:
             expected_fingerprint=expected_fingerprint,
             at_all_enabled=at_all_enabled,
             on_progress=on_progress,
+            is_target_active=is_target_active,
         )
         return group_result.merge(user_result)
 

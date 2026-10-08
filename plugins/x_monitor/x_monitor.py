@@ -733,6 +733,18 @@ class XMonitor:
                 )
                 await self._persist_state(username, check_generation=check_generation)
 
+            def is_target_active(kind: str, target: str) -> bool:
+                if check_generation is not None and not self._check_still_valid(
+                    username, check_generation
+                ):
+                    return False
+                mapping = (
+                    self.config.x_monitor_mapping
+                    if kind == "group"
+                    else self.config.x_monitor_user_mapping
+                )
+                return target in mapping.get(username, [])
+
             if check_generation is not None and not self._check_still_valid(
                 username, check_generation
             ):
@@ -780,15 +792,20 @@ class XMonitor:
                 user_starts=user_starts,
                 expected_fingerprint=expected_fp,
                 on_progress=checkpoint,
+                is_target_active=is_target_active,
             )
             if check_generation is not None and not self._check_still_valid(
                 username, check_generation
             ):
                 return False
             failed_groups, failed_users = failed_targets_with_resume(delivery)
-            if delivery.all_succeeded or (
-                delivery.attempted and not failed_groups and not failed_users
-            ):
+            failed_groups = [
+                pair for pair in failed_groups if is_target_active("group", pair[0])
+            ]
+            failed_users = [
+                pair for pair in failed_users if is_target_active("user", pair[0])
+            ]
+            if not failed_groups and not failed_users:
                 self._pending_tweet_delivery.pop(username, None)
                 if tweet_id_as_int(tweet.id) > tweet_id_as_int(
                     self.last_tweet_ids.get(username, "0")
