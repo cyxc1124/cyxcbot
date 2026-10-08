@@ -495,13 +495,14 @@ class LiveMonitor:
             room_id, "start", state
         )
 
-        if not room_info:
-            logger.debug("房间 {} 获取信息失败", room_id)
-            return
-
         if not self._is_active_room(room_id):
             return
         if not self._is_current_room_state(room_id, state):
+            return
+
+        if not room_info:
+            logger.debug("房间 {} 获取信息失败", room_id)
+            await self._delivery.retry_prepared(room_id, state)
             return
 
         # 相对当前 previous_status 重检；epoch 变化时仅放行「开播」类更新观测
@@ -597,6 +598,8 @@ class LiveMonitor:
                 confirm_observed_status=self._confirm_observed_status,
                 retry_pending=self._delivery.retry_pending_unlocked,
             )
+        elif not room_info:
+            await self._delivery.retry_prepared(room_id, state)
 
     async def _handle_room_change(self, room_id: str, data: dict):
         """处理房间信息变更"""
@@ -621,6 +624,12 @@ class LiveMonitor:
             return False
 
         try:
+            if state.pending_start or state.pending_end:
+                self.initialized_rooms[room_id] = True
+                await self._delivery.retry_prepared(room_id, state)
+                logger.info("房间 {} 已恢复待投递直播通知", room_id)
+                return True
+
             room_info, user_info = await api_manager.get_room_and_user_info(
                 int(room_id)
             )
@@ -633,10 +642,6 @@ class LiveMonitor:
 
                 state.room_info = room_info
                 state.user_info = user_info
-                if state.pending_start or state.pending_end:
-                    self.initialized_rooms[room_id] = True
-                    logger.info("房间 {} 已恢复待投递直播通知", room_id)
-                    return True
                 state.previous_status = room_info.live_status
                 state.clear_pending_start()
                 state.clear_pending_end()
@@ -727,14 +732,16 @@ class LiveMonitor:
                     "房间 {} 卡片素材预下载失败", room_id
                 )
 
-        if not room_info:
-            logger.debug("无法获取房间 {} 的最新状态", room_id)
-            return False
-
         if not self._is_active_room(room_id):
             return True
         if not self._is_current_room_state(room_id, state):
             return True
+
+        if not room_info:
+            logger.debug("无法获取房间 {} 的最新状态", room_id)
+            await self._delivery.retry_prepared(room_id, state)
+            return False
+
         # 检测状态变化；观测状态与待投递通知分开跟踪
         is_live_began, is_live_ended, new_status, start_time = (
             state.detect_status_change(room_info)

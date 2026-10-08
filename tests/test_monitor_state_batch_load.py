@@ -583,15 +583,16 @@ async def test_live_load_persisted_states_single_query(
 @pytest.mark.parametrize("status", ["start", "end"])
 @pytest.mark.parametrize("target", ["group", "user"])
 @pytest.mark.parametrize("failure", ["recipient", "part"])
+@pytest.mark.parametrize("recovery", ["available", "offline_poll", "offline_signal"])
 async def test_official_live_retry_restores_snapshot_targets_and_parts(
-    db_context, monkeypatch, status, target, failure
+    db_context, monkeypatch, status, target, failure, recovery
 ):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
     from plugins.live_monitor import sender, state_store
     from plugins.live_monitor.config import Config
-    from plugins.live_monitor.live_monitor import LiveMonitor
+    from plugins.live_monitor.live_monitor import LiveMonitor, api_manager
     from plugins.live_monitor.models import LiveRoomState
     from shared.adapter import outbound
     from shared.adapter.qq_errors import LoggedQQApiError
@@ -602,19 +603,19 @@ async def test_official_live_retry_restores_snapshot_targets_and_parts(
     monkeypatch.setattr(state_store, "LiveMonitorState", LiveMonitorState)
     monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
     accepted = []
-    failed = False
+    failures_remaining = 1 if recovery == "available" else 2
     failure_target = f"{target}-openid"
 
     async def send(**kwargs):
-        nonlocal failed
+        nonlocal failures_remaining
         destination = kwargs.get("group_openid") or kwargs.get("openid")
         segment = kwargs["message"][0]
         if (
             destination == failure_target
-            and not failed
+            and failures_remaining > 0
             and (failure == "recipient" or segment.type == "file_image")
         ):
-            failed = True
+            failures_remaining -= 1
             raise LoggedQQApiError(50055001, "暂时失败")
         accepted.append(
             (
@@ -687,15 +688,29 @@ async def test_official_live_retry_restores_snapshot_targets_and_parts(
     if failure == "part":
         starts = snapshot.group_starts if target == "group" else snapshot.user_starts
         assert starts[failure_target] == 1
-    monkeypatch.setattr(
-        "plugins.live_monitor.live_monitor.api_manager.get_room_and_user_info",
-        AsyncMock(return_value=(room, user)),
-    )
-    assert await restarted._initialize_room("111")
     assert getattr(restored, f"pending_{status}")
-    await restarted._delivery.retry_pending(
-        "111", restored, room_info=room, user_info=user
+    fetch = AsyncMock(
+        return_value=(room, user) if recovery == "available" else (None, None)
     )
+    monkeypatch.setattr(api_manager, "get_room_and_user_info", fetch)
+    if recovery == "available":
+        assert await restarted._check_room_status("111")
+    else:
+        restored.room_info = None
+        restored.user_info = None
+        if recovery == "offline_signal":
+            restored.last_live_room_info = None
+            restored.last_live_user_info = None
+        assert await restarted._initialize_room("111")
+        fetch.assert_not_awaited()
+        assert getattr(restored, f"pending_{status}")
+        if recovery == "offline_poll":
+            assert not await restarted._check_room_status("111")
+        elif status == "start":
+            await restarted._handle_live_signal("111")
+        else:
+            await restarted._handle_preparing_signal("111", None)
+        fetch.assert_awaited_once()
     assert not getattr(restored, f"pending_{status}")
     expected = [
         (kind, value if kind == "text" else b"saved-card")

@@ -354,7 +354,7 @@ class LiveNotificationDelivery:
         room_id: str,
         state: LiveRoomState,
         *,
-        room_info: RoomInfo,
+        room_info: Optional[RoomInfo],
         user_info: Optional[UserInfo],
         prefetched_images: Optional[PrefetchImages] = None,
     ) -> bool:
@@ -435,7 +435,7 @@ class LiveNotificationDelivery:
         self,
         room_id: str,
         state: LiveRoomState,
-        room_info: RoomInfo,
+        room_info: Optional[RoomInfo],
         user_info: Optional[UserInfo],
         *,
         prefetched_start: Optional[PrefetchImages] = None,
@@ -456,11 +456,23 @@ class LiveNotificationDelivery:
                 skip_end=skip_end,
             )
 
+    async def retry_prepared(self, room_id: str, state: LiveRoomState) -> None:
+        """采集不可用时只续传完整消息快照，不重新生成通知。"""
+        async with self._lock_for(room_id):
+            await self.retry_pending_unlocked(
+                room_id,
+                state,
+                state.room_info or state.last_live_room_info,
+                state.user_info or state.last_live_user_info,
+                skip_start=state.pending_start_delivery is None,
+                skip_end=state.pending_end_delivery is None,
+            )
+
     async def retry_pending_unlocked(
         self,
         room_id: str,
         state: LiveRoomState,
-        room_info: RoomInfo,
+        room_info: Optional[RoomInfo],
         user_info: Optional[UserInfo],
         *,
         prefetched_start: Optional[PrefetchImages] = None,
@@ -497,7 +509,10 @@ class LiveNotificationDelivery:
             not skip_end
             and state.pending_end
             and state.previous_status != LiveStatus.LIVE
-            and effective_room_info is not None
+            and (
+                effective_room_info is not None
+                or state.pending_end_delivery is not None
+            )
         ):
             logger.info("重试房间 {} 待投递的下播通知", room_id)
             await self.deliver_end(
