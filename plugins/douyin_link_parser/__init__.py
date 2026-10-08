@@ -16,13 +16,19 @@ from nonebot.adapters.onebot.v11.exception import ActionFailed
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
+from shared.adapter.bots import is_official_qq_bot
 from shared.adapter.inbound import (
     group_id_of,
     is_group_event,
     is_private_event,
     user_id_of,
 )
-from shared.adapter.outbound import send_event_message
+from shared.adapter.outbound import (
+    OfficialReplyLimitError,
+    official_reply_remaining,
+    send_event_message,
+)
+from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.douyin_link_parser_policy import resolve_douyin_link_parser_policy
 from shared.config.service import get_config_service
 from shared.config.shared_media import (
@@ -37,6 +43,7 @@ from utils.douyin_api import (
 
 from .config import Config, get_config, reload_config
 from .message_text import collect_message_text
+from .official_reply import prepare_official_reply
 from .send_result import is_onebot_send_success
 from .sender import build_douyin_link_message, reply_batches
 
@@ -113,8 +120,13 @@ async def _download_and_reply(
     message_text: str,
 ) -> None:
     result = None
+    generated: list[Path] = []
     user_id = user_id_of(event)
     try:
+        official = is_official_qq_bot(bot)
+        if official and not official_reply_remaining(event):
+            logger.warning("抖音链接解析：本事件的官方回复次数已用完 user={}", user_id)
+            return
         # 与 B 站一致：媒体扁平写入共享根目录（无 douyin_* 子目录）。
         media_dir = ensure_shared_media_dir(
             get_config_service().get_snapshot().link_parser_shared_media_dir
@@ -131,6 +143,10 @@ async def _download_and_reply(
             logger.info("抖音链接解析：等待前序发送完成 user={}", user_id)
         async with _SEND_SEM:
             reply = build_douyin_link_message(result, config.message_templates)
+            if official:
+                reply, generated = await prepare_official_reply(
+                    reply, official_reply_remaining(event), media_dir
+                )
             # 含 video 时拆成媒体 + 文案两条：同条混排时 QQ 常只显示视频
             batches = reply_batches(reply)
             send_results: list[object] = [
@@ -158,6 +174,12 @@ async def _download_and_reply(
             [_message_id_of(item) for item in send_results],
             reply_scope,
         )
+    except LoggedQQApiError, OfficialReplyLimitError:
+        logger.warning(
+            "抖音链接解析：官方消息未完成 user={} aweme_id={}",
+            user_id,
+            getattr(result, "aweme_id", None),
+        )
     except DouyinResolveError as exc:
         logger.warning("抖音链接解析失败: {}", exc)
     except ActionFailed as exc:
@@ -179,6 +201,8 @@ async def _download_and_reply(
         # 失败路径同样清理，避免临时文件泄漏（共享根目录本身不删）。
         if result is not None:
             _cleanup_result_files(result)
+        for path in generated:
+            path.unlink(missing_ok=True)
 
 
 def _message_id_of(send_result: object) -> object:
