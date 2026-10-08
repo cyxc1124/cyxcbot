@@ -72,7 +72,9 @@ async def _disconnect(adapter) -> None:
             logger.opt(exception=True).warning("断开官方 Bot {} 失败", bot.self_id)
 
 
-async def apply_official_runtime(snapshot: AppConfigSnapshot) -> None:
+async def apply_official_runtime(
+    snapshot: AppConfigSnapshot, *, start_websocket: bool = True
+) -> None:
     """Apply official QQ webhook or legacy websocket credentials."""
     global _applied_key
 
@@ -108,13 +110,17 @@ async def apply_official_runtime(snapshot: AppConfigSnapshot) -> None:
     await _disconnect(adapter)
     info = _bot_info(app_id, secret, use_ws)
     adapter.qq_config.qq_bots = [info]
-    if use_ws:
+    if use_ws and start_websocket:
         task = asyncio.create_task(adapter.run_bot_websocket(info))
         adapter_tasks = getattr(adapter, "tasks", None)
         if isinstance(adapter_tasks, set):
             task.add_done_callback(adapter_tasks.discard)
             adapter_tasks.add(task)
         logger.info("官方 Bot WebSocket 已启动 AppID {}", _mask_app_id(app_id))
+    elif use_ws:
+        logger.info(
+            "官方 Bot WebSocket 已配置 AppID {}，等待适配器启动", _mask_app_id(app_id)
+        )
     else:
         logger.info(
             "官方 Bot 使用 Webhook AppID {}，等待开放平台 POST /qq/webhook（NoneBot 端口，不是 Web Admin）。本机没有公网转发时收不到消息",
