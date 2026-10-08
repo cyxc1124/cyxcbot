@@ -293,14 +293,6 @@ class LiveNotificationSender:
         target_users = target_users or []
         if not target_groups and not target_users:
             return empty_delivery_result()
-        if not messaging_bots():
-            return DeliveryResult(
-                targets=[
-                    TargetDelivery(kind, target, False, "没有可用的机器人实例")
-                    for kind, ids in (("group", target_groups), ("user", target_users))
-                    for target in ids
-                ]
-            )
         if pending is None:
             card = await self._generate_card_if_needed(
                 status,
@@ -331,6 +323,17 @@ class LiveNotificationSender:
             pending.users = [uid for uid in pending.users if uid in target_users]
         if on_prepared is not None:
             await on_prepared(pending)
+        if not messaging_bots():
+            return DeliveryResult(
+                targets=[
+                    TargetDelivery(kind, target, False, "没有可用的机器人实例")
+                    for kind, ids in (
+                        ("group", pending.groups),
+                        ("user", pending.users),
+                    )
+                    for target in ids
+                ]
+            )
 
         async def checkpoint(kind: str, target: str, next_part: int) -> None:
             starts = pending.group_starts if kind == "group" else pending.user_starts

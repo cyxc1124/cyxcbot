@@ -582,7 +582,7 @@ async def test_live_load_persisted_states_single_query(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["start", "end"])
 @pytest.mark.parametrize("target", ["group", "user"])
-@pytest.mark.parametrize("failure", ["recipient", "part"])
+@pytest.mark.parametrize("failure", ["recipient", "part", "no_bot"])
 @pytest.mark.parametrize("recovery", ["available", "offline_poll", "offline_signal"])
 async def test_official_live_retry_restores_snapshot_targets_and_parts(
     db_context, monkeypatch, status, target, failure, recovery
@@ -604,6 +604,8 @@ async def test_official_live_retry_restores_snapshot_targets_and_parts(
     monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
     accepted = []
     failures_remaining = 1 if recovery == "available" else 2
+    if failure == "no_bot":
+        failures_remaining -= 1
     failure_target = f"{target}-openid"
 
     async def send(**kwargs):
@@ -613,7 +615,7 @@ async def test_official_live_retry_restores_snapshot_targets_and_parts(
         if (
             destination == failure_target
             and failures_remaining > 0
-            and (failure == "recipient" or segment.type == "file_image")
+            and (failure != "part" or segment.type == "file_image")
         ):
             failures_remaining -= 1
             raise LoggedQQApiError(50055001, "暂时失败")
@@ -672,9 +674,15 @@ async def test_official_live_retry_restores_snapshot_targets_and_parts(
 
     first = monitor()
     state = first.room_states["111"]
+    if failure == "no_bot":
+        monkeypatch.setattr(sender, "messaging_bots", lambda: [])
     assert not await getattr(first._delivery, f"deliver_{status}")(
         "111", state, room_info=room, user_info=user
     )
+    if failure == "no_bot":
+        assert not accepted
+        onebot.send_group_msg.assert_not_awaited()
+        monkeypatch.setattr(sender, "messaging_bots", lambda: [onebot, official])
     async with factory() as session:
         row = await session.get(LiveMonitorState, "111")
         assert row.pending_notifications != "{}"
@@ -685,6 +693,7 @@ async def test_official_live_retry_restores_snapshot_targets_and_parts(
     await restarted._load_persisted_states()
     restored = restarted.room_states["111"]
     snapshot = getattr(restored, f"pending_{status}_delivery")
+    assert snapshot is not None
     if failure == "part":
         starts = snapshot.group_starts if target == "group" else snapshot.user_starts
         assert starts[failure_target] == 1

@@ -636,21 +636,38 @@ async def test_dynamic_sender_does_not_duplicate_when_first_bot_succeeds(
 
 
 @pytest.mark.asyncio
-async def test_live_sender_no_bot_marks_targets_failed(live_sender_module) -> None:
+@pytest.mark.parametrize("status", ["start", "end"])
+async def test_live_sender_no_bot_marks_targets_failed(
+    live_sender_module, status
+) -> None:
     sender = live_sender_module.LiveNotificationSender()
     driver = SimpleNamespace(bots={})
 
-    with patch("nonebot.get_bots", return_value=driver.bots):
+    async def filter_targets(pending):
+        pending.groups = ["1001"]
+
+    prepared = AsyncMock(side_effect=filter_targets)
+    with (
+        patch("nonebot.get_bots", return_value=driver.bots),
+        patch.object(sender, "_generate_card_if_needed", AsyncMock(return_value=None)),
+        patch.object(sender, "_send_group_message", AsyncMock()) as send_group,
+        patch.object(sender, "_send_private_message", AsyncMock()) as send_user,
+    ):
         result = await sender.send_notification(
-            status="start",
+            status=status,
             streamer_name="tester",
             room_info=None,
-            target_groups=["1001"],
+            target_groups=["1001", "removed"],
             target_users=["2002"],
+            on_prepared=prepared,
         )
 
+    prepared.assert_awaited_once()
+    assert "tester" in prepared.await_args.args[0].message.extract_plain_text()
     assert result.all_failed
-    assert len(result.targets) == 2
+    assert [target.target_id for target in result.targets] == ["1001", "2002"]
+    send_group.assert_not_awaited()
+    send_user.assert_not_awaited()
 
 
 @pytest.mark.asyncio
