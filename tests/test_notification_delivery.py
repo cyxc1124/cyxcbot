@@ -174,7 +174,7 @@ def x_monitor_module(dynamic_monitor_module):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", ["dynamic", "x"])
-async def test_official_monitor_targets_skip_without_retry_or_blocking_onebot(
+async def test_official_monitor_targets_route_alongside_onebot(
     kind, dynamic_monitor_module, x_monitor_module
 ):
     cls = (
@@ -201,6 +201,7 @@ async def test_official_monitor_targets_skip_without_retry_or_blocking_onebot(
     monitor._pending_tweet_delivery = {
         "target": ("tweet", "", [("official-group", 0)], [])
     }
+    monitor.last_tweet_ids = {}
     monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
     monitor._resolve_author_name = AsyncMock(return_value="author")
     monitor.session = None
@@ -218,25 +219,88 @@ async def test_official_monitor_targets_skip_without_retry_or_blocking_onebot(
         else monitor._send_tweet_notification
     )
     assert await send("target", item)
-    if kind == "dynamic":
-        assert monitor.sender.send_message.await_args.args[1:3] == (
-            ["official-group"],
-            ["official-user"],
-        )
-        groups.append("1001")
-        item.id = "next-item"
-        assert await send("target", item)
-        assert monitor.sender.send_message.await_args.args[1:3] == (
-            ["official-group", "1001"],
-            ["official-user"],
-        )
-        return
-    monitor.sender.send_message.assert_not_awaited()
-    if kind == "x":
-        assert not monitor._pending_tweet_delivery
+    assert monitor.sender.send_message.await_args.args[1:3] == (
+        ["official-group"],
+        ["official-user"],
+    )
     groups.append("1001")
+    item.id = "next-item"
     assert await send("target", item)
-    assert monitor.sender.send_message.await_args.args[1:3] == (["1001"], [])
+    assert monitor.sender.send_message.await_args.args[1:3] == (
+        ["official-group", "1001"],
+        ["official-user"],
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_x_plan_change_then_cancel_resets_offsets_before_persisting(
+    x_monitor_module, monkeypatch, legacy
+):
+    from nonebot.adapters.onebot.v11 import MessageSegment
+
+    from utils.x_api.models import TweetItem
+
+    monitor = object.__new__(x_monitor_module.XMonitor)
+    monitor.config = SimpleNamespace(
+        x_monitor_mapping={"author": ["group-openid"]},
+        x_monitor_user_mapping={"author": []},
+        x_at_all={"author": True},
+    )
+    monitor.sender = x_monitor_module.XSender()
+    message = Message([MessageSegment.text("caption"), MessageSegment.image(b"image")])
+    monitor.sender.build_tweet_message = MagicMock(return_value=message)
+    old_fp = (
+        "t|v|t"
+        if legacy
+        else monitor.sender.plan_fingerprint(message, at_all_enabled=False)
+    )
+    monitor._pending_tweet_delivery = {
+        "author": ("200", old_fp, [("group-openid", 1)], [])
+    }
+    monitor.last_tweet_ids = {"author": "100"}
+    monitor.session = None
+    persisted = []
+
+    async def persist(*args, **kwargs):
+        persisted.append(monitor._pending_tweet_delivery["author"])
+        raise asyncio.CancelledError
+
+    monitor._persist_state = persist
+    tweet = TweetItem(
+        id="200",
+        text="caption",
+        created_at="",
+        username="author",
+        name="Author",
+        url="",
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await monitor._send_tweet_notification("author", tweet)
+    assert persisted[0][1] == monitor.sender.plan_fingerprint(
+        message, at_all_enabled=True
+    )
+    assert persisted[0][2] == [("group-openid", 0)]
+    monkeypatch.setitem(
+        monitor.sender.send_to_groups.__func__.__globals__,
+        "messaging_bots",
+        lambda: [object()],
+    )
+    send = AsyncMock()
+    monkeypatch.setitem(
+        monitor.sender._send_official_batches.__func__.__globals__, "send_group", send
+    )
+    result = await monitor.sender.send_message(
+        message,
+        ["group-openid"],
+        [],
+        at_all_enabled=True,
+        group_starts={"group-openid": 0},
+        expected_fingerprint=persisted[0][1],
+    )
+    assert result.all_succeeded
+    assert send.await_args.kwargs["start"] == 0
+    assert "caption" in send.await_args.args[1].extract_plain_text()
 
 
 @pytest.mark.asyncio

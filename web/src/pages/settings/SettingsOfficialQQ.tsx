@@ -92,7 +92,7 @@ export function SettingsOfficialQQPage() {
             QQ 开放平台
           </a>{' '}
           创建机器人后填写 AppID 与 AppSecret。凭证加密存库，保存后立即生效，无需重启。与
-          OneBot 可同时在线：官方 Bot 支持群聊和私聊的命令、链接解析回复。动态和直播监控支持官方群和官方好友推送；X 仍推送到数字 QQ。
+          OneBot 可同时在线：官方 Bot 支持群聊和私聊的命令、链接解析回复。动态、直播和 X 可配置官方目标，主动发送能力以平台策略和回执为准。
         </p>
 
         <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm space-y-2">

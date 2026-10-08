@@ -32,9 +32,33 @@ from shared.notify.at_all import DYNAMIC_AT_ALL_FALLBACK, resolve_at_all_prefix
 
 _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 _OFFICIAL_MIN_INTERVAL = 3.0
+OFFICIAL_REPLY_LIMIT = 5
 _official_locks: dict[str, asyncio.Lock] = {}
 _official_last_sent: dict[str, float] = {}
 PartProgressCallback = Callable[[int], Awaitable[None]]
+
+
+class OfficialReplyLimitError(RuntimeError):
+    """本条官方群/C2C 消息的被动回复预算已用完。"""
+
+
+def official_reply_remaining(event: Any) -> int:
+    sequence = max(0, int(getattr(event, "_reply_seq", 0)))
+    accepted = getattr(event, "_official_reply_count", sequence)
+    previous_sequence = getattr(event, "_official_reply_last_seq", sequence)
+    return max(
+        0, OFFICIAL_REPLY_LIMIT - accepted - max(0, sequence - previous_sequence)
+    )
+
+
+def _remember_official_reply(
+    event: Any, remaining: int, sequence: int, *, accepted: bool
+) -> None:
+    current = max(0, int(getattr(event, "_reply_seq", 0)))
+    # SDK 序号包括失败尝试；已知拒绝不占预算，SDK 外部回复保守计入。
+    extra = max(1, current - sequence) if accepted else max(0, current - sequence - 1)
+    event._official_reply_count = OFFICIAL_REPLY_LIMIT - remaining + extra
+    event._official_reply_last_seq = current
 
 
 def _official_lock(target_id: str) -> asyncio.Lock:
@@ -184,6 +208,8 @@ async def _send_official_parts(
     start: int = 0,
     on_part_sent: PartProgressCallback | None = None,
 ) -> None:
+    from nonebot.adapters.qq.event import GuildMessageEvent
+
     if event is not None:
         if not event_msg_id(event):
             raise ValueError("官方 Bot 被动回复缺少消息 ID")
@@ -205,6 +231,13 @@ async def _send_official_parts(
             retries = 0
             send_value = value
             while True:
+                limited = event is not None and not isinstance(event, GuildMessageEvent)
+                remaining = (
+                    official_reply_remaining(event) if limited else OFFICIAL_REPLY_LIMIT
+                )
+                sequence = getattr(event, "_reply_seq", 0)
+                if limited and not remaining:
+                    raise OfficialReplyLimitError("本条官方消息的被动回复次数已用完")
                 try:
                     await _send_official_once(
                         bot,
@@ -215,8 +248,16 @@ async def _send_official_parts(
                         value=send_value,
                         msg_seq=index + 1,
                     )
+                    if limited:
+                        _remember_official_reply(
+                            event, remaining, sequence, accepted=True
+                        )
                     break
                 except Exception as exc:
+                    if limited and (_is_url_forbidden(exc) or _is_rate_limited(exc)):
+                        _remember_official_reply(
+                            event, remaining, sequence, accepted=False
+                        )
                     if (
                         kind == "text"
                         and _is_url_forbidden(exc)

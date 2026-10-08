@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from shared.adapter.qq_errors import is_terminal_qq_error_text
 from shared.notify.delivery import DeliveryResult
 
 
@@ -18,7 +19,10 @@ def failed_targets_with_resume(
     groups: list[tuple[str, int]] = []
     users: list[tuple[str, int]] = []
     for target in delivery.targets:
-        if target.success:
+        error = str(target.error or "")
+        if error.startswith("resume_from:"):
+            error = error.split(":", 2)[-1]
+        if target.success or is_terminal_qq_error_text(error):
             continue
         resume = parse_resume_from(target.error)
         item = (target.target_id, resume)
@@ -78,6 +82,8 @@ def normalize_batch_start(
     if batch_count <= 0:
         return True, 0, None
     if start > 0 and start >= batch_count:
+        if start == batch_count and expected and actual and expected == actual:
+            return True, start, None
         return (
             False,
             0,

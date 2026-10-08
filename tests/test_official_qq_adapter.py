@@ -196,6 +196,55 @@ async def test_checkpoint_failure_stops_official_fallback(target, monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scope", ["group", "c2c"])
+async def test_official_passive_reply_budget_stops_before_excess_api_call(
+    scope, monkeypatch
+):
+    event = _official_event(scope)
+    event._reply_seq = 3
+    bot = QQBot(MagicMock(), "test-app", _bot_info("test-app", "test-secret", False))
+    api = AsyncMock()
+    monkeypatch.setattr(
+        bot, "send_to_group" if scope == "group" else "send_to_c2c", api
+    )
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    message = Message([MessageSegment.image(b"image") for _ in range(3)])
+    with pytest.raises(outbound.OfficialReplyLimitError):
+        await outbound.send_event_message(bot, event, message)
+    assert api.await_count == 2
+    assert [call.kwargs["msg_seq"] for call in api.await_args_list] == [4, 5]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "c2c"])
+async def test_rejected_url_retry_does_not_consume_reply_budget(scope, monkeypatch):
+    event = _official_event(scope)
+    bot = QQBot(MagicMock(), "test-app", _bot_info("test-app", "test-secret", False))
+    accepted = []
+
+    async def send(**kwargs):
+        message = kwargs["message"]
+        if "https://" in message.extract_plain_text():
+            raise outbound.note_qq_api_error(SimpleRejected(), target="test")
+        accepted.append(kwargs)
+
+    class SimpleRejected(Exception):
+        code = 40054010
+        message = "不允许发送URL"
+
+    monkeypatch.setattr(
+        bot, "send_to_group" if scope == "group" else "send_to_c2c", send
+    )
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    message = Message([MessageSegment.image(b"image") for _ in range(4)])
+    message.append(MessageSegment.text("caption https://example.com/blocked"))
+    await outbound.send_event_message(bot, event, message)
+    assert len(accepted) == 5
+    assert accepted[-1]["msg_seq"] == 6
+    assert outbound.official_reply_remaining(event) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "c2c"])
 async def test_official_batches_share_native_reply_sequence_and_send_bytes(
     scope, monkeypatch
 ):
