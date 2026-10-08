@@ -33,6 +33,7 @@ from shared.notify.at_all import DYNAMIC_AT_ALL_FALLBACK, resolve_at_all_prefix
 _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 _OFFICIAL_MIN_INTERVAL = 3.0
 OFFICIAL_REPLY_LIMIT = 5
+OFFICIAL_C2C_REPLY_LIMIT = 4
 _official_locks: dict[str, asyncio.Lock] = {}
 _official_last_sent: dict[str, float] = {}
 PartProgressCallback = Callable[[int], Awaitable[None]]
@@ -43,12 +44,11 @@ class OfficialReplyLimitError(RuntimeError):
 
 
 def official_reply_remaining(event: Any) -> int:
+    limit = OFFICIAL_REPLY_LIMIT if is_group_event(event) else OFFICIAL_C2C_REPLY_LIMIT
     sequence = max(0, int(getattr(event, "_reply_seq", 0)))
     accepted = getattr(event, "_official_reply_count", sequence)
     previous_sequence = getattr(event, "_official_reply_last_seq", sequence)
-    return max(
-        0, OFFICIAL_REPLY_LIMIT - accepted - max(0, sequence - previous_sequence)
-    )
+    return max(0, limit - accepted - max(0, sequence - previous_sequence))
 
 
 def _remember_official_reply(
@@ -57,7 +57,8 @@ def _remember_official_reply(
     current = max(0, int(getattr(event, "_reply_seq", 0)))
     # SDK 序号包括失败尝试；已知拒绝不占预算，SDK 外部回复保守计入。
     extra = max(1, current - sequence) if accepted else max(0, current - sequence - 1)
-    event._official_reply_count = OFFICIAL_REPLY_LIMIT - remaining + extra
+    limit = OFFICIAL_REPLY_LIMIT if is_group_event(event) else OFFICIAL_C2C_REPLY_LIMIT
+    event._official_reply_count = limit - remaining + extra
     event._official_reply_last_seq = current
 
 

@@ -234,6 +234,69 @@ async def test_official_monitor_targets_route_alongside_onebot(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("remove_all", [False, True])
+async def test_x_mapping_reload_during_plan_persist_filters_old_targets(
+    x_monitor_module, legacy, remove_all
+):
+    from utils.x_api.models import TweetItem
+
+    monitor = object.__new__(x_monitor_module.XMonitor)
+    monitor.config = SimpleNamespace(
+        x_monitor_mapping={"author": ["removed-group", "kept-group"]},
+        x_monitor_user_mapping={"author": ["removed-user", "kept-user"]},
+        x_at_all={},
+    )
+    monitor.sender = SimpleNamespace(
+        build_tweet_message=MagicMock(return_value=Message("caption")),
+        plan_fingerprint=MagicMock(return_value="plan"),
+        send_message=AsyncMock(return_value=_delivery_succeeded()),
+    )
+    monitor._pending_tweet_delivery = {}
+    if legacy:
+        monitor._pending_tweet_delivery["author"] = (
+            "200",
+            "plan",
+            [("removed-group", 1), ("kept-group", 2)],
+            [("removed-user", 1), ("kept-user", 2)],
+        )
+    monitor.last_tweet_ids = {"author": "100"}
+    monitor.session = None
+    first = True
+
+    async def persist(*args, **kwargs):
+        nonlocal first
+        if first:
+            first = False
+            monitor.config.x_monitor_mapping["author"] = (
+                [] if remove_all else ["kept-group"]
+            )
+            monitor.config.x_monitor_user_mapping["author"] = (
+                [] if remove_all else ["kept-user"]
+            )
+
+    monitor._persist_state = persist
+    tweet = TweetItem(
+        id="200",
+        text="caption",
+        created_at="",
+        username="author",
+        name="Author",
+        url="",
+    )
+    assert await monitor._send_tweet_notification("author", tweet)
+    if remove_all:
+        monitor.sender.send_message.assert_not_awaited()
+    else:
+        assert monitor.sender.send_message.await_args.args[1:3] == (
+            ["kept-group"],
+            ["kept-user"],
+        )
+    assert monitor.last_tweet_ids["author"] == "200"
+    assert not monitor._pending_tweet_delivery
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy", [False, True])
 async def test_x_plan_change_then_cancel_resets_offsets_before_persisting(
     x_monitor_module, monkeypatch, legacy
 ):

@@ -83,7 +83,7 @@ def build_x_link_message(
 
 
 def official_reply_message(message: Message, remaining: int) -> Message:
-    """官方事件最多回复五次：合并文案，超出媒体数量时明确提示。"""
+    """官方群最多回复五次、C2C 四次：合并文案，超出媒体数量时明确提示。"""
     if remaining <= 0:
         return Message()
     media = [segment for segment in message if segment.type in {"image", "video"}]

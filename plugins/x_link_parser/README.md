@@ -14,7 +14,7 @@
 ## 官方 QQ Bot
 
 - 支持官方群/C2C 原生消息事件，媒体通过 QQ 富媒体接口上传，回复沿用原事件的 `msg_id` 与递增序号；全部发送结束后才清理暂存文件。
-- [平台被动回复预算](https://github.com/tencent-connect/bot-docs/blob/main/docs/develop/api-v2/server-inter/message/send-receive/send.md)为每条消息最多五次。官方侧合并文案并回传预算内的图片/视频，超出媒体明确提示查看原推文；多链接消息只解析首个，提示其他链接分开发送。OneBot 维持原有批次和多链接行为。
+- [平台被动回复预算](https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/overview.html)为群聊每条消息五次、单聊四次。官方侧合并文案并回传预算内的图片/视频，超出媒体明确提示查看原推文；多链接消息只解析首个，提示其他链接分开发送。OneBot 维持原有批次和多链接行为。
 - 超频、权限或内容等正常平台拒绝只记录业务警告，不重复输出异常栈。URL 未配置到平台白名单时，共享发送层会移除 URL 后重试。
 
 ## 配置入口

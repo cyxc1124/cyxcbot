@@ -52,8 +52,11 @@ async def test_native_x_link_reply_preserves_media_and_budget(
             "id": "incoming",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "content": "https://x.com/author/status/200",
-            "group_id": "g",
-            "group_openid": "g-openid",
+            **(
+                {"group_id": "g", "group_openid": "g-openid"}
+                if scope == "group"
+                else {}
+            ),
             "author": {
                 "id": "u",
                 "user_openid": "u-openid",
@@ -145,7 +148,7 @@ async def test_native_x_link_reply_preserves_media_and_budget(
         ),
         event.content,
     )
-    assert api.await_count == (5 if kind == "large" else 2)
+    assert api.await_count == ((5 if scope == "group" else 4) if kind == "large" else 2)
     assert [call.kwargs["msg_seq"] for call in api.await_args_list] == list(
         range(1, api.await_count + 1)
     )
@@ -155,9 +158,8 @@ async def test_native_x_link_reply_preserves_media_and_budget(
     )
     if kind == "large":
         assert (
-            "另有 2 项媒体"
-            in api.await_args_list[-1].kwargs["message"].extract_plain_text()
-        )
+            "另有 2 项媒体" if scope == "group" else "另有 3 项媒体"
+        ) in api.await_args_list[-1].kwargs["message"].extract_plain_text()
     assert all(not path.exists() for path in paths)
     session.close.assert_awaited_once()
     logger.error.assert_not_called()

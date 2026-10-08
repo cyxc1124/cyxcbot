@@ -26,4 +26,4 @@ X API 封装见 `utils/x_api/`。
 - 官方消息的每个文字/图片/视频分段成功后保存进度；OneBot 保存批次进度。已成功的目标不随其他目标失败重复发送。
 - 平台权限/内容等终止拒绝不会卡住游标；频控、断连与未知错误继续重试。重试需重新获取推文及下载媒体，暂存文件每轮清理。
 - 群 `@全体` 在官方侧使用文字提示；修改前缀策略会使新版本的未完成计划失效，防止按旧下标跳过内容。旧 OneBot 进度保留兼容。
-- [腾讯文档](https://github.com/tencent-connect/bot-docs/blob/main/docs/develop/api-v2/server-inter/message/send-receive/send.md)已公告停止提供主动推送。这里适配接口与拒绝处理，不保证普通应用能主动送达；请按实际回执判断，不能用本地测试代替平台验收。
+- [腾讯文档](https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/overview.html)说明当前允许主动发送；用户可关闭允许主动发送开关，发送仍受频控及应用权限约束。本模块适配官方群/C2C 主动推送，请按实际回执判断送达情况。

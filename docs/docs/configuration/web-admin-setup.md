@@ -36,10 +36,10 @@ OneBot **不在** Web Admin 面板里填写地址。请将协议端（如 NapCat
 - **动态、直播和 X 监控可配置官方群/C2C 目标**，实际主动能力以 QQ 平台策略和回执为准；终止拒绝会结束当前目标，临时错误保留进度。官方会话的订阅映射也用于命令查询（最新动态/置顶动态/最新视频为群聊命令，动态图片提取支持群聊和 C2C）
 - 直播开播/下播的消息快照、失败目标和分段进度会写入数据库，重建后继续未完成投递；首次订阅仅记录直播基线，不补发当前场次。官方群的 `@全体` 使用文字提示，OneBot 仍按群权限处理
 - 权限、关系或内容等确定性拒绝只终止本条通知的对应目标；频控、暂时下线和服务端故障保留重试。未收到成功回执的网络超时无法保证严格去重
-- 官方回复受平台限制：群聊回复窗口为 5 分钟、C2C 为 60 分钟，每条用户消息最多回复 5 次。分批图片/视频可能超出额度；请减少单次请求内容
+- 官方回复受平台限制：群聊回复窗口为 5 分钟、每条用户消息最多回复 5 次；C2C 回复窗口为 60 分钟、最多回复 4 次。分批图片/视频可能超出额度；请减少单次请求内容
 - 不覆盖频道（Guild）；Rust 群管 / 专属头衔仍仅 OneBot
 
-平台能力依据：[官方消息发送说明](https://github.com/tencent-connect/bot-docs/blob/main/docs/develop/api-v2/server-inter/message/send-receive/send.md)、[官方 SDK 接入提示](https://github.com/tencent-connect/botgo#注意事项)。
+平台能力依据：[官方消息概述](https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/overview.html)、[群消息发送](https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_messages.post.html)、[C2C 消息发送](https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_users_user_openid_messages.post.html)。
 
 ## 4. 配置 B 站账号
 

@@ -45,8 +45,11 @@ def _official_event(scope: str):
             "id": "test-message",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "content": "/status",
-            "group_id": "test-group",
-            "group_openid": "test-group",
+            **(
+                {"group_id": "test-group", "group_openid": "test-group"}
+                if scope == "group"
+                else {}
+            ),
             "author": {
                 "id": "test-user",
                 "user_openid": "test-user",
@@ -200,7 +203,8 @@ async def test_official_passive_reply_budget_stops_before_excess_api_call(
     scope, monkeypatch
 ):
     event = _official_event(scope)
-    event._reply_seq = 3
+    limit = 5 if scope == "group" else 4
+    event._reply_seq = limit - 2
     bot = QQBot(MagicMock(), "test-app", _bot_info("test-app", "test-secret", False))
     api = AsyncMock()
     monkeypatch.setattr(
@@ -211,7 +215,10 @@ async def test_official_passive_reply_budget_stops_before_excess_api_call(
     with pytest.raises(outbound.OfficialReplyLimitError):
         await outbound.send_event_message(bot, event, message)
     assert api.await_count == 2
-    assert [call.kwargs["msg_seq"] for call in api.await_args_list] == [4, 5]
+    assert [call.kwargs["msg_seq"] for call in api.await_args_list] == [
+        limit - 1,
+        limit,
+    ]
 
 
 @pytest.mark.asyncio
@@ -235,11 +242,12 @@ async def test_rejected_url_retry_does_not_consume_reply_budget(scope, monkeypat
         bot, "send_to_group" if scope == "group" else "send_to_c2c", send
     )
     monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
-    message = Message([MessageSegment.image(b"image") for _ in range(4)])
+    limit = 5 if scope == "group" else 4
+    message = Message([MessageSegment.image(b"image") for _ in range(limit - 1)])
     message.append(MessageSegment.text("caption https://example.com/blocked"))
     await outbound.send_event_message(bot, event, message)
-    assert len(accepted) == 5
-    assert accepted[-1]["msg_seq"] == 6
+    assert len(accepted) == limit
+    assert accepted[-1]["msg_seq"] == limit + 1
     assert outbound.official_reply_remaining(event) == 0
 
 

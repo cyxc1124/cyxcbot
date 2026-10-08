@@ -733,6 +733,44 @@ class XMonitor:
                 )
                 await self._persist_state(username, check_generation=check_generation)
 
+            if check_generation is not None and not self._check_still_valid(
+                username, check_generation
+            ):
+                return False
+            group_ids = [
+                target
+                for target in group_ids
+                if target in self.config.x_monitor_mapping.get(username, [])
+            ]
+            user_ids = [
+                target
+                for target in user_ids
+                if target in self.config.x_monitor_user_mapping.get(username, [])
+            ]
+            group_starts = {
+                target: offset
+                for target, offset in group_starts.items()
+                if target in group_ids
+            }
+            user_starts = {
+                target: offset
+                for target, offset in user_starts.items()
+                if target in user_ids
+            }
+            self._pending_tweet_delivery[username] = (
+                tweet.id,
+                progress_fp,
+                [(target, group_starts.get(target, 0)) for target in group_ids],
+                [(target, user_starts.get(target, 0)) for target in user_ids],
+            )
+            if not group_ids and not user_ids:
+                self._pending_tweet_delivery.pop(username, None)
+                if tweet_id_as_int(tweet.id) > tweet_id_as_int(
+                    self.last_tweet_ids.get(username, "0")
+                ):
+                    self.last_tweet_ids[username] = tweet.id
+                await self._persist_state(username, check_generation=check_generation)
+                return True
             delivery = await self.sender.send_message(
                 message,
                 group_ids,

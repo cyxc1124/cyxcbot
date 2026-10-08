@@ -98,7 +98,7 @@ export function SettingsOfficialQQPage() {
         <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm space-y-2">
           <p>推荐使用 Webhook：将公网 HTTPS 地址的 <code>/qq/webhook</code> 转发到机器人监听端口（默认 8080），在开放平台完成回调验证、事件订阅和出口 IP 白名单配置。Web Admin 端口 8081 不接收回调。</p>
           <p>保存凭证不代表已连接；首次有效事件到达后，可在仪表盘查看连接状态。</p>
-          <p>被动回复仍受平台限制：同一条用户消息最多回复 5 次，较多图片或视频可能无法一次全部返回。</p>
+          <p>被动回复仍受平台限制：同一条用户消息在群聊最多回复 5 次、私聊最多 4 次，较多图片或视频可能无法一次全部返回。</p>
         </div>
 
         <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
