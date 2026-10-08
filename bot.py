@@ -115,6 +115,8 @@ def configure_logging() -> None:
     LOG_LEVEL is read by NoneBot during nonebot.init() and controls terminal
     output only; this does not change nonebot.log.logger filtering.
     """
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     if log_level == "DEBUG":
         logging.getLogger("aiohttp").setLevel(logging.WARNING)
