@@ -123,7 +123,11 @@ chore: 更新环境变量示例
 
 ## 发布
 
-功能改动从功能分支开 PR / MR 合进 `develop`，不要直接推 `develop` 或 `main`。要发版本时：`develop` 开 PR / MR 到 `main`，**合并后再打** annotated tag（`v1.0.1`）并 `git push origin v1.0.1`。不要在 `develop` 上直接打发行 tag。只改 CI 不用打 tag；运行时依赖或业务改动才打。
+功能改动从功能分支开 PR / MR 合进 `develop`，不要直接推 `develop` 或 `main`（下述 GitLab 同步例外除外）。要发版本时：`develop` 开 PR / MR 到 `main`，**合并后再打** annotated tag（`v1.0.1`）并 `git push origin v1.0.1`。不要在 `develop` 上直接打发行 tag。只改 CI 不用打 tag；运行时依赖或业务改动才打。
+
+**GitLab 同步例外**：GitHub PR 合并到 `develop` 后，可以直接将 GitHub `develop` 的已合并结果快进推送到 GitLab `develop`，无需另外开 GitLab MR。合并后先同步两端 `develop`，再清理功能分支。
+
+同步前先获取 GitHub 最新 `develop`，确认 GitLab `develop` 是其祖先；通过明确的 GitLab URL 推送（本仓可用 `git push https://gitlab.cyxc.club/cyxc1124/cyxcbot.git refs/remotes/origin/develop:refs/heads/develop`），避免误推 GitHub。若两端存在分叉或无法快进，停下来询问用户，不强推覆盖 GitLab 独有提交。
 
 `v*` tag 会触发 GitHub 推 GHCR 镜像与 Windows 包（GitHub Release），以及 GitLab 推 Registry 镜像。`origin` 同时 push GitHub 与 GitLab 时，打一次 tag 两边都会到。
 
