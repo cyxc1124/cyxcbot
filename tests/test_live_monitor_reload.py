@@ -132,6 +132,7 @@ def _make_monitor(
         use_websocket=True,
     )
     monitor = LiveMonitor(config)
+    monitor._state_store.persist = AsyncMock()
     monitor.is_running = True
     for room_id in room_ids:
         monitor.room_states[room_id] = LiveRoomState(room_id=int(room_id))

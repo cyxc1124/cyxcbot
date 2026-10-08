@@ -15,14 +15,15 @@ driver = get_driver()
 async def init_shared_services():
     """Load config from DB."""
     from shared.adapter import sessions as _official_sessions  # noqa: F401
-    from shared.adapter.official_runtime import on_config_reload
+    from shared.adapter.official_runtime import apply_official_runtime, on_config_reload
     from shared.config.service import get_config_service
 
     try:
         svc = get_config_service()
         snapshot = await svc.load()
         svc.register_reload_callback(on_config_reload)
-        await on_config_reload(snapshot)
+        # 首连由 QQ 适配器的 on_ready 启动，避免同一 AppID 建立两个连接。
+        await apply_official_runtime(snapshot, start_websocket=False)
         logger.info("共享服务初始化完成")
     except Exception as exc:
         logger.warning("共享服务初始化失败: {}", exc)

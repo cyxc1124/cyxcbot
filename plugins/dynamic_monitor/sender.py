@@ -3,7 +3,6 @@
 负责构建和发送动态通知消息
 """
 
-from collections.abc import Awaitable, Callable
 from functools import partial
 from typing import Iterable, List, Optional, Union
 
@@ -14,6 +13,7 @@ from shared.adapter.outbound import send_group, send_user
 from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.message_templates import DynamicMessageTemplates
 from shared.notify.delivery import (
+    DeliveryProgressCallback,
     DeliveryResult,
     TargetDelivery,
     empty_delivery_result,
@@ -22,7 +22,6 @@ from shared.notify.message_template import build_message_from_template
 from utils.bilibili_api import DynamicItem
 
 SegmentPart = Union[MessageSegment, str]
-DeliveryProgressCallback = Callable[[str, str, int], Awaitable[None]]
 
 
 class DynamicSender:

@@ -130,7 +130,7 @@ def dynamic_monitor_module(monkeypatch):
 
 
 @pytest.fixture
-def live_monitor_module():
+def live_monitor_module(monkeypatch):
     _ensure_package("plugins", PLUGINS_ROOT)
     _ensure_package("plugins.live_monitor", LIVE_MONITOR_ROOT)
     sys.modules.setdefault(
@@ -156,11 +156,13 @@ def live_monitor_module():
         LIVE_MONITOR_ROOT,
         "sender.py",
     )
-    return _load_module(
+    module = _load_module(
         "plugins.live_monitor.live_monitor",
         LIVE_MONITOR_ROOT,
         "live_monitor.py",
     )
+    monkeypatch.setattr(module.LiveMonitorStateStore, "persist", AsyncMock())
+    return module
 
 
 @pytest.fixture
@@ -313,7 +315,7 @@ async def test_dynamic_official_partial_retry_keeps_snapshot_and_resumes_parts(
 
 
 @pytest.mark.asyncio
-async def test_live_official_targets_clear_pending_and_keep_onebot(live_monitor_module):
+async def test_live_official_targets_are_sent_alongside_onebot(live_monitor_module):
     from plugins.live_monitor.models import LiveRoomState
     from plugins.live_monitor.notification_delivery import LiveNotificationDelivery
 
@@ -332,11 +334,20 @@ async def test_live_official_targets_clear_pending_and_keep_onebot(live_monitor_
     state.pending_start_groups = ["official-group"]
     assert await delivery.deliver_start("1", state, room_info=None, user_info=None)
     assert not state.pending_start
-    sender.send_notification.assert_not_awaited()
+    sender.send_notification.assert_awaited_once()
+    assert sender.send_notification.await_args.kwargs["target_groups"] == [
+        "official-group"
+    ]
+    assert sender.send_notification.await_args.kwargs["target_users"] == []
     groups.append("1001")
     assert await delivery.deliver_start("1", state, room_info=None, user_info=None)
-    assert sender.send_notification.await_args.kwargs["target_groups"] == ["1001"]
-    assert sender.send_notification.await_args.kwargs["target_users"] == []
+    assert sender.send_notification.await_args.kwargs["target_groups"] == [
+        "official-group",
+        "1001",
+    ]
+    assert sender.send_notification.await_args.kwargs["target_users"] == [
+        "official-user"
+    ]
 
 
 @pytest.mark.asyncio
@@ -625,21 +636,38 @@ async def test_dynamic_sender_does_not_duplicate_when_first_bot_succeeds(
 
 
 @pytest.mark.asyncio
-async def test_live_sender_no_bot_marks_targets_failed(live_sender_module) -> None:
+@pytest.mark.parametrize("status", ["start", "end"])
+async def test_live_sender_no_bot_marks_targets_failed(
+    live_sender_module, status
+) -> None:
     sender = live_sender_module.LiveNotificationSender()
     driver = SimpleNamespace(bots={})
 
-    with patch("nonebot.get_bots", return_value=driver.bots):
+    async def filter_targets(pending):
+        pending.groups = ["1001"]
+
+    prepared = AsyncMock(side_effect=filter_targets)
+    with (
+        patch("nonebot.get_bots", return_value=driver.bots),
+        patch.object(sender, "_generate_card_if_needed", AsyncMock(return_value=None)),
+        patch.object(sender, "_send_group_message", AsyncMock()) as send_group,
+        patch.object(sender, "_send_private_message", AsyncMock()) as send_user,
+    ):
         result = await sender.send_notification(
-            status="start",
+            status=status,
             streamer_name="tester",
             room_info=None,
-            target_groups=["1001"],
+            target_groups=["1001", "removed"],
             target_users=["2002"],
+            on_prepared=prepared,
         )
 
+    prepared.assert_awaited_once()
+    assert "tester" in prepared.await_args.args[0].message.extract_plain_text()
     assert result.all_failed
-    assert len(result.targets) == 2
+    assert [target.target_id for target in result.targets] == ["1001", "2002"]
+    send_group.assert_not_awaited()
+    send_user.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -655,11 +683,6 @@ async def test_live_sender_partial_failure(live_sender_module) -> None:
     with (
         patch("nonebot.get_bots", return_value=driver.bots),
         patch.object(sender, "_generate_card_if_needed", AsyncMock(return_value=None)),
-        patch.object(
-            sender,
-            "_resolve_at_all_map",
-            AsyncMock(return_value={"1001": False}),
-        ),
     ):
         result = await sender.send_notification(
             status="start",
@@ -693,11 +716,6 @@ async def test_live_sender_any_bot_success_counts_as_delivered(
     with (
         patch("nonebot.get_bots", return_value=driver.bots),
         patch.object(sender, "_generate_card_if_needed", AsyncMock(return_value=None)),
-        patch.object(
-            sender,
-            "_resolve_at_all_map",
-            AsyncMock(return_value={"1001": False}),
-        ),
     ):
         result = await sender.send_notification(
             status="start",
@@ -731,11 +749,6 @@ async def test_live_sender_does_not_duplicate_when_first_bot_succeeds(
     with (
         patch("nonebot.get_bots", return_value=driver.bots),
         patch.object(sender, "_generate_card_if_needed", AsyncMock(return_value=None)),
-        patch.object(
-            sender,
-            "_resolve_at_all_map",
-            AsyncMock(return_value={"1001": False}),
-        ),
     ):
         result = await sender.send_notification(
             status="start",
@@ -1679,7 +1692,7 @@ async def test_end_waits_for_in_flight_start_before_flushing_pending(
         start_task = asyncio.create_task(monitor._handle_live_signal("111"))
         await start_started.wait()
         assert state.previous_status == LiveStatus.LIVE
-        assert state.pending_start is False
+        assert state.pending_start is True
 
         end_task = asyncio.create_task(
             monitor._handle_preparing_signal("111", round_status=None)
@@ -2561,3 +2574,135 @@ async def test_stale_retry_pending_serializes_with_end_flush(
     assert statuses.count("start") == 1
     assert "end" in statuses
     assert state.pending_start is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["start", "end"])
+async def test_live_sender_mixes_official_and_onebot_routes_with_card(
+    status, live_sender_module, monkeypatch
+):
+    from nonebot.adapters.onebot.v11 import MessageSegment
+
+    from shared.adapter import outbound
+    from shared.notify.at_all import LIVE_AT_ALL_FALLBACK
+
+    sender = live_sender_module.LiveNotificationSender()
+    monkeypatch.setattr(
+        sender, "_generate_card_if_needed", AsyncMock(return_value=b"card")
+    )
+    onebot = SimpleNamespace(send_group_msg=AsyncMock(), send_private_msg=AsyncMock())
+    official = SimpleNamespace(send_to_group=AsyncMock(), send_to_c2c=AsyncMock())
+    monkeypatch.setattr(
+        live_sender_module, "messaging_bots", lambda: [onebot, official]
+    )
+    monkeypatch.setattr(outbound, "iter_onebot_bots", lambda: [onebot])
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [official])
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    prefix = AsyncMock(return_value=Message(MessageSegment.at("all")))
+    monkeypatch.setattr(outbound, "resolve_at_all_prefix", prefix)
+    result = await sender.send_notification(
+        status,
+        "author",
+        None,
+        ["1001", "group-openid"],
+        ["2002", "user-openid"],
+        at_all_enabled=True,
+        duration_seconds=60,
+    )
+    assert result.all_succeeded
+    onebot.send_group_msg.assert_awaited_once()
+    onebot.send_private_msg.assert_awaited_once()
+    group_calls = official.send_to_group.await_args_list
+    assert [call.kwargs["message"][0].type for call in group_calls] == (
+        ["text", "text", "file_image"]
+        if status == "start"
+        else ["text", "file_image", "text"]
+    )
+    if status == "start":
+        assert (
+            group_calls[0].kwargs["message"].extract_plain_text()
+            == LIVE_AT_ALL_FALLBACK
+        )
+        assert onebot.send_group_msg.await_args.kwargs["message"][0].type == "at"
+        prefix.assert_awaited_once()
+    else:
+        prefix.assert_not_awaited()
+    images = [
+        call.kwargs["message"][0]
+        for call in official.send_to_c2c.await_args_list
+        if call.kwargs["message"][0].type == "file_image"
+    ]
+    assert len(images) == 1 and images[0].data["content"] == b"card"
+
+
+@pytest.mark.asyncio
+async def test_live_permission_rejection_is_terminal(live_sender_module, monkeypatch):
+    from plugins.live_monitor.models import LiveRoomState
+    from plugins.live_monitor.notification_delivery import LiveNotificationDelivery
+    from shared.adapter import outbound
+    from shared.adapter.qq_errors import LoggedQQApiError
+
+    sender = live_sender_module.LiveNotificationSender()
+    monkeypatch.setattr(
+        sender, "_generate_card_if_needed", AsyncMock(return_value=None)
+    )
+    bot = SimpleNamespace(
+        send_to_group=AsyncMock(side_effect=LoggedQQApiError(40034105, "无权限")),
+        send_to_c2c=AsyncMock(),
+    )
+    monkeypatch.setattr(live_sender_module, "messaging_bots", lambda: [bot])
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [bot])
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    delivery = LiveNotificationDelivery(
+        sender,
+        get_group_mapping=lambda: {"1": ["group-openid"]},
+        get_user_mapping=lambda: {"1": ["user-openid"]},
+        get_at_all=lambda: {"1": False},
+    )
+    state = LiveRoomState(room_id=1)
+    assert await delivery.deliver_start("1", state, room_info=None, user_info=None)
+    assert not state.pending_start
+    bot.send_to_c2c.assert_awaited_once()
+    await delivery.retry_pending("1", state, room_info=None, user_info=None)
+    bot.send_to_group.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_live_finish_write_failure_retains_acknowledged_parts(
+    live_sender_module, monkeypatch
+):
+    from plugins.live_monitor.models import LiveRoomState
+    from plugins.live_monitor.notification_delivery import LiveNotificationDelivery
+    from shared.adapter import outbound
+
+    sender = live_sender_module.LiveNotificationSender()
+    monkeypatch.setattr(
+        sender, "_generate_card_if_needed", AsyncMock(return_value=b"card")
+    )
+    bot = SimpleNamespace(send_to_group=AsyncMock())
+    monkeypatch.setattr(live_sender_module, "messaging_bots", lambda: [bot])
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [bot])
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    state = LiveRoomState(room_id=1)
+    fail_once = True
+
+    async def persist(_room_id):
+        nonlocal fail_once
+        if not state.pending_start and fail_once:
+            fail_once = False
+            raise RuntimeError("write failed")
+
+    delivery = LiveNotificationDelivery(
+        sender,
+        get_group_mapping=lambda: {"1": ["group-openid"]},
+        get_user_mapping=lambda: {},
+        get_at_all=lambda: {"1": False},
+        persist_state=persist,
+    )
+    with pytest.raises(RuntimeError, match="write failed"):
+        await delivery.deliver_start("1", state, room_info=None, user_info=None)
+    assert state.pending_start
+    assert state.pending_start_delivery.group_starts == {"group-openid": 2}
+    assert await delivery.deliver_start("1", state, room_info=None, user_info=None)
+    assert bot.send_to_group.await_count == 2
+    assert not state.pending_start

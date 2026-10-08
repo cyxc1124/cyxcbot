@@ -1,47 +1,13 @@
 """动态监控运行时状态的 DB 持久化。"""
 
 import json
-from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional
 
-from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot_plugin_orm import get_session
 from sqlalchemy import select
 
 from shared.db.models import DynamicMonitorState
-
-
-@dataclass
-class PendingDynamicDelivery:
-    message: Message
-    groups: list[str]
-    users: list[str]
-    at_all: bool = False
-    group_starts: dict[str, int] = field(default_factory=dict)
-    user_starts: dict[str, int] = field(default_factory=dict)
-
-    def to_data(self) -> dict:
-        return {
-            "message": [
-                {"type": segment.type, "data": segment.data} for segment in self.message
-            ],
-            "groups": self.groups,
-            "users": self.users,
-            "at_all": self.at_all,
-            "group_starts": self.group_starts,
-            "user_starts": self.user_starts,
-        }
-
-    @classmethod
-    def from_data(cls, data: dict) -> "PendingDynamicDelivery":
-        return cls(
-            message=Message(MessageSegment(**segment) for segment in data["message"]),
-            groups=data["groups"],
-            users=data["users"],
-            at_all=data["at_all"],
-            group_starts=data["group_starts"],
-            user_starts=data["user_starts"],
-        )
+from shared.notify.delivery import PendingDelivery
 
 
 class DynamicMonitorStateStore:
@@ -54,7 +20,7 @@ class DynamicMonitorStateStore:
         last_dynamic_ids: Dict[str, int],
         initialized_uids: Dict[str, bool],
         pinned_dynamic_ids: Dict[str, Optional[int]],
-        pending_targets: dict[tuple[str, int | str, bool], PendingDynamicDelivery]
+        pending_targets: dict[tuple[str, int | str, bool], PendingDelivery]
         | None = None,
     ) -> None:
         for uid in uids:
@@ -87,9 +53,7 @@ class DynamicMonitorStateStore:
                         if pending_targets is not None:
                             for data in json.loads(row.pending_deliveries or "[]"):
                                 key = (uid, data["dynamic_id"], data["is_pinned"])
-                                pending_targets[key] = PendingDynamicDelivery.from_data(
-                                    data
-                                )
+                                pending_targets[key] = PendingDelivery.from_data(data)
                     else:
                         last_dynamic_ids[uid] = 0
                         initialized_uids[uid] = False
@@ -101,7 +65,7 @@ class DynamicMonitorStateStore:
         last_dynamic_ids: Dict[str, int],
         initialized_uids: Dict[str, bool],
         pinned_dynamic_ids: Dict[str, Optional[int]],
-        pending_targets: dict[tuple[str, int | str, bool], PendingDynamicDelivery]
+        pending_targets: dict[tuple[str, int | str, bool], PendingDelivery]
         | None = None,
         check_still_valid: Optional[Callable[[], bool]] = None,
     ) -> None:

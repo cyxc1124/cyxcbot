@@ -324,6 +324,80 @@ async def test_apply_skips_webhook_when_already_applied() -> None:
 
 
 @pytest.mark.asyncio
+async def test_startup_starts_official_websocket_once_and_reload_reconnects(
+    monkeypatch,
+):
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    import nonebot
+    from nonebot.adapters.qq import Adapter as QQAdapter
+    from nonebot.adapters.qq.config import Config as QQConfig
+    from nonebot.internal.driver._lifespan import Lifespan
+
+    from shared.adapter import official_runtime as runtime
+
+    lifespan = Lifespan()
+    driver = SimpleNamespace(
+        on_startup=lifespan.on_startup,
+        on_shutdown=lifespan.on_shutdown,
+        _bot_connect=MagicMock(),
+        _bot_disconnect=MagicMock(),
+    )
+    monkeypatch.setattr(nonebot, "get_driver", lambda: driver)
+    spec = importlib.util.spec_from_file_location(
+        "test_admin_startup", Path(__file__).resolve().parents[1] / "admin/startup.py"
+    )
+    startup = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(startup)
+    # 只验证配置和 QQ 生命周期，不启动 Web Admin 或系统采样器。
+    lifespan._startup_funcs = [startup.init_shared_services]
+    lifespan._shutdown_funcs = []
+    monkeypatch.setattr(QQAdapter, "setup", lambda self: None)
+    monkeypatch.setattr(
+        "nonebot.adapters.qq.adapter.get_plugin_config", lambda _: QQConfig()
+    )
+    adapter = QQAdapter(driver)
+    send = AsyncMock()
+    monkeypatch.setattr(adapter, "run_bot_websocket", send)
+    lifespan.on_ready(adapter.startup)
+    lifespan.on_shutdown(adapter.shutdown)
+    monkeypatch.setattr(runtime, "_get_adapter", lambda: adapter)
+    monkeypatch.setattr(runtime, "_applied_key", None)
+    monkeypatch.setattr("shared.adapter.bots.iter_official_bots", lambda: [])
+    snapshot = SimpleNamespace(
+        official_qq_app_id="test-app",
+        official_qq_app_secret="first-secret",
+        official_qq_is_sandbox=False,
+        official_qq_use_websocket=True,
+    )
+    config = SimpleNamespace(
+        load=AsyncMock(return_value=snapshot), register_reload_callback=MagicMock()
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "shared.config.service",
+        SimpleNamespace(get_config_service=lambda: config),
+    )
+    async with lifespan:
+        await asyncio.sleep(0)
+        send.assert_awaited_once()
+        config.register_reload_callback.assert_called_once_with(
+            runtime.on_config_reload
+        )
+        snapshot.official_qq_app_secret = "second-secret"
+        await runtime.on_config_reload(snapshot)
+        await asyncio.sleep(0)
+        assert send.await_count == 2
+        assert adapter.qq_config.qq_bots[0].secret == "second-secret"
+        snapshot.official_qq_app_secret = ""
+        await runtime.on_config_reload(snapshot)
+        assert not adapter.qq_config.qq_bots
+        assert not adapter.tasks
+
+
+@pytest.mark.asyncio
 async def test_webhook_credentials_verify_signed_event_and_clear(monkeypatch):
     from nonebot.adapters.qq import Adapter as QQAdapter
     from nonebot.adapters.qq.config import Config as QQConfig

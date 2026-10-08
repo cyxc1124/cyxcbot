@@ -37,7 +37,7 @@ export function FriendSelector({
       getName={(friend) => friend.source === 'official' ? `${friend.nickname || friend.user_id}（官方）` : friend.nickname}
       labels={FRIEND_LABELS}
       disabled={disabled}
-      helperText={`${helperText ?? FRIEND_LABELS.defaultHelperText}。动态监控会向官方好友主动推送；直播与 X 仍只推送到数字 QQ。`}
+      helperText={`${helperText ?? FRIEND_LABELS.defaultHelperText}。动态和直播监控支持官方好友推送；X 仍只推送到数字 QQ。`}
     />
   )
 }

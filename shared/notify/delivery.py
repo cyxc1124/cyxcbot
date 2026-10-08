@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import List, Optional
+
+from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 
 @dataclass(frozen=True)
@@ -69,3 +72,39 @@ def aggregate_by_target(result: DeliveryResult) -> DeliveryResult:
 
 def empty_delivery_result() -> DeliveryResult:
     return DeliveryResult()
+
+
+DeliveryProgressCallback = Callable[[str, str, int], Awaitable[None]]
+
+
+@dataclass
+class PendingDelivery:
+    message: Message
+    groups: list[str]
+    users: list[str]
+    at_all: bool = False
+    group_starts: dict[str, int] = field(default_factory=dict)
+    user_starts: dict[str, int] = field(default_factory=dict)
+
+    def to_data(self) -> dict:
+        return {
+            "message": [
+                {"type": segment.type, "data": segment.data} for segment in self.message
+            ],
+            "groups": self.groups,
+            "users": self.users,
+            "at_all": self.at_all,
+            "group_starts": self.group_starts,
+            "user_starts": self.user_starts,
+        }
+
+    @classmethod
+    def from_data(cls, data: dict) -> "PendingDelivery":
+        return cls(
+            message=Message(MessageSegment(**segment) for segment in data["message"]),
+            groups=data["groups"],
+            users=data["users"],
+            at_all=data["at_all"],
+            group_starts=data["group_starts"],
+            user_starts=data["user_starts"],
+        )
