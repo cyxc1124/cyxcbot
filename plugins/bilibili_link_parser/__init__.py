@@ -349,6 +349,7 @@ async def _resolve_and_reply(
             return
         if remaining == 1:
             scope = replace(scope, send_video_enabled=False)
+            enable_dynamic_screenshot = False
     resolved = _ResolvedReply()
     user_id = user_id_of(event)
     try:

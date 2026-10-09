@@ -431,3 +431,32 @@ async def test_single_native_reply_budget_skips_video_download(
     api.assert_awaited_once()
     assert "视频标题" in api.await_args.kwargs["message"].extract_plain_text()
     assert outbound.official_reply_remaining(event) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "c2c"])
+async def test_single_native_reply_budget_skips_dynamic_screenshot(
+    scope, pipeline, monkeypatch
+):
+    plugin, snapshot, _ = pipeline
+    assert snapshot.dynamic_enable_screenshot is True
+    event = _event(scope, "https://t.bilibili.com/123456789")
+    bot = QQBot(MagicMock(), "app", _bot_info("app", "secret", False))
+    api = AsyncMock()
+    monkeypatch.setattr(
+        bot, "send_to_group" if scope == "group" else "send_to_c2c", api
+    )
+    while outbound.official_reply_remaining(event) > 1:
+        await outbound.send_event_message(bot, event, plugin.Message("earlier reply"))
+    api.reset_mock()
+
+    await (
+        plugin.handle_group_link if scope == "group" else plugin.handle_private_link
+    )(bot, event)
+
+    plugin.get_dynamic_screenshot.assert_not_called()
+    api.assert_awaited_once()
+    caption = api.await_args.kwargs["message"].extract_plain_text()
+    assert "动态标题" in caption and "动态正文" in caption
+    assert snapshot.dynamic_enable_screenshot is True
+    assert outbound.official_reply_remaining(event) == 0
