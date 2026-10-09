@@ -368,11 +368,14 @@ export interface XLinkParserGroupPolicyItem {
   member_count?: number | null
   customized: boolean
   enabled: boolean
+  source?: 'onebot' | 'official'
+  editable?: boolean
 }
 
 export interface XLinkParserGroupPolicyList {
   groups: XLinkParserGroupPolicyItem[]
   group_list_available: boolean
+  onebot_list_status?: OneBotListStatus | null
 }
 
 export interface XLinkParserGroupPolicyMutation {
@@ -385,11 +388,14 @@ export interface XLinkParserUserPolicyItem {
   name?: string | null
   customized: boolean
   enabled: boolean
+  source?: 'onebot' | 'official'
+  editable?: boolean
 }
 
 export interface XLinkParserUserPolicyList {
   users: XLinkParserUserPolicyItem[]
   friend_list_available: boolean
+  onebot_list_status?: OneBotListStatus | null
 }
 
 export interface XLinkParserUserPolicyMutation {
