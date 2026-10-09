@@ -3,7 +3,8 @@ import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
 import { useMountAsync } from '../hooks/useMountAsync'
 import { createRetryHandler } from '../utils/retryLoad'
 import { getMessagePolicy, updateMessagePolicy } from '../api/client'
-import type { Group } from '../api/types'
+import type { Group, OneBotListStatus } from '../api/types'
+import { resolveOneBotListStatus } from '../utils/rosterStatus'
 import { GroupSpecialTitlePolicyTab } from '../components/GroupSpecialTitlePolicyTab'
 import { DouyinLinkParserGroupPolicyTab } from '../components/DouyinLinkParserPolicyTabs'
 import { LinkParserGroupPolicyTab } from '../components/LinkParserPolicyTabs'
@@ -39,6 +40,7 @@ export function GroupsPage() {
   const [error, setError] = useState('')
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [groupListAvailable, setGroupListAvailable] = useState(true)
+  const [onebotListStatus, setOnebotListStatus] = useState<OneBotListStatus>('ok')
 
   const load = useCallback(async () => {
     if (tab !== 'message') return
@@ -48,6 +50,7 @@ export function GroupsPage() {
       setRestrict(data.restrict)
       setEnabledIds(data.enabled_group_ids)
       setGroupListAvailable(data.group_list_available)
+      setOnebotListStatus(resolveOneBotListStatus(data.onebot_list_status, data.group_list_available))
       setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
@@ -78,6 +81,7 @@ export function GroupsPage() {
       allGroupIds,
       restrict,
       enabledIds,
+      groupListAvailable,
     )
     const next = {
       restrict: nextPolicy.restrict,
@@ -96,6 +100,7 @@ export function GroupsPage() {
       setRestrict(updated.restrict)
       setEnabledIds(updated.enabled_group_ids)
       setGroupListAvailable(updated.group_list_available)
+      setOnebotListStatus(resolveOneBotListStatus(updated.onebot_list_status, updated.group_list_available))
     } catch (err) {
       setRestrict(prevRestrict)
       setEnabledIds(prevEnabledIds)
@@ -124,6 +129,7 @@ export function GroupsPage() {
       setRestrict(updated.restrict)
       setEnabledIds(updated.enabled_group_ids)
       setGroupListAvailable(updated.group_list_available)
+      setOnebotListStatus(resolveOneBotListStatus(updated.onebot_list_status, updated.group_list_available))
       showToast('success', enabled ? '已启用全部群组' : '已关闭全部群组')
     } catch (err) {
       setRestrict(prevRestrict)
@@ -176,9 +182,15 @@ export function GroupsPage() {
 
       {tab === 'message' && (
       <>
-      {!groupListAvailable && groups.length > 0 && (
+      {onebotListStatus === 'incomplete' && (
         <p className="text-sm text-amber-700 dark:text-amber-300">
-          群列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改群消息开关；待连接恢复后再调整。
+          OneBot 群列表获取失败，暂不可批量调整或修改 OneBot 会话；白名单模式下，仍可单独调整已发现的官方会话。
+        </p>
+      )}
+      {onebotListStatus === 'offline' && (
+        <p className="text-sm text-muted-foreground">
+          使用官方 Bot 无需连接 OneBot。官方群通过收到群事件发现；
+          {restrict ? '可单独调整下方已发现的官方群，允许名单中其他会话保持不变。' : '当前为全部启用模式，官方消息已允许处理。'}
         </p>
       )}
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
@@ -188,9 +200,11 @@ export function GroupsPage() {
           <p className="text-sm text-muted-foreground">
             {error
               ? '数据暂时无法加载'
-              : groupListAvailable
-                ? '暂无可用群组，请确保机器人已连接 OneBot 并在线。'
-                : '暂无群组数据。请确保机器人已连接 OneBot，或等待群列表同步完成。'}
+              : onebotListStatus === 'offline'
+                ? '尚未发现官方会话，请先在官方群中 @机器人后刷新。使用 OneBot 时请检查协议端连接。'
+                : groupListAvailable
+                ? '暂无群组数据。请连接 OneBot，或在官方群中 @机器人后刷新。'
+                : '暂无群组数据。请连接 OneBot，或先在官方群中 @机器人后刷新。'}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -198,22 +212,23 @@ export function GroupsPage() {
               <thead>
                 <tr className="border-b border-border text-muted-foreground border-border">
                   <th className="pb-3 pr-4 font-medium">群名称</th>
-                  <th className="pb-3 pr-4 font-medium">群号</th>
+                  <th className="pb-3 pr-4 font-medium">群号 / OpenID</th>
                   <th className="pb-3 pr-4 font-medium">成员数</th>
-                  <th className="pb-3 font-medium text-right">处理群消息</th>
+                  <th id="group-message-heading" className="pb-3 font-medium text-right">处理群消息</th>
                 </tr>
               </thead>
               <tbody>
                 {groups.map((group) => {
                   const enabled = isItemEnabled(group.group_id, restrict, enabledIds)
-                  const rowBusy = busy && (togglingId === group.group_id || togglingId === '__all__')
+                  const rowEditable = policyEditable || (restrict && group.source === 'official')
                   return (
                     <tr
                       key={group.group_id}
                       className="border-b border-border last:border-0 border-border"
                     >
-                      <td className="py-3.5 pr-4 font-medium text-foreground">
+                      <td id={`group-name-${group.group_id}`} className="py-3.5 pr-4 font-medium text-foreground">
                         {group.group_name ?? '—'}
+                        {group.source === 'official' && <span className="ml-2 text-xs text-muted-foreground">官方</span>}
                       </td>
                       <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">
                         {group.group_id}
@@ -230,7 +245,8 @@ export function GroupsPage() {
                           </span>
                           <ToggleSwitch
                             checked={enabled}
-                            disabled={rowBusy || !policyEditable}
+                            disabled={busy || !rowEditable}
+                            ariaLabelledBy={`group-message-heading group-name-${group.group_id}`}
                             onChange={(checked) => void handleToggle(group.group_id, checked)}
                           />
                         </div>

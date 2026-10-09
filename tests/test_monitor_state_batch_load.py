@@ -21,6 +21,8 @@ _MONITOR_PLUGIN_MODULES = (
     "plugins.dynamic_monitor.dynamic_monitor",
     "plugins.live_monitor.state_store",
     "plugins.live_monitor.live_monitor",
+    "plugins.x_monitor.state_store",
+    "plugins.x_monitor.x_monitor",
 )
 
 
@@ -45,11 +47,12 @@ def _ensure_real_db_modules():
             if _model_column_is_real(
                 DynamicMonitorState, "uid"
             ) and _model_column_is_real(LiveMonitorState, "room_id"):
-                for name in (
-                    "plugins.dynamic_monitor.state_store",
-                    "plugins.live_monitor.state_store",
-                ):
+                for name in _MONITOR_PLUGIN_MODULES:
                     sys.modules.pop(name, None)
+                    parent, attribute = name.rsplit(".", 1)
+                    package = sys.modules.get(parent)
+                    if package is not None:
+                        vars(package).pop(attribute, None)
                 return Model, DynamicMonitorState, LiveMonitorState
 
     for name in (
@@ -111,6 +114,139 @@ async def db_context():
         yield engine, factory, DynamicMonitorState, LiveMonitorState
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["recipient", "part", "completed"])
+@pytest.mark.parametrize("is_pinned", [False, True])
+async def test_dynamic_delivery_restart_restores_targets_snapshot_and_part_offset(
+    db_context,
+    monkeypatch,
+    failure,
+    is_pinned,
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from nonebot.adapters.onebot.v11 import Message, MessageSegment
+
+    from plugins.dynamic_monitor import state_store
+    from plugins.dynamic_monitor.config import Config
+    from plugins.dynamic_monitor.dynamic_monitor import DynamicMonitor
+    from plugins.dynamic_monitor.sender import DynamicSender
+    from shared.adapter import outbound
+    from shared.adapter.qq_errors import LoggedQQApiError
+
+    _, factory, DynamicMonitorState, _ = db_context
+    monkeypatch.setattr(state_store, "get_session", lambda: factory())
+    monkeypatch.setattr(state_store, "DynamicMonitorState", DynamicMonitorState)
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    accepted = []
+    failed = False
+
+    async def send(**kwargs):
+        nonlocal failed
+        target = kwargs.get("group_openid") or kwargs.get("openid")
+        segment = kwargs["message"][0]
+        if (
+            target == "group-openid"
+            and not failed
+            and (
+                failure == "recipient"
+                or failure == "part"
+                and segment.type == "file_image"
+            )
+        ):
+            failed = True
+            raise LoggedQQApiError(50055001, "临时发送失败")
+        accepted.append(
+            (
+                target,
+                segment.type,
+                kwargs["message"].extract_plain_text()
+                if segment.type == "text"
+                else segment.data["content"],
+            )
+        )
+
+    monkeypatch.setattr(
+        outbound,
+        "iter_official_bots",
+        lambda: [SimpleNamespace(send_to_group=send, send_to_c2c=send)],
+    )
+
+    def make_monitor():
+        monitor = DynamicMonitor(
+            Config(
+                dynamic_monitor_mapping={"111": ["group-openid"]},
+                dynamic_monitor_user_mapping={
+                    "111": ["user-openid"] if failure == "recipient" else []
+                },
+            )
+        )
+        monitor._state_store = state_store.DynamicMonitorStateStore()
+        monitor.sender = DynamicSender()
+        monitor._resolve_author_name = AsyncMock(return_value="author")
+        monitor._fetch_dynamic_screenshot = AsyncMock(return_value=b"snapshot-image")
+        monitor.sender.build_dynamic_message = MagicMock(
+            return_value=Message(
+                [
+                    MessageSegment.text("snapshot-caption"),
+                    MessageSegment.image(b"snapshot-image"),
+                ]
+            )
+        )
+        return monitor
+
+    original = make_monitor()
+    original.last_dynamic_ids["111"] = 100
+    original.initialized_uids["111"] = True
+    original.pinned_dynamic_ids["111"] = 42
+    dynamic = SimpleNamespace(id=200, uid="111", get_type_description=lambda: "text")
+    assert await original._send_dynamic_notification("111", dynamic, is_pinned) is (
+        failure == "completed"
+    )
+    async with factory() as session:
+        row = await session.get(DynamicMonitorState, "111")
+        assert row.last_dynamic_id == 100
+        assert row.pending_deliveries != "[]"
+
+    restarted = make_monitor()
+    restarted.sender.build_dynamic_message.side_effect = AssertionError(
+        "must use saved snapshot"
+    )
+    await restarted._load_persisted_states()
+    pending = restarted._pending_targets[("111", 200, is_pinned)]
+    if failure == "part":
+        assert pending.group_starts["group-openid"] == 1
+    elif failure == "recipient":
+        assert pending.groups == ["group-openid"] and pending.users == []
+    else:
+        assert not pending.groups and not pending.users
+    # feed 已不含这条动态，仍须用快照完成旧通知。
+    restarted.fetcher = SimpleNamespace(
+        fetch_user_dynamics=AsyncMock(return_value=([], 200 if is_pinned else 42))
+    )
+    assert await restarted._check_user_dynamic("111")
+    await restarted._drain_pending_deliveries()
+    expected = [
+        ("group-openid", "text", "snapshot-caption"),
+        ("group-openid", "file_image", b"snapshot-image"),
+    ]
+    if failure == "recipient":
+        expected = [
+            ("user-openid", "text", "snapshot-caption"),
+            ("user-openid", "file_image", b"snapshot-image"),
+            *expected,
+        ]
+    assert accepted == expected
+    restarted._fetch_dynamic_screenshot.assert_not_awaited()
+    assert not restarted._pending_targets
+    async with factory() as session:
+        row = await session.get(DynamicMonitorState, "111")
+        assert row.pending_deliveries == "[]"
+        assert row.pinned_dynamic_id == (200 if is_pinned else 42)
+        assert row.last_dynamic_id == (100 if is_pinned else 200)
 
 
 @pytest.mark.asyncio
@@ -443,3 +579,283 @@ async def test_live_load_persisted_states_single_query(
 
     assert counter["select"] == 1
     assert monitor.room_states["119"].start_time == 119
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "user"])
+@pytest.mark.parametrize("terminal", [False, True])
+async def test_official_x_persists_parts_and_cursor_across_restart(
+    db_context, monkeypatch, tmp_path, scope, terminal
+):
+    from pathlib import Path
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from nonebot.adapters.onebot.v11 import Message, MessageSegment
+
+    from plugins.x_monitor import sender, state_store
+    from plugins.x_monitor.config import Config
+    from plugins.x_monitor.x_monitor import XMonitor
+    from shared.adapter import outbound
+    from shared.adapter.qq_errors import LoggedQQApiError
+    from shared.db.models import XMonitorState
+    from utils.x_api.models import TweetItem, TweetMediaItem
+
+    _, factory, _, _ = db_context
+    monkeypatch.setattr(state_store, "get_session", lambda: factory())
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    accepted = []
+    failed = False
+
+    async def send(**kwargs):
+        nonlocal failed
+        destination = kwargs.get("group_openid") or kwargs.get("openid")
+        segment = kwargs["message"][0]
+        if destination == f"{scope}-openid" and (
+            terminal or not failed and segment.type == "file_image"
+        ):
+            failed = True
+            raise LoggedQQApiError(40034105 if terminal else 50055001, "拒绝或暂时失败")
+        value = (
+            segment.data["text"] if segment.type == "text" else segment.data["content"]
+        )
+        if isinstance(value, Path):
+            value = value.read_bytes()
+        accepted.append((destination, segment.type, value))
+
+    onebot = SimpleNamespace(send_group_msg=AsyncMock(), send_private_msg=AsyncMock())
+    official = SimpleNamespace(send_to_group=send, send_to_c2c=send)
+    monkeypatch.setattr(outbound, "iter_onebot_bots", lambda: [onebot])
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [official])
+    monkeypatch.setattr(sender, "messaging_bots", lambda: [onebot, official])
+    monkeypatch.setattr(
+        sender,
+        "resolve_at_all_prefix",
+        AsyncMock(return_value=Message(MessageSegment.at("all"))),
+    )
+    media = []
+    for index, (kind, content) in enumerate(
+        (("image", b"one"), ("video", b"clip"), ("image", b"two"))
+    ):
+        path = tmp_path / f"{index}.{'mp4' if kind == 'video' else 'jpg'}"
+        path.write_bytes(content)
+        media.append(TweetMediaItem(kind=kind, url="", file_path=path))
+    tweet = TweetItem(
+        id="200",
+        text="caption",
+        created_at="",
+        username="author",
+        name="Author",
+        url="https://x.com/author/status/200",
+        media_items=media,
+    )
+
+    def monitor():
+        result = XMonitor(
+            Config(
+                x_monitor_mapping={"author": ["1001", "group-openid"]},
+                x_monitor_user_mapping={"author": ["2002", "user-openid"]},
+                x_at_all={"author": True},
+            )
+        )
+        result.sender = sender.XSender()
+        result.last_tweet_ids["author"] = "100"
+        result.initialized_usernames["author"] = True
+        return result
+
+    first = monitor()
+    assert await first._send_tweet_notification("author", tweet) is terminal
+    async with factory() as session:
+        row = await session.get(XMonitorState, "author")
+        if not terminal:
+            targets = (
+                row.pending_group_ids if scope == "group" else row.pending_user_ids
+            )
+            assert targets == f"{scope}-openid@1"
+            assert row.pending_tweet_id.startswith("200#v2:")
+            assert row.last_tweet_id == "100"
+    restarted = monitor()
+    await restarted._load_persisted_states()
+    if not terminal:
+        assert await restarted._send_tweet_notification("author", tweet)
+    assert restarted.last_tweet_ids["author"] == "200"
+    for destination in ("group-openid", "user-openid"):
+        delivered = [
+            (kind, value) for target, kind, value in accepted if target == destination
+        ]
+        if terminal and destination == f"{scope}-openid":
+            assert not delivered
+            continue
+        assert [(kind, value) for kind, value in delivered if kind != "text"] == [
+            ("file_image", b"one"),
+            ("file_video", b"clip"),
+            ("file_image", b"two"),
+        ]
+        assert len([kind for kind, _ in delivered if kind == "text"]) == 2
+    batch_count = len(sender.reply_batches(first.sender.build_tweet_message(tweet)))
+    assert onebot.send_group_msg.await_count == batch_count + 1
+    assert onebot.send_private_msg.await_count == batch_count
+    async with factory() as session:
+        row = await session.get(XMonitorState, "author")
+        assert row.last_tweet_id == "200"
+        assert row.pending_tweet_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["start", "end"])
+@pytest.mark.parametrize("target", ["group", "user"])
+@pytest.mark.parametrize("failure", ["recipient", "part", "no_bot"])
+@pytest.mark.parametrize("recovery", ["available", "offline_poll", "offline_signal"])
+async def test_official_live_retry_restores_snapshot_targets_and_parts(
+    db_context, monkeypatch, status, target, failure, recovery
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from plugins.live_monitor import sender, state_store
+    from plugins.live_monitor.config import Config
+    from plugins.live_monitor.live_monitor import LiveMonitor, api_manager
+    from plugins.live_monitor.models import LiveRoomState
+    from shared.adapter import outbound
+    from shared.adapter.qq_errors import LoggedQQApiError
+    from utils.bilibili_api import RoomInfo, UserInfo
+
+    _, factory, _, LiveMonitorState = db_context
+    monkeypatch.setattr(state_store, "get_session", lambda: factory())
+    monkeypatch.setattr(state_store, "LiveMonitorState", LiveMonitorState)
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    accepted = []
+    failures_remaining = 1 if recovery == "available" else 2
+    if failure == "no_bot":
+        failures_remaining -= 1
+    failure_target = f"{target}-openid"
+
+    async def send(**kwargs):
+        nonlocal failures_remaining
+        destination = kwargs.get("group_openid") or kwargs.get("openid")
+        segment = kwargs["message"][0]
+        if (
+            destination == failure_target
+            and failures_remaining > 0
+            and (failure != "part" or segment.type == "file_image")
+        ):
+            failures_remaining -= 1
+            raise LoggedQQApiError(50055001, "暂时失败")
+        accepted.append(
+            (
+                destination,
+                segment.type,
+                kwargs["message"].extract_plain_text()
+                if segment.type == "text"
+                else segment.data["content"],
+            )
+        )
+
+    onebot = SimpleNamespace(send_group_msg=AsyncMock(), send_private_msg=AsyncMock())
+    official = SimpleNamespace(send_to_group=send, send_to_c2c=send)
+    monkeypatch.setattr(outbound, "iter_onebot_bots", lambda: [onebot])
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [official])
+    monkeypatch.setattr(sender, "messaging_bots", lambda: [onebot, official])
+    live_room = RoomInfo.from_api_data(
+        {
+            "uid": 2,
+            "room_id": 111,
+            "live_status": 1,
+            "live_start_time": 1000,
+            "title": "saved-title",
+        }
+    )
+    room = (
+        live_room
+        if status == "start"
+        else RoomInfo.from_api_data({"uid": 2, "room_id": 111, "live_status": 0})
+    )
+    user = UserInfo(uid=2, name="author", face="")
+
+    def monitor():
+        result = LiveMonitor(
+            Config(
+                live_monitor_mapping={"111": ["1001", "group-openid"]},
+                live_monitor_user_mapping={"111": ["user-openid"]},
+                live_at_all={"111": False},
+                use_websocket=False,
+            )
+        )
+        result._state_store = state_store.LiveMonitorStateStore()
+        result._sender._generate_card_if_needed = AsyncMock(return_value=b"saved-card")
+        result.room_states["111"] = LiveRoomState(
+            room_id=111,
+            room_info=room,
+            user_info=user,
+            previous_status=room.live_status,
+            start_time=1000,
+            last_live_room_info=live_room,
+            last_live_user_info=user,
+        )
+        return result
+
+    first = monitor()
+    state = first.room_states["111"]
+    if failure == "no_bot":
+        monkeypatch.setattr(sender, "messaging_bots", lambda: [])
+    assert not await getattr(first._delivery, f"deliver_{status}")(
+        "111", state, room_info=room, user_info=user
+    )
+    if failure == "no_bot":
+        assert not accepted
+        onebot.send_group_msg.assert_not_awaited()
+        monkeypatch.setattr(sender, "messaging_bots", lambda: [onebot, official])
+    async with factory() as session:
+        row = await session.get(LiveMonitorState, "111")
+        assert row.pending_notifications != "{}"
+    restarted = monitor()
+    restarted._sender._generate_card_if_needed.side_effect = AssertionError(
+        "must reuse snapshot"
+    )
+    await restarted._load_persisted_states()
+    restored = restarted.room_states["111"]
+    snapshot = getattr(restored, f"pending_{status}_delivery")
+    assert snapshot is not None
+    if failure == "part":
+        starts = snapshot.group_starts if target == "group" else snapshot.user_starts
+        assert starts[failure_target] == 1
+    assert getattr(restored, f"pending_{status}")
+    fetch = AsyncMock(
+        return_value=(room, user) if recovery == "available" else (None, None)
+    )
+    monkeypatch.setattr(api_manager, "get_room_and_user_info", fetch)
+    if recovery == "available":
+        assert await restarted._check_room_status("111")
+    else:
+        restored.room_info = None
+        restored.user_info = None
+        if recovery == "offline_signal":
+            restored.last_live_room_info = None
+            restored.last_live_user_info = None
+        assert await restarted._initialize_room("111")
+        fetch.assert_not_awaited()
+        assert getattr(restored, f"pending_{status}")
+        if recovery == "offline_poll":
+            assert not await restarted._check_room_status("111")
+        elif status == "start":
+            await restarted._handle_live_signal("111")
+        else:
+            await restarted._handle_preparing_signal("111", None)
+        fetch.assert_awaited_once()
+    assert not getattr(restored, f"pending_{status}")
+    expected = [
+        (kind, value if kind == "text" else b"saved-card")
+        for kind, value in outbound.convert_onebot_message(snapshot.message)
+    ]
+    for destination in ("group-openid", "user-openid"):
+        assert [
+            ("image" if kind == "file_image" else kind, value)
+            for peer, kind, value in accepted
+            if peer == destination
+        ] == expected
+    onebot.send_group_msg.assert_awaited_once()
+    restarted._sender._generate_card_if_needed.assert_not_awaited()
+    async with factory() as session:
+        assert (
+            await session.get(LiveMonitorState, "111")
+        ).pending_notifications == "{}"

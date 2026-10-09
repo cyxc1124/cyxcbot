@@ -43,6 +43,11 @@ spec:
             configMapKeyRef:
               name: {{ include "cyxcbot.fullname" . }}-config
               key: port
+        - name: DRIVER
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "cyxcbot.fullname" . }}-config
+              key: driver
         - name: COMMAND_START
           valueFrom:
             configMapKeyRef:

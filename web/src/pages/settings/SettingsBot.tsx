@@ -19,8 +19,12 @@ function formatQqInput(qqList: string[]): string {
   return qqList.join('\n')
 }
 
+function isAllowedUserId(value: string): boolean {
+  return /^\d+$/.test(value) || /^[A-Za-z0-9_-]{8,64}$/.test(value)
+}
+
 function validateQqList(list: string[]): string[] | null {
-  const invalid = list.filter((qq) => !/^\d+$/.test(qq))
+  const invalid = list.filter((qq) => !isAllowedUserId(qq))
   if (invalid.length > 0) return invalid
   return null
 }
@@ -85,7 +89,8 @@ export function SettingsBotPage() {
           <h3 className="font-semibold text-foreground">NoneBot 超级用户</h3>
           <p className="mt-1 text-sm text-muted-foreground">
             对应 NoneBot 的 <code className="font-mono text-xs">SUPERUSER</code>{' '}
-            权限。超级用户可查询机器人状态，并在其他插件中享有更高权限。保存后会同步到运行中的机器人，无需重启。
+            权限。超级用户可查询机器人状态，并在其他插件中享有更高权限。保存后会同步到运行中的机器人，无需重启。官方
+            Bot 请填写用户 openid（非数字 QQ 号）。
           </p>
         </div>
 
@@ -96,7 +101,7 @@ export function SettingsBotPage() {
           <textarea
             id="nonebot_superusers"
             className="input min-h-32 font-mono text-sm"
-            placeholder={'每行一个 QQ 号，例如：\n120674547'}
+            placeholder={'每行一个 QQ 号或官方 openid'}
             value={superuserText}
             disabled={formDisabled || saving}
             onChange={(e) => setSuperuserText(e.target.value)}
@@ -122,7 +127,7 @@ export function SettingsBotPage() {
           <textarea
             id="status_check_allowed_qq"
             className="input min-h-32 font-mono text-sm"
-            placeholder={'每行一个 QQ 号'}
+            placeholder={'每行一个 QQ 号或官方 openid'}
             value={statusCheckText}
             disabled={formDisabled || saving}
             onChange={(e) => setStatusCheckText(e.target.value)}

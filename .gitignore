@@ -172,6 +172,9 @@ tmp/
 .cache/
 cache/
 
+# CodeGraph 本地索引（数据库、pid、socket）
+.codegraph/
+
 # 插件缓存
 .nonebot/
 

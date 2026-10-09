@@ -104,15 +104,142 @@ def dynamic_monitor_modules() -> Iterator[tuple[Any, Any]]:
                 sys.modules[key] = original
 
 
+@pytest.mark.asyncio
+async def test_partial_delivery_retry_skips_successful_targets(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """部分目标失败时，重试只发给还没成功的目标。"""
+    from shared.notify.delivery import DeliveryResult, TargetDelivery
+
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.config.dynamic_monitor_mapping["111"] = ["1001", "1002"]
+    monitor.config.dynamic_monitor_user_mapping["111"] = ["2002"]
+    dynamic = SimpleNamespace(id=200, uid="111", get_type_description=lambda: "text")
+    monitor._resolve_author_name = AsyncMock(return_value="author")
+    monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
+    partial = DeliveryResult(
+        targets=[
+            TargetDelivery("group", "1001", True),
+            TargetDelivery("group", "1002", False, "down"),
+            TargetDelivery("user", "2002", True),
+        ]
+    )
+    success = DeliveryResult(targets=[TargetDelivery("group", "1002", True)])
+    monitor.sender = SimpleNamespace(
+        build_dynamic_message=MagicMock(return_value="msg"),
+        send_message=AsyncMock(side_effect=[partial, success]),
+    )
+
+    assert await monitor._send_dynamic_notification("111", dynamic) is False
+    assert await monitor._send_dynamic_notification("111", dynamic) is True
+
+    first_groups, first_users = monitor.sender.send_message.await_args_list[0].args[1:3]
+    second_groups, second_users = monitor.sender.send_message.await_args_list[1].args[
+        1:3
+    ]
+    assert first_groups == ["1001", "1002"]
+    assert first_users == ["2002"]
+    assert second_groups == ["1002"]
+    assert second_users == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", [40034105, 40034101, 40054003, 40034006, 40054007])
+async def test_terminal_qq_rejection_does_not_retry(
+    dynamic_monitor_modules: tuple[Any, Any],
+    code: int,
+) -> None:
+    """确定性拒绝不阻挡游标推进，也不阻挡下一条动态。"""
+    from shared.notify.delivery import DeliveryResult, TargetDelivery
+
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.config.dynamic_monitor_mapping["111"] = ["group-openid"]
+    monitor.config.dynamic_monitor_user_mapping["111"] = ["user-openid"]
+    dynamics = [
+        SimpleNamespace(id=dynamic_id, uid="111", get_type_description=lambda: "text")
+        for dynamic_id in (200, 201)
+    ]
+    monitor._resolve_author_name = AsyncMock(return_value="author")
+    monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
+    monitor._persist_state = AsyncMock()
+    monitor.sender = SimpleNamespace(
+        build_dynamic_message=MagicMock(return_value="msg"),
+        send_message=AsyncMock(
+            return_value=DeliveryResult(
+                targets=[
+                    TargetDelivery("group", "group-openid", False, f"{code} 平台拒绝"),
+                    TargetDelivery("user", "user-openid", True),
+                ]
+            )
+        ),
+    )
+
+    await monitor._deliver_new_dynamics("111", dynamics, check_generation=0)
+
+    assert monitor.last_dynamic_ids["111"] == 201
+    assert monitor.sender.send_message.await_count == 2
+    assert not monitor._pending_targets
+    monitor._persist_state.assert_awaited_with("111", check_generation=0)
+
+
+@pytest.mark.asyncio
+async def test_terminal_rejection_only_retries_transient_failed_targets(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    from shared.notify.delivery import DeliveryResult, TargetDelivery
+
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.config.dynamic_monitor_mapping["111"] = ["group-openid", "1001"]
+    monitor.config.dynamic_monitor_user_mapping["111"] = ["user-openid"]
+    dynamic = SimpleNamespace(id=200, uid="111", get_type_description=lambda: "text")
+    monitor._resolve_author_name = AsyncMock(return_value="author")
+    monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
+    monitor._persist_state = AsyncMock()
+    monitor.sender = SimpleNamespace(
+        build_dynamic_message=MagicMock(return_value="msg"),
+        send_message=AsyncMock(
+            side_effect=[
+                DeliveryResult(
+                    targets=[
+                        TargetDelivery(
+                            "group", "group-openid", False, "40054003 不是群成员"
+                        ),
+                        TargetDelivery("group", "1001", True),
+                        TargetDelivery(
+                            "user", "user-openid", False, "50055001 稍后重试"
+                        ),
+                    ]
+                ),
+                DeliveryResult(targets=[TargetDelivery("user", "user-openid", True)]),
+            ]
+        ),
+    )
+
+    await monitor._deliver_new_dynamics("111", [dynamic], check_generation=0)
+    assert monitor.last_dynamic_ids["111"] == 100
+    pending = monitor._pending_targets[("111", 200, False)]
+    assert (pending.groups, pending.users) == ([], ["user-openid"])
+    monitor._persist_state.assert_awaited_with("111", check_generation=0)
+
+    await monitor._deliver_new_dynamics("111", [dynamic], check_generation=0)
+    assert monitor.last_dynamic_ids["111"] == 200
+    assert monitor.sender.send_message.await_args.args[1:3] == ([], ["user-openid"])
+    assert not monitor._pending_targets
+
+
 def _make_monitor(
     Config: Any,
     DynamicMonitor: Any,
     uids: list[str],
 ):
     config = Config(
-        dynamic_monitor_mapping={uid: ["group1"] for uid in uids},
+        dynamic_monitor_mapping={uid: ["1001"] for uid in uids},
     )
     monitor = DynamicMonitor(config)
+    monitor._state_store.persist = AsyncMock()
     monitor.is_running = True
     for uid in uids:
         monitor.last_dynamic_ids[uid] = 100
@@ -149,7 +276,7 @@ async def test_stale_check_skips_notification_after_disable_reenable_bumps_gener
         await fetch_started.wait()
 
         monitor._remove_uid("111")
-        monitor.config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+        monitor.config = Config(dynamic_monitor_mapping={"111": ["1001"]})
         monitor._bump_check_generation("111")
         monitor.last_dynamic_ids["111"] = 100
         monitor.initialized_uids["111"] = True
@@ -208,7 +335,7 @@ async def test_stale_check_skips_notification_after_disable_reenable_during_send
         await first_notify_started.wait()
 
         monitor._remove_uid("111")
-        monitor.config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+        monitor.config = Config(dynamic_monitor_mapping={"111": ["1001"]})
         monitor._bump_check_generation("111")
         monitor.last_dynamic_ids["111"] = 0
         monitor.initialized_uids["111"] = False
@@ -254,10 +381,10 @@ async def test_stale_check_skips_notification_when_disable_reenable_during_send(
         patch.object(monitor, "_persist_state", AsyncMock()) as persist,
     ):
         stale_task = asyncio.create_task(monitor._check_user_dynamic("111"))
-        await send_started.wait()
+        await asyncio.wait_for(send_started.wait(), timeout=2)
 
         monitor._remove_uid("111")
-        monitor.config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+        monitor.config = Config(dynamic_monitor_mapping={"111": ["1001"]})
         monitor._bump_check_generation("111")
         monitor.last_dynamic_ids["111"] = 0
         monitor.initialized_uids["111"] = False
@@ -316,7 +443,7 @@ async def test_stale_check_skips_pinned_notification_after_disable_reenable_duri
         await pinned_notify_started.wait()
 
         monitor._remove_uid("111")
-        monitor.config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+        monitor.config = Config(dynamic_monitor_mapping={"111": ["1001"]})
         monitor._bump_check_generation("111")
         monitor.pinned_dynamic_ids["111"] = 42
         monitor.last_dynamic_ids["111"] = 100
@@ -337,7 +464,7 @@ async def test_reload_config_removes_deleted_uid_runtime_state(
     monitor = _make_monitor(Config, DynamicMonitor, ["111", "222"])
 
     reduced_config = Config(
-        dynamic_monitor_mapping={"222": ["group1"]},
+        dynamic_monitor_mapping={"222": ["1001"]},
     )
 
     with (
@@ -367,7 +494,7 @@ async def test_reenabled_uid_treated_as_new_after_reload_removal(
     monitor = _make_monitor(Config, DynamicMonitor, ["111"])
 
     disabled_config = Config(dynamic_monitor_mapping={})
-    reenabled_config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+    reenabled_config = Config(dynamic_monitor_mapping={"111": ["1001"]})
 
     with (
         patch(
@@ -456,7 +583,7 @@ async def _run_stale_check_during_disable_reenable_via_reload_config(
 ) -> tuple[AsyncMock, AsyncMock]:
     """在 fetch 进行中通过 reload_config 模拟停用→重启用，等待过期检查完成。"""
     disabled_config = Config(dynamic_monitor_mapping={})
-    reenabled_config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+    reenabled_config = Config(dynamic_monitor_mapping={"111": ["1001"]})
 
     fetch_started = asyncio.Event()
     release_fetch = asyncio.Event()
@@ -568,7 +695,7 @@ async def test_reenabled_uid_reset_after_stale_inflight_check_repollutes_memory(
     monitor = _make_monitor(Config, DynamicMonitor, ["111"])
 
     disabled_config = Config(dynamic_monitor_mapping={})
-    reenabled_config = Config(dynamic_monitor_mapping={"111": ["group1"]})
+    reenabled_config = Config(dynamic_monitor_mapping={"111": ["1001"]})
 
     with (
         patch(
@@ -620,7 +747,7 @@ async def test_reload_config_deletes_persisted_state_for_removed_uid(
     monitor = _make_monitor(Config, DynamicMonitor, ["111", "222"])
 
     reduced_config = Config(
-        dynamic_monitor_mapping={"222": ["group1"]},
+        dynamic_monitor_mapping={"222": ["1001"]},
     )
 
     with (
@@ -648,7 +775,7 @@ async def test_start_dynamic_monitor_registers_config_reload_once(
     monitor_mod._config_reload_registered = False
     monitor_mod.dynamic_monitor_instance = None
 
-    config = _Config(dynamic_monitor_mapping={"111": ["group1"]})
+    config = _Config(dynamic_monitor_mapping={"111": ["1001"]})
     fake_monitor = AsyncMock()
     fake_monitor.start_monitoring = AsyncMock()
 

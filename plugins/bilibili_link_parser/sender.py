@@ -200,6 +200,24 @@ def split_media_and_caption(message: Message) -> tuple[Message, Message]:
     return media, caption
 
 
+def official_reply_message(message: Message, remaining: int) -> Message:
+    """保留一条文案预算，超出官方群/C2C 次数的媒体提示用户查看原内容。"""
+    if remaining <= 0:
+        return Message()
+    media, text = split_media_and_caption(message)
+    caption = text.extract_plain_text()
+    limit = remaining - 1 if caption or len(media) > remaining else remaining
+    omitted = max(0, len(media) - limit)
+    if omitted:
+        caption = (
+            f"官方 Bot 回复次数有限，另有 {omitted} 项媒体请查看原链接。\n{caption}"
+        )
+    parts = list(media[:limit])
+    if caption.strip():
+        parts.append(MessageSegment.text(caption))
+    return Message(parts)
+
+
 def _chunk_media(media: Message, *, size: int = MAX_MEDIA_PER_MESSAGE) -> list[Message]:
     chunks: list[Message] = []
     current = Message()

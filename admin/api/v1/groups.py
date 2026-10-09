@@ -22,6 +22,10 @@ from admin.schemas.status_check import (
     GroupStatusPolicyUpdateRequest,
     StatusCheckDisplayOptions,
 )
+from admin.services.message_policy import (
+    ensure_message_policy_edit_allowed,
+    visible_message_policy_rows,
+)
 from admin.services.onebot_bridge import (
     get_group_list,
     get_group_list_with_availability,
@@ -45,15 +49,6 @@ def _group_list_available(status: str) -> bool:
     return status == "ok"
 
 
-async def _ensure_group_list_complete_for_mutation() -> None:
-    _, fetch_status = await get_group_list_with_status()
-    if fetch_status != "ok":
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="群列表不完整，暂不可修改策略",
-        )
-
-
 @router.get("", response_model=GroupListResponse)
 async def list_groups(_: AdminUser):
     groups = await get_group_list()
@@ -68,8 +63,11 @@ async def get_message_policy(_: AdminUser):
     return GroupMessagePolicyResponse(
         restrict=snap.message_group_restrict,
         enabled_group_ids=snap.message_enabled_group_ids,
-        groups=[] if fetch_status == "offline" else [GroupInfo(**g) for g in groups],
+        groups=[
+            GroupInfo(**g) for g in visible_message_policy_rows(groups, fetch_status)
+        ],
         group_list_available=available,
+        onebot_list_status=fetch_status,
     )
 
 
@@ -78,11 +76,21 @@ async def update_message_policy(
     body: GroupMessagePolicyUpdateRequest,
     _: AdminUser,
 ):
-    await _ensure_group_list_complete_for_mutation()
     svc = get_config_service()
+    groups, fetch_status = await get_group_list_with_status()
+    snap = svc.get_snapshot()
     enabled_ids = [
         str(gid).strip() for gid in body.enabled_group_ids if str(gid).strip()
     ]
+    ensure_message_policy_edit_allowed(
+        fetch_status=fetch_status,
+        rows=groups,
+        id_key="group_id",
+        current_restrict=snap.message_group_restrict,
+        current_ids=snap.message_enabled_group_ids,
+        restrict=body.restrict,
+        enabled_ids=enabled_ids,
+    )
     await svc.set_settings(
         {
             "message_group_restrict": str(body.restrict).lower(),
@@ -96,8 +104,11 @@ async def update_message_policy(
     return GroupMessagePolicyResponse(
         restrict=snap.message_group_restrict,
         enabled_group_ids=snap.message_enabled_group_ids,
-        groups=[] if fetch_status == "offline" else [GroupInfo(**g) for g in groups],
+        groups=[
+            GroupInfo(**g) for g in visible_message_policy_rows(groups, fetch_status)
+        ],
         group_list_available=_group_list_available(fetch_status),
+        onebot_list_status=fetch_status,
     )
 
 

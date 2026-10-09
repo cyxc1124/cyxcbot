@@ -1,16 +1,22 @@
 """X 推文消息发送模块。"""
 
+from collections.abc import Callable
+from hashlib import sha256
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Union
 
-from nonebot import get_driver
-from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.log import logger
 
+from shared.adapter.bots import iter_onebot_bots, messaging_bots
+from shared.adapter.ids import is_numeric_qq_id
+from shared.adapter.outbound import convert_onebot_message, send_group, send_user
+from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.message_templates import XMessageTemplates
 from shared.notify.at_all import X_AT_ALL_FALLBACK, resolve_at_all_prefix
 from shared.notify.delivery import (
+    DeliveryCancelledError,
+    DeliveryProgressCallback,
     DeliveryResult,
     TargetDelivery,
     empty_delivery_result,
@@ -22,7 +28,6 @@ from utils.x_api.models import TweetMediaItem
 from .delivery_retry import (
     batch_plan_fingerprint,
     normalize_batch_start,
-    parse_resume_from,
 )
 
 SegmentPart = Union[MessageSegment, str]
@@ -58,21 +63,16 @@ class XSender:
         )
 
     def plan_fingerprint(
-        self, message: Message, *, at_all_enabled: bool = False
+        self,
+        message: Message,
+        *,
+        at_all_enabled: bool = False,
+        expected_fingerprint: str = "",
     ) -> str:
-        del at_all_enabled  # 指纹只描述 reply_batches；@全体是发送时额外前缀批
         batches = reply_batches(message) or ([message] if message else [])
-        return batch_plan_fingerprint(
-            [_batch_kind_key(batch) for batch in batches],
-            at_all=False,
+        return _plan_fingerprint(
+            batches, at_all_enabled=at_all_enabled, expected=expected_fingerprint
         )
-
-    def _valid_bots(self) -> List[Tuple[str, Bot]]:
-        return [
-            (bot_id, bot)
-            for bot_id, bot in get_driver().bots.items()
-            if isinstance(bot, Bot)
-        ]
 
     async def send_to_groups(
         self,
@@ -82,6 +82,8 @@ class XSender:
         at_all_enabled: bool = False,
         start_by_target: Optional[Dict[str, int]] = None,
         expected_fingerprint: str = "",
+        on_progress: DeliveryProgressCallback | None = None,
+        is_target_active: Callable[[str, str], bool] | None = None,
     ) -> DeliveryResult:
         if not group_ids:
             return empty_delivery_result()
@@ -89,14 +91,13 @@ class XSender:
         batches = reply_batches(message)
         if not batches:
             batches = [message]
-        plan_fp = batch_plan_fingerprint(
-            [_batch_kind_key(batch) for batch in batches], at_all=False
-        )
         expected_fp = (expected_fingerprint or "").strip()
+        plan_fp = _plan_fingerprint(
+            batches, at_all_enabled=at_all_enabled, expected=expected_fp
+        )
 
-        valid_bots = self._valid_bots()
         starts = start_by_target or {}
-        if not valid_bots:
+        if not messaging_bots():
             return DeliveryResult(
                 targets=[
                     TargetDelivery(
@@ -112,27 +113,27 @@ class XSender:
 
         targets: List[TargetDelivery] = []
         for group_id in group_ids:
+            if is_target_active is not None and not is_target_active("group", group_id):
+                continue
             start = max(0, int(starts.get(group_id, 0) or 0))
-            delivery = TargetDelivery("group", group_id, False, "没有可用的机器人实例")
-            for _, bot in valid_bots:
-                delivery = await self._send_group_via_bot(
-                    bot,
+            targets.append(
+                await self._send_group_batches(
                     group_id,
                     batches,
                     start=start,
                     at_all_enabled=at_all_enabled,
                     expected_fingerprint=expected_fp,
                     actual_fingerprint=plan_fp,
+                    on_progress=on_progress,
+                    can_send=(lambda target=group_id: is_target_active("group", target))
+                    if is_target_active is not None
+                    else None,
                 )
-                if delivery.success:
-                    break
-                start = parse_resume_from(delivery.error)
-            targets.append(delivery)
+            )
         return DeliveryResult(targets=targets)
 
-    async def _send_group_via_bot(
+    async def _send_group_batches(
         self,
-        bot: Bot,
         group_id: str,
         batches: List[Message],
         *,
@@ -140,16 +141,33 @@ class XSender:
         at_all_enabled: bool = False,
         expected_fingerprint: str = "",
         actual_fingerprint: str = "",
+        on_progress: DeliveryProgressCallback | None = None,
+        can_send: Callable[[], bool] | None = None,
     ) -> TargetDelivery:
         prepared: list[Message] = list(batches)
         if at_all_enabled:
-            prefix = await resolve_at_all_prefix(
-                bot,
-                group_id,
-                enabled=True,
-                fallback=X_AT_ALL_FALLBACK,
-            )
+            prefix = Message(f"{X_AT_ALL_FALLBACK} ")
+            if is_numeric_qq_id(group_id):
+                onebot_bots = iter_onebot_bots()
+                if onebot_bots:
+                    prefix = await resolve_at_all_prefix(
+                        onebot_bots[0],
+                        group_id,
+                        enabled=True,
+                        fallback=X_AT_ALL_FALLBACK,
+                    )
             prepared = [prefix, *batches]
+        if not is_numeric_qq_id(group_id):
+            return await self._send_official_batches(
+                group_id,
+                "group",
+                prepared,
+                start=start,
+                expected_fingerprint=expected_fingerprint,
+                actual_fingerprint=actual_fingerprint,
+                on_progress=on_progress,
+                can_send=can_send,
+            )
         ok, start, stale_error = normalize_batch_start(
             start,
             len(prepared),
@@ -166,12 +184,14 @@ class XSender:
         sent = start
         try:
             for index in range(start, len(prepared)):
-                await bot.send_group_msg(
-                    group_id=int(group_id), message=prepared[index]
-                )
+                await send_group(group_id, prepared[index], can_send=can_send)
                 sent = index + 1
+                if on_progress is not None:
+                    await on_progress("group", group_id, sent)
             logger.info("X 推文消息已发送到群组 {}", group_id)
             return TargetDelivery("group", group_id, True)
+        except (LoggedQQApiError, DeliveryCancelledError) as exc:
+            return TargetDelivery("group", group_id, False, f"resume_from:{sent}:{exc}")
         except Exception as exc:
             logger.opt(exception=True).error(
                 "发送消息到群组 {} 失败（已发 {}/{}）",
@@ -188,6 +208,9 @@ class XSender:
         *,
         start_by_target: Optional[Dict[str, int]] = None,
         expected_fingerprint: str = "",
+        at_all_enabled: bool = False,
+        on_progress: DeliveryProgressCallback | None = None,
+        is_target_active: Callable[[str, str], bool] | None = None,
     ) -> DeliveryResult:
         if not user_ids:
             return empty_delivery_result()
@@ -195,14 +218,13 @@ class XSender:
         batches = reply_batches(message)
         if not batches:
             batches = [message]
-        plan_fp = batch_plan_fingerprint(
-            [_batch_kind_key(batch) for batch in batches], at_all=False
-        )
         expected_fp = (expected_fingerprint or "").strip()
+        plan_fp = _plan_fingerprint(
+            batches, at_all_enabled=at_all_enabled, expected=expected_fp
+        )
 
-        valid_bots = self._valid_bots()
         starts = start_by_target or {}
-        if not valid_bots:
+        if not messaging_bots():
             return DeliveryResult(
                 targets=[
                     TargetDelivery(
@@ -218,33 +240,46 @@ class XSender:
 
         targets: List[TargetDelivery] = []
         for user_id in user_ids:
+            if is_target_active is not None and not is_target_active("user", user_id):
+                continue
             start = max(0, int(starts.get(user_id, 0) or 0))
-            delivery = TargetDelivery("user", user_id, False, "没有可用的机器人实例")
-            for _, bot in valid_bots:
-                delivery = await self._send_user_via_bot(
-                    bot,
+            targets.append(
+                await self._send_user_batches(
                     user_id,
                     batches,
                     start=start,
                     expected_fingerprint=expected_fp,
                     actual_fingerprint=plan_fp,
+                    on_progress=on_progress,
+                    can_send=(lambda target=user_id: is_target_active("user", target))
+                    if is_target_active is not None
+                    else None,
                 )
-                if delivery.success:
-                    break
-                start = parse_resume_from(delivery.error)
-            targets.append(delivery)
+            )
         return DeliveryResult(targets=targets)
 
-    async def _send_user_via_bot(
+    async def _send_user_batches(
         self,
-        bot: Bot,
         user_id: str,
         batches: List[Message],
         *,
         start: int = 0,
         expected_fingerprint: str = "",
         actual_fingerprint: str = "",
+        on_progress: DeliveryProgressCallback | None = None,
+        can_send: Callable[[], bool] | None = None,
     ) -> TargetDelivery:
+        if not is_numeric_qq_id(user_id):
+            return await self._send_official_batches(
+                user_id,
+                "user",
+                batches,
+                start=start,
+                expected_fingerprint=expected_fingerprint,
+                actual_fingerprint=actual_fingerprint,
+                on_progress=on_progress,
+                can_send=can_send,
+            )
         ok, start, stale_error = normalize_batch_start(
             start,
             len(batches),
@@ -261,10 +296,14 @@ class XSender:
         sent = start
         try:
             for index in range(start, len(batches)):
-                await bot.send_private_msg(user_id=int(user_id), message=batches[index])
+                await send_user(user_id, batches[index], can_send=can_send)
                 sent = index + 1
+                if on_progress is not None:
+                    await on_progress("user", user_id, sent)
             logger.info("X 推文消息已发送到好友 {}", user_id)
             return TargetDelivery("user", user_id, True)
+        except (LoggedQQApiError, DeliveryCancelledError) as exc:
+            return TargetDelivery("user", user_id, False, f"resume_from:{sent}:{exc}")
         except Exception as exc:
             logger.opt(exception=True).error(
                 "发送消息到好友 {} 失败（已发 {}/{}）",
@@ -273,6 +312,58 @@ class XSender:
                 len(batches),
             )
             return TargetDelivery("user", user_id, False, f"resume_from:{sent}:{exc}")
+
+    async def _send_official_batches(
+        self,
+        target_id: str,
+        target_type: str,
+        batches: List[Message],
+        *,
+        start: int,
+        expected_fingerprint: str,
+        actual_fingerprint: str,
+        on_progress: DeliveryProgressCallback | None,
+        can_send: Callable[[], bool] | None = None,
+    ) -> TargetDelivery:
+        message = Message([segment for batch in batches for segment in batch])
+        part_count = len(convert_onebot_message(message))
+        ok, start, error = normalize_batch_start(
+            start,
+            part_count,
+            expected_fingerprint=expected_fingerprint,
+            actual_fingerprint=actual_fingerprint,
+        )
+        if not ok:
+            return TargetDelivery(target_type, target_id, False, error)
+        sent = start
+
+        async def checkpoint(next_part: int) -> None:
+            nonlocal sent
+            sent = next_part
+            if on_progress is not None:
+                await on_progress(target_type, target_id, next_part)
+
+        try:
+            if start < part_count:
+                send = send_group if target_type == "group" else send_user
+                await send(
+                    target_id,
+                    message,
+                    start=start,
+                    on_part_sent=checkpoint,
+                    can_send=can_send,
+                )
+            logger.info("X 推文消息已发送到官方会话 {}", target_id)
+            return TargetDelivery(target_type, target_id, True)
+        except (LoggedQQApiError, DeliveryCancelledError) as exc:
+            return TargetDelivery(
+                target_type, target_id, False, f"resume_from:{sent}:{exc}"
+            )
+        except Exception as exc:
+            logger.opt(exception=True).error("发送 X 消息到官方会话 {} 失败", target_id)
+            return TargetDelivery(
+                target_type, target_id, False, f"resume_from:{sent}:{exc}"
+            )
 
     async def send_message(
         self,
@@ -284,6 +375,8 @@ class XSender:
         group_starts: Optional[Dict[str, int]] = None,
         user_starts: Optional[Dict[str, int]] = None,
         expected_fingerprint: str = "",
+        on_progress: DeliveryProgressCallback | None = None,
+        is_target_active: Callable[[str, str], bool] | None = None,
     ) -> DeliveryResult:
         group_result = await self.send_to_groups(
             message,
@@ -291,14 +384,29 @@ class XSender:
             at_all_enabled=at_all_enabled,
             start_by_target=group_starts,
             expected_fingerprint=expected_fingerprint,
+            on_progress=on_progress,
+            is_target_active=is_target_active,
         )
         user_result = await self.send_to_users(
             message,
             user_ids,
             start_by_target=user_starts,
             expected_fingerprint=expected_fingerprint,
+            at_all_enabled=at_all_enabled,
+            on_progress=on_progress,
+            is_target_active=is_target_active,
         )
         return group_result.merge(user_result)
+
+
+def _plan_fingerprint(
+    batches: List[Message], *, at_all_enabled: bool, expected: str = ""
+) -> str:
+    legacy = batch_plan_fingerprint([_batch_kind_key(batch) for batch in batches])
+    # 升级前的 pending 仍按旧指纹续传；新进度同时校验群前缀策略。
+    if expected and not expected.startswith("v2:"):
+        return legacy
+    return "v2:" + sha256(f"{at_all_enabled}:{legacy}".encode()).hexdigest()
 
 
 def _video_parts(file_path: Path) -> Iterable[SegmentPart]:

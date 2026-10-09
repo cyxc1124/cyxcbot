@@ -88,3 +88,12 @@ def test_reply_batches_keeps_trailing_text_after_videos(tmp_path: Path):
     assert batches[0].extract_plain_text() == "leading"
     assert batches[1][0].type == "video"
     assert batches[2].extract_plain_text() == "https://x.com/a/status/1"
+
+
+def test_new_progress_fingerprint_includes_group_prefix_policy():
+    sender = _load_sender().XSender()
+    message = Message("caption")
+    assert sender.plan_fingerprint(message).startswith("v2:")
+    assert sender.plan_fingerprint(message) != sender.plan_fingerprint(
+        message, at_all_enabled=True
+    )

@@ -50,6 +50,22 @@ def cookie_header(cookies: Mapping[Any, Any]) -> str:
     return "; ".join(f"{key}={value}" for key, value in sanitized.items() if value)
 
 
+def cookie_value(cookies: Mapping[Any, Any], *names: str) -> str:
+    """Return the first non-empty cookie value, matching names case-insensitively."""
+    if not cookies or not names:
+        return ""
+    lowered = {
+        str(key).lower(): str(value).strip()
+        for key, value in cookies.items()
+        if key is not None and value is not None and str(value).strip()
+    }
+    for name in names:
+        value = lowered.get(str(name).lower(), "")
+        if value:
+            return value
+    return ""
+
+
 def cookies_from_morsels(cookies: object) -> Dict[str, str]:
     if not cookies:
         return {}

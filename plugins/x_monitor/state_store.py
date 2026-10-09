@@ -90,6 +90,8 @@ class XMonitorStateStore:
         async with get_session() as session:
             async with session.begin():
                 row = await session.get(XMonitorState, username)
+                if check_still_valid is not None and not check_still_valid():
+                    return
                 if not row:
                     row = XMonitorState(username=username)
                     session.add(row)

@@ -8,9 +8,57 @@ from typing import List, Literal
 from nonebot import get_bots
 from nonebot.log import logger
 
+from shared.adapter.bots import is_console_bot, is_official_qq_bot
+from shared.adapter.sessions import (
+    list_sessions,
+    session_rows_as_friends,
+    session_rows_as_groups,
+)
+
+
+def _onebot_bots() -> dict:
+    return {
+        sid: bot
+        for sid, bot in get_bots().items()
+        if not is_console_bot(bot) and not is_official_qq_bot(bot)
+    }
+
+
 OneBotListFetchStatus = Literal["ok", "offline", "incomplete"]
 # Backward-compatible alias for friend-list callers/tests.
 FriendListFetchStatus = OneBotListFetchStatus
+
+
+async def _merge_official_groups(groups: List[dict]) -> List[dict]:
+    for group in groups:
+        group.setdefault("source", "onebot")
+    try:
+        extra = session_rows_as_groups(await list_sessions("group"))
+    except Exception:
+        logger.debug("读取官方群会话缓存失败")
+        return groups
+    seen = {group["group_id"] for group in groups}
+    for item in extra:
+        if item["group_id"] not in seen:
+            groups.append(item)
+            seen.add(item["group_id"])
+    return groups
+
+
+async def _merge_official_friends(users: List[dict]) -> List[dict]:
+    for user in users:
+        user.setdefault("source", "onebot")
+    try:
+        extra = session_rows_as_friends(await list_sessions("c2c"))
+    except Exception:
+        logger.debug("读取官方好友会话缓存失败")
+        return users
+    seen = {user["user_id"] for user in users}
+    for item in extra:
+        if item["user_id"] not in seen:
+            users.append(item)
+            seen.add(item["user_id"])
+    return users
 
 
 async def get_group_list_with_status() -> tuple[List[dict], OneBotListFetchStatus]:
@@ -22,10 +70,10 @@ async def get_group_list_with_status() -> tuple[List[dict], OneBotListFetchStatu
     - ``incomplete``: at least one bot is connected but a fetch failed
     """
     groups: List[dict] = []
-    bots = get_bots()
+    bots = _onebot_bots()
     if not bots:
         logger.warning("无已连接的 OneBot 机器人，无法获取群列表")
-        return groups, "offline"
+        return await _merge_official_groups(groups), "offline"
 
     success_count = 0
     for bot in bots.values():
@@ -51,6 +99,7 @@ async def get_group_list_with_status() -> tuple[List[dict], OneBotListFetchStatu
             seen.add(gid)
             unique.append(g)
 
+    unique = await _merge_official_groups(unique)
     if success_count == len(bots):
         return unique, "ok"
     return unique, "incomplete"
@@ -114,7 +163,7 @@ async def get_friend_list_with_availability() -> tuple[
     """
     global _FRIEND_LIST_CACHE
     now = time.time()
-    bots = get_bots()
+    bots = _onebot_bots()
     live_bot_ids = frozenset(str(bot.self_id) for bot in bots.values())
 
     if (
@@ -125,7 +174,7 @@ async def get_friend_list_with_availability() -> tuple[
         if not bots:
             _FRIEND_LIST_CACHE = None
             logger.warning("无已连接的 OneBot 机器人，丢弃过期好友列表缓存")
-            return [], "offline"
+            return await _merge_official_friends([]), "offline"
         if live_bot_ids == cached_bot_ids:
             return [dict(user) for user in cached_users], "ok"
         # Bot set changed within TTL — do not trust the previous complete snapshot.
@@ -134,7 +183,7 @@ async def get_friend_list_with_availability() -> tuple[
     users: dict[str, dict] = {}
     if not bots:
         logger.warning("无已连接的 OneBot 机器人，无法获取好友列表")
-        return [], "offline"
+        return await _merge_official_friends([]), "offline"
 
     bot_list = list(bots.values())
     self_ids = set(live_bot_ids)
@@ -152,7 +201,9 @@ async def get_friend_list_with_availability() -> tuple[
         except Exception as exc:
             logger.error("从机器人 {} 获取好友列表失败: {}", bot.self_id, exc)
 
-    result = sorted(users.values(), key=lambda item: item["user_id"])
+    result = await _merge_official_friends(
+        sorted(users.values(), key=lambda item: item["user_id"])
+    )
     if success_count == len(bot_list):
         _FRIEND_LIST_CACHE = (now, result, live_bot_ids)
         return [dict(user) for user in result], "ok"

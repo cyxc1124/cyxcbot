@@ -126,6 +126,10 @@ SETTING_KEYS = {
     "x_proxy_port": ("7890", int),
     "x_proxy_username": ("", str),
     "x_proxy_password_encrypted": ("", str),
+    "official_qq_app_id": ("", str),
+    "official_qq_app_secret_encrypted": ("", str),
+    "official_qq_is_sandbox": ("false", bool),
+    "official_qq_use_websocket": ("false", bool),
 }
 
 for key, default in MESSAGE_TEMPLATE_KEYS.items():
@@ -256,6 +260,16 @@ class ConfigService:
             except ValueError as exc:
                 logger.error("X API Bearer Token 解密失败: {}", exc)
 
+        official_qq_secret_encrypted = settings.get(
+            "official_qq_app_secret_encrypted", ""
+        )
+        official_qq_app_secret = ""
+        if official_qq_secret_encrypted:
+            try:
+                official_qq_app_secret = decrypt_value(official_qq_secret_encrypted)
+            except ValueError as exc:
+                logger.error("官方 Bot AppSecret 解密失败: {}", exc)
+
         x_proxy_password_encrypted = settings.get("x_proxy_password_encrypted", "")
         x_proxy_password = ""
         if x_proxy_password_encrypted:
@@ -362,6 +376,11 @@ class ConfigService:
             x_api_bearer=x_api_bearer,
             x_api_bearer_set=bool(x_api_bearer_encrypted),
             x_proxy=x_proxy,
+            official_qq_app_id=str(settings.get("official_qq_app_id", "") or ""),
+            official_qq_app_secret=official_qq_app_secret,
+            official_qq_app_secret_set=bool(official_qq_secret_encrypted),
+            official_qq_is_sandbox=settings.get("official_qq_is_sandbox", False),
+            official_qq_use_websocket=settings.get("official_qq_use_websocket", False),
         )
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
         warn_rust_rcon_command_alias_conflicts(
@@ -1115,6 +1134,15 @@ class ConfigService:
                 "port": xp.port,
                 "username": xp.username,
                 "password_configured": bool(xp.password),
+            },
+            "official_qq": {
+                "app_id": snap.official_qq_app_id,
+                "secret": {
+                    "configured": snap.official_qq_app_secret_set,
+                    "preview": None,
+                },
+                "is_sandbox": snap.official_qq_is_sandbox,
+                "use_websocket": snap.official_qq_use_websocket,
             },
         }
 

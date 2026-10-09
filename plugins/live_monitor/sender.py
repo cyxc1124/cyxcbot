@@ -4,19 +4,23 @@
 参考 stream_notify 的推送方式实现
 """
 
-import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Dict, Iterable, List, Optional, Tuple, Union
+from functools import partial
+from typing import Iterable, List, Optional, Union
 
-from nonebot import get_driver
-from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.log import logger
 
+from shared.adapter.bots import messaging_bots
+from shared.adapter.outbound import send_group, send_user
+from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.message_templates import LiveMessageTemplates
-from shared.notify.at_all import LIVE_AT_ALL_FALLBACK, bot_can_at_all
+from shared.notify.at_all import LIVE_AT_ALL_FALLBACK
 from shared.notify.delivery import (
+    DeliveryProgressCallback,
     DeliveryResult,
+    PendingDelivery,
     TargetDelivery,
     empty_delivery_result,
 )
@@ -218,40 +222,28 @@ class LiveNotificationSender:
             prefetched_images,
         )
 
-    async def _resolve_at_all_map(
-        self,
-        bot: Bot,
-        target_groups: List[str],
-        *,
-        status: str,
-        at_all_enabled: bool,
-    ) -> Dict[str, bool]:
-        if status != "start" or not at_all_enabled or not target_groups:
-            return {group_id: False for group_id in target_groups}
-
-        results = await asyncio.gather(
-            *[bot_can_at_all(bot, group_id) for group_id in target_groups],
-            return_exceptions=True,
-        )
-        return {
-            group_id: result if isinstance(result, bool) else False
-            for group_id, result in zip(target_groups, results)
-        }
-
     async def _send_group_message(
         self,
-        bot: Bot,
         group_id: str,
         message: Message,
         status: str,
+        *,
+        pending: PendingDelivery,
+        on_part_sent: DeliveryProgressCallback,
     ) -> TargetDelivery:
         try:
-            await bot.send_group_msg(
-                group_id=int(group_id),
-                message=message,
+            await send_group(
+                group_id,
+                message,
+                at_all=pending.at_all,
+                at_all_fallback=LIVE_AT_ALL_FALLBACK,
+                start=pending.group_starts.get(group_id, 0),
+                on_part_sent=partial(on_part_sent, "group", group_id),
             )
             logger.success("直播{}通知已发送到群组 {}", status, group_id)
             return TargetDelivery("group", group_id, True)
+        except LoggedQQApiError as exc:
+            return TargetDelivery("group", group_id, False, str(exc))
         except Exception as exc:
             logger.opt(exception=True).error(
                 "发送通知到群组 {} 失败: {}", group_id, exc
@@ -260,18 +252,24 @@ class LiveNotificationSender:
 
     async def _send_private_message(
         self,
-        bot: Bot,
         user_id: str,
         message: Message,
         status: str,
+        *,
+        pending: PendingDelivery,
+        on_part_sent: DeliveryProgressCallback,
     ) -> TargetDelivery:
         try:
-            await bot.send_private_msg(
-                user_id=int(user_id),
-                message=message,
+            await send_user(
+                user_id,
+                message,
+                start=pending.user_starts.get(user_id, 0),
+                on_part_sent=partial(on_part_sent, "user", user_id),
             )
             logger.success("直播{}通知已发送到好友 {}", status, user_id)
             return TargetDelivery("user", user_id, True)
+        except LoggedQQApiError as exc:
+            return TargetDelivery("user", user_id, False, str(exc))
         except Exception as exc:
             logger.opt(exception=True).error("发送通知到好友 {} 失败: {}", user_id, exc)
             return TargetDelivery("user", user_id, False, str(exc))
@@ -282,63 +280,21 @@ class LiveNotificationSender:
         streamer_name: str,
         room_info: Optional[RoomInfo],
         target_groups: List[str],
+        target_users: Optional[List[str]] = None,
         user_info: Optional[UserInfo] = None,
         duration_seconds: int = 0,
         at_all_enabled: bool = False,
-        target_users: Optional[List[str]] = None,
         prefetched_images: Optional[PrefetchImages] = None,
+        pending: PendingDelivery | None = None,
+        on_prepared: Callable[[PendingDelivery], Awaitable[None]] | None = None,
+        on_part_sent: DeliveryProgressCallback | None = None,
     ) -> DeliveryResult:
-        """发送直播通知到指定群组与好友，返回结构化投递结果。"""
+        """沿目标协议发送开播/下播通知，续传复用已准备的消息。"""
         target_users = target_users or []
         if not target_groups and not target_users:
-            logger.warning("没有配置推送目标，跳过发送通知")
             return empty_delivery_result()
-
-        logger.info(
-            "开始发送直播{}通知 - 主播: {}, 目标群组: {}, 目标好友: {}",
-            status,
-            streamer_name,
-            target_groups,
-            target_users,
-        )
-
-        bots = get_driver().bots
-
-        if not bots:
-            logger.warning("没有可用的机器人实例")
-            return DeliveryResult(
-                targets=[
-                    TargetDelivery("group", group_id, False, "没有可用的机器人实例")
-                    for group_id in target_groups
-                ]
-                + [
-                    TargetDelivery("user", user_id, False, "没有可用的机器人实例")
-                    for user_id in target_users
-                ]
-            )
-
-        valid_bots: List[Tuple[str, Bot]] = [
-            (bot_id, bot) for bot_id, bot in bots.items() if isinstance(bot, Bot)
-        ]
-        if not valid_bots:
-            logger.warning("没有可用的 OneBot 机器人实例")
-            return DeliveryResult(
-                targets=[
-                    TargetDelivery(
-                        "group", group_id, False, "没有可用的 OneBot 机器人实例"
-                    )
-                    for group_id in target_groups
-                ]
-                + [
-                    TargetDelivery(
-                        "user", user_id, False, "没有可用的 OneBot 机器人实例"
-                    )
-                    for user_id in target_users
-                ]
-            )
-
-        parallel_tasks: List = [
-            self._generate_card_if_needed(
+        if pending is None:
+            card = await self._generate_card_if_needed(
                 status,
                 streamer_name,
                 user_info,
@@ -346,94 +302,66 @@ class LiveNotificationSender:
                 duration_seconds,
                 prefetched_images,
             )
-        ]
-        for _, bot in valid_bots:
-            parallel_tasks.append(
-                self._resolve_at_all_map(
-                    bot,
-                    target_groups,
-                    status=status,
-                    at_all_enabled=at_all_enabled,
-                )
-            )
-
-        parallel_results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
-
-        card_image: Optional[bytes] = None
-        card_result = parallel_results[0]
-        if isinstance(card_result, Exception):
-            logger.error("生成直播{}卡片失败: {}", status, card_result)
-        else:
-            card_image = card_result
-
-        at_all_maps: List[Dict[str, bool]] = []
-        for result in parallel_results[1:]:
-            if isinstance(result, Exception):
-                logger.error("查询 @全体 权限失败: {}", result)
-                at_all_maps.append({group_id: False for group_id in target_groups})
-            else:
-                at_all_maps.append(result)
-
-        # 按 Bot 顺序 failover：同一目标只投递给首个成功的 Bot，避免多 Bot 同群/同好友重复推送。
-        targets: List[TargetDelivery] = []
-        for group_id in target_groups:
-            delivery = TargetDelivery("group", group_id, False, "没有可用的机器人实例")
-            for index, (_, bot) in enumerate(valid_bots):
-                at_all_map = (
-                    at_all_maps[index]
-                    if index < len(at_all_maps)
-                    else {group_id: False for group_id in target_groups}
-                )
-                if status == "start":
-                    message = self.build_start_message(
-                        streamer_name=streamer_name,
-                        room_info=room_info,
-                        card_image=card_image,
-                        at_all_enabled=at_all_enabled,
-                        can_at_all=at_all_map.get(group_id, False),
-                    )
-                else:
-                    message = self.build_end_message(
-                        streamer_name=streamer_name,
-                        card_image=card_image,
-                        duration_seconds=duration_seconds,
-                    )
-
-                delivery = await self._send_group_message(
-                    bot, group_id, message, status
-                )
-                if delivery.success:
-                    break
-            targets.append(delivery)
-
-        for user_id in target_users:
             if status == "start":
                 message = self.build_start_message(
-                    streamer_name=streamer_name,
-                    room_info=room_info,
-                    card_image=card_image,
-                    at_all_enabled=False,
-                    can_at_all=False,
+                    streamer_name=streamer_name, room_info=room_info, card_image=card
                 )
             else:
                 message = self.build_end_message(
                     streamer_name=streamer_name,
-                    card_image=card_image,
                     duration_seconds=duration_seconds,
+                    card_image=card,
                 )
+            pending = PendingDelivery(
+                message,
+                list(target_groups),
+                list(target_users),
+                at_all=at_all_enabled and status == "start",
+            )
+        else:
+            pending.groups = [gid for gid in pending.groups if gid in target_groups]
+            pending.users = [uid for uid in pending.users if uid in target_users]
+        if on_prepared is not None:
+            await on_prepared(pending)
+        if not messaging_bots():
+            return DeliveryResult(
+                targets=[
+                    TargetDelivery(kind, target, False, "没有可用的机器人实例")
+                    for kind, ids in (
+                        ("group", pending.groups),
+                        ("user", pending.users),
+                    )
+                    for target in ids
+                ]
+            )
 
-            delivery = TargetDelivery("user", user_id, False, "没有可用的机器人实例")
-            for _, bot in valid_bots:
-                delivery = await self._send_private_message(
-                    bot, user_id, message, status
+        async def checkpoint(kind: str, target: str, next_part: int) -> None:
+            starts = pending.group_starts if kind == "group" else pending.user_starts
+            starts[target] = next_part
+            if on_part_sent is not None:
+                await on_part_sent(kind, target, next_part)
+
+        targets = []
+        for group in pending.groups:
+            targets.append(
+                await self._send_group_message(
+                    group,
+                    pending.message,
+                    status,
+                    pending=pending,
+                    on_part_sent=checkpoint,
                 )
-                if delivery.success:
-                    break
-            targets.append(delivery)
-
-        if not targets:
-            return empty_delivery_result()
-
+            )
+        for user in pending.users:
+            targets.append(
+                await self._send_private_message(
+                    user,
+                    pending.message,
+                    status,
+                    pending=pending,
+                    on_part_sent=checkpoint,
+                )
+            )
         return DeliveryResult(targets=targets)
 
 

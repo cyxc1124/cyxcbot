@@ -10,8 +10,8 @@ interface GroupSelectorProps {
 }
 
 const GROUP_LABELS = {
-  emptyListMessage: '暂无可用群组，请确保机器人已连接 OneBot 并在线。',
-  defaultHelperText: '点击左侧群组添加到推送列表',
+  emptyListMessage: '暂无可用群组。请连接 OneBot，或等官方 Bot 进群/收到消息后刷新。',
+  defaultHelperText: '点击左侧群组添加订阅映射',
   availableSearchPlaceholder: '搜索群名或群号',
   selectedSearchPlaceholder: '搜索已选群名或群号',
   availablePanelTitle: '可选群组',
@@ -28,10 +28,10 @@ export function GroupSelector({ groups, selected, onChange, disabled, helperText
       selected={selected}
       onChange={onChange}
       getId={(group) => group.group_id}
-      getName={(group) => group.group_name}
+      getName={(group) => group.source === 'official' ? `${group.group_name}（官方）` : group.group_name}
       labels={GROUP_LABELS}
       disabled={disabled}
-      helperText={helperText}
+      helperText={`${helperText ?? GROUP_LABELS.defaultHelperText}。动态、直播和 X 可配置官方目标，主动发送能力以平台策略和回执为准。`}
     />
   )
 }

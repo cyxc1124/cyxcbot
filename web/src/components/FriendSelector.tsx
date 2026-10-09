@@ -10,8 +10,8 @@ interface FriendSelectorProps {
 }
 
 const FRIEND_LABELS = {
-  emptyListMessage: '暂无好友数据，请确保机器人已连接 OneBot 且协议端支持 get_friend_list。',
-  defaultHelperText: '点击左侧好友添加到推送列表',
+  emptyListMessage: '暂无好友数据。请连接 OneBot，或等官方 Bot 收到私聊后刷新。',
+  defaultHelperText: '点击左侧好友添加订阅映射',
   availableSearchPlaceholder: '搜索昵称或 QQ 号',
   selectedSearchPlaceholder: '搜索已选昵称或 QQ 号',
   availablePanelTitle: '可选好友',
@@ -34,10 +34,10 @@ export function FriendSelector({
       selected={selected}
       onChange={onChange}
       getId={(friend) => friend.user_id}
-      getName={(friend) => friend.nickname}
+      getName={(friend) => friend.source === 'official' ? `${friend.nickname || friend.user_id}（官方）` : friend.nickname}
       labels={FRIEND_LABELS}
       disabled={disabled}
-      helperText={helperText}
+      helperText={`${helperText ?? FRIEND_LABELS.defaultHelperText}。动态、直播和 X 可配置官方目标，主动发送能力以平台策略和回执为准。`}
     />
   )
 }

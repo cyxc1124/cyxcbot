@@ -16,6 +16,8 @@ sidebar_position: 5
 
 插件以较低优先级监听消息（`priority=4, block=False`），与 [B 站链接解析](./link-parser) 同级，互不阻断。
 
+支持 OneBot 与官方 QQ Bot 的官方群、C2C 会话。官方会话会在收到事件后缓存；先打开「群消息」或「好友消息」总开关，再启用该会话的抖音链接策略。默认不会自动启用。
+
 ## 支持内容
 
 | 类型 | 说明 |
@@ -37,9 +39,11 @@ sidebar_position: 5
 | **设置 → 抖音 → 账号** | 扫码登录（Playwright）或粘贴 Cookie；与 B 站账号相互独立 |
 | **抖音 → 消息模板** | `link_template_douyin` |
 
-Cookie **非硬性必填**：未配置时仍会尝试游客态解析（日志中有提示）。建议配置登录态（如含 `ttwid` / `odin_tt` / `passport_csrf_token`）；`msToken` 可缺省并由程序自动生成。
+Cookie **非硬性必填**：未配置时仍会尝试游客态解析（日志中有提示）。建议配置登录态（如含 `ttwid` / `odin_tt` / `passport_csrf_token` / `UIFID`）；`msToken` 可缺省并由程序自动生成。扫码登录会带上 `UIFID`。详情接口经 Argus 网关，缺 `UIFID` 或只发空 `uifid=` 会直接 403。
 
 扫码登录依赖本机 / 镜像内已安装的 Chromium（见 [本地开发](../getting-started/local-dev)）。
+
+策略列表按行显示 OneBot / 官方 QQ 来源。没有 OneBot 连接或 OneBot 列表不完整时，已缓存的官方会话仍可开启、关闭；数字 QQ 策略只读，未缓存的 OpenID 不可配置。
 
 ## 消息模板
 
@@ -59,4 +63,5 @@ Cookie **非硬性必填**：未配置时仍会尝试游客态解析（日志中
 
 - 须同时满足：群/好友**消息守卫**开启，且该会话的**抖音链接**策略开启
 - 大图集会拆成多条消息；发送失败时请查看 `/logs` 或磁盘日志中的协议端返回
+- 官方 QQ 被动回复按当前平台规则限制为官方群五次、C2C 四次：超预算的静态图合成带序号的预览，Live 图仍按视频发送；预算内未回传的媒体数量会在文案中提示。媒体和生成的预览在成功、拒绝或取消后清理。
 - 部分协议端 `message_id` 可能为负数，本插件将其视为发送成功（与 LuckyLilliaBot / LLOneBot 行为对齐）

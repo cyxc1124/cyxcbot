@@ -136,6 +136,26 @@ def test_normalize_batch_start_rejects_stale_plan():
     assert ok is True and start == 1
 
 
+def test_completed_checkpoint_requires_matching_plan():
+    delivery_retry = _load_delivery_retry()
+    assert delivery_retry.normalize_batch_start(
+        2, 2, expected_fingerprint="v2:known", actual_fingerprint="v2:known"
+    ) == (True, 2, None)
+
+
+def test_terminal_official_rejection_does_not_stall_other_targets():
+    delivery_retry = _load_delivery_retry()
+    result = DeliveryResult(
+        targets=[
+            TargetDelivery("group", "g-openid", False, "resume_from:1:40034105 无权限"),
+            TargetDelivery(
+                "user", "u-openid", False, "resume_from:2:50055001 暂时失败"
+            ),
+        ]
+    )
+    assert delivery_retry.failed_targets_with_resume(result) == ([], [("u-openid", 2)])
+
+
 def test_batch_plan_fingerprint():
     delivery_retry = _load_delivery_retry()
     assert delivery_retry.batch_plan_fingerprint(["v", "i", "v"]) == "v|i|v"

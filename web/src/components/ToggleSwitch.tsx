@@ -2,15 +2,17 @@ interface ToggleSwitchProps {
   checked: boolean
   onChange: (checked: boolean) => void
   disabled?: boolean
+  ariaLabelledBy?: string
 }
 
 /** iOS-style switch: systemGreen when on, system gray track when off. */
-export function ToggleSwitch({ checked, onChange, disabled }: ToggleSwitchProps) {
+export function ToggleSwitch({ checked, onChange, disabled, ariaLabelledBy }: ToggleSwitchProps) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-labelledby={ariaLabelledBy}
       disabled={disabled}
       onClick={(event) => {
         event.stopPropagation()

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -13,11 +13,14 @@ class DouyinLinkParserGroupPolicyItem(BaseModel):
     member_count: Optional[int] = None
     customized: bool
     enabled: bool
+    source: Literal["onebot", "official"] = "onebot"
+    editable: bool = True
 
 
 class DouyinLinkParserGroupPolicyListResponse(BaseModel):
     groups: List[DouyinLinkParserGroupPolicyItem]
     group_list_available: bool = True
+    onebot_list_status: Literal["ok", "offline", "incomplete"] = "ok"
 
 
 class DouyinLinkParserGroupPolicyMutationResponse(BaseModel):
@@ -34,11 +37,14 @@ class DouyinLinkParserUserPolicyItem(BaseModel):
     name: Optional[str] = None
     customized: bool
     enabled: bool
+    source: Literal["onebot", "official"] = "onebot"
+    editable: bool = True
 
 
 class DouyinLinkParserUserPolicyListResponse(BaseModel):
     users: List[DouyinLinkParserUserPolicyItem]
     friend_list_available: bool = True
+    onebot_list_status: Literal["ok", "offline", "incomplete"] = "ok"
 
 
 class DouyinLinkParserUserPolicyMutationResponse(BaseModel):

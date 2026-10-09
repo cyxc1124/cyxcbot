@@ -6,17 +6,20 @@ UP主动态监控核心模块
 import asyncio
 from collections import defaultdict
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Dict, List, Optional, Set
 
 import aiohttp
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.log import logger
 
+from shared.adapter.qq_errors import is_terminal_qq_error_text
 from shared.config.service import get_config_service
 from shared.monitor.background_task import spawn_background_task
 from shared.monitor.check_cycle import CheckCycleLogger
 from shared.monitor.concurrency import run_with_concurrency
 from shared.monitor.poll_schedule import compute_dynamic_poll_schedule
+from shared.notify.delivery import PendingDelivery
 from utils.bilibili_api import DynamicFetcher
 from utils.screenshot import (
     close_screenshot_service,
@@ -99,6 +102,8 @@ class DynamicMonitor:
         self._screenshot_semaphore = asyncio.Semaphore(_SCREENSHOT_CONCURRENCY)
         self._screenshot_queue_semaphore = asyncio.Semaphore(_SCREENSHOT_QUEUE_MAX)
         self._state_store = DynamicMonitorStateStore()
+        # uid, dynamic_id, is_pinned -> 尚未成功的群/好友。重试不再发给已成功目标。
+        self._pending_targets: Dict[tuple[str, int | str, bool], PendingDelivery] = {}
 
     def _touch_last_check_at(self) -> None:
         self.last_check_at = datetime.now().isoformat(timespec="seconds")
@@ -125,6 +130,10 @@ class DynamicMonitor:
         self.initialized_uids.pop(uid, None)
         self.pinned_dynamic_ids.pop(uid, None)
         self._delivery_locks.pop(uid, None)
+        pending_targets = getattr(self, "_pending_targets", None)
+        if pending_targets is not None:
+            for key in [key for key in pending_targets if key[0] == uid]:
+                pending_targets.pop(key, None)
 
     def _spawn_delivery_task(self, coro, *, name: str = "动态投递") -> None:
         spawn_background_task(name, coro, tasks=self._delivery_tasks)
@@ -188,6 +197,7 @@ class DynamicMonitor:
             last_dynamic_ids=self.last_dynamic_ids,
             initialized_uids=self.initialized_uids,
             pinned_dynamic_ids=self.pinned_dynamic_ids,
+            pending_targets=self._pending_targets,
         )
 
     async def _persist_state(self, uid: str, *, check_generation: Optional[int] = None):
@@ -203,6 +213,14 @@ class DynamicMonitor:
             last_dynamic_ids=self.last_dynamic_ids,
             initialized_uids=self.initialized_uids,
             pinned_dynamic_ids=self.pinned_dynamic_ids,
+            pending_targets=self._pending_targets,
+            check_still_valid=lambda: (
+                self._is_active_uid(uid)
+                and (
+                    check_generation is None
+                    or self._check_still_valid(uid, check_generation)
+                )
+            ),
         )
 
     async def reload_config(self):
@@ -448,10 +466,30 @@ class DynamicMonitor:
             return True
 
         dynamics, new_pinned_id = result
+        stale_pinned = [
+            key
+            for key in self._pending_targets
+            if key[0] == uid and key[2] and key[1] != new_pinned_id
+        ]
+        for key in stale_pinned:
+            self._pending_targets.pop(key)
 
         # 检查是否有新动态
         last_dynamic_id = self.last_dynamic_ids.get(uid, 0)
         new_dynamics = collect_new_dynamics(dynamics, last_dynamic_id)
+        # feed 可能已翻页或删除动态；已有快照仍应先完成投递。
+        pending_ids = sorted(
+            {
+                key[1]
+                for key in self._pending_targets
+                if key[0] == uid and not key[2] and key[1] > last_dynamic_id
+            }
+        )
+        if pending_ids:
+            new_dynamics = [
+                SimpleNamespace(id=dynamic_id, timestamp=0)
+                for dynamic_id in pending_ids
+            ] + [dynamic for dynamic in new_dynamics if dynamic.id not in pending_ids]
 
         # 首次检查只记录基准状态，不推送（避免启动时刷屏）
         # 注意：不能用 last_dynamic_id == 0 判断，无动态用户的基准 ID 也会一直是 0
@@ -495,6 +533,11 @@ class DynamicMonitor:
             # 只有当前置顶动态ID存在且有变化时，才推送置顶动态通知
             if should_notify_pinned_change(new_pinned_id, current_pinned_id):
                 pinned_dynamic = find_pinned_dynamic(dynamics, new_pinned_id)
+                if (
+                    pinned_dynamic is None
+                    and (uid, new_pinned_id, True) in self._pending_targets
+                ):
+                    pinned_dynamic = SimpleNamespace(id=new_pinned_id)
                 if pinned_dynamic:
                     if not self._check_still_valid(uid, check_generation):
                         return True
@@ -530,7 +573,7 @@ class DynamicMonitor:
                     uid, to_deliver, check_generation, persist_pinned=pinned_updated
                 )
             )
-        elif pinned_updated:
+        elif pinned_updated or stale_pinned:
             if not self._check_still_valid(uid, check_generation):
                 return True
             await self._persist_state(uid, check_generation=check_generation)
@@ -573,6 +616,8 @@ class DynamicMonitor:
             ):
                 if delivered_dynamic_ids:
                     self.last_dynamic_ids[uid] = max(delivered_dynamic_ids)
+                    for dynamic_id in delivered_dynamic_ids:
+                        self._pending_targets.pop((uid, dynamic_id, False), None)
                 await self._persist_state(uid, check_generation=check_generation)
 
     async def _deliver_pinned_change(
@@ -603,6 +648,7 @@ class DynamicMonitor:
             if not self._check_still_valid(uid, check_generation):
                 return
             self.pinned_dynamic_ids[uid] = new_pinned_id
+            self._pending_targets.pop((uid, pinned_dynamic.id, True), None)
             await self._persist_state(uid, check_generation=check_generation)
 
     async def _fetch_dynamic_screenshot(
@@ -676,83 +722,144 @@ class DynamicMonitor:
         *,
         check_generation: Optional[int] = None,
     ) -> bool:
-        """发送动态通知，全部目标投递成功时返回 True。"""
+        """发送动态通知；重试复用消息快照，并跳过已确认发送的分段。"""
         if check_generation is not None and not self._check_still_valid(
             uid, check_generation
         ):
             return False
 
-        # 获取真实的用户名（feed / 缓存 / API）
-        dynamic.name = await self._resolve_author_name(dynamic)
-        if check_generation is not None and not self._check_still_valid(
-            uid, check_generation
-        ):
-            return False
-        logger.info("发现新动态: {} - {}", dynamic.name, dynamic.get_type_description())
+        pending_key = (uid, dynamic.id, is_pinned)
+        pending_targets = self.__dict__.setdefault("_pending_targets", {})
+        pending = pending_targets.get(pending_key)
+        if pending is None:
+            if not self.config.dynamic_monitor_mapping.get(
+                uid, []
+            ) and not self.config.dynamic_monitor_user_mapping.get(uid, []):
+                logger.warning("UP主 {} 没有配置推送目标", uid)
+                return False
 
-        screenshot_image = await self._fetch_dynamic_screenshot(
-            dynamic, uid=uid, check_generation=check_generation
-        )
-        if check_generation is not None and not self._check_still_valid(
-            uid, check_generation
-        ):
-            return False
+            dynamic.name = await self._resolve_author_name(dynamic)
+            if check_generation is not None and not self._check_still_valid(
+                uid, check_generation
+            ):
+                return False
+            logger.info(
+                "发现新动态: {} - {}", dynamic.name, dynamic.get_type_description()
+            )
+            screenshot_image = await self._fetch_dynamic_screenshot(
+                dynamic, uid=uid, check_generation=check_generation
+            )
+            if check_generation is not None and not self._check_still_valid(
+                uid, check_generation
+            ):
+                return False
+            message = self.sender.build_dynamic_message(
+                dynamic,
+                screenshot_image,
+                is_pinned,
+                include_dynamic_media=(
+                    not self.config.enable_screenshot or screenshot_image is None
+                ),
+            )
+            pending = PendingDelivery(
+                Message(message),
+                list(self.config.dynamic_monitor_mapping.get(uid, [])),
+                list(self.config.dynamic_monitor_user_mapping.get(uid, [])),
+                self.config.dynamic_at_all.get(uid, False),
+            )
+            pending_targets[pending_key] = pending
 
-        # 构建通知消息
-        message = self.sender.build_dynamic_message(
-            dynamic,
-            screenshot_image,
-            is_pinned,
-            include_dynamic_media=(
-                not self.config.enable_screenshot or screenshot_image is None
-            ),
-        )
+        # 已移除的目标不再投递；新增目标从下一条动态开始。
+        pending.groups = [
+            gid
+            for gid in pending.groups
+            if gid in self.config.dynamic_monitor_mapping.get(uid, [])
+        ]
+        pending.users = [
+            user_id
+            for user_id in pending.users
+            if user_id in self.config.dynamic_monitor_user_mapping.get(uid, [])
+        ]
+        if not pending.groups and not pending.users:
+            await self._persist_state(uid, check_generation=check_generation)
+            return True
 
-        # 获取需要推送的群组与好友
-        group_ids = self.config.dynamic_monitor_mapping.get(uid, [])
-        user_ids = self.config.dynamic_monitor_user_mapping.get(uid, [])
-        if not group_ids and not user_ids:
-            logger.warning("UP主 {} 没有配置推送目标", uid)
-            return False
+        await self._persist_state(uid, check_generation=check_generation)
 
-        if check_generation is not None and not self._check_still_valid(
-            uid, check_generation
-        ):
-            return False
+        async def checkpoint(target_type: str, target_id: str, next_part: int) -> None:
+            starts = (
+                pending.group_starts if target_type == "group" else pending.user_starts
+            )
+            starts[target_id] = next_part
+            await self._persist_state(uid, check_generation=check_generation)
 
-        at_all_enabled = self.config.dynamic_at_all.get(uid, False)
         delivery = await self.sender.send_message(
-            message,
-            group_ids,
-            user_ids,
-            at_all_enabled=at_all_enabled,
+            pending.message,
+            pending.groups,
+            pending.users,
+            at_all_enabled=pending.at_all,
+            group_starts=pending.group_starts,
+            user_starts=pending.user_starts,
+            on_part_sent=checkpoint,
         )
+        if check_generation is not None and not self._check_still_valid(
+            uid, check_generation
+        ):
+            return False
         if delivery.all_succeeded:
+            group_count, user_count = len(pending.groups), len(pending.users)
+            # 先留下完成标记，调用方推进游标时再原子清理。
+            pending.groups, pending.users = [], []
+            await self._persist_state(uid, check_generation=check_generation)
             logger.info(
                 "动态通知已推送: uid={} dynamic_id={} groups={} users={} pinned={}",
                 uid,
                 dynamic.id,
-                len(group_ids),
-                len(user_ids),
+                group_count,
+                user_count,
                 is_pinned,
             )
             return True
 
-        failed_targets = [
-            f"{target.target_type}:{target.target_id}"
-            for target in delivery.targets
-            if not target.success
-        ]
+        failed_groups: List[str] = []
+        failed_users: List[str] = []
+        rejected: List[str] = []
+        for target in delivery.targets:
+            if target.success:
+                continue
+            label = f"{target.target_type}:{target.target_id}"
+            if is_terminal_qq_error_text(target.error):
+                rejected.append(label)
+                continue
+            if target.target_type == "group":
+                failed_groups.append(target.target_id)
+            elif target.target_type == "user":
+                failed_users.append(target.target_id)
+        if rejected:
+            logger.info(
+                "动态通知不再重试被平台拒绝的目标: uid={} dynamic_id={} targets={}",
+                uid,
+                dynamic.id,
+                rejected,
+            )
+        if not failed_groups and not failed_users:
+            pending.groups, pending.users = [], []
+            await self._persist_state(uid, check_generation=check_generation)
+            return True
+        pending.groups = failed_groups
+        pending.users = failed_users
+        await self._persist_state(uid, check_generation=check_generation)
         logger.warning(
             "动态通知投递未全部成功: uid={} dynamic_id={} failed={}",
             uid,
             dynamic.id,
-            failed_targets,
+            [f"group:{gid}" for gid in failed_groups]
+            + [f"user:{user_id}" for user_id in failed_users],
         )
         return False
 
-    async def get_latest_dynamic(self, uid: str, group_id: str):
-        """获取并发送指定UP主的最新动态"""
+    async def get_latest_dynamic(self, uid: str) -> Message:
+        """构建最新动态查询结果，由调用方沿原事件回复。"""
         logger.info("主动获取UP主 {} 的最新动态", uid)
 
         # 获取用户的动态列表
@@ -770,18 +877,14 @@ class DynamicMonitor:
 
         if not dynamics:
             logger.info("UP主 {} 没有动态", uid)
-            await self.sender.send_to_groups(Message("该UP主暂无动态"), [group_id])
-            return
+            return Message("该UP主暂无动态")
 
         # 过滤掉置顶动态和直播动态，获取最新的动态（按时间戳排序）
         # 注意：直播动态已经在fetcher中被过滤，这里主要过滤置顶动态
         filtered_dynamics = [d for d in dynamics if not d.is_pinned and d.type != 16]
         if not filtered_dynamics:
             logger.info("UP主 {} 没有非置顶非直播动态", uid)
-            await self.sender.send_to_groups(
-                Message("该UP主暂无非置顶的动态"), [group_id]
-            )
-            return
+            return Message("该UP主暂无非置顶的动态")
 
         latest_dynamic = max(filtered_dynamics, key=lambda x: x.timestamp)
         logger.debug(
@@ -811,14 +914,10 @@ class DynamicMonitor:
             ),
         )
 
-        logger.debug("主动查询消息构建完成，开始发送到群组 {}", group_id)
+        return message
 
-        # 发送到指定群组
-        await self.sender.send_to_groups(message, [group_id])
-        logger.info("已发送UP主 {} 的最新动态查询结果到群组 {}", uid, group_id)
-
-    async def get_pinned_dynamic(self, uid: str, group_id: str):
-        """获取并发送指定UP主的置顶动态"""
+    async def get_pinned_dynamic(self, uid: str) -> Message:
+        """构建置顶动态查询结果，由调用方沿原事件回复。"""
         logger.info("主动获取UP主 {} 的置顶动态", uid)
 
         # 获取用户的动态列表
@@ -835,8 +934,7 @@ class DynamicMonitor:
 
         if not pinned_id:
             logger.info("UP主 {} 没有置顶动态", uid)
-            await self.sender.send_to_groups(Message("该UP主暂无置顶动态"), [group_id])
-            return
+            return Message("该UP主暂无置顶动态")
 
         # 查找置顶动态
         pinned_dynamic = next((d for d in dynamics if d.id == pinned_id), None)
@@ -864,11 +962,7 @@ class DynamicMonitor:
             ),
         )
 
-        logger.debug("置顶动态主动查询消息构建完成，开始发送到群组 {}", group_id)
-
-        # 发送到指定群组
-        await self.sender.send_to_groups(message, [group_id])
-        logger.info("已发送UP主 {} 的置顶动态查询结果到群组 {}", uid, group_id)
+        return message
 
 
 # 插件启动和关闭函数

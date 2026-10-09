@@ -22,6 +22,7 @@ import {
   SettingsBilibiliMonitorPage,
   SettingsXMonitorPage,
 } from './pages/settings/SettingsMonitor'
+import { SettingsOfficialQQPage } from './pages/settings/SettingsOfficialQQ'
 import { SettingsXAccountPage } from './pages/settings/SettingsXAccount'
 import { XMonitorPage } from './pages/XMonitor'
 import { RustRconPage } from './pages/RustRcon'
@@ -61,6 +62,7 @@ export default function App() {
                   <Route path="account" element={<SettingsAccountPage />} />
                   <Route path="douyin-account" element={<SettingsDouyinAccountPage />} />
                   <Route path="x-account" element={<SettingsXAccountPage />} />
+                  <Route path="official-qq" element={<SettingsOfficialQQPage />} />
                   <Route path="bot" element={<SettingsBotPage />} />
                   <Route path="commands" element={<SettingsCommandsPage />} />
                 </Route>

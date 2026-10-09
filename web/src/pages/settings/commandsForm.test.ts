@@ -39,6 +39,12 @@ function baseSettings(commandAliases: Settings['command_aliases']): Settings {
       username: '',
       password_configured: false,
     },
+    official_qq: {
+      app_id: '',
+      secret: { configured: false, preview: null },
+      is_sandbox: false,
+      use_websocket: false,
+    },
     status_check_allowed_qq: [],
     nonebot_superusers: [],
     command_aliases: commandAliases,

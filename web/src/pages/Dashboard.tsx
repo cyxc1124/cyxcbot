@@ -15,6 +15,7 @@ import type {
   ConnectionsStatus,
   DynamicMonitorStatus,
   LiveMonitorStatus,
+  OfficialQqConnectionStatus,
   QqConnectionStatus,
   SystemMonitorStatus,
   XMonitorStatus,
@@ -82,6 +83,29 @@ function qqCardValue(q: QqConnectionStatus | undefined): string {
   return `${q.bot_count} 个账号`
 }
 
+function officialQqCardValue(q: OfficialQqConnectionStatus | undefined): string {
+  if (!q) return '—'
+  if (q.connected) return '已连接'
+  if (q.configured) return '未连接'
+  return '未配置'
+}
+
+function officialQqSubtitle(q: OfficialQqConnectionStatus | undefined) {
+  if (!q) return undefined
+  if (!q.configured) {
+    return (
+      <>
+        前往
+        <Link to="/settings/official-qq" className="font-medium text-primary hover:opacity-80 hover:underline">
+          官方 Bot
+        </Link>
+        配置
+      </>
+    )
+  }
+  return q.message
+}
+
 export function DashboardPage() {
   const [loading, setLoading] = useLoadingOnKeyChange('dashboard')
   const [error, setError] = useState('')
@@ -140,7 +164,7 @@ export function DashboardPage() {
 
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="机器草状态"
           value={running ? '运行中' : '已停止'}
@@ -155,6 +179,11 @@ export function DashboardPage() {
           title="QQ 登录"
           value={qqCardValue(connections?.qq)}
           subtitle={connections?.qq.message}
+        />
+        <StatCard
+          title="官方 Bot"
+          value={officialQqCardValue(connections?.official_qq)}
+          subtitle={officialQqSubtitle(connections?.official_qq)}
         />
       </div>
 

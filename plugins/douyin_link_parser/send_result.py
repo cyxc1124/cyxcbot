@@ -26,6 +26,8 @@ def is_onebot_send_success(send_result: object) -> bool:
         return send_result.strip() != ""
 
     if isinstance(send_result, dict):
+        if send_result.get("ok") is True:
+            return True
         mid = send_result.get("message_id")
     else:
         mid = getattr(send_result, "message_id", None)

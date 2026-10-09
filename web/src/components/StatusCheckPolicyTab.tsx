@@ -297,11 +297,11 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
               ? '数据暂时无法加载'
               : listAvailable
                 ? isGroup
-                  ? '暂无已启用群消息的群组。请先在「群消息」Tab 中启用对应群组，或确保机器人已连接 OneBot。'
-                  : '暂无已启用好友消息的好友。请先在「好友消息」Tab 中启用对应好友，或确保机器人已连接 OneBot。'
+                  ? '暂无已启用群消息的群组。请先在「群消息」Tab 中启用对应群组，或确保 OneBot / 官方 Bot 已连接。'
+                  : '暂无已启用好友消息的好友。请先在「好友消息」Tab 中启用对应好友，或确保 OneBot / 官方 Bot 已连接。'
                 : isGroup
-                  ? '暂无群组数据。请确保机器人已连接 OneBot，或等待群列表同步完成。'
-                  : '暂无好友数据。请确保机器人已连接 OneBot，或等待好友列表同步完成。'}
+                  ? '暂无群组数据。请确保 OneBot / 官方 Bot 已连接，或等待群列表同步完成。'
+                  : '暂无好友数据。请确保 OneBot / 官方 Bot 已连接，或等待好友列表同步完成。'}
           </p>
         ) : (
           <div className="overflow-x-auto">

@@ -77,6 +77,9 @@ FONT_CANDIDATES = [
     # Windows
     "C:/Windows/Fonts/msyh.ttc",
     "C:/Windows/Fonts/simhei.ttf",
+    # macOS
+    "/System/Library/Fonts/Hiragino Sans GB.ttc",
+    "/System/Library/Fonts/STHeiti Medium.ttc",
 ]
 
 # 全局字体缓存
@@ -615,7 +618,7 @@ async def generate_live_start_card(
         return card_bytes
 
     except FileNotFoundError as e:
-        logger.error("卡片生成失败（字体缺失）: {}", e)
+        logger.warning("卡片生成失败（字体缺失）: {}", e)
         return None
     except Exception:
         logger.opt(exception=True).error("卡片生成失败")
@@ -675,7 +678,7 @@ async def generate_live_end_card(
         return card_bytes
 
     except FileNotFoundError as e:
-        logger.error("下播卡片生成失败（字体缺失）: {}", e)
+        logger.warning("下播卡片生成失败（字体缺失）: {}", e)
         return None
     except Exception:
         logger.opt(exception=True).error("下播卡片生成失败")

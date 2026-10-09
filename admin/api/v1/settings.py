@@ -16,6 +16,7 @@ from admin.services.connection_status import (
     bilibili_status_message,
     get_bilibili_connection_status,
 )
+from shared.adapter.ids import is_qq_user_id
 from shared.config.command_aliases import (
     merge_partial_command_aliases,
     normalize_command_aliases,
@@ -99,22 +100,17 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         updates["x_proxy_password_encrypted"] = (
             encrypt_value(password) if password else ""
         )
-    if body.status_check_allowed_qq is not None:
-        cleaned = [
-            item.strip()
-            for qq in body.status_check_allowed_qq
-            for item in [str(qq).strip()]
-            if item.isdigit()
-        ]
-        updates["status_check_allowed_qq"] = json.dumps(cleaned, ensure_ascii=False)
-    if body.nonebot_superusers is not None:
-        cleaned = [
-            item.strip()
-            for qq in body.nonebot_superusers
-            for item in [str(qq).strip()]
-            if item.isdigit()
-        ]
-        updates["nonebot_superusers"] = json.dumps(cleaned, ensure_ascii=False)
+    for key in ("status_check_allowed_qq", "nonebot_superusers"):
+        values = getattr(body, key)
+        if values is not None:
+            cleaned = list(
+                dict.fromkeys(item.strip() for item in values if item.strip())
+            )
+            if not all(is_qq_user_id(item) for item in cleaned):
+                raise HTTPException(
+                    status_code=400, detail="用户 ID 须为 QQ 号或 8–64 位官方 openid"
+                )
+            updates[key] = json.dumps(cleaned, ensure_ascii=False)
     if body.command_aliases is not None:
         # 与当前快照合并后再 normalize：
         # 1) 只传部分命令时，未提及的命令保留原有配置（而非被
@@ -152,6 +148,19 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         updates["command_extra_prefixes"] = json.dumps(
             normalize_extra_prefixes(body.command_extra_prefixes), ensure_ascii=False
         )
+    if body.official_qq_app_id is not None:
+        updates["official_qq_app_id"] = body.official_qq_app_id.strip()
+    if body.official_qq_app_secret is not None:
+        secret = body.official_qq_app_secret.strip()
+        updates["official_qq_app_secret_encrypted"] = (
+            encrypt_value(secret) if secret else ""
+        )
+    if body.official_qq_is_sandbox is not None:
+        updates["official_qq_is_sandbox"] = str(body.official_qq_is_sandbox).lower()
+    if body.official_qq_use_websocket is not None:
+        updates["official_qq_use_websocket"] = str(
+            body.official_qq_use_websocket
+        ).lower()
     if body.link_parser_shared_media_dir is not None:
         raw = body.link_parser_shared_media_dir.strip()
         if "\x00" in raw:
