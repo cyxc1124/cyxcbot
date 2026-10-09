@@ -92,13 +92,13 @@ export function SettingsOfficialQQPage() {
             QQ 开放平台
           </a>{' '}
           创建机器人后填写 AppID 与 AppSecret。凭证加密存库，保存后立即生效，无需重启。与
-          OneBot 可同时在线：官方 Bot 支持群聊和私聊的命令、链接解析回复。动态和直播监控支持官方群和官方好友推送；X 仍推送到数字 QQ。
+          OneBot 可同时在线：官方 Bot 支持群聊和私聊的命令、链接解析回复。动态、直播和 X 可配置官方目标，主动发送能力以平台策略和回执为准。
         </p>
 
         <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm space-y-2">
           <p>推荐使用 Webhook：将公网 HTTPS 地址的 <code>/qq/webhook</code> 转发到机器人监听端口（默认 8080），在开放平台完成回调验证、事件订阅和出口 IP 白名单配置。Web Admin 端口 8081 不接收回调。</p>
           <p>保存凭证不代表已连接；首次有效事件到达后，可在仪表盘查看连接状态。</p>
-          <p>被动回复仍受平台限制：同一条用户消息最多回复 5 次，较多图片或视频可能无法一次全部返回。</p>
+          <p>被动回复仍受平台限制：同一条用户消息在群聊最多回复 5 次、私聊最多 4 次，较多图片或视频可能无法一次全部返回。</p>
         </div>
 
         <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">

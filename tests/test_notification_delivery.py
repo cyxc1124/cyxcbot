@@ -174,7 +174,7 @@ def x_monitor_module(dynamic_monitor_module):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", ["dynamic", "x"])
-async def test_official_monitor_targets_skip_without_retry_or_blocking_onebot(
+async def test_official_monitor_targets_route_alongside_onebot(
     kind, dynamic_monitor_module, x_monitor_module
 ):
     cls = (
@@ -201,6 +201,7 @@ async def test_official_monitor_targets_skip_without_retry_or_blocking_onebot(
     monitor._pending_tweet_delivery = {
         "target": ("tweet", "", [("official-group", 0)], [])
     }
+    monitor.last_tweet_ids = {}
     monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
     monitor._resolve_author_name = AsyncMock(return_value="author")
     monitor.session = None
@@ -218,25 +219,357 @@ async def test_official_monitor_targets_skip_without_retry_or_blocking_onebot(
         else monitor._send_tweet_notification
     )
     assert await send("target", item)
-    if kind == "dynamic":
-        assert monitor.sender.send_message.await_args.args[1:3] == (
-            ["official-group"],
-            ["official-user"],
-        )
-        groups.append("1001")
-        item.id = "next-item"
-        assert await send("target", item)
-        assert monitor.sender.send_message.await_args.args[1:3] == (
-            ["official-group", "1001"],
-            ["official-user"],
-        )
-        return
-    monitor.sender.send_message.assert_not_awaited()
-    if kind == "x":
-        assert not monitor._pending_tweet_delivery
+    assert monitor.sender.send_message.await_args.args[1:3] == (
+        ["official-group"],
+        ["official-user"],
+    )
     groups.append("1001")
+    item.id = "next-item"
     assert await send("target", item)
-    assert monitor.sender.send_message.await_args.args[1:3] == (["1001"], [])
+    assert monitor.sender.send_message.await_args.args[1:3] == (
+        ["official-group", "1001"],
+        ["official-user"],
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("remove_all", [False, True])
+async def test_x_mapping_reload_during_plan_persist_filters_old_targets(
+    x_monitor_module, legacy, remove_all
+):
+    from utils.x_api.models import TweetItem
+
+    monitor = object.__new__(x_monitor_module.XMonitor)
+    monitor.config = SimpleNamespace(
+        x_monitor_mapping={"author": ["removed-group", "kept-group"]},
+        x_monitor_user_mapping={"author": ["removed-user", "kept-user"]},
+        x_at_all={},
+    )
+    monitor.sender = SimpleNamespace(
+        build_tweet_message=MagicMock(return_value=Message("caption")),
+        plan_fingerprint=MagicMock(return_value="plan"),
+        send_message=AsyncMock(return_value=_delivery_succeeded()),
+    )
+    monitor._pending_tweet_delivery = {}
+    if legacy:
+        monitor._pending_tweet_delivery["author"] = (
+            "200",
+            "plan",
+            [("removed-group", 1), ("kept-group", 2)],
+            [("removed-user", 1), ("kept-user", 2)],
+        )
+    monitor.last_tweet_ids = {"author": "100"}
+    monitor.session = None
+    first = True
+
+    async def persist(*args, **kwargs):
+        nonlocal first
+        if first:
+            first = False
+            monitor.config.x_monitor_mapping["author"] = (
+                [] if remove_all else ["kept-group"]
+            )
+            monitor.config.x_monitor_user_mapping["author"] = (
+                [] if remove_all else ["kept-user"]
+            )
+
+    monitor._persist_state = persist
+    tweet = TweetItem(
+        id="200",
+        text="caption",
+        created_at="",
+        username="author",
+        name="Author",
+        url="",
+    )
+    assert await monitor._send_tweet_notification("author", tweet)
+    if remove_all:
+        monitor.sender.send_message.assert_not_awaited()
+    else:
+        assert monitor.sender.send_message.await_args.args[1:3] == (
+            ["kept-group"],
+            ["kept-user"],
+        )
+    assert monitor.last_tweet_ids["author"] == "200"
+    assert not monitor._pending_tweet_delivery
+
+
+@pytest.fixture
+def x_reload_delivery(x_monitor_module, monkeypatch):
+    from nonebot.adapters.onebot.v11 import MessageSegment
+
+    from shared.adapter import outbound
+    from utils.x_api.models import TweetItem
+
+    monitor = x_monitor_module.XMonitor(
+        SimpleNamespace(
+            x_monitor_mapping={
+                "author": ["current-group", "later-group", "kept-group"]
+            },
+            x_monitor_user_mapping={"author": ["later-user", "kept-user"]},
+            x_at_all={},
+        )
+    )
+    monitor.last_tweet_ids = {"author": "100"}
+    monitor.sender = x_monitor_module.XSender()
+    monitor.sender.build_tweet_message = MagicMock(
+        return_value=Message(
+            [
+                MessageSegment.text("first"),
+                MessageSegment.image(b"image"),
+                MessageSegment.text("last"),
+            ]
+        )
+    )
+    monitor._persist_state = AsyncMock()
+    bot = SimpleNamespace(send_to_group=AsyncMock(), send_to_c2c=AsyncMock())
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [bot])
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    monkeypatch.setattr(outbound, "_official_last_sent", {})
+    monkeypatch.setattr(outbound, "_official_locks", {})
+    monkeypatch.setitem(
+        monitor.sender.send_message.__func__.__globals__,
+        "messaging_bots",
+        lambda: [bot],
+    )
+    tweet = TweetItem(
+        id="200",
+        text="caption",
+        created_at="",
+        username="author",
+        name="Author",
+        url="",
+    )
+    return monitor, bot, tweet, outbound
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("remove_current", [False, True])
+@pytest.mark.parametrize("retry_kept", [False, True])
+async def test_x_mapping_reload_after_ack_stops_removed_and_resumes_kept(
+    x_reload_delivery, remove_current, retry_kept
+):
+    monitor, bot, tweet, _ = x_reload_delivery
+    persisted = []
+
+    async def persist(*args, **kwargs):
+        persisted.append(monitor._pending_tweet_delivery.get("author"))
+        if len(persisted) == 2:
+            monitor.config.x_monitor_mapping["author"] = (
+                [] if remove_current else ["current-group"]
+            ) + ["kept-group"]
+            monitor.config.x_monitor_user_mapping["author"] = ["kept-user"]
+            await asyncio.sleep(0)
+
+    monitor._persist_state = persist
+    failed_once = False
+
+    async def send_group(*, group_openid, message, msg_seq):
+        nonlocal failed_once
+        if (
+            retry_kept
+            and group_openid == "kept-group"
+            and msg_seq == 2
+            and not failed_once
+        ):
+            failed_once = True
+            raise RuntimeError("temporary failure")
+
+    bot.send_to_group.side_effect = send_group
+    delivered = await monitor._send_tweet_notification(
+        "author", tweet, check_generation=0
+    )
+    assert delivered is not retry_kept
+    assert ("current-group", 1) in persisted[1][2]
+    if retry_kept:
+        assert monitor.last_tweet_ids["author"] == "100"
+        assert monitor._pending_tweet_delivery["author"][2:] == (
+            [("kept-group", 1)],
+            [],
+        )
+        assert await monitor._send_tweet_notification(
+            "author", tweet, check_generation=0
+        )
+    group_calls = bot.send_to_group.await_args_list
+    assert not any(call.kwargs["group_openid"] == "later-group" for call in group_calls)
+    assert [
+        call.kwargs["msg_seq"]
+        for call in group_calls
+        if call.kwargs["group_openid"] == "current-group"
+    ] == ([1] if remove_current else [1, 2, 3])
+    assert [
+        call.kwargs["msg_seq"]
+        for call in group_calls
+        if call.kwargs["group_openid"] == "kept-group"
+    ] == ([1, 2, 2, 3] if retry_kept else [1, 2, 3])
+    assert [call.kwargs["openid"] for call in bot.send_to_c2c.await_args_list] == [
+        "kept-user"
+    ] * 3
+    assert monitor.last_tweet_ids["author"] == "200"
+    assert not monitor._pending_tweet_delivery
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wait_kind", ["pacing", "retry", "media"])
+async def test_x_mapping_reload_during_official_wait_stops_api(
+    x_reload_delivery, monkeypatch, wait_kind
+):
+    import time
+
+    monitor, bot, tweet, outbound = x_reload_delivery
+    sleep = asyncio.sleep
+
+    def remove_targets():
+        monitor.config.x_monitor_mapping["author"] = ["kept-group"]
+        monitor.config.x_monitor_user_mapping["author"] = ["kept-user"]
+
+    if wait_kind == "media":
+        materialize = outbound._materialize_media
+        first = True
+
+        async def download(value):
+            nonlocal first
+            if first:
+                first = False
+                remove_targets()
+                await sleep(0)
+            return await materialize(value)
+
+        monkeypatch.setattr(outbound, "_materialize_media", download)
+    else:
+
+        async def wait(_):
+            remove_targets()
+            await sleep(0)
+
+        monkeypatch.setattr(outbound.asyncio, "sleep", wait)
+        if wait_kind == "pacing":
+            monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 3)
+            outbound._official_last_sent["current-group"] = time.monotonic()
+        else:
+
+            async def reject(*, group_openid, message, msg_seq):
+                if group_openid == "current-group":
+                    raise RuntimeError("40034100")
+
+            bot.send_to_group.side_effect = reject
+
+    assert await monitor._send_tweet_notification("author", tweet, check_generation=0)
+    assert [
+        call.kwargs["msg_seq"]
+        for call in bot.send_to_group.await_args_list
+        if call.kwargs["group_openid"] == "current-group"
+    ] == ([] if wait_kind == "pacing" else [1])
+    assert not any(
+        call.kwargs["group_openid"] == "later-group"
+        for call in bot.send_to_group.await_args_list
+    )
+    assert [call.kwargs["openid"] for call in bot.send_to_c2c.await_args_list] == [
+        "kept-user"
+    ] * 3
+    assert monitor.last_tweet_ids["author"] == "200"
+    assert not monitor._pending_tweet_delivery
+
+
+@pytest.mark.asyncio
+async def test_x_mapping_reload_during_onebot_prefix_wait_stops_api(
+    x_reload_delivery, monkeypatch
+):
+    monitor, _, tweet, outbound = x_reload_delivery
+    monitor.config.x_monitor_mapping["author"] = ["1001", "1002"]
+    monitor.config.x_monitor_user_mapping["author"] = []
+    monitor.config.x_at_all = {"author": True}
+    monitor.sender.build_tweet_message.return_value = Message("caption")
+    bot = SimpleNamespace(send_group_msg=AsyncMock())
+    sender_globals = monitor.sender.send_message.__func__.__globals__
+    monkeypatch.setitem(sender_globals, "messaging_bots", lambda: [bot])
+    monkeypatch.setitem(sender_globals, "iter_onebot_bots", lambda: [bot])
+    monkeypatch.setattr(outbound, "iter_onebot_bots", lambda: [bot])
+
+    async def prefix(*args, **kwargs):
+        monitor.config.x_monitor_mapping["author"] = ["1002"]
+        await asyncio.sleep(0)
+        return Message("prefix")
+
+    monkeypatch.setitem(sender_globals, "resolve_at_all_prefix", prefix)
+    assert await monitor._send_tweet_notification("author", tweet, check_generation=0)
+    assert [call.kwargs["group_id"] for call in bot.send_group_msg.await_args_list] == [
+        1002,
+        1002,
+    ]
+    assert not monitor._pending_tweet_delivery
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_x_plan_change_then_cancel_resets_offsets_before_persisting(
+    x_monitor_module, monkeypatch, legacy
+):
+    from nonebot.adapters.onebot.v11 import MessageSegment
+
+    from utils.x_api.models import TweetItem
+
+    monitor = object.__new__(x_monitor_module.XMonitor)
+    monitor.config = SimpleNamespace(
+        x_monitor_mapping={"author": ["group-openid"]},
+        x_monitor_user_mapping={"author": []},
+        x_at_all={"author": True},
+    )
+    monitor.sender = x_monitor_module.XSender()
+    message = Message([MessageSegment.text("caption"), MessageSegment.image(b"image")])
+    monitor.sender.build_tweet_message = MagicMock(return_value=message)
+    old_fp = (
+        "t|v|t"
+        if legacy
+        else monitor.sender.plan_fingerprint(message, at_all_enabled=False)
+    )
+    monitor._pending_tweet_delivery = {
+        "author": ("200", old_fp, [("group-openid", 1)], [])
+    }
+    monitor.last_tweet_ids = {"author": "100"}
+    monitor.session = None
+    persisted = []
+
+    async def persist(*args, **kwargs):
+        persisted.append(monitor._pending_tweet_delivery["author"])
+        raise asyncio.CancelledError
+
+    monitor._persist_state = persist
+    tweet = TweetItem(
+        id="200",
+        text="caption",
+        created_at="",
+        username="author",
+        name="Author",
+        url="",
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await monitor._send_tweet_notification("author", tweet)
+    assert persisted[0][1] == monitor.sender.plan_fingerprint(
+        message, at_all_enabled=True
+    )
+    assert persisted[0][2] == [("group-openid", 0)]
+    monkeypatch.setitem(
+        monitor.sender.send_to_groups.__func__.__globals__,
+        "messaging_bots",
+        lambda: [object()],
+    )
+    send = AsyncMock()
+    monkeypatch.setitem(
+        monitor.sender._send_official_batches.__func__.__globals__, "send_group", send
+    )
+    result = await monitor.sender.send_message(
+        message,
+        ["group-openid"],
+        [],
+        at_all_enabled=True,
+        group_starts={"group-openid": 0},
+        expected_fingerprint=persisted[0][1],
+    )
+    assert result.all_succeeded
+    assert send.await_args.kwargs["start"] == 0
+    assert "caption" in send.await_args.args[1].extract_plain_text()
 
 
 @pytest.mark.asyncio

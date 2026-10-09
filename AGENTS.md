@@ -33,7 +33,7 @@ deploy/             # Docker Compose / Helm
 
 数据流：Web Admin ↔ `admin/` ↔ `shared/db` ↔ 各 `plugins/` ↔ OneBot 协议端 / 官方 QQ Bot。官方凭证仅存数据库（`official_qq_*`），经 `shared/adapter/official_runtime.py` 热连接；数字 QQ 号走 OneBot，openid 走官方 Bot。`rust_player` / `rust_rcon` / `group_special_title` 仍仅 OneBot。
 
-官方 Bot 默认使用 Webhook（`/qq/webhook`，机器人端口默认 8080）。动态和直播监控会向官方群/C2C 主动推送，支持未完成目标和分段的持久化续传；X 仍只投递数字 OneBot 目标。命令回复走 `send_event_message()`，由 QQ 适配器维护事件回复序号。
+官方 Bot 默认使用 Webhook（`/qq/webhook`，机器人端口默认 8080）。动态、直播和 X 监控支持官方目标投递；主动能力以 QQ 平台策略及回执为准。动态/直播保存消息快照，X 保存目标和分段进度（重试仍需重新获取推文及媒体）。命令回复走 `send_event_message()`，由 QQ 适配器维护事件回复序号；官方群被动回复最多五次、C2C 四次，解析插件须预先安排媒体和文案预算。
 
 ### 插件
 

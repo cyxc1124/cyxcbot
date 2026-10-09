@@ -21,6 +21,8 @@ _MONITOR_PLUGIN_MODULES = (
     "plugins.dynamic_monitor.dynamic_monitor",
     "plugins.live_monitor.state_store",
     "plugins.live_monitor.live_monitor",
+    "plugins.x_monitor.state_store",
+    "plugins.x_monitor.x_monitor",
 )
 
 
@@ -577,6 +579,126 @@ async def test_live_load_persisted_states_single_query(
 
     assert counter["select"] == 1
     assert monitor.room_states["119"].start_time == 119
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "user"])
+@pytest.mark.parametrize("terminal", [False, True])
+async def test_official_x_persists_parts_and_cursor_across_restart(
+    db_context, monkeypatch, tmp_path, scope, terminal
+):
+    from pathlib import Path
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from nonebot.adapters.onebot.v11 import Message, MessageSegment
+
+    from plugins.x_monitor import sender, state_store
+    from plugins.x_monitor.config import Config
+    from plugins.x_monitor.x_monitor import XMonitor
+    from shared.adapter import outbound
+    from shared.adapter.qq_errors import LoggedQQApiError
+    from shared.db.models import XMonitorState
+    from utils.x_api.models import TweetItem, TweetMediaItem
+
+    _, factory, _, _ = db_context
+    monkeypatch.setattr(state_store, "get_session", lambda: factory())
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    accepted = []
+    failed = False
+
+    async def send(**kwargs):
+        nonlocal failed
+        destination = kwargs.get("group_openid") or kwargs.get("openid")
+        segment = kwargs["message"][0]
+        if destination == f"{scope}-openid" and (
+            terminal or not failed and segment.type == "file_image"
+        ):
+            failed = True
+            raise LoggedQQApiError(40034105 if terminal else 50055001, "拒绝或暂时失败")
+        value = (
+            segment.data["text"] if segment.type == "text" else segment.data["content"]
+        )
+        if isinstance(value, Path):
+            value = value.read_bytes()
+        accepted.append((destination, segment.type, value))
+
+    onebot = SimpleNamespace(send_group_msg=AsyncMock(), send_private_msg=AsyncMock())
+    official = SimpleNamespace(send_to_group=send, send_to_c2c=send)
+    monkeypatch.setattr(outbound, "iter_onebot_bots", lambda: [onebot])
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [official])
+    monkeypatch.setattr(sender, "messaging_bots", lambda: [onebot, official])
+    monkeypatch.setattr(
+        sender,
+        "resolve_at_all_prefix",
+        AsyncMock(return_value=Message(MessageSegment.at("all"))),
+    )
+    media = []
+    for index, (kind, content) in enumerate(
+        (("image", b"one"), ("video", b"clip"), ("image", b"two"))
+    ):
+        path = tmp_path / f"{index}.{'mp4' if kind == 'video' else 'jpg'}"
+        path.write_bytes(content)
+        media.append(TweetMediaItem(kind=kind, url="", file_path=path))
+    tweet = TweetItem(
+        id="200",
+        text="caption",
+        created_at="",
+        username="author",
+        name="Author",
+        url="https://x.com/author/status/200",
+        media_items=media,
+    )
+
+    def monitor():
+        result = XMonitor(
+            Config(
+                x_monitor_mapping={"author": ["1001", "group-openid"]},
+                x_monitor_user_mapping={"author": ["2002", "user-openid"]},
+                x_at_all={"author": True},
+            )
+        )
+        result.sender = sender.XSender()
+        result.last_tweet_ids["author"] = "100"
+        result.initialized_usernames["author"] = True
+        return result
+
+    first = monitor()
+    assert await first._send_tweet_notification("author", tweet) is terminal
+    async with factory() as session:
+        row = await session.get(XMonitorState, "author")
+        if not terminal:
+            targets = (
+                row.pending_group_ids if scope == "group" else row.pending_user_ids
+            )
+            assert targets == f"{scope}-openid@1"
+            assert row.pending_tweet_id.startswith("200#v2:")
+            assert row.last_tweet_id == "100"
+    restarted = monitor()
+    await restarted._load_persisted_states()
+    if not terminal:
+        assert await restarted._send_tweet_notification("author", tweet)
+    assert restarted.last_tweet_ids["author"] == "200"
+    for destination in ("group-openid", "user-openid"):
+        delivered = [
+            (kind, value) for target, kind, value in accepted if target == destination
+        ]
+        if terminal and destination == f"{scope}-openid":
+            assert not delivered
+            continue
+        assert [(kind, value) for kind, value in delivered if kind != "text"] == [
+            ("file_image", b"one"),
+            ("file_video", b"clip"),
+            ("file_image", b"two"),
+        ]
+        assert len([kind for kind, _ in delivered if kind == "text"]) == 2
+    batch_count = len(sender.reply_batches(first.sender.build_tweet_message(tweet)))
+    assert onebot.send_group_msg.await_count == batch_count + 1
+    assert onebot.send_private_msg.await_count == batch_count
+    async with factory() as session:
+        row = await session.get(XMonitorState, "author")
+        assert row.last_tweet_id == "200"
+        assert row.pending_tweet_id is None
 
 
 @pytest.mark.asyncio

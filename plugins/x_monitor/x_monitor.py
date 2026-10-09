@@ -16,7 +16,6 @@ from nonebot.log import logger
 from nonebot_plugin_orm import get_session
 from sqlalchemy import select
 
-from shared.adapter.ids import onebot_target_ids
 from shared.config.service import get_config_service
 from shared.config.shared_media import chmod_shared_media_file, ensure_shared_media_dir
 from shared.db.models import XTarget
@@ -594,15 +593,6 @@ class XMonitor:
         if not self.sender:
             return False
 
-        configured_groups = self.config.x_monitor_mapping.get(username, [])
-        configured_users = self.config.x_monitor_user_mapping.get(username, [])
-        if (configured_groups or configured_users) and not onebot_target_ids(
-            configured_groups + configured_users
-        ):
-            self._pending_tweet_delivery.pop(username, None)
-            logger.debug("X 博主 {} 仅配置官方会话，跳过主动推送", username)
-            return True
-
         downloaded: list[Path] = []
         try:
             if not tweet.media_items and tweet.media_urls:
@@ -631,11 +621,9 @@ class XMonitor:
                         len(missing),
                         len([i for i in tweet.media_items if i.url]),
                     )
-                    configured_groups = onebot_target_ids(
-                        self.config.x_monitor_mapping.get(username, [])
-                    )
-                    configured_users = onebot_target_ids(
-                        self.config.x_monitor_user_mapping.get(username, [])
+                    configured_groups = self.config.x_monitor_mapping.get(username, [])
+                    configured_users = self.config.x_monitor_user_mapping.get(
+                        username, []
                     )
                     pending = self._pending_tweet_delivery.get(username)
                     if pending and pending[0] == tweet.id:
@@ -656,13 +644,12 @@ class XMonitor:
                     return False
 
             message = self.sender.build_tweet_message(tweet)
-            plan_fp = self.sender.plan_fingerprint(message)
-            configured_groups = onebot_target_ids(
-                self.config.x_monitor_mapping.get(username, [])
+            at_all_enabled = self.config.x_at_all.get(username, False)
+            plan_fp = self.sender.plan_fingerprint(
+                message, at_all_enabled=at_all_enabled
             )
-            configured_users = onebot_target_ids(
-                self.config.x_monitor_user_mapping.get(username, [])
-            )
+            configured_groups = self.config.x_monitor_mapping.get(username, [])
+            configured_users = self.config.x_monitor_user_mapping.get(username, [])
             group_starts: dict[str, int] = {}
             user_starts: dict[str, int] = {}
             expected_fp = ""
@@ -703,7 +690,99 @@ class XMonitor:
             ):
                 return False
 
-            at_all_enabled = self.config.x_at_all.get(username, False)
+            if (
+                expected_fp
+                and self.sender.plan_fingerprint(
+                    message,
+                    at_all_enabled=at_all_enabled,
+                    expected_fingerprint=expected_fp,
+                )
+                != expected_fp
+            ):
+                group_starts = {}
+                user_starts = {}
+                expected_fp = ""
+            progress_fp = expected_fp or plan_fp
+            self._pending_tweet_delivery[username] = (
+                tweet.id,
+                progress_fp,
+                [(gid, group_starts.get(gid, 0)) for gid in group_ids],
+                [(uid, user_starts.get(uid, 0)) for uid in user_ids],
+            )
+            await self._persist_state(username, check_generation=check_generation)
+
+            async def checkpoint(kind: str, target: str, next_part: int) -> None:
+                if check_generation is not None and not self._check_still_valid(
+                    username, check_generation
+                ):
+                    return
+                current = self._pending_tweet_delivery.get(username)
+                if not current or current[0] != tweet.id:
+                    return
+                groups, users = list(current[2]), list(current[3])
+                targets = groups if kind == "group" else users
+                targets[:] = [
+                    (target_id, next_part if target_id == target else offset)
+                    for target_id, offset in targets
+                ]
+                self._pending_tweet_delivery[username] = (
+                    tweet.id,
+                    progress_fp,
+                    groups,
+                    users,
+                )
+                await self._persist_state(username, check_generation=check_generation)
+
+            def is_target_active(kind: str, target: str) -> bool:
+                if check_generation is not None and not self._check_still_valid(
+                    username, check_generation
+                ):
+                    return False
+                mapping = (
+                    self.config.x_monitor_mapping
+                    if kind == "group"
+                    else self.config.x_monitor_user_mapping
+                )
+                return target in mapping.get(username, [])
+
+            if check_generation is not None and not self._check_still_valid(
+                username, check_generation
+            ):
+                return False
+            group_ids = [
+                target
+                for target in group_ids
+                if target in self.config.x_monitor_mapping.get(username, [])
+            ]
+            user_ids = [
+                target
+                for target in user_ids
+                if target in self.config.x_monitor_user_mapping.get(username, [])
+            ]
+            group_starts = {
+                target: offset
+                for target, offset in group_starts.items()
+                if target in group_ids
+            }
+            user_starts = {
+                target: offset
+                for target, offset in user_starts.items()
+                if target in user_ids
+            }
+            self._pending_tweet_delivery[username] = (
+                tweet.id,
+                progress_fp,
+                [(target, group_starts.get(target, 0)) for target in group_ids],
+                [(target, user_starts.get(target, 0)) for target in user_ids],
+            )
+            if not group_ids and not user_ids:
+                self._pending_tweet_delivery.pop(username, None)
+                if tweet_id_as_int(tweet.id) > tweet_id_as_int(
+                    self.last_tweet_ids.get(username, "0")
+                ):
+                    self.last_tweet_ids[username] = tweet.id
+                await self._persist_state(username, check_generation=check_generation)
+                return True
             delivery = await self.sender.send_message(
                 message,
                 group_ids,
@@ -712,11 +791,29 @@ class XMonitor:
                 group_starts=group_starts,
                 user_starts=user_starts,
                 expected_fingerprint=expected_fp,
+                on_progress=checkpoint,
+                is_target_active=is_target_active,
             )
-            if delivery.all_succeeded:
+            if check_generation is not None and not self._check_still_valid(
+                username, check_generation
+            ):
+                return False
+            failed_groups, failed_users = failed_targets_with_resume(delivery)
+            failed_groups = [
+                pair for pair in failed_groups if is_target_active("group", pair[0])
+            ]
+            failed_users = [
+                pair for pair in failed_users if is_target_active("user", pair[0])
+            ]
+            if not failed_groups and not failed_users:
                 self._pending_tweet_delivery.pop(username, None)
+                if tweet_id_as_int(tweet.id) > tweet_id_as_int(
+                    self.last_tweet_ids.get(username, "0")
+                ):
+                    self.last_tweet_ids[username] = tweet.id
+                await self._persist_state(username, check_generation=check_generation)
                 logger.info(
-                    "X 推文通知已推送: username={} tweet_id={} groups={} users={}",
+                    "X 推文通知处理完成: username={} tweet_id={} groups={} users={}",
                     username,
                     tweet.id,
                     len(group_ids),
@@ -724,10 +821,9 @@ class XMonitor:
                 )
                 return True
 
-            failed_groups, failed_users = failed_targets_with_resume(delivery)
             self._pending_tweet_delivery[username] = (
                 tweet.id,
-                plan_fp,
+                progress_fp,
                 failed_groups,
                 failed_users,
             )

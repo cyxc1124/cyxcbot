@@ -11,17 +11,24 @@ from pathlib import Path
 
 from nonebot import get_driver, on_message
 from nonebot.adapters import Bot, Event
+from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.adapters.onebot.v11.exception import ActionFailed
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
+from shared.adapter.bots import is_official_qq_bot
 from shared.adapter.inbound import (
     group_id_of,
     is_group_event,
     is_private_event,
     user_id_of,
 )
-from shared.adapter.outbound import send_event_message
+from shared.adapter.outbound import (
+    OfficialReplyLimitError,
+    official_reply_remaining,
+    send_event_message,
+)
+from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.service import get_config_service
 from shared.config.shared_media import chmod_shared_media_file, ensure_shared_media_dir
 from shared.config.x_link_parser_policy import resolve_x_link_parser_policy
@@ -31,7 +38,7 @@ from utils.x_api.download import cleanup_media_files, materialize_tweet_media
 from .config import Config, get_config, reload_config
 from .message_text import collect_message_text
 from .send_result import is_onebot_send_success
-from .sender import build_x_link_message, reply_batches
+from .sender import build_x_link_message, official_reply_message, reply_batches
 
 __plugin_meta__ = PluginMetadata(
     name="X 链接解析",
@@ -113,12 +120,21 @@ async def _fetch_and_reply(
         if not tweet_ids:
             logger.debug("X 链接解析：未解析到推文 ID user={}", user_id)
             return
+        official = is_official_qq_bot(bot)
+        multiple_links = official and len(tweet_ids) > 1
+        if official:
+            tweet_ids = tweet_ids[:1]
 
         media_dir = ensure_shared_media_dir(
             get_config_service().get_snapshot().link_parser_shared_media_dir
         )
 
         for tweet_id in tweet_ids:
+            if official and not official_reply_remaining(event):
+                logger.warning(
+                    "X 链接解析：本事件的官方回复次数已用完 user={}", user_id
+                )
+                break
             tweet = await client.get_tweet_by_id(tweet_id)
             if tweet is None:
                 logger.warning("X 链接解析：拉取推文失败 tweet_id={}", tweet_id)
@@ -134,6 +150,17 @@ async def _fetch_and_reply(
                 logger.info("X 链接解析：等待前序发送完成 user={}", user_id)
             async with _SEND_SEM:
                 reply = build_x_link_message(tweet, config.message_templates)
+                if official:
+                    if multiple_links:
+                        reply.insert(
+                            0,
+                            MessageSegment.text(
+                                "官方 Bot 每条消息仅解析首个 X 链接，请将其他链接分开发送。\n"
+                            ),
+                        )
+                    reply = official_reply_message(
+                        reply, official_reply_remaining(event)
+                    )
                 batches = reply_batches(reply)
                 send_results: list[object] = [
                     await send_event_message(bot, event, batch) for batch in batches
@@ -160,6 +187,8 @@ async def _fetch_and_reply(
                 [_message_id_of(item) for item in send_results],
                 reply_scope,
             )
+    except LoggedQQApiError, OfficialReplyLimitError:
+        logger.warning("X 链接解析：官方消息未完成 user={}", user_id)
     except ActionFailed as exc:
         detail = str(
             getattr(exc, "wording", None) or getattr(exc, "message", None) or exc

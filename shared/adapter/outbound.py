@@ -29,12 +29,38 @@ from shared.adapter.inbound import (
 )
 from shared.adapter.qq_errors import note_qq_api_error
 from shared.notify.at_all import DYNAMIC_AT_ALL_FALLBACK, resolve_at_all_prefix
+from shared.notify.delivery import DeliveryCancelledError
 
 _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 _OFFICIAL_MIN_INTERVAL = 3.0
+OFFICIAL_REPLY_LIMIT = 5
+OFFICIAL_C2C_REPLY_LIMIT = 4
 _official_locks: dict[str, asyncio.Lock] = {}
 _official_last_sent: dict[str, float] = {}
 PartProgressCallback = Callable[[int], Awaitable[None]]
+
+
+class OfficialReplyLimitError(RuntimeError):
+    """本条官方群/C2C 消息的被动回复预算已用完。"""
+
+
+def official_reply_remaining(event: Any) -> int:
+    limit = OFFICIAL_REPLY_LIMIT if is_group_event(event) else OFFICIAL_C2C_REPLY_LIMIT
+    sequence = max(0, int(getattr(event, "_reply_seq", 0)))
+    accepted = getattr(event, "_official_reply_count", sequence)
+    previous_sequence = getattr(event, "_official_reply_last_seq", sequence)
+    return max(0, limit - accepted - max(0, sequence - previous_sequence))
+
+
+def _remember_official_reply(
+    event: Any, remaining: int, sequence: int, *, accepted: bool
+) -> None:
+    current = max(0, int(getattr(event, "_reply_seq", 0)))
+    # SDK 序号包括失败尝试；已知拒绝不占预算，SDK 外部回复保守计入。
+    extra = max(1, current - sequence) if accepted else max(0, current - sequence - 1)
+    limit = OFFICIAL_REPLY_LIMIT if is_group_event(event) else OFFICIAL_C2C_REPLY_LIMIT
+    event._official_reply_count = limit - remaining + extra
+    event._official_reply_last_seq = current
 
 
 def _official_lock(target_id: str) -> asyncio.Lock:
@@ -159,11 +185,14 @@ async def _send_official_once(
     kind: str,
     value: Any,
     msg_seq: int,
+    can_send: Callable[[], bool] | None = None,
 ) -> None:
     from nonebot.adapters.qq import Message
 
     segment = await _to_official_segment(kind, value)
     payload = Message(segment)
+    if can_send is not None and not can_send():
+        raise DeliveryCancelledError("推送目标已取消")
     if event is not None:
         # QQ 适配器在事件上递增 _reply_seq，跨批次和 Matcher 共用回复序号。
         await bot.send(event, payload)
@@ -183,7 +212,10 @@ async def _send_official_parts(
     user_id: str | None = None,
     start: int = 0,
     on_part_sent: PartProgressCallback | None = None,
+    can_send: Callable[[], bool] | None = None,
 ) -> None:
+    from nonebot.adapters.qq.event import GuildMessageEvent
+
     if event is not None:
         if not event_msg_id(event):
             raise ValueError("官方 Bot 被动回复缺少消息 ID")
@@ -205,6 +237,13 @@ async def _send_official_parts(
             retries = 0
             send_value = value
             while True:
+                limited = event is not None and not isinstance(event, GuildMessageEvent)
+                remaining = (
+                    official_reply_remaining(event) if limited else OFFICIAL_REPLY_LIMIT
+                )
+                sequence = getattr(event, "_reply_seq", 0)
+                if limited and not remaining:
+                    raise OfficialReplyLimitError("本条官方消息的被动回复次数已用完")
                 try:
                     await _send_official_once(
                         bot,
@@ -214,9 +253,18 @@ async def _send_official_parts(
                         kind=kind,
                         value=send_value,
                         msg_seq=index + 1,
+                        can_send=can_send,
                     )
+                    if limited:
+                        _remember_official_reply(
+                            event, remaining, sequence, accepted=True
+                        )
                     break
                 except Exception as exc:
+                    if limited and (_is_url_forbidden(exc) or _is_rate_limited(exc)):
+                        _remember_official_reply(
+                            event, remaining, sequence, accepted=False
+                        )
                     if (
                         kind == "text"
                         and _is_url_forbidden(exc)
@@ -247,6 +295,7 @@ async def _send_official_to_target(
     user_id: str | None = None,
     start: int = 0,
     on_part_sent: PartProgressCallback | None = None,
+    can_send: Callable[[], bool] | None = None,
 ) -> None:
     bots = iter_official_bots()
     if not bots:
@@ -274,8 +323,11 @@ async def _send_official_to_target(
                 user_id=user_id,
                 start=next_part,
                 on_part_sent=checkpoint,
+                can_send=can_send,
             )
             return
+        except DeliveryCancelledError:
+            raise
         except Exception as exc:
             if checkpoint_failed:
                 raise
@@ -291,6 +343,7 @@ async def send_group(
     at_all_fallback: str = DYNAMIC_AT_ALL_FALLBACK,
     start: int = 0,
     on_part_sent: PartProgressCallback | None = None,
+    can_send: Callable[[], bool] | None = None,
 ) -> None:
     gid = str(group_id).strip()
     if not gid:
@@ -315,7 +368,11 @@ async def send_group(
                         fallback=at_all_fallback,
                     )
                     payload = prefix + message
+                if can_send is not None and not can_send():
+                    raise DeliveryCancelledError("推送目标已取消")
                 await bot.send_group_msg(group_id=int(gid), message=payload)
+            except DeliveryCancelledError:
+                raise
             except Exception as exc:
                 last_exc = exc
                 continue
@@ -334,6 +391,7 @@ async def send_group(
         group_id=gid,
         start=start,
         on_part_sent=on_part_sent,
+        can_send=can_send,
     )
 
 
@@ -343,6 +401,7 @@ async def send_user(
     *,
     start: int = 0,
     on_part_sent: PartProgressCallback | None = None,
+    can_send: Callable[[], bool] | None = None,
 ) -> None:
     uid = str(user_id).strip()
     if not uid:
@@ -358,7 +417,11 @@ async def send_user(
         last_exc: Exception | None = None
         for bot in bots:
             try:
+                if can_send is not None and not can_send():
+                    raise DeliveryCancelledError("推送目标已取消")
                 await bot.send_private_msg(user_id=int(uid), message=message)
+            except DeliveryCancelledError:
+                raise
             except Exception as exc:
                 last_exc = exc
                 continue
@@ -375,6 +438,7 @@ async def send_user(
         user_id=uid,
         start=start,
         on_part_sent=on_part_sent,
+        can_send=can_send,
     )
 
 
