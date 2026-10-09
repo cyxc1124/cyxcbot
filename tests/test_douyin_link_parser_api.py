@@ -273,3 +273,20 @@ async def test_official_policy_and_cookie_reload_reach_actual_native_handler(
     reply.reset_mock()
     await native_plugin.handle_private_douyin_link(bot, event)
     reply.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_save_cookie_warns_when_legacy_keys_lack_uifid(policy_api):
+    api, svc, _ = policy_api
+    legacy = "ttwid=1; odin_tt=2; passport_csrf_token=3"
+    result = await api.save_cookie(api.DouyinCookieSaveRequest(cookie=legacy), None)
+    assert result.configured
+    assert "已保存" in result.message
+    assert "UIFID" in result.message
+    assert svc.get_snapshot().douyin_cookie == legacy
+
+    complete = f"{legacy}; UIFID=u"
+    result = await api.save_cookie(api.DouyinCookieSaveRequest(cookie=complete), None)
+    assert result.configured
+    assert result.message == "抖音 Cookie 已保存"
+    assert svc.get_snapshot().douyin_cookie == complete

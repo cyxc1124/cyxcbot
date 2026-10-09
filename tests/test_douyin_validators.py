@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from utils.douyin_api.cookies import validate_cookie_header, validate_cookies
 from utils.douyin_api.url_parser import extract_video_id, parse_video_url
 from utils.douyin_api.validators import (
@@ -57,14 +59,30 @@ def test_parse_url_type_and_video_id():
 
 
 def test_validate_cookies_required_keys():
-    assert validate_cookies(
-        {
-            "ttwid": "1",
-            "odin_tt": "2",
-            "passport_csrf_token": "3",
-        }
-    )
+    legacy = {
+        "ttwid": "1",
+        "odin_tt": "2",
+        "passport_csrf_token": "3",
+    }
+    assert not validate_cookies(legacy)
+    assert validate_cookies({**legacy, "UIFID": "u"})
+    assert validate_cookies({**legacy, "uifid": "u"})
     assert not validate_cookie_header("ttwid=1; sessionid=x")
+
+
+@pytest.mark.parametrize("key", ["ttwid", "odin_tt", "passport_csrf_token"])
+def test_validate_cookies_rejects_misnamed_legacy_keys(key):
+    cookies = {
+        "ttwid": "1",
+        "odin_tt": "2",
+        "passport_csrf_token": "3",
+        "UIFID": "u",
+    }
+    cookies[key.upper()] = cookies.pop(key)
+    assert not validate_cookies(cookies)
+    assert not validate_cookie_header(
+        "; ".join(f"{name}={value}" for name, value in cookies.items())
+    )
 
 
 def test_xbogus_appends_param():
