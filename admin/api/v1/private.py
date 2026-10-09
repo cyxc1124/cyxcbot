@@ -68,6 +68,7 @@ async def get_message_policy(_: AdminUser):
             for user in visible_message_policy_rows(users, fetch_status)
         ],
         friend_list_available=available,
+        onebot_list_status=fetch_status,
     )
 
 
@@ -111,6 +112,7 @@ async def update_message_policy(
             for user in visible_message_policy_rows(users, fetch_status)
         ],
         friend_list_available=_friend_list_available(fetch_status),
+        onebot_list_status=fetch_status,
     )
 
 

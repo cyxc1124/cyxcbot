@@ -23,6 +23,7 @@ class GroupMessagePolicyResponse(BaseModel):
     enabled_group_ids: List[str]
     groups: List[GroupInfo]
     group_list_available: bool = True
+    onebot_list_status: Optional[Literal["ok", "offline", "incomplete"]] = None
 
 
 class GroupMessagePolicyUpdateRequest(BaseModel):

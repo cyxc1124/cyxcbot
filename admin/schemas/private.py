@@ -22,6 +22,7 @@ class PrivateMessagePolicyResponse(BaseModel):
     enabled_user_ids: List[str]
     users: List[FriendInfo]
     friend_list_available: bool = True
+    onebot_list_status: Optional[Literal["ok", "offline", "incomplete"]] = None
 
 
 class PrivateMessagePolicyUpdateRequest(BaseModel):

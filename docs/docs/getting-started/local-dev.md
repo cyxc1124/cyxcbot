@@ -62,4 +62,8 @@ cd web && npm install && npm run dev
 
 前端构建：`cd web && npm run build`，产物输出至 `web/dist/`，由后端静态文件服务托管。
 
+### 拉取更新后仍显示旧页面
+
+`git pull` 只更新源码，不会重建 `web/dist/`，也不会让已运行的 Python 进程重新加载模块。若直接访问后端 8081 的管理页面，请先在 `web/` 执行 `npm run build`，刷新浏览器；后端代码有变化时还需重启自己启动的 `bot.py`。开发服务器应使用 Vite 终端实际显示的地址，默认端口 5173 若被其他项目占用会变动。
+
 更多细节见 [开发指南](../development/project-structure)。
