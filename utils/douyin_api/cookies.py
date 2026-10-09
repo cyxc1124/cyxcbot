@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from nonebot.log import logger
 
-from .cookie_utils import cookie_value, parse_cookie_header, sanitize_cookies
+from .cookie_utils import parse_cookie_header, sanitize_cookies
 
 REQUIRED_COOKIE_KEYS = frozenset({"ttwid", "odin_tt", "passport_csrf_token", "UIFID"})
 
@@ -17,13 +17,13 @@ def validate_cookies(cookies: dict[str, str]) -> bool:
     ``UIFID`` 计入完整性：详情接口经 Argus 网关，缺了会 403。
     """
     clean = sanitize_cookies(cookies or {})
-    missing = [
-        key for key in sorted(REQUIRED_COOKIE_KEYS) if not cookie_value(clean, key)
-    ]
+    missing = [key for key in sorted(REQUIRED_COOKIE_KEYS) if not clean.get(key)]
+    if "UIFID" in missing and clean.get("uifid"):
+        missing.remove("UIFID")
     if missing:
         logger.warning("抖音 Cookie 不完整，缺少: {}", ", ".join(missing))
         return False
-    if not cookie_value(clean, "msToken"):
+    if not clean.get("msToken"):
         logger.info("抖音 Cookie 未含 msToken，将在请求时自动生成")
     return True
 
