@@ -9,7 +9,7 @@ ARG no_proxy
 ARG all_proxy
 
 # Web Admin 前端构建阶段
-FROM node:22-slim AS web-builder
+FROM node:26-slim AS web-builder
 
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
