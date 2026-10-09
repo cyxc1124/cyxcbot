@@ -25,6 +25,8 @@ from shared.adapter.inbound import (
     is_private_event,
     user_id_of,
 )
+from shared.adapter.outbound import OfficialReplyLimitError
+from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.link_parser_policy import (
     LinkParserScopePolicy,
     resolve_link_parser_policy,
@@ -383,6 +385,13 @@ async def _resolve_and_reply(
             [_message_id_of(item) for item in send_results],
             reply_scope,
         )
+    except OfficialReplyLimitError:
+        logger.warning(
+            "B 站链接解析：本条官方消息的被动回复次数已用完 user={}", user_id
+        )
+    except LoggedQQApiError:
+        # 已由共享发送层按 QQ 平台错误码记录，避免重复异常栈。
+        return
     except ActionFailed as exc:
         detail = str(
             getattr(exc, "wording", None) or getattr(exc, "message", None) or exc

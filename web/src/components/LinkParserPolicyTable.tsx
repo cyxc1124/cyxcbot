@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { ToggleSwitch } from './ToggleSwitch'
 import type { LinkParserPolicyRow } from '../hooks/useLinkParserPolicies'
 
@@ -5,19 +6,23 @@ function PolicyToggleRow({
   checked,
   disabled,
   onChange,
+  label,
 }: {
   checked: boolean
   disabled: boolean
   onChange: (checked: boolean) => void
+  label: string
 }) {
+  const labelId = useId()
   return (
-    <div className="inline-flex items-center gap-2">
+    <div className="relative inline-flex items-center gap-2">
+      <span id={labelId} className="sr-only">{label}</span>
       <span
         className={`text-xs ${checked ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}
       >
         {checked ? '已启用' : '已关闭'}
       </span>
-      <ToggleSwitch checked={checked} disabled={disabled} onChange={onChange} />
+      <ToggleSwitch checked={checked} disabled={disabled} onChange={onChange} ariaLabelledBy={labelId} />
     </div>
   )
 }
@@ -90,11 +95,15 @@ export function LinkParserPolicyTable<T extends LinkParserPolicyRow>({
           {items.map((item) => {
             const itemId = getItemId(item)
             const saving = savingIds.has(itemId) || togglingAll
-            const disabled = saving || !editable
+            const disabled = saving || !(item.editable ?? editable)
             return (
               <tr key={itemId} className="border-b border-border last:border-0 border-border">
                 <td className="py-3.5 pr-4 font-medium text-foreground">
                   {getDisplayName(item) ?? '—'}
+                  <span className="ml-2 text-[10px] text-muted-foreground">
+                    {item.source === 'official' ? '官方 QQ' : 'OneBot'}
+                    {disabled && !saving ? ' · 只读' : ''}
+                  </span>
                   {saving && (
                     <span className="ml-2 text-[10px] text-muted-foreground">保存中…</span>
                   )}
@@ -102,6 +111,7 @@ export function LinkParserPolicyTable<T extends LinkParserPolicyRow>({
                 <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">{itemId}</td>
                 <td className="py-3.5 pr-4">
                   <PolicyToggleRow
+                    label={`${itemId} 视频链接`}
                     checked={item.video_enabled}
                     disabled={disabled}
                     onChange={(checked) =>
@@ -116,6 +126,7 @@ export function LinkParserPolicyTable<T extends LinkParserPolicyRow>({
                 </td>
                 <td className="py-3.5 pr-4">
                   <PolicyToggleRow
+                    label={`${itemId} 发送视频`}
                     checked={item.send_video_enabled}
                     disabled={disabled}
                     onChange={(checked) =>
@@ -130,6 +141,7 @@ export function LinkParserPolicyTable<T extends LinkParserPolicyRow>({
                 </td>
                 <td className="py-3.5 pr-4">
                   <PolicyToggleRow
+                    label={`${itemId} 直播链接`}
                     checked={item.live_enabled}
                     disabled={disabled}
                     onChange={(checked) => void onPatch(itemId, { live_enabled: checked })}
@@ -137,6 +149,7 @@ export function LinkParserPolicyTable<T extends LinkParserPolicyRow>({
                 </td>
                 <td className="py-3.5 pr-4">
                   <PolicyToggleRow
+                    label={`${itemId} 动态链接`}
                     checked={item.dynamic_enabled}
                     disabled={disabled}
                     onChange={(checked) =>

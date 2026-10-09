@@ -17,10 +17,13 @@ import { useToast } from '../contexts/ToastContext'
 
 export interface LinkParserPolicyRow extends LinkParserPolicyFlags {
   customized: boolean
+  source?: 'onebot' | 'official'
+  editable?: boolean
 }
 
 interface UseLinkParserPoliciesOptions<T extends LinkParserPolicyRow> {
   loadingKey: string
+  editable: boolean
   loadItems: () => Promise<T[]>
   getItemId: (item: T) => string
   mergeItem: (existing: T, incoming: T) => T
@@ -36,6 +39,7 @@ interface UseLinkParserPoliciesOptions<T extends LinkParserPolicyRow> {
 
 export function useLinkParserPolicies<T extends LinkParserPolicyRow>({
   loadingKey,
+  editable,
   loadItems,
   getItemId,
   mergeItem,
@@ -87,7 +91,7 @@ export function useLinkParserPolicies<T extends LinkParserPolicyRow>({
   const patchItem = async (id: string, patch: Partial<LinkParserPolicyFlags>) => {
     const normalizedId = String(id)
     const row = items.find((item) => getItemId(item) === normalizedId)
-    if (!row) return
+    if (!row || !(row.editable ?? editable)) return
 
     const optimistic = buildPolicyPayload(row, patch)
     const prevRow = row
@@ -113,6 +117,8 @@ export function useLinkParserPolicies<T extends LinkParserPolicyRow>({
   }
 
   const handleReset = async (id: string) => {
+    const row = items.find((item) => getItemId(item) === id)
+    if (!row || !(row.editable ?? editable)) return
     markSaving(id, true)
     try {
       const data = await resetItem(id)
@@ -126,13 +132,15 @@ export function useLinkParserPolicies<T extends LinkParserPolicyRow>({
   }
 
   const handleToggleAll = async (enabled: boolean) => {
-    if (items.length === 0) return
+    const editableItems = items.filter((item) => item.editable ?? editable)
+    if (editableItems.length === 0) return
 
     const prevItems = items
     setTogglingAll(true)
     // 全开：只开三项解析，保留各行已有的「发送视频」；全关走 reset
     setItems((current) =>
       current.map((item) => {
+        if (!(item.editable ?? editable)) return item
         if (!enabled) {
           return {
             ...item,
@@ -156,7 +164,7 @@ export function useLinkParserPolicies<T extends LinkParserPolicyRow>({
 
     try {
       await Promise.all(
-        items.map((item) =>
+        editableItems.map((item) =>
           enabled
             ? updateItem(
                 getItemId(item),
@@ -182,12 +190,14 @@ export function useLinkParserPolicies<T extends LinkParserPolicyRow>({
   }
 
   const handleToggleAllSendVideo = async (enabled: boolean) => {
-    if (items.length === 0) return
+    const editableItems = items.filter((item) => item.editable ?? editable)
+    if (editableItems.length === 0) return
 
     const prevItems = items
     setTogglingAll(true)
     setItems((current) =>
       current.map((item) => {
+        if (!(item.editable ?? editable)) return item
         const payload = buildToggleAllSendVideoPayload(item, enabled)
         return {
           ...item,
@@ -203,7 +213,7 @@ export function useLinkParserPolicies<T extends LinkParserPolicyRow>({
 
     try {
       await Promise.all(
-        items.map((item) => {
+        editableItems.map((item) => {
           const payload = buildToggleAllSendVideoPayload(item, enabled)
           const nextCustomized =
             payload.video_enabled ||
@@ -227,10 +237,11 @@ export function useLinkParserPolicies<T extends LinkParserPolicyRow>({
     }
   }
 
-  const allEnabled = isAllPoliciesEnabled(items)
-  const noneEnabled = isNoPoliciesEnabled(items)
-  const allSendVideoEnabled = isAllSendVideoEnabled(items)
-  const noneSendVideoEnabled = isNoSendVideoEnabled(items)
+  const editableItems = items.filter((item) => item.editable ?? editable)
+  const allEnabled = isAllPoliciesEnabled(editableItems)
+  const noneEnabled = isNoPoliciesEnabled(editableItems)
+  const allSendVideoEnabled = isAllSendVideoEnabled(editableItems)
+  const noneSendVideoEnabled = isNoSendVideoEnabled(editableItems)
   const busy = togglingAll || savingIds.size > 0
 
   return {
