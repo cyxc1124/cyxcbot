@@ -78,6 +78,7 @@ export function GroupsPage() {
       allGroupIds,
       restrict,
       enabledIds,
+      groupListAvailable,
     )
     const next = {
       restrict: nextPolicy.restrict,
@@ -178,7 +179,7 @@ export function GroupsPage() {
       <>
       {!groupListAvailable && groups.length > 0 && (
         <p className="text-sm text-amber-700 dark:text-amber-300">
-          群列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改群消息开关；待连接恢复后再调整。
+          列表尚未完整同步，暂不可批量调整或修改 OneBot 会话；白名单模式下，可单独调整已发现的官方会话。
         </p>
       )}
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
@@ -189,8 +190,8 @@ export function GroupsPage() {
             {error
               ? '数据暂时无法加载'
               : groupListAvailable
-                ? '暂无可用群组，请确保机器人已连接 OneBot 并在线。'
-                : '暂无群组数据。请确保机器人已连接 OneBot，或等待群列表同步完成。'}
+                ? '暂无群组数据。请连接 OneBot，或在官方群中 @机器人后刷新。'
+                : '暂无群组数据。请连接 OneBot，或先在官方群中 @机器人后刷新。'}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -198,22 +199,23 @@ export function GroupsPage() {
               <thead>
                 <tr className="border-b border-border text-muted-foreground border-border">
                   <th className="pb-3 pr-4 font-medium">群名称</th>
-                  <th className="pb-3 pr-4 font-medium">群号</th>
+                  <th className="pb-3 pr-4 font-medium">群号 / OpenID</th>
                   <th className="pb-3 pr-4 font-medium">成员数</th>
-                  <th className="pb-3 font-medium text-right">处理群消息</th>
+                  <th id="group-message-heading" className="pb-3 font-medium text-right">处理群消息</th>
                 </tr>
               </thead>
               <tbody>
                 {groups.map((group) => {
                   const enabled = isItemEnabled(group.group_id, restrict, enabledIds)
-                  const rowBusy = busy && (togglingId === group.group_id || togglingId === '__all__')
+                  const rowEditable = policyEditable || (restrict && group.source === 'official')
                   return (
                     <tr
                       key={group.group_id}
                       className="border-b border-border last:border-0 border-border"
                     >
-                      <td className="py-3.5 pr-4 font-medium text-foreground">
+                      <td id={`group-name-${group.group_id}`} className="py-3.5 pr-4 font-medium text-foreground">
                         {group.group_name ?? '—'}
+                        {group.source === 'official' && <span className="ml-2 text-xs text-muted-foreground">官方</span>}
                       </td>
                       <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">
                         {group.group_id}
@@ -230,7 +232,8 @@ export function GroupsPage() {
                           </span>
                           <ToggleSwitch
                             checked={enabled}
-                            disabled={rowBusy || !policyEditable}
+                            disabled={busy || !rowEditable}
+                            ariaLabelledBy={`group-message-heading group-name-${group.group_id}`}
                             onChange={(checked) => void handleToggle(group.group_id, checked)}
                           />
                         </div>

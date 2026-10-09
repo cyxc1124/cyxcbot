@@ -75,6 +75,7 @@ export function PrivatePage() {
       allUserIds,
       restrict,
       enabledIds,
+      friendListAvailable,
     )
     const next = {
       restrict: nextPolicy.restrict,
@@ -175,7 +176,7 @@ export function PrivatePage() {
         <>
           {!friendListAvailable && users.length > 0 && (
             <p className="text-sm text-amber-700 dark:text-amber-300">
-              好友列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改好友消息开关；待连接恢复后再调整。
+              列表尚未完整同步，暂不可批量调整或修改 OneBot 会话；白名单模式下，可单独调整已发现的官方会话。
             </p>
           )}
           {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
@@ -186,8 +187,8 @@ export function PrivatePage() {
                 {error
                   ? '数据暂时无法加载'
                   : friendListAvailable
-                    ? '暂无好友数据，请确保机器人已连接 OneBot 且协议端支持 get_friend_list。'
-                    : '暂无好友数据。请确保机器人已连接 OneBot，或等待好友列表同步完成。'}
+                    ? '暂无好友数据。OneBot 需在线且支持好友列表；官方 Bot 收到私聊后会显示对应用户。'
+                    : '暂无好友数据。请连接 OneBot，或先向官方 Bot 发一条私聊消息后刷新。'}
               </p>
             ) : (
               <div className="overflow-x-auto">
@@ -195,21 +196,22 @@ export function PrivatePage() {
                   <thead>
                     <tr className="border-b border-border text-muted-foreground border-border">
                       <th className="pb-3 pr-4 font-medium">昵称</th>
-                      <th className="pb-3 pr-4 font-medium">QQ 号</th>
-                      <th className="pb-3 font-medium text-right">处理好友消息</th>
+                      <th className="pb-3 pr-4 font-medium">QQ 号 / OpenID</th>
+                      <th id="private-message-heading" className="pb-3 font-medium text-right">处理好友消息</th>
                     </tr>
                   </thead>
                   <tbody>
                     {users.map((user) => {
                       const enabled = isItemEnabled(user.user_id, restrict, enabledIds)
-                      const rowBusy = busy && (togglingId === user.user_id || togglingId === '__all__')
+                      const rowEditable = policyEditable || (restrict && user.source === 'official')
                       return (
                         <tr
                           key={user.user_id}
                           className="border-b border-border last:border-0 border-border"
                         >
-                          <td className="py-3.5 pr-4 font-medium text-foreground">
+                          <td id={`friend-name-${user.user_id}`} className="py-3.5 pr-4 font-medium text-foreground">
                             {user.nickname ?? '—'}
+                            {user.source === 'official' && <span className="ml-2 text-xs text-muted-foreground">官方</span>}
                           </td>
                           <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">
                             {user.user_id}
@@ -223,7 +225,8 @@ export function PrivatePage() {
                               </span>
                               <ToggleSwitch
                                 checked={enabled}
-                                disabled={rowBusy || !policyEditable}
+                                disabled={busy || !rowEditable}
+                                ariaLabelledBy={`private-message-heading friend-name-${user.user_id}`}
                                 onChange={(checked) => void handleToggle(user.user_id, checked)}
                               />
                             </div>
