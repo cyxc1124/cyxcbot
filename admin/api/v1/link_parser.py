@@ -15,15 +15,17 @@ from admin.schemas.link_parser import (
     LinkParserUserPolicyMutationResponse,
     LinkParserUserPolicyUpdateRequest,
 )
+from admin.services.link_parser_access import (
+    ensure_link_parser_target_editable,
+    link_parser_policy_rows,
+)
 from admin.services.link_parser_policy_items import (
     build_user_policy_item,
     build_user_policy_items,
     onebot_list_listing_mode,
 )
 from admin.services.onebot_bridge import (
-    get_friend_list,
     get_friend_list_with_availability,
-    get_group_list,
     get_group_list_with_status,
     invalidate_user_list_cache,
 )
@@ -97,6 +99,8 @@ def _build_group_item(snap, group: dict) -> LinkParserGroupPolicyItem:
         group_id=group_id,
         group_name=group.get("group_name"),
         member_count=group.get("member_count"),
+        source=group.get("source", "onebot"),
+        editable=group.get("editable", True),
         customized=customized,
         video_enabled=video_enabled,
         live_enabled=live_enabled,
@@ -135,56 +139,39 @@ def _is_default_off(
     return not video and not live and not dynamic and not send
 
 
-async def _group_meta(group_id: str) -> dict:
-    groups = await get_group_list()
-    for group in groups:
-        if str(group["group_id"]) == str(group_id):
-            return group
-    return {"group_id": str(group_id)}
-
-
-async def _user_meta(user_id: str, snap) -> dict:
-    users = await get_friend_list()
-    for user in users:
-        if str(user["user_id"]) == str(user_id):
-            return user
-    return {"user_id": str(user_id)}
-
-
-async def _ensure_friend_list_complete_for_mutation() -> None:
-    """Reject writes when the live friend list is offline or incomplete."""
+async def _ensure_user_editable(user_id: str) -> dict:
     # Always re-fetch: a TTL cache hit must not bypass the mutation guard after disconnect.
     invalidate_user_list_cache()
-    _, fetch_status = await get_friend_list_with_availability()
-    if fetch_status == "incomplete":
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="好友列表不完整，暂不可修改链接解析策略",
-        )
+    users, fetch_status = await get_friend_list_with_availability()
+    return ensure_link_parser_target_editable(
+        user_id,
+        users,
+        fetch_status,
+        id_key="user_id",
+        detail="好友列表不完整或目标未知，暂不可修改链接解析策略",
+    )
 
 
-async def _ensure_group_list_complete_for_mutation() -> None:
-    """Reject writes when the live group list is offline or incomplete."""
-    _, fetch_status = await get_group_list_with_status()
-    if fetch_status == "incomplete":
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="群列表不完整，暂不可修改链接解析策略",
-        )
+async def _ensure_group_editable(group_id: str) -> dict:
+    groups, fetch_status = await get_group_list_with_status()
+    return ensure_link_parser_target_editable(
+        group_id,
+        groups,
+        fetch_status,
+        id_key="group_id",
+        detail="群列表不完整或目标未知，暂不可修改链接解析策略",
+    )
 
 
 async def _list_group_policy_response(snap) -> LinkParserGroupPolicyListResponse:
     groups, fetch_status = await get_group_list_with_status()
-    mode = onebot_list_listing_mode(fetch_status)
-    if mode == "empty":
-        return LinkParserGroupPolicyListResponse(
-            groups=[],
-            group_list_available=False,
-        )
-    visible = _message_enabled_groups(snap, groups)
+    visible = _message_enabled_groups(
+        snap, link_parser_policy_rows(groups, fetch_status)
+    )
     return LinkParserGroupPolicyListResponse(
         groups=_build_group_items(snap, visible),
-        group_list_available=(mode == "map"),
+        group_list_available=(fetch_status == "ok"),
+        onebot_list_status=fetch_status,
     )
 
 
@@ -195,12 +182,7 @@ async def _list_user_policy_response(
         invalidate_user_list_cache()
     friends, fetch_status = await get_friend_list_with_availability()
     mode = onebot_list_listing_mode(fetch_status)
-    if mode == "empty":
-        return LinkParserUserPolicyListResponse(
-            users=[],
-            friend_list_available=False,
-        )
-    users = _message_enabled_users(snap, friends)
+    users = _message_enabled_users(snap, link_parser_policy_rows(friends, fetch_status))
     return LinkParserUserPolicyListResponse(
         users=build_user_policy_items(
             snap,
@@ -208,6 +190,7 @@ async def _list_user_policy_response(
             include_configured_non_friends=(mode == "map"),
         ),
         friend_list_available=(mode == "map"),
+        onebot_list_status=fetch_status,
     )
 
 
@@ -223,7 +206,7 @@ async def update_group_policy(
     body: LinkParserGroupPolicyUpdateRequest,
     _: AdminUser,
 ):
-    await _ensure_group_list_complete_for_mutation()
+    group = await _ensure_group_editable(group_id)
     svc = get_config_service()
     snap = svc.get_snapshot()
     _ensure_group_message_enabled(group_id, snap)
@@ -242,7 +225,6 @@ async def update_group_policy(
     await svc.reload()
 
     snap = svc.get_snapshot()
-    group = await _group_meta(group_id)
     return LinkParserGroupPolicyMutationResponse(
         item=_build_group_item(snap, group),
     )
@@ -252,7 +234,7 @@ async def update_group_policy(
     "/groups/{group_id}", response_model=LinkParserGroupPolicyMutationResponse
 )
 async def reset_group_policy(group_id: str, _: AdminUser):
-    await _ensure_group_list_complete_for_mutation()
+    group = await _ensure_group_editable(group_id)
     svc = get_config_service()
     snap = svc.get_snapshot()
     _ensure_group_message_enabled(group_id, snap)
@@ -260,7 +242,6 @@ async def reset_group_policy(group_id: str, _: AdminUser):
     await svc.reload()
 
     snap = svc.get_snapshot()
-    group = await _group_meta(group_id)
     return LinkParserGroupPolicyMutationResponse(
         item=_build_group_item(snap, group),
     )
@@ -282,10 +263,7 @@ async def create_user_policy(
     _: AdminUser,
 ):
     user_id = body.user_id.strip()
-    if not user_id.isdigit():
-        raise HTTPException(status_code=400, detail="QQ 号必须为数字")
-
-    await _ensure_friend_list_complete_for_mutation()
+    user_meta = await _ensure_user_editable(user_id)
     svc = get_config_service()
     snap = svc.get_snapshot()
     _ensure_private_message_enabled(user_id, snap)
@@ -305,7 +283,6 @@ async def create_user_policy(
     await svc.reload()
 
     snap = svc.get_snapshot()
-    user_meta = await _user_meta(user_id, snap)
     return LinkParserUserPolicyMutationResponse(
         item=build_user_policy_item(snap, user_meta),
     )
@@ -317,7 +294,7 @@ async def update_user_policy(
     body: LinkParserUserPolicyUpdateRequest,
     _: AdminUser,
 ):
-    await _ensure_friend_list_complete_for_mutation()
+    user_meta = await _ensure_user_editable(user_id)
     svc = get_config_service()
     snap = svc.get_snapshot()
     _ensure_private_message_enabled(user_id, snap)
@@ -340,7 +317,6 @@ async def update_user_policy(
     await svc.reload()
 
     snap = svc.get_snapshot()
-    user_meta = await _user_meta(user_id, snap)
     return LinkParserUserPolicyMutationResponse(
         item=build_user_policy_item(snap, user_meta),
     )
@@ -348,13 +324,13 @@ async def update_user_policy(
 
 @router.delete("/users/{user_id}", response_model=LinkParserUserPolicyMutationResponse)
 async def reset_user_policy(user_id: str, _: AdminUser):
-    await _ensure_friend_list_complete_for_mutation()
+    user_meta = await _ensure_user_editable(user_id)
     svc = get_config_service()
+    _ensure_private_message_enabled(user_id, svc.get_snapshot())
     await svc.delete_link_parser_user_policy(user_id)
     await svc.reload()
 
     snap = svc.get_snapshot()
-    user_meta = await _user_meta(user_id, snap)
     return LinkParserUserPolicyMutationResponse(
         item=build_user_policy_item(snap, user_meta),
     )

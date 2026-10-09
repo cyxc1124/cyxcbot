@@ -67,7 +67,7 @@ def collect_message_text(event: Any) -> str:
     if plain:
         parts.append(plain)
 
-    for segment in event.message:
+    for segment in event.get_message():
         if segment.type == "json":
             segment_data = segment.data.get("data", segment.data)
             payload = parse_json_segment_data(segment_data)

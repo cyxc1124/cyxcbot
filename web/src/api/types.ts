@@ -286,6 +286,8 @@ export interface LinkParserGroupPolicyItem {
   group_id: string
   group_name: string | null
   member_count: number | null
+  source?: 'onebot' | 'official'
+  editable?: boolean
   customized: boolean
   video_enabled: boolean
   live_enabled: boolean
@@ -296,6 +298,7 @@ export interface LinkParserGroupPolicyItem {
 export interface LinkParserGroupPolicyList {
   groups: LinkParserGroupPolicyItem[]
   group_list_available: boolean
+  onebot_list_status?: OneBotListStatus
 }
 
 export interface LinkParserGroupPolicyMutation {
@@ -306,6 +309,8 @@ export interface LinkParserUserPolicyItem {
   user_id: string
   nickname: string | null
   name: string | null
+  source?: 'onebot' | 'official'
+  editable?: boolean
   customized: boolean
   video_enabled: boolean
   live_enabled: boolean
@@ -316,6 +321,7 @@ export interface LinkParserUserPolicyItem {
 export interface LinkParserUserPolicyList {
   users: LinkParserUserPolicyItem[]
   friend_list_available: boolean
+  onebot_list_status?: OneBotListStatus
 }
 
 export interface LinkParserUserPolicyMutation {

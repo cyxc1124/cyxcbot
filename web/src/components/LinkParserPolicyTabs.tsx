@@ -10,8 +10,10 @@ import {
 import type {
   LinkParserGroupPolicyItem,
   LinkParserUserPolicyItem,
+  OneBotListStatus,
 } from '../api/types'
 import { useLinkParserPolicies } from '../hooks/useLinkParserPolicies'
+import { resolveOneBotListStatus } from '../utils/rosterStatus'
 import { LoadErrorBanner } from './LoadErrorBanner'
 import { GlobalPolicyHint, LinkParserPolicyTable } from './LinkParserPolicyTable'
 import { PageLoading } from './LoadingSpinner'
@@ -40,8 +42,8 @@ function mergeUserItem(
 
 function BulkToggleButtons({
   label,
-  enableLabel = '全部启用',
-  disableLabel = '全部关闭',
+  enableLabel = '启用可编辑项',
+  disableLabel = '关闭可编辑项',
   busy,
   editable,
   allEnabled,
@@ -84,10 +86,12 @@ function BulkToggleButtons({
 
 export function LinkParserGroupPolicyTab() {
   const [groupListAvailable, setGroupListAvailable] = useState(true)
+  const [groupListStatus, setGroupListStatus] = useState<OneBotListStatus>('ok')
 
   const loadGroups = useCallback(async () => {
     const data = await getLinkParserGroupPolicies()
     setGroupListAvailable(data.group_list_available)
+    setGroupListStatus(resolveOneBotListStatus(data.onebot_list_status, data.group_list_available))
     return data.groups
   }, [])
 
@@ -109,18 +113,19 @@ export function LinkParserGroupPolicyTab() {
     busy,
   } = useLinkParserPolicies({
     loadingKey: 'link-parser-groups',
+    editable: groupListAvailable,
     loadItems: loadGroups,
     getItemId: (item) => item.group_id,
     mergeItem: mergeGroupItem,
     updateItem: (id, payload) => updateLinkParserGroupPolicy(id, payload),
     resetItem: resetLinkParserGroupPolicy,
     toggleAllSuccessMessage: (enabled) =>
-      enabled ? '已为全部群组启用 B 站链接解析' : '已为全部群组关闭 B 站链接解析',
+      enabled ? '已为可编辑群组启用 B 站链接解析' : '已为可编辑群组关闭 B 站链接解析',
     toggleAllSendVideoSuccessMessage: (enabled) =>
-      enabled ? '已为全部群组启用发送视频' : '已为全部群组关闭发送视频',
+      enabled ? '已为可编辑群组启用发送视频' : '已为可编辑群组关闭发送视频',
   })
 
-  const policyEditable = groupListAvailable
+  const policyEditable = groups.some((group) => group.editable ?? groupListAvailable)
 
   if (loading && groups.length === 0 && !error) return <PageLoading />
   if (error && groups.length === 0) return <LoadErrorBanner message={error} onRetry={retryLoad} />
@@ -155,8 +160,10 @@ export function LinkParserGroupPolicyTab() {
         )}
       </div>
       {!groupListAvailable && groups.length > 0 && (
-        <p className="text-sm text-amber-700 dark:text-amber-300">
-          群列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改链接解析开关；待连接恢复后再调整。
+        <p className={groupListStatus === 'offline' ? 'text-sm text-muted-foreground' : 'text-sm text-amber-700 dark:text-amber-300'}>
+          {groupListStatus === 'offline'
+            ? '使用官方 Bot 无需连接 OneBot。当前仅展示已缓存的官方 QQ 群，可单独修改其解析策略。'
+            : 'OneBot 群列表尚未完整同步，数字 QQ 群暂为只读；已缓存的官方 QQ 群可编辑。'}
         </p>
       )}
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
@@ -165,18 +172,20 @@ export function LinkParserGroupPolicyTab() {
         <p className="text-sm text-muted-foreground">
           {groupListAvailable
             ? '暂无已启用群消息的群组。请先在「群消息」Tab 中启用对应群组，或确保 OneBot / 官方 Bot 已连接。'
-            : '暂无群组数据。请确保 OneBot / 官方 Bot 已连接，或等待群列表同步完成。'}
+            : groupListStatus === 'offline'
+              ? '暂无已启用群消息的官方 QQ 群。请先在官方群 @ 机器人发送消息，再到「群消息」中启用对应群组。'
+              : '暂无群组数据。请确保 OneBot / 官方 Bot 已连接，或等待群列表同步完成。'}
         </p>
       ) : (
         <LinkParserPolicyTable
           items={groups}
           getItemId={(group) => group.group_id}
           getDisplayName={(group) => group.group_name}
-          idColumnLabel="群号"
+          idColumnLabel="群号 / OpenID"
           nameColumnLabel="群名称"
           savingIds={savingIds}
           togglingAll={togglingAll}
-          editable={policyEditable}
+          editable={groupListAvailable}
           onPatch={patchItem}
           onReset={handleReset}
         />
@@ -187,10 +196,12 @@ export function LinkParserGroupPolicyTab() {
 
 export function LinkParserUserPolicyTab() {
   const [friendListAvailable, setFriendListAvailable] = useState(true)
+  const [friendListStatus, setFriendListStatus] = useState<OneBotListStatus>('ok')
 
   const loadUsers = useCallback(async () => {
     const data = await getLinkParserUserPolicies()
     setFriendListAvailable(data.friend_list_available)
+    setFriendListStatus(resolveOneBotListStatus(data.onebot_list_status, data.friend_list_available))
     return data.users
   }, [])
 
@@ -212,6 +223,7 @@ export function LinkParserUserPolicyTab() {
     busy,
   } = useLinkParserPolicies({
     loadingKey: 'link-parser-users',
+    editable: friendListAvailable,
     loadItems: loadUsers,
     getItemId: (item) => item.user_id,
     mergeItem: mergeUserItem,
@@ -225,12 +237,12 @@ export function LinkParserUserPolicyTab() {
       }),
     resetItem: resetLinkParserUserPolicy,
     toggleAllSuccessMessage: (enabled) =>
-      enabled ? '已为全部好友启用 B 站链接解析' : '已为全部好友关闭 B 站链接解析',
+      enabled ? '已为可编辑好友启用 B 站链接解析' : '已为可编辑好友关闭 B 站链接解析',
     toggleAllSendVideoSuccessMessage: (enabled) =>
-      enabled ? '已为全部好友启用发送视频' : '已为全部好友关闭发送视频',
+      enabled ? '已为可编辑好友启用发送视频' : '已为可编辑好友关闭发送视频',
   })
 
-  const policyEditable = friendListAvailable
+  const policyEditable = users.some((user) => user.editable ?? friendListAvailable)
 
   if (loading && users.length === 0 && !error) return <PageLoading />
   if (error && users.length === 0) return <LoadErrorBanner message={error} onRetry={retryLoad} />
@@ -265,8 +277,10 @@ export function LinkParserUserPolicyTab() {
         )}
       </div>
       {!friendListAvailable && users.length > 0 && (
-        <p className="text-sm text-amber-700 dark:text-amber-300">
-          好友列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改链接解析开关；待连接恢复后再调整。
+        <p className={friendListStatus === 'offline' ? 'text-sm text-muted-foreground' : 'text-sm text-amber-700 dark:text-amber-300'}>
+          {friendListStatus === 'offline'
+            ? '使用官方 Bot 无需连接 OneBot。当前仅展示已缓存的官方 QQ 用户，可单独修改其解析策略。'
+            : 'OneBot 好友列表尚未完整同步，数字 QQ 用户暂为只读；已缓存的官方 QQ 用户可编辑。'}
         </p>
       )}
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
@@ -275,18 +289,20 @@ export function LinkParserUserPolicyTab() {
         <p className="text-sm text-muted-foreground">
           {friendListAvailable
             ? '暂无已启用好友消息的好友。请先在「好友消息」Tab 中启用对应好友，或确保 OneBot / 官方 Bot 已连接。'
-            : '暂无好友数据。请确保 OneBot / 官方 Bot 已连接，或等待好友列表同步完成。'}
+            : friendListStatus === 'offline'
+              ? '暂无已启用好友消息的官方 QQ 用户。请先私聊机器人，再到「好友消息」中启用对应用户。'
+              : '暂无好友数据。请确保 OneBot / 官方 Bot 已连接，或等待好友列表同步完成。'}
         </p>
       ) : (
         <LinkParserPolicyTable
           items={users}
           getItemId={(user) => user.user_id}
           getDisplayName={(user) => user.nickname ?? user.name}
-          idColumnLabel="QQ 号"
+          idColumnLabel="QQ 号 / OpenID"
           nameColumnLabel="昵称"
           savingIds={savingIds}
           togglingAll={togglingAll}
-          editable={policyEditable}
+          editable={friendListAvailable}
           onPatch={patchItem}
           onReset={handleReset}
         />

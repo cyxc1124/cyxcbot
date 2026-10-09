@@ -207,7 +207,15 @@ async def _merge_av(audio: Path, video: Path, output: Path) -> None:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    _, stderr = await proc.communicate()
+    try:
+        _, stderr = await proc.communicate()
+    finally:
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            await proc.communicate()
     if proc.returncode != 0:
         detail = (stderr or b"").decode("utf-8", errors="replace")[:300]
         raise BilibiliVideoDownloadError(f"FFmpeg 混流失败: {detail}")
@@ -287,7 +295,7 @@ async def download_bilibili_video(
             prefer_qn=prefer_qn,
             max_bytes=max_bytes,
         )
-    except Exception:
+    except Exception, asyncio.CancelledError:
         final.unlink(missing_ok=True)
         _cleanup_work_dir(work, owned=owned_work)
         raise

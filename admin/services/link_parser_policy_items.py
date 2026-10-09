@@ -36,6 +36,8 @@ def build_user_policy_item(snap, user: dict) -> LinkParserUserPolicyItem:
         user_id=user_id,
         nickname=user.get("nickname"),
         name=override.name if override else None,
+        source=user.get("source", "onebot"),
+        editable=user.get("editable", True),
         customized=customized,
         video_enabled=video_enabled,
         live_enabled=live_enabled,
@@ -61,6 +63,8 @@ def build_user_policy_items(
     if include_configured_non_friends:
         for user_id, record in snap.link_parser_user_policies.items():
             if user_id in by_id:
+                continue
+            if not user_id.isdigit():
                 continue
             if not is_private_message_enabled_from_snapshot(user_id, snap):
                 continue

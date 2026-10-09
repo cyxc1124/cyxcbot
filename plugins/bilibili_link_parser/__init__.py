@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from nonebot import get_driver, on_message
@@ -19,12 +19,15 @@ from nonebot.adapters.onebot.v11.message import Message
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
+from shared.adapter.bots import is_official_qq_bot
 from shared.adapter.inbound import (
     group_id_of,
     is_group_event,
     is_private_event,
     user_id_of,
 )
+from shared.adapter.outbound import OfficialReplyLimitError, official_reply_remaining
+from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.link_parser_policy import (
     LinkParserScopePolicy,
     resolve_link_parser_policy,
@@ -340,6 +343,13 @@ async def _resolve_and_reply(
     *,
     enable_dynamic_screenshot: bool,
 ) -> None:
+    if is_official_qq_bot(bot):
+        remaining = official_reply_remaining(event)
+        if not remaining:
+            return
+        if remaining == 1:
+            scope = replace(scope, send_video_enabled=False)
+            enable_dynamic_screenshot = False
     resolved = _ResolvedReply()
     user_id = user_id_of(event)
     try:
@@ -383,6 +393,13 @@ async def _resolve_and_reply(
             [_message_id_of(item) for item in send_results],
             reply_scope,
         )
+    except OfficialReplyLimitError:
+        logger.warning(
+            "B 站链接解析：本条官方消息的被动回复次数已用完 user={}", user_id
+        )
+    except LoggedQQApiError:
+        # 已由共享发送层按 QQ 平台错误码记录，避免重复异常栈。
+        return
     except ActionFailed as exc:
         detail = str(
             getattr(exc, "wording", None) or getattr(exc, "message", None) or exc
