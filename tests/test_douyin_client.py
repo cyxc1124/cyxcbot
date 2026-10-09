@@ -7,8 +7,17 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from utils.douyin_api.client import DouyinAPIClient, _should_retry_http_status
-from utils.douyin_api.cookie_utils import cookie_header, cookies_from_http_response
+from utils.douyin_api.client import (
+    DouyinAPIClient,
+    _gateway_error_snippet,
+    _is_nonretryable_argus,
+    _should_retry_http_status,
+)
+from utils.douyin_api.cookie_utils import (
+    cookie_header,
+    cookie_value,
+    cookies_from_http_response,
+)
 
 
 def test_should_retry_http_status():
@@ -18,6 +27,22 @@ def test_should_retry_http_status():
     assert not _should_retry_http_status(200)
     assert not _should_retry_http_status(400)
     assert not _should_retry_http_status(404)
+
+
+def test_cookie_value_is_case_insensitive():
+    assert cookie_value({"UIFID": "abc"}, "uifid") == "abc"
+    assert cookie_value({"uifid": "xyz"}, "UIFID") == "xyz"
+    assert cookie_value({"ttwid": "1"}, "UIFID", "uifid") == ""
+
+
+def test_argus_gateway_snippet():
+    assert (
+        _gateway_error_snippet("Blocked by ArgusSecurityPlugin Uifid Not Found")
+        == "Blocked by ArgusSecurityPlugin Uifid Not Found"
+    )
+    assert _is_nonretryable_argus("Blocked by ArgusSecurityPlugin Uifid Not Found")
+    assert _is_nonretryable_argus("Blocked by ArgusSecurityPlugin Signature Not Found")
+    assert not _is_nonretryable_argus("")
 
 
 def test_cookie_header_keeps_configured_pairs():
@@ -62,11 +87,93 @@ class _FakeResp:
     async def json(self, content_type=None):
         return json.loads(self._body)
 
+    async def text(self) -> str:
+        return self._body.decode("utf-8", errors="replace")
+
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, *args):
         return False
+
+
+@pytest.mark.asyncio
+async def test_default_query_uses_cookie_uifid_and_omits_empty():
+    client = DouyinAPIClient({"UIFID": "from-cookie", "s_v_web_id": "verify_x"})
+    with patch.object(client, "_ensure_ms_token", new=AsyncMock(return_value="tok")):
+        query = await client._default_query()
+    assert query["uifid"] == "from-cookie"
+    assert query["verifyFp"] == "verify_x"
+    assert query["fp"] == "verify_x"
+    assert query["msToken"] == "tok"
+
+    guest = DouyinAPIClient({})
+    with patch.object(guest, "_ensure_ms_token", new=AsyncMock(return_value="tok")):
+        empty = await guest._default_query()
+    assert "uifid" not in empty
+    assert "verifyFp" not in empty
+
+
+@pytest.mark.asyncio
+async def test_request_json_sends_uifid_header():
+    client = DouyinAPIClient({"UIFID": "from-cookie", "ttwid": "1"})
+    captured: list[dict] = []
+
+    class _FakeSession:
+        closed = False
+
+        def get(self, url, **kwargs):
+            captured.append(kwargs)
+            return _FakeResp(200, b'{"ok": true}')
+
+    client._session = _FakeSession()
+    data = await client._request_json("/aweme/v1/web/aweme/detail/", {"aweme_id": "1"})
+    assert data == {"ok": True}
+    assert captured[0]["headers"]["uifid"] == "from-cookie"
+    assert captured[0]["headers"]["x-tt-argus"] == "1"
+
+
+@pytest.mark.asyncio
+async def test_request_json_omits_argus_headers_without_uifid():
+    client = DouyinAPIClient({"ttwid": "1"})
+    captured: list[dict] = []
+
+    class _FakeSession:
+        closed = False
+
+        def get(self, url, **kwargs):
+            captured.append(kwargs)
+            return _FakeResp(200, b'{"ok": true}')
+
+    client._session = _FakeSession()
+    data = await client._request_json("/aweme/v1/web/aweme/detail/", {"aweme_id": "1"})
+    assert data == {"ok": True}
+    assert "uifid" not in captured[0]["headers"]
+    assert "x-tt-argus" not in captured[0]["headers"]
+
+
+@pytest.mark.asyncio
+async def test_request_json_does_not_retry_argus_uifid_missing():
+    client = DouyinAPIClient({"ttwid": "1"})
+    calls = {"n": 0}
+
+    class _FakeSession:
+        closed = False
+
+        def get(self, url, **kwargs):
+            calls["n"] += 1
+            return _FakeResp(403, b"Blocked by ArgusSecurityPlugin Uifid Not Found")
+
+    client._session = _FakeSession()
+    with patch(
+        "utils.douyin_api.client.asyncio.sleep", new_callable=AsyncMock
+    ) as sleep:
+        data = await client._request_json(
+            "/aweme/v1/web/aweme/detail/", {"aweme_id": "1"}
+        )
+    assert data == {}
+    assert calls["n"] == 1
+    sleep.assert_not_called()
 
 
 @pytest.mark.asyncio

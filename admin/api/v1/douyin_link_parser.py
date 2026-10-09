@@ -342,7 +342,7 @@ async def save_cookie(body: DouyinCookieSaveRequest, _: AdminUser):
     if not keys_ok:
         message = (
             "抖音 Cookie 已保存，但缺少建议字段"
-            "（ttwid / odin_tt / passport_csrf_token），解析可能失败"
+            "（ttwid / odin_tt / passport_csrf_token / UIFID），解析可能失败"
         )
     return DouyinCookieStatusResponse(
         configured=snap.douyin_cookie_set,

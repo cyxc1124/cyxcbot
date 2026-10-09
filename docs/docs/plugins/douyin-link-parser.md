@@ -39,7 +39,7 @@ sidebar_position: 5
 | **设置 → 抖音 → 账号** | 扫码登录（Playwright）或粘贴 Cookie；与 B 站账号相互独立 |
 | **抖音 → 消息模板** | `link_template_douyin` |
 
-Cookie **非硬性必填**：未配置时仍会尝试游客态解析（日志中有提示）。建议配置登录态（如含 `ttwid` / `odin_tt` / `passport_csrf_token`）；`msToken` 可缺省并由程序自动生成。
+Cookie **非硬性必填**：未配置时仍会尝试游客态解析（日志中有提示）。建议配置登录态（如含 `ttwid` / `odin_tt` / `passport_csrf_token` / `UIFID`）；`msToken` 可缺省并由程序自动生成。扫码登录会带上 `UIFID`。详情接口经 Argus 网关，缺 `UIFID` 或只发空 `uifid=` 会直接 403。
 
 扫码登录依赖本机 / 镜像内已安装的 Chromium（见 [本地开发](../getting-started/local-dev)）。
 
