@@ -221,6 +221,8 @@ export type XTargetUpdate = Partial<
 >
 
 // Groups
+export type OneBotListStatus = 'ok' | 'offline' | 'incomplete'
+
 export interface Group {
   group_id: string
   group_name: string | null
@@ -233,6 +235,7 @@ export interface GroupMessagePolicy {
   enabled_group_ids: string[]
   groups: Group[]
   group_list_available: boolean
+  onebot_list_status?: OneBotListStatus | null
 }
 
 export interface Friend {
@@ -246,6 +249,7 @@ export interface PrivateMessagePolicy {
   enabled_user_ids: string[]
   users: Friend[]
   friend_list_available: boolean
+  onebot_list_status?: OneBotListStatus | null
 }
 
 export interface StatusCheckDisplayOptions {

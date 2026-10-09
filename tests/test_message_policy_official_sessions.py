@@ -79,7 +79,7 @@ def load_handlers(scope, snapshot, rows, fetch_status):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scope", ["group", "private"])
-@pytest.mark.parametrize("fetch_status", ["offline", "incomplete"])
+@pytest.mark.parametrize("fetch_status", ["ok", "offline", "incomplete"])
 async def test_cached_official_session_can_enable_disable_and_reload(
     scope, fetch_status
 ):
@@ -96,6 +96,7 @@ async def test_cached_official_session_can_enable_disable_and_reload(
     ]
     handlers, service = load_handlers(scope, snapshot, rows, fetch_status)
     policy = await handlers["get_message_policy"](None)
+    assert policy.onebot_list_status == fetch_status
     returned = policy.groups if scope == "group" else policy.users
     assert [getattr(row, f"{key}_id") for row in returned] == (
         ["official"] if fetch_status == "offline" else ["official", "1002"]
@@ -116,11 +117,13 @@ async def test_cached_official_session_can_enable_disable_and_reload(
         response = await handlers["update_message_policy"](
             request(restrict=True, **{f"enabled_{key}_ids": expected}), None
         )
+        assert response.onebot_list_status == fetch_status
         assert getattr(response, f"enabled_{key}_ids") == expected
         assert guard("official", snapshot) is enabled
         assert guard("1001", snapshot)
         assert not guard("unknown-official", snapshot)
         reloaded = await handlers["get_message_policy"](None)
+        assert reloaded.onebot_list_status == fetch_status
         assert getattr(reloaded, f"enabled_{key}_ids") == expected
     assert service.set_settings.await_count == 2
 

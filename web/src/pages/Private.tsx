@@ -3,7 +3,8 @@ import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
 import { useMountAsync } from '../hooks/useMountAsync'
 import { createRetryHandler } from '../utils/retryLoad'
 import { getPrivateMessagePolicy, updatePrivateMessagePolicy } from '../api/client'
-import type { Friend } from '../api/types'
+import type { Friend, OneBotListStatus } from '../api/types'
+import { resolveOneBotListStatus } from '../utils/rosterStatus'
 import { DouyinLinkParserUserPolicyTab } from '../components/DouyinLinkParserPolicyTabs'
 import { LinkParserUserPolicyTab } from '../components/LinkParserPolicyTabs'
 import { XLinkParserUserPolicyTab } from '../components/XLinkParserPolicyTabs'
@@ -37,6 +38,7 @@ export function PrivatePage() {
   const [error, setError] = useState('')
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [friendListAvailable, setFriendListAvailable] = useState(true)
+  const [onebotListStatus, setOnebotListStatus] = useState<OneBotListStatus>('ok')
 
   const load = useCallback(async () => {
     if (tab !== 'message') return
@@ -46,6 +48,7 @@ export function PrivatePage() {
       setRestrict(data.restrict)
       setEnabledIds(data.enabled_user_ids)
       setFriendListAvailable(data.friend_list_available)
+      setOnebotListStatus(resolveOneBotListStatus(data.onebot_list_status, data.friend_list_available))
       setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
@@ -94,6 +97,7 @@ export function PrivatePage() {
       setRestrict(updated.restrict)
       setEnabledIds(updated.enabled_user_ids)
       setFriendListAvailable(updated.friend_list_available)
+      setOnebotListStatus(resolveOneBotListStatus(updated.onebot_list_status, updated.friend_list_available))
     } catch (err) {
       setRestrict(prevRestrict)
       setEnabledIds(prevEnabledIds)
@@ -122,6 +126,7 @@ export function PrivatePage() {
       setRestrict(updated.restrict)
       setEnabledIds(updated.enabled_user_ids)
       setFriendListAvailable(updated.friend_list_available)
+      setOnebotListStatus(resolveOneBotListStatus(updated.onebot_list_status, updated.friend_list_available))
       showToast('success', enabled ? '已启用全部好友' : '已关闭全部好友')
     } catch (err) {
       setRestrict(prevRestrict)
@@ -174,9 +179,15 @@ export function PrivatePage() {
 
       {tab === 'message' && (
         <>
-          {!friendListAvailable && users.length > 0 && (
+          {onebotListStatus === 'incomplete' && (
             <p className="text-sm text-amber-700 dark:text-amber-300">
-              列表尚未完整同步，暂不可批量调整或修改 OneBot 会话；白名单模式下，可单独调整已发现的官方会话。
+              OneBot 好友列表获取失败，暂不可批量调整或修改 OneBot 会话；白名单模式下，仍可单独调整已发现的官方会话。
+            </p>
+          )}
+          {onebotListStatus === 'offline' && (
+            <p className="text-sm text-muted-foreground">
+              使用官方 Bot 无需连接 OneBot。官方好友通过收到私聊事件发现；
+              {restrict ? '可单独调整下方已发现的官方好友，允许名单中其他会话保持不变。' : '当前为全部启用模式，官方消息已允许处理。'}
             </p>
           )}
           {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
@@ -186,7 +197,9 @@ export function PrivatePage() {
               <p className="text-sm text-muted-foreground">
                 {error
                   ? '数据暂时无法加载'
-                  : friendListAvailable
+                  : onebotListStatus === 'offline'
+                    ? '尚未发现官方会话，请先向官方 Bot 发一条私聊消息后刷新。使用 OneBot 时请检查协议端连接。'
+                    : friendListAvailable
                     ? '暂无好友数据。OneBot 需在线且支持好友列表；官方 Bot 收到私聊后会显示对应用户。'
                     : '暂无好友数据。请连接 OneBot，或先向官方 Bot 发一条私聊消息后刷新。'}
               </p>
