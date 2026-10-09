@@ -57,13 +57,14 @@ def test_parse_url_type_and_video_id():
 
 
 def test_validate_cookies_required_keys():
-    assert validate_cookies(
-        {
-            "ttwid": "1",
-            "odin_tt": "2",
-            "passport_csrf_token": "3",
-        }
-    )
+    legacy = {
+        "ttwid": "1",
+        "odin_tt": "2",
+        "passport_csrf_token": "3",
+    }
+    assert not validate_cookies(legacy)
+    assert validate_cookies({**legacy, "UIFID": "u"})
+    assert validate_cookies({**legacy, "uifid": "u"})
     assert not validate_cookie_header("ttwid=1; sessionid=x")
 
 

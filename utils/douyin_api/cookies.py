@@ -6,7 +6,7 @@ from nonebot.log import logger
 
 from .cookie_utils import cookie_value, parse_cookie_header, sanitize_cookies
 
-REQUIRED_COOKIE_KEYS = frozenset({"ttwid", "odin_tt", "passport_csrf_token"})
+REQUIRED_COOKIE_KEYS = frozenset({"ttwid", "odin_tt", "passport_csrf_token", "UIFID"})
 
 
 def validate_cookies(cookies: dict[str, str]) -> bool:
@@ -14,19 +14,17 @@ def validate_cookies(cookies: dict[str, str]) -> bool:
 
     对齐 douyin-downloader：缺键只表示「不完整」，调用方应 warning 后仍可尝试。
     ``msToken`` 可缺，运行时会自动生成。
-    ``UIFID`` 建议具备：详情接口经 Argus 网关，空 uifid 会直接 403。
+    ``UIFID`` 计入完整性：详情接口经 Argus 网关，缺了会 403。
     """
     clean = sanitize_cookies(cookies or {})
-    missing = [key for key in sorted(REQUIRED_COOKIE_KEYS) if not clean.get(key)]
+    missing = [
+        key for key in sorted(REQUIRED_COOKIE_KEYS) if not cookie_value(clean, key)
+    ]
     if missing:
         logger.warning("抖音 Cookie 不完整，缺少: {}", ", ".join(missing))
         return False
-    if not clean.get("msToken"):
+    if not cookie_value(clean, "msToken"):
         logger.info("抖音 Cookie 未含 msToken，将在请求时自动生成")
-    if not cookie_value(clean, "UIFID", "uifid"):
-        logger.warning(
-            "抖音 Cookie 未含 UIFID，详情接口可能被 Argus 拦截（403 Uifid Not Found）"
-        )
     return True
 
 
