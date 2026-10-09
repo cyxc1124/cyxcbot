@@ -4,53 +4,23 @@
 
 ## 项目概览
 
-**机器草（cyxcbot）**：基于 NoneBot2 的 QQ 机器人，专注 B 站直播/动态监控与群消息推送。2.0 起业务配置走 **Web Admin + 数据库**，环境变量仅保留启动级项。
+**机器草（cyxcbot）**：基于 NoneBot2 的 QQ 机器人，支持 OneBot V11 与官方 QQ Bot。Web Admin 使用 FastAPI（`admin/`）和 React + TypeScript + Tailwind（`web/`）；数据库使用 SQLAlchemy + Alembic（`shared/db/`），截图使用 Playwright + Chromium。
 
-| 组件 | 技术 |
-|------|------|
-| 机器人 | NoneBot2 + OneBot V11 |
-| Web Admin API | FastAPI（`admin/`） |
-| 前端 | React + TypeScript + Tailwind（`web/`） |
-| 数据库 | SQLAlchemy + Alembic 迁移（`shared/db/`） |
-| 截图 | Playwright + Chromium |
-
-入口：`bot.py` → `nonebot.init()` → 加载 `plugins/`、`admin/startup.py` 启动 Web Admin。
-
-## 目录结构
-
-```
-bot.py              # 主入口
-admin/              # FastAPI、JWT 鉴权、REST/WS API
-shared/             # DB、ConfigService、策略、通知、B 站登录、日志广播
-plugins/            # NoneBot 插件（每目录一个 __init__.py）
-utils/              # B 站 API、截图等无 NoneBot 依赖的工具
-web/                # 管理面板前端（独立 npm 项目）
-docs/               # 文档站（Docusaurus）
-scripts/            # Windows 打包等
-tests/              # pytest
-deploy/             # Docker Compose / Helm
-```
+入口：`bot.py` → `nonebot.init()` → 加载 `plugins/`、`admin/startup.py` 启动 Web Admin。业务配置走 **Web Admin + 数据库**，环境变量仅保留启动级项。
 
 数据流：Web Admin ↔ `admin/` ↔ `shared/db` ↔ 各 `plugins/` ↔ OneBot 协议端 / 官方 QQ Bot。官方凭证仅存数据库（`official_qq_*`），经 `shared/adapter/official_runtime.py` 热连接；数字 QQ 号走 OneBot，openid 走官方 Bot。`rust_player` / `rust_rcon` / `group_special_title` 仍仅 OneBot。
 
 官方 Bot 默认使用 Webhook（`/qq/webhook`，机器人端口默认 8080）。动态、直播和 X 监控支持官方目标投递；主动能力以 QQ 平台策略及回执为准。动态/直播保存消息快照，X 保存目标和分段进度（重试仍需重新获取推文及媒体）。命令回复走 `send_event_message()`，由 QQ 适配器维护事件回复序号；官方群被动回复最多五次、C2C 四次，解析插件须预先安排媒体和文案预算。
 
-### 插件
+`video_monitor` 仅负责最新视频命令查询，新投稿自动推送在 `dynamic_monitor`；`group_guard` / `private_guard` 控制入站消息，不影响监控主动推送。其余插件职责和用法按需查看对应 `plugins/*/README.md` 或 [插件文档](docs/docs/plugins/)。
 
-| 插件 | 职责 |
-|------|------|
-| `dynamic_monitor` | UP 主动态轮询推送与置顶变更推送；`最新动态`/`置顶动态`/`#提取` |
-| `x_monitor` | X (Twitter) 博主新推文轮询推送（需 Bearer Token；支持 HTTP/HTTPS/SOCKS5 代理） |
-| `live_monitor` | 直播开播/下播（WebSocket + API 轮询） |
-| `video_monitor` | 群内 `最新视频`/`最新投稿` **命令查询**（非自动推送；新投稿推送见 `dynamic_monitor`） |
-| `bilibili_link_parser` | 群/好友 B 站链接与 QQ 小程序自动解析 |
-| `douyin_link_parser` | 群/好友抖音分享链接解析与视频/图集/Live 图回传（Live 以视频发送） |
-| `x_link_parser` | 群/好友 X (Twitter) 链接解析与推文文字/图片/视频回传（复用 X Bearer/代理） |
-| `rust_rcon` | 群/私聊 WebRCON 远控（触发词 + QQ 白名单；会话开关默认关） |
-| `rust_player` | 群内签到、SteamID 绑定、积分查询与商城兑换（仅群聊） |
-| `group_special_title` | 群成员自助设置 QQ 专属头衔（须群主、白名单；`/头衔`） |
-| `group_guard` / `private_guard` | 入站消息总开关（OneBot + 官方 Bot；不影响监控主动推送） |
-| `status_check` | `/status` 运行状态查询与权限控制 |
+## 工作范围与完成条件
+
+- 只读取当前任务需要的代码和文档；下方入口用于按需定位。
+- 完成请求所需的调用方、测试和文档调整，修复本次改动引入的问题，完成相关验证后再交付；未解决的阻塞明确报告。
+- 保留用户已有改动，只改任务相关代码；沿用周边命名、错误处理和接口，不添加未请求的抽象。
+- 注释仅解释代码本身无法表达的原因。行为变更按风险补最小回归检查，不以代码行数判断是否需要测试。
+- JWT 密钥、Cookie、Token、数据库凭证等不得写入日志或硬编码。
 
 ### Admin ↔ Plugin 边界
 
@@ -59,13 +29,20 @@ deploy/             # Docker Compose / Helm
 
 ## 开发与测试
 
-- 使用 **Python 3.14** 与仓库根目录 `.venv/`，勿用系统全局 Python。不存在时：`python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt`（pyenv 用户可在项目根执行 `pyenv local 3.14`）
-- 格式化/检查：`./.venv/bin/ruff check .`、`./.venv/bin/ruff format .`
-- 测试：`./.venv/bin/pytest`
-- 本地启动：`./.venv/bin/python bot.py`；前端另开终端 `cd web && npm run dev`
-- 前端构建/类型检查：`cd web && npm run build`
-- 文档站：`cd docs && npm start`（预览）/ `npm run build`
-- `bot.py` 有 intentional E402（`nonebot.init()` 之后的 import），ruff 已忽略
+- 使用 **Python 3.14** 与仓库根目录 `.venv/`，勿用系统全局 Python 运行项目。不存在时：`python3.14 -m venv .venv && ./.venv/bin/pip install -r requirements.txt`；已有环境可用 `./.venv/bin/python --version` 确认版本。
+- 按改动影响选择下列检查，不要求每次全跑；格式化仅覆盖本次修改文件。涉及跨模块行为或发版时按影响扩大验证范围。
+
+| 改动 | 验证入口 |
+|------|----------|
+| Python | `./.venv/bin/ruff check <相关文件>`；`./.venv/bin/ruff format <修改文件>`；`./.venv/bin/pytest tests/<相关测试文件>` |
+| 前端行为 | `cd web && npm test -- <相关测试文件>`（Vitest）；完整前端测试为 `npm test` |
+| 前端构建/类型 | `cd web && npm run build` |
+| 文档站 | `cd docs && npm run build`；普通 Markdown 修改检查内容和链接即可 |
+
+- Python 测试在 `tests/`；前端测试沿用 `web/` 的 Vitest。需要完整 Python 回归时运行 `./.venv/bin/pytest`。
+- 本地启动：`./.venv/bin/python bot.py`；前端 `cd web && npm run dev`；文档预览 `cd docs && npm start`。
+- 本地验证使用隔离数据库和测试目标；`bot.py` 会连接配置的数据库并执行迁移，不作为无副作用的检查命令。
+- `bot.py` 的 E402 是 `nonebot.init()` 后导入所需，Ruff 已忽略。
 
 ## 配置约定
 
@@ -79,128 +56,27 @@ deploy/             # Docker Compose / Helm
 **插件读配置的标准模式**：
 
 1. `Config.from_service()` 从 `get_config_service().get_snapshot()` 取快照
-2. 需热重载的插件注册 `get_config_service().register_reload_callback(...)`（见 `dynamic_monitor`、`x_monitor`、`live_monitor`、`video_monitor`、`bilibili_link_parser`、`douyin_link_parser`、`x_link_parser`）
+2. 需热重载的插件注册 `get_config_service().register_reload_callback(...)`，沿用所改插件的现有模式
 3. 超级用户由 `shared/config/nonebot_superusers.py` 从 DB 同步到 NoneBot
 
 数据库迁移在 `shared/db/migrations/`；启动时 `nonebot.init(alembic_startup_check=True)` 经 Alembic **upgrade** 应用（勿用 sync 模式，模型变更失败时可能删表重建）。
 
-启动前 `bot.py` 会调用 `shared/db/alembic_repair.py` 的 `repair_alembic_version_if_needed()`，补救历史上 sync 模式（`alembic_startup_check=False`）留下的漂移——那种模式会建表却把 `alembic_version` 清空，直接切到 upgrade 会因 `CREATE TABLE` 冲突失败。repair **仅在「核心表已存在但 `alembic_version` 空/缺」时**，按现有表结构推断并回填一次 revision；`alembic_version` 非空的健康库一律不动。它会按 URL 依次尝试已安装的同步/异步驱动（`postgresql+asyncpg` 优先 async 再回退 `psycopg`；SQLite 固定用内置 pysqlite），缺驱动时跳过 repair 而不阻断启动。
+**新增改表结构的 migration 时，须在 `shared/db/alembic_repair.py` 的 `infer_alembic_revision()` 登记可唯一识别的表/列特征。** 修改迁移或启动修复时阅读 [数据库迁移说明](shared/db/README.md)；不要改写非空的健康 `alembic_version`，也不要在未确认历史部署迁移完成前删除修复代码。
 
-**`alembic_repair.py` 是一次性过渡代码**，待所有历史部署都迁移完毕（`alembic_version` 均已正常）后可整体删除。`infer_alembic_revision()` 的推断基础上限是切换前的 head（`g7h8i9j0k1l2`）——sync 模式切换前的漂移库只会止步于这个版本；但若部署被回滚到仍带 `alembic_startup_check=False` 的旧版本并启动过一次，之后新增迁移引入的列/表（如 h8 的 `dynamic_enabled` 列）也可能残留在漂移库中而 `alembic_version` 被再次清空。**因此新增会改表结构的 migration 时，仍需在 `infer_alembic_revision()` 中为其登记可唯一识别的表/列特征**（参考 h8 分支的写法），否则 Alembic upgrade 会因重复建表/加列而启动失败。
+## 提交与发布
 
-## 代码风格
-
-- **最小改动**：只改任务相关代码，不扩 scope、不加未请求的抽象。
-- **沿用现有模式**：命名、import 顺序、错误处理方式与周边文件保持一致。
-- **注释**：仅解释非显而易见的业务/技术细节；不自解释代码。
-- **测试**：非平凡逻辑留最小可运行检查（`tests/` 里 pytest）；一行能搞定的不用框架。
-- **安全**：JWT 密钥、Cookie、数据库凭证等**不得**写入日志或硬编码。
-- **提交**：仅在用户明确要求时 `git commit`；不主动 push。格式见下方。
-
-## 提交
-
-`<type>: <中文说明>`，可加范围：`feat(auth): ...`。必须保留 type 前缀，不要只写中文。
-
-- `feat` 新功能
-- `fix` 修缺陷
-- `docs` 文档
-- `style` 格式（不影响行为）
-- `refactor` 重构
-- `perf` 性能
-- `test` 测试
-- `build` 构建与依赖
-- `ci` CI / 工作流
-- `chore` 脚手架、杂项
-- `revert` 回滚
-
-```
-feat: 支持抖音图集解析回传
-fix: 抖音详情接口 403 后换签重试
-docs: 扩充提交前缀
-ci: 增加 GitLab 流水线检查
-chore: 更新环境变量示例
-```
-
-## 发布
-
-功能改动从功能分支开 PR / MR 合进 `develop`，不要直接推 `develop` 或 `main`（下述 GitLab 同步例外除外）。要发版本时：`develop` 开 PR / MR 到 `main`，**合并后再打** annotated tag（`v1.0.1`）并 `git push origin v1.0.1`。不要在 `develop` 上直接打发行 tag。只改 CI 不用打 tag；运行时依赖或业务改动才打。
-
-**GitLab 同步例外**：GitHub PR 合并到 `develop` 后，可以直接将 GitHub `develop` 的已合并结果快进推送到 GitLab `develop`，无需另外开 GitLab MR。合并后先同步两端 `develop`，再清理功能分支。
-
-同步前先获取 GitHub 最新 `develop`，确认 GitLab `develop` 是其祖先；通过明确的 GitLab URL 推送（本仓可用 `git push https://gitlab.cyxc.club/cyxc1124/cyxcbot.git refs/remotes/origin/develop:refs/heads/develop`），避免误推 GitHub。若两端存在分叉或无法快进，停下来询问用户，不强推覆盖 GitLab 独有提交。
-
-`v*` tag 会触发 GitHub 推 GHCR 镜像与 Windows 包（GitHub Release），以及 GitLab 推 Registry 镜像。`origin` 同时 push GitHub 与 GitLab 时，打一次 tag 两边都会到。
-
-发版必须同步 Helm 版本：仓内 `deploy/helm` 的 `appVersion` / `image.tag`（公开默认仍是 GHCR），以及仓外现网 chart `../helm-chart/cyxcbot-chart` 的 `appVersion` / `image.tag`（与发行 tag 同一号，如 `v2.11.8`）。现网 `image.repository` 用 `registry.gitlab.cyxc.club/cyxc1124/cyxcbot`（与 Kaniko 推送的 GitLab Registry 一致），不要写 `ghcr.io/...` 或 Harbor。GitLab CI 拉 Docker Hub 基础镜像走 Harbor 代理，例如 `harbor.cyxc.club/dockerhub/library/python:3.14`、`harbor.cyxc.club/dockerhub/martizih/kaniko:v1.28.3-debug`。现网 overlay 含拉取密钥，不要把密钥拷回本仓。模板改动先改仓内 `deploy/helm`，再同步到现网（不含密钥）。
+- 仅在用户明确要求时 `git commit`；推送、合并、发版和分支清理在用户已授权的范围内执行，已有授权无需重复确认。修改 Helm 文件不代表获得现网部署授权。
+- 提交格式为 `<type>: <中文说明>`，可加范围，例如 `fix(auth): 修复会话过期判断`。保留 `feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`revert` 等 type 前缀。
+- 功能分支通过 PR / MR 合入 `develop`，不得直接推 `develop` 或 `main`（下述 GitLab 同步例外除外）。发版通过 `develop` → `main` 的 PR / MR，合并后才在 `main` 打 annotated tag；只改 CI 不打发行 tag。
+- GitHub PR 合入 `develop` 后，允许将其已合并结果快进同步到 GitLab `develop`，无需另开 MR；先同步两端，再清理功能分支。分叉或无法快进时停止并询问，不强推。
+- 涉及合并后同步、发版或 Helm 变更时阅读 [维护者发布流程](deploy/README.md#维护者发布流程)，保留双端发布、仓内与仓外 chart 版本同步及现网镜像约定；不得把现网拉取密钥拷回本仓。
 
 ## 日志规范（NoneBot / loguru）
 
-本项目使用 NoneBot 内置的 loguru logger。Web Admin `/logs` 通过 `shared/logging/broadcast.py` 订阅同一条 logger 输出。
-
-### 必须
-
-```python
-from nonebot.log import logger
-
-logger.info("服务已启动")
-logger.warning("未配置 Cookie，部分接口可能受限")
-logger.debug("房间 {} 轮询完成", room_id)  # 高频路径优先占位符，避免 f-string 无谓求值
-```
-
-异常栈：
-
-```python
-try:
-    ...
-except Exception:
-    logger.opt(exception=True).error("处理动态查询失败")
-```
-
-### 禁止
-
-```python
-# ❌ 不要用 print
-print("debug")
-
-# ❌ 不要用标准库 logging（不会进 NoneBot 格式，也不会进 Web 日志广播）
-import logging
-
-logger = logging.getLogger(__name__)
-
-# ❌ 不要手写 traceback
-import traceback
-
-logger.error(f"错误: {traceback.format_exc()}")
-```
-
-若第三方库走 stdlib `logging`，在入口用 `LoguruHandler` 桥接（见 [NoneBot 日志文档](https://nonebot.dev/docs/appendices/log)），不要另起一套 handler。
-
-### 级别选用
-
-| 级别 | 用途 |
-|------|------|
-| `debug` | 轮询细节、单次检查、开发诊断 |
-| `info` | 启动、配置变更、用户可见操作结果 |
-| `success` | 可选；重大里程碑（插件加载完成等） |
-| `warning` | 可降级继续、配置缺失、重试 |
-| `error` | 单条失败、需关注的异常 |
-| `critical` | 极少用；进程级致命问题 |
-
-周期性监控（直播/动态轮询）用 `shared/monitor/check_cycle.py` 的 `CheckCycleLogger` 汇总每轮结果，避免对每个目标单独 `info`。
-
-### 日志级别配置
-
-- 由环境变量 **`LOG_LEVEL`** 控制（默认 `INFO`），NoneBot 在 `nonebot.init()` 时读取，**仅过滤终端 stdout 输出**。
-- Web Admin `/logs` 通过 `install_log_broadcast()` 注册的 sink 固定为 `DEBUG` 级别：即使 `LOG_LEVEL=INFO/WARNING`，终端不显示 DEBUG，Web 日志页仍会缓冲并推送 DEBUG 及以上。
-- `bot.py` 的 `configure_logging()` 仅调节 stdlib 第三方库（如 `aiohttp`、`playwright`）噪声，**不**改变 `nonebot.log.logger` 的过滤级别。
-- 第三方 stdlib 日志经 `bot.py` 中的 `LoguruHandler` 汇入 NoneBot/loguru 管道，再进入 Web 广播。Uvicorn 启动时使用 `log_config=None`、`access_log=False` 并调用 `bridge_uvicorn_loggers()`（仅桥接 `uvicorn`/`uvicorn.error`/`uvicorn.asgi`，`uvicorn.access` 不进入 Web /logs），勿在 `broadcast.py` 重复挂载 uvicorn handler。
-- NoneBot 入站事件 SUCCESS dump（如 OneBot 群消息）与 Matcher 调度 INFO（`Event will be handled` / `running complete`）由 `web_broadcast_filter` 排除，只出现在终端与磁盘日志，不进入 Web `/logs`。
-- 磁盘持久化由 `shared/logging/file_sink.py` 的 `install_file_log_sink()` 注册 file sink：每次启动写入 `{stem}.{timestamp}.log`，会话内按 `LOG_FILE_ROTATION`（默认 10 MB）切分，启动时清理超过 `LOG_FILE_RETENTION`（默认 7 天）的旧文件；与 Web 环形缓冲独立，级别由 `LOG_FILE_LEVEL` 控制。
-
-### 敏感信息
-
-- Cookie、Token、密码：只记录「是否已配置」或计数，不记录值。
-- 启动环境变量脱敏见 `shared/security/database_url.py` 的 `mask_database_url()` 与 `bot.py` 的 `_format_env_value()`，新增启动/诊断日志时沿用同样规则。
+- 业务日志使用 `from nonebot.log import logger`，不要用 `print` 或另建 stdlib logger；异常用 `logger.opt(exception=True).error(...)`，不要手写 traceback。
+- 高频路径使用占位符和 `debug`；周期性监控用 `shared/monitor/check_cycle.py` 的 `CheckCycleLogger` 汇总，避免逐目标 `info`。
+- Cookie、Token、密码只记录是否配置或计数；启动/诊断脱敏沿用 `mask_database_url()` 与 `bot.py` 的 `_format_env_value()`。
+- 修改日志管道、第三方桥接或级别过滤时阅读 [日志文档](docs/docs/configuration/logging.md)。保留终端、Web、磁盘的独立过滤行为，勿重复挂载 Uvicorn handler。
 
 ## 常见修改入口
 

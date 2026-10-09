@@ -112,6 +112,30 @@ docker compose logs -f cyxcbot
 - 高频路径（轮询、单次检查）优先 `logger.debug`；周期性监控用 `CheckCycleLogger` 汇总，避免逐条 `info`。
 - Cookie、Token 等敏感信息只记「是否配置」，不记值。
 
+高频日志优先使用占位符（如 `logger.debug("房间 {} 轮询完成", room_id)`），避免 f-string 无谓求值。异常栈交给 loguru，不要手写 `traceback.format_exc()`：
+
+```python
+try:
+    ...
+except Exception:
+    logger.opt(exception=True).error("处理动态查询失败")
+```
+
+| 级别 | 用途 |
+|------|------|
+| `debug` | 轮询细节、单次检查、开发诊断 |
+| `info` | 启动、配置变更、用户可见操作结果 |
+| `success` | 可选；重大里程碑，如插件加载完成 |
+| `warning` | 可降级继续、配置缺失、重试 |
+| `error` | 单条失败、需关注的异常 |
+| `critical` | 极少用；进程级致命问题 |
+
+第三方库使用 stdlib `logging` 时，在入口通过 `LoguruHandler` 桥接到 NoneBot/loguru 管道（见 [NoneBot 日志文档](https://nonebot.dev/docs/appendices/log)），不要另起一套 handler。`bot.py` 的 `configure_logging()` 仅调节第三方库噪声，不改变 `nonebot.log.logger` 的过滤级别。
+
+Uvicorn 启动时使用 `log_config=None`、`access_log=False`，并调用 `bridge_uvicorn_loggers()`，只桥接 `uvicorn`、`uvicorn.error`、`uvicorn.asgi`；`uvicorn.access` 不进入 Web `/logs`。勿在 `broadcast.py` 重复挂载 Uvicorn handler。
+
+新增启动/诊断日志时，沿用 `shared/security/database_url.py` 的 `mask_database_url()` 与 `bot.py` 的 `_format_env_value()` 脱敏规则。周期性监控汇总器位于 `shared/monitor/check_cycle.py`。
+
 实现位置：
 
 | 模块 | 职责 |
