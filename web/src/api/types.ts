@@ -328,11 +328,14 @@ export interface DouyinLinkParserGroupPolicyItem {
   member_count?: number | null
   customized: boolean
   enabled: boolean
+  source?: 'onebot' | 'official'
+  editable?: boolean
 }
 
 export interface DouyinLinkParserGroupPolicyList {
   groups: DouyinLinkParserGroupPolicyItem[]
   group_list_available: boolean
+  onebot_list_status?: OneBotListStatus | null
 }
 
 export interface DouyinLinkParserGroupPolicyMutation {
@@ -345,11 +348,14 @@ export interface DouyinLinkParserUserPolicyItem {
   name?: string | null
   customized: boolean
   enabled: boolean
+  source?: 'onebot' | 'official'
+  editable?: boolean
 }
 
 export interface DouyinLinkParserUserPolicyList {
   users: DouyinLinkParserUserPolicyItem[]
   friend_list_available: boolean
+  onebot_list_status?: OneBotListStatus | null
 }
 
 export interface DouyinLinkParserUserPolicyMutation {

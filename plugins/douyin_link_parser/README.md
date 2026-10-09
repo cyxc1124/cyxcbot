@@ -6,6 +6,7 @@
 
 - 监听 `on_message(priority=4, block=False)`（与 B 站链接解析同级，互不 `block`）
 - 策略默认关闭；仅当群 / 好友在 Web Admin「抖音链接」中开启后生效
+- 须先开启该会话的「群消息」/「好友消息」总开关。官方 QQ 缓存会话即使没有 OneBot 连接也可配置；OneBot 列表不可用或不完整时，数字 QQ 策略只读，未知 OpenID 不可配置。
 - Cookie 独立于 B 站（设置 → 抖音账号）；**非硬性必填**，对齐 douyin-downloader：缺省仅 warning，仍尝试游客态；建议配置 `ttwid` / `odin_tt` / `passport_csrf_token`（`msToken` 可缺省自动生成）
 - 支持 `aweme_type` 视频（0/4）与图集（2/68）；Live Photo 取 `images[].video.play_addr` 以视频发送
 - 文案模板键：`link_template_douyin`（占位符：`{video}` `{title}` `{author}` `{url}` `{aweme_id}`；`{video}` 会展开为全部图片/视频段）

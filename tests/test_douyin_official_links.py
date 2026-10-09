@@ -1,26 +1,28 @@
 """Official QQ Douyin pipeline: native events, budget, and local-media cleanup."""
 
-import ast
 import asyncio
 import importlib.util
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from nonebot.adapters.onebot.v11.exception import ActionFailed
 from nonebot.adapters.qq import Bot as QQBot
 from nonebot.adapters.qq.event import C2CMessageCreateEvent, GroupAtMessageCreateEvent
 from PIL import Image
 
 from shared.adapter import outbound
-from shared.adapter.bots import is_official_qq_bot
-from shared.adapter.inbound import group_id_of, is_group_event, user_id_of
 from shared.adapter.official_runtime import _bot_info
 from shared.adapter.qq_errors import LoggedQQApiError
+from shared.config.douyin_link_parser_policy import (
+    DouyinLinkParserGroupPolicyRecord,
+    DouyinLinkParserUserPolicyRecord,
+)
 from shared.config.message_templates import DouyinLinkMessageTemplates
-from utils.douyin_api import DouyinResolveError
+from shared.config.types import AppConfigSnapshot
+from tests.test_config_service_load_perf import _ensure_real_db_modules
 from utils.douyin_api.resolve import DouyinMediaItem, DouyinVideoResult
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,21 +38,9 @@ def _load(name):
     return module
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("scope", ["group", "c2c"])
-@pytest.mark.parametrize(
-    "kind", ["video", "album", "live", "large", "many_live", "mixed"]
-)
-@pytest.mark.parametrize("reject", [False, True])
-async def test_native_douyin_reply_and_cleanup(
-    scope, kind, reject, tmp_path, monkeypatch
-):
-    sender, text, official, results = (
-        _load(name)
-        for name in ("sender", "message_text", "official_reply", "send_result")
-    )
+def _event(scope):
     cls = GroupAtMessageCreateEvent if scope == "group" else C2CMessageCreateEvent
-    event = cls.model_validate(
+    return cls.model_validate(
         {
             "id": "incoming",
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -69,7 +59,60 @@ async def test_native_douyin_reply_and_cleanup(
             },
         }
     )
-    assert "douyin.com/video/200" in text.collect_message_text(event)
+
+
+@pytest.fixture
+def native_plugin(monkeypatch):
+    import nonebot
+
+    _ensure_real_db_modules()
+    matcher = SimpleNamespace(handle=lambda: lambda fn: fn)
+    monkeypatch.setattr(nonebot, "on_message", lambda **_: matcher)
+    monkeypatch.setattr(
+        nonebot, "get_driver", lambda: SimpleNamespace(on_startup=lambda fn: fn)
+    )
+    name = "douyin_native_handler_test"
+    spec = importlib.util.spec_from_file_location(
+        name, PLUGIN / "__init__.py", submodule_search_locations=[str(PLUGIN)]
+    )
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, name, module)
+    spec.loader.exec_module(module)
+    yield module
+    for key in list(sys.modules):
+        if key.startswith(f"{name}."):
+            sys.modules.pop(key)
+
+
+@pytest.fixture
+def message_guards(monkeypatch, native_plugin):
+    import nonebot.message
+
+    monkeypatch.setattr(nonebot.message, "event_preprocessor", lambda fn: fn)
+    guards = {}
+    for scope in ("group", "private"):
+        spec = importlib.util.spec_from_file_location(
+            f"douyin_test_{scope}_guard",
+            ROOT / "plugins" / f"{scope}_guard" / "__init__.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        monkeypatch.setattr(module, "remember_official_session", AsyncMock())
+        guards[scope] = module
+    return guards
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "c2c"])
+@pytest.mark.parametrize(
+    "kind", ["video", "album", "live", "large", "many_live", "mixed"]
+)
+@pytest.mark.parametrize("reject", [False, True])
+async def test_native_douyin_reply_and_cleanup(
+    scope, kind, reject, tmp_path, monkeypatch, native_plugin, message_guards
+):
+    event = _event(scope)
+    assert "douyin.com/video/200" in native_plugin.collect_message_text(event)
     count = (
         26
         if kind == "large"
@@ -118,53 +161,50 @@ async def test_native_douyin_reply_and_cleanup(
     )
     monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
     logger = MagicMock()
-    namespace = {
-        "is_official_qq_bot": is_official_qq_bot,
-        "official_reply_remaining": outbound.official_reply_remaining,
-        "OfficialReplyLimitError": outbound.OfficialReplyLimitError,
-        "LoggedQQApiError": LoggedQQApiError,
-        "user_id_of": user_id_of,
-        "group_id_of": group_id_of,
-        "is_group_event": is_group_event,
-        "ensure_shared_media_dir": lambda _: tmp_path,
-        "get_config_service": lambda: SimpleNamespace(
-            get_snapshot=lambda: SimpleNamespace(link_parser_shared_media_dir="")
-        ),
-        "resolve_and_download": AsyncMock(return_value=result),
-        "chmod_shared_media_file": lambda _: None,
-        "_SEND_SEM": asyncio.Semaphore(1),
-        "build_douyin_link_message": sender.build_douyin_link_message,
-        "prepare_official_reply": official.prepare_official_reply,
-        "reply_batches": sender.reply_batches,
-        "send_event_message": outbound.send_event_message,
-        "is_onebot_send_success": results.is_onebot_send_success,
-        "DouyinResolveError": DouyinResolveError,
-        "ActionFailed": ActionFailed,
-        "logger": logger,
-    }
-    source = ast.parse((PLUGIN / "__init__.py").read_text())
-    functions = [
-        node
-        for node in source.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name
-        in {"_download_and_reply", "_cleanup_result_files", "_message_id_of"}
-    ]
-    future = ast.ImportFrom(
-        module="__future__", names=[ast.alias(name="annotations")], level=0
+    snapshot = AppConfigSnapshot(
+        message_enabled_group_ids=["g-openid"],
+        message_enabled_user_ids=["u-openid"],
+        douyin_link_parser_group_policies={
+            "g-openid": DouyinLinkParserGroupPolicyRecord("g-openid", enabled=True)
+        },
+        douyin_link_parser_user_policies={
+            "u-openid": DouyinLinkParserUserPolicyRecord("u-openid", enabled=True)
+        },
     )
-    module = ast.fix_missing_locations(
-        ast.Module(body=[future, *functions], type_ignores=[])
+    guard = message_guards["group" if scope == "group" else "private"]
+    monkeypatch.setattr(
+        guard,
+        "get_config_service",
+        lambda: SimpleNamespace(get_snapshot=lambda: snapshot),
     )
-    exec(compile(module, str(PLUGIN / "__init__.py"), "exec"), namespace)
-    await namespace["_download_and_reply"](
-        bot,
-        event,
-        SimpleNamespace(
+    monkeypatch.setattr(
+        native_plugin,
+        "get_config_service",
+        lambda: SimpleNamespace(get_snapshot=lambda: snapshot),
+    )
+    monkeypatch.setattr(
+        native_plugin,
+        "get_config",
+        lambda: native_plugin.Config(
             douyin_cookie="", message_templates=DouyinLinkMessageTemplates()
         ),
-        event.content,
     )
+    monkeypatch.setattr(native_plugin, "logger", logger)
+    monkeypatch.setattr(native_plugin, "ensure_shared_media_dir", lambda _: tmp_path)
+    download = AsyncMock(return_value=result)
+    monkeypatch.setattr(native_plugin, "resolve_and_download", download)
+    handler = (
+        native_plugin.handle_group_douyin_link
+        if scope == "group"
+        else native_plugin.handle_private_douyin_link
+    )
+    await (
+        guard.block_disabled_group_messages(event)
+        if scope == "group"
+        else guard.block_disabled_private_messages(event)
+    )
+    await handler(bot, event)
+    download.assert_awaited_once_with(event.content, "", tmp_dir=tmp_path)
     expected = (
         1
         if reject
@@ -205,6 +245,134 @@ async def test_native_douyin_reply_and_cleanup(
     assert not list(tmp_path.glob("douyin_preview_*.jpg"))
     logger.error.assert_not_called()
     logger.opt.return_value.error.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "c2c"])
+@pytest.mark.parametrize("disabled", ["master", "leaf"])
+async def test_native_handler_requires_master_and_leaf(
+    scope, disabled, native_plugin, message_guards, monkeypatch
+):
+    from nonebot.exception import IgnoredException
+
+    snapshot = AppConfigSnapshot(
+        message_enabled_group_ids=[] if disabled == "master" else ["g-openid"],
+        message_enabled_user_ids=[] if disabled == "master" else ["u-openid"],
+        douyin_link_parser_group_policies={
+            "g-openid": DouyinLinkParserGroupPolicyRecord(
+                "g-openid", enabled=disabled != "leaf"
+            )
+        },
+        douyin_link_parser_user_policies={
+            "u-openid": DouyinLinkParserUserPolicyRecord(
+                "u-openid", enabled=disabled != "leaf"
+            )
+        },
+    )
+    service = SimpleNamespace(get_snapshot=lambda: snapshot)
+    guard = message_guards["group" if scope == "group" else "private"]
+    monkeypatch.setattr(guard, "get_config_service", lambda: service)
+    monkeypatch.setattr(native_plugin, "get_config_service", lambda: service)
+    monkeypatch.setattr(native_plugin, "get_config", native_plugin.Config)
+    download = AsyncMock()
+    monkeypatch.setattr(native_plugin, "resolve_and_download", download)
+    event = _event(scope)
+
+    async def dispatch():
+        if scope == "group":
+            await guard.block_disabled_group_messages(event)
+            await native_plugin.handle_group_douyin_link(SimpleNamespace(), event)
+        else:
+            await guard.block_disabled_private_messages(event)
+            await native_plugin.handle_private_douyin_link(SimpleNamespace(), event)
+
+    if disabled == "master":
+        with pytest.raises(IgnoredException):
+            await dispatch()
+    else:
+        await dispatch()
+    download.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "c2c"])
+@pytest.mark.parametrize("stage", ["render", "send"])
+async def test_cancelling_native_handler_cleans_sources_and_preview(
+    scope, stage, native_plugin, tmp_path, monkeypatch
+):
+    import threading
+
+    paths = [tmp_path / f"{i}.jpg" for i in range(6)]
+    for path in paths:
+        Image.new("RGB", (60, 80)).save(path)
+    result = DouyinVideoResult(
+        aweme_id="200",
+        title="caption",
+        author="Author",
+        share_url="https://www.douyin.com/note/200",
+        file_path=paths[0],
+        detail={},
+        content_type="album",
+        items=[DouyinMediaItem(kind="image", file_path=path) for path in paths],
+    )
+    snapshot = AppConfigSnapshot(
+        douyin_link_parser_group_policies={
+            "g-openid": DouyinLinkParserGroupPolicyRecord("g-openid", enabled=True)
+        },
+        douyin_link_parser_user_policies={
+            "u-openid": DouyinLinkParserUserPolicyRecord("u-openid", enabled=True)
+        },
+    )
+    monkeypatch.setattr(
+        native_plugin,
+        "get_config_service",
+        lambda: SimpleNamespace(get_snapshot=lambda: snapshot),
+    )
+    monkeypatch.setattr(native_plugin, "get_config", native_plugin.Config)
+    monkeypatch.setattr(native_plugin, "ensure_shared_media_dir", lambda _: tmp_path)
+    monkeypatch.setattr(
+        native_plugin, "resolve_and_download", AsyncMock(return_value=result)
+    )
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    bot = QQBot(MagicMock(), "app", _bot_info("app", "secret", False))
+    started, release = threading.Event(), threading.Event()
+    if stage == "render":
+        official = sys.modules[f"{native_plugin.__name__}.official_reply"]
+        original = official._album_preview
+
+        def render(*args):
+            started.set()
+            release.wait(5)
+            return original(*args)
+
+        monkeypatch.setattr(official, "_album_preview", render)
+        api = AsyncMock()
+    else:
+
+        async def send(**kwargs):
+            started.set()
+            await asyncio.Event().wait()
+
+        api = AsyncMock(side_effect=send)
+    monkeypatch.setattr(
+        bot, "send_to_group" if scope == "group" else "send_to_c2c", api
+    )
+    handler = (
+        native_plugin.handle_group_douyin_link
+        if scope == "group"
+        else native_plugin.handle_private_douyin_link
+    )
+    task = asyncio.create_task(handler(bot, _event(scope)))
+    assert await asyncio.to_thread(started.wait, 5)
+    for _ in range(2):
+        task.cancel()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not any(path.exists() for path in paths)
+    assert not list(tmp_path.glob("douyin_preview_*.jpg"))
 
 
 @pytest.mark.asyncio

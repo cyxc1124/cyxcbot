@@ -69,7 +69,7 @@ async def _persist_stream(
             return False
         os.replace(str(tmp_path), str(save_path))
         return True
-    except Exception:
+    except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise
 
