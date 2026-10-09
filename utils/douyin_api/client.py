@@ -40,6 +40,7 @@ _USER_AGENT = (
 # Argus 明文拒绝（UIFID / 签名缺失）换签无效，不应再耗重试。
 _RETRYABLE_HTTP_STATUSES = frozenset({403, 429})
 _ARGUS_NON_RETRYABLE = ("Uifid Not Found", "Signature Not Found")
+_GATEWAY_ERROR_READ_LIMIT = 512
 # Argus 目前只检查头存在、不验值；真验签名后日志会变成 Signature Not Found。
 _ARGUS_PLACEHOLDER = "1"
 
@@ -50,15 +51,11 @@ def _should_retry_http_status(status: int) -> bool:
 
 def _gateway_error_snippet(text: str) -> str:
     cleaned = " ".join((text or "").split())
-    if not cleaned or len(cleaned) > 200:
-        return ""
-    if any(ch in cleaned for ch in ";\n\r"):
-        return ""
-    return cleaned
-
-
-def _is_nonretryable_argus(snippet: str) -> bool:
-    return any(marker in snippet for marker in _ARGUS_NON_RETRYABLE)
+    for marker in _ARGUS_NON_RETRYABLE:
+        reason = f"Blocked by ArgusSecurityPlugin {marker}"
+        if reason in cleaned:
+            return reason
+    return ""
 
 
 class LoginRequiredError(Exception):
@@ -373,31 +370,33 @@ class DouyinAPIClient:
                             max_retries,
                         )
                         return {}
-                    snippet = ""
                     try:
-                        snippet = _gateway_error_snippet(await response.text())
+                        prefix = await response.content.readexactly(
+                            _GATEWAY_ERROR_READ_LIMIT
+                        )
+                    except asyncio.IncompleteReadError as exc:
+                        prefix = exc.partial
                     except Exception:
-                        snippet = ""
-                    if _is_nonretryable_argus(snippet):
+                        prefix = b""
+                    snippet = _gateway_error_snippet(
+                        prefix.decode("utf-8", errors="replace")
+                    )
+                    if snippet:
                         log_fn = logger.info if suppress_error else logger.error
                         log_fn(
-                            "抖音 API 网关拒绝 path={} status={} body={}",
+                            "抖音 API 网关拒绝 path={} status={} reason={}",
                             path,
                             response.status,
                             snippet,
                         )
                         return {}
-                    last_exc = RuntimeError(
-                        f"HTTP {response.status} for {path}"
-                        + (f" ({snippet})" if snippet else "")
-                    )
+                    last_exc = RuntimeError(f"HTTP {response.status} for {path}")
                     logger.warning(
-                        "抖音 API 可重试失败 path={} status={} attempt={}/{}{}",
+                        "抖音 API 可重试失败 path={} status={} attempt={}/{}",
                         path,
                         response.status,
                         attempt + 1,
                         max_retries,
-                        f" body={snippet}" if snippet else "",
                     )
             except LoginRequiredError:
                 raise
