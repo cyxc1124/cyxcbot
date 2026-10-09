@@ -8,6 +8,7 @@ import {
   updateXLinkParserUserPolicy,
 } from '../api/client'
 import type {
+  OneBotListStatus,
   XLinkParserGroupPolicyItem,
   XLinkParserUserPolicyItem,
 } from '../api/types'
@@ -15,6 +16,7 @@ import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
 import { useMountAsync } from '../hooks/useMountAsync'
 import { createRetryHandler } from '../utils/retryLoad'
 import { formatApiError } from '../utils/apiError'
+import { resolveOneBotListStatus } from '../utils/rosterStatus'
 import { useToast } from '../contexts/ToastContext'
 import { LoadErrorBanner } from './LoadErrorBanner'
 import { PageLoading } from './LoadingSpinner'
@@ -48,12 +50,14 @@ export function XLinkParserGroupPolicyTab() {
   const [error, setError] = useState('')
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
   const [listAvailable, setListAvailable] = useState(true)
+  const [listStatus, setListStatus] = useState<OneBotListStatus>('ok')
 
   const load = useCallback(async () => {
     try {
       const data = await getXLinkParserGroupPolicies()
       setItems(data.groups)
       setListAvailable(data.group_list_available)
+      setListStatus(resolveOneBotListStatus(data.onebot_list_status, data.group_list_available))
       setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
@@ -98,9 +102,14 @@ export function XLinkParserGroupPolicyTab() {
     <div className="space-y-4">
       <Hint scope="group" />
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
-      {!listAvailable && !error && (
+      {listStatus === 'offline' && !error && (
+        <p className="text-sm text-muted-foreground">
+          当前未连接 OneBot；已缓存的官方 QQ Bot 群可直接配置。
+        </p>
+      )}
+      {listStatus === 'incomplete' && !error && (
         <p className="text-sm text-amber-600 dark:text-amber-400">
-          群列表暂不可用或不完整，策略只读展示。
+          OneBot 群列表同步不完整，数字 QQ 群暂时只读；官方 QQ Bot 群仍可配置。
         </p>
       )}
       <div className="overflow-x-auto">
@@ -108,7 +117,7 @@ export function XLinkParserGroupPolicyTab() {
           <thead>
             <tr className="border-b border-border text-muted-foreground">
               <th className="pb-3 pr-4 font-medium">群名称</th>
-              <th className="pb-3 pr-4 font-medium">群号</th>
+              <th className="pb-3 pr-4 font-medium">群号 / OpenID</th>
               <th className="pb-3 font-medium">X 链接</th>
             </tr>
           </thead>
@@ -119,6 +128,9 @@ export function XLinkParserGroupPolicyTab() {
                 <tr key={item.group_id} className="border-b border-border last:border-0">
                   <td className="py-3.5 pr-4 font-medium text-foreground">
                     {item.group_name ?? '—'}
+                    {item.source === 'official' && (
+                      <span className="ml-2 text-xs text-muted-foreground">官方 QQ Bot</span>
+                    )}
                     {saving && (
                       <span className="ml-2 text-[10px] text-muted-foreground">保存中…</span>
                     )}
@@ -135,7 +147,7 @@ export function XLinkParserGroupPolicyTab() {
                       </span>
                       <ToggleSwitch
                         checked={item.enabled}
-                        disabled={saving || !listAvailable}
+                        disabled={saving || !(item.editable ?? listAvailable)}
                         onChange={(checked) => void handleToggle(item.group_id, checked)}
                       />
                     </div>
@@ -160,12 +172,14 @@ export function XLinkParserUserPolicyTab() {
   const [error, setError] = useState('')
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
   const [listAvailable, setListAvailable] = useState(true)
+  const [listStatus, setListStatus] = useState<OneBotListStatus>('ok')
 
   const load = useCallback(async () => {
     try {
       const data = await getXLinkParserUserPolicies()
       setItems(data.users)
       setListAvailable(data.friend_list_available)
+      setListStatus(resolveOneBotListStatus(data.onebot_list_status, data.friend_list_available))
       setError('')
     } catch (err) {
       setError(formatApiError(err, '加载失败'))
@@ -210,9 +224,14 @@ export function XLinkParserUserPolicyTab() {
     <div className="space-y-4">
       <Hint scope="user" />
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
-      {!listAvailable && !error && (
+      {listStatus === 'offline' && !error && (
+        <p className="text-sm text-muted-foreground">
+          当前未连接 OneBot；已缓存的官方 QQ Bot 用户可直接配置。
+        </p>
+      )}
+      {listStatus === 'incomplete' && !error && (
         <p className="text-sm text-amber-600 dark:text-amber-400">
-          好友列表暂不可用或不完整，策略只读展示。
+          OneBot 好友列表同步不完整，数字 QQ 用户暂时只读；官方 QQ Bot 用户仍可配置。
         </p>
       )}
       <div className="overflow-x-auto">
@@ -220,7 +239,7 @@ export function XLinkParserUserPolicyTab() {
           <thead>
             <tr className="border-b border-border text-muted-foreground">
               <th className="pb-3 pr-4 font-medium">昵称</th>
-              <th className="pb-3 pr-4 font-medium">QQ</th>
+              <th className="pb-3 pr-4 font-medium">QQ / OpenID</th>
               <th className="pb-3 font-medium">X 链接</th>
             </tr>
           </thead>
@@ -231,6 +250,9 @@ export function XLinkParserUserPolicyTab() {
                 <tr key={item.user_id} className="border-b border-border last:border-0">
                   <td className="py-3.5 pr-4 font-medium text-foreground">
                     {item.nickname ?? item.name ?? '—'}
+                    {item.source === 'official' && (
+                      <span className="ml-2 text-xs text-muted-foreground">官方 QQ Bot</span>
+                    )}
                     {saving && (
                       <span className="ml-2 text-[10px] text-muted-foreground">保存中…</span>
                     )}
@@ -247,7 +269,7 @@ export function XLinkParserUserPolicyTab() {
                       </span>
                       <ToggleSwitch
                         checked={item.enabled}
-                        disabled={saving || !listAvailable}
+                        disabled={saving || !(item.editable ?? listAvailable)}
                         onChange={(checked) => void handleToggle(item.user_id, checked)}
                       />
                     </div>

@@ -44,18 +44,17 @@ async def download_url(
                             max_bytes,
                             save_path.name,
                         )
-                        tmp_path.unlink(missing_ok=True)
                         return False
                     handle.write(chunk)
         if written <= 0:
-            tmp_path.unlink(missing_ok=True)
             return False
         os.replace(str(tmp_path), str(save_path))
         return True
     except Exception:
         logger.opt(exception=True).warning("X 媒体下载异常: {}", url[:120])
-        tmp_path.unlink(missing_ok=True)
         return False
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 def _suffix_for_item(item: TweetMediaItem) -> str:
@@ -80,22 +79,29 @@ async def materialize_tweet_media(
     """
     paths: list[Path] = []
     media_dir.mkdir(parents=True, exist_ok=True)
-    for index, item in enumerate(tweet.media_items):
-        if not item.url:
-            continue
-        unique = secrets.token_hex(4)
-        dest = media_dir / f"x_{tweet.id}_{index}_{unique}{_suffix_for_item(item)}"
-        ok = await download_url(session, item.url, dest)
-        if not ok:
-            logger.warning(
-                "X 媒体下载失败 tweet_id={} kind={} index={}，跳过该段",
-                tweet.id,
-                item.kind,
-                index,
-            )
-            continue
-        item.file_path = dest
-        paths.append(dest)
+    try:
+        for index, item in enumerate(tweet.media_items):
+            if not item.url:
+                continue
+            unique = secrets.token_hex(4)
+            dest = media_dir / f"x_{tweet.id}_{index}_{unique}{_suffix_for_item(item)}"
+            ok = await download_url(session, item.url, dest)
+            if not ok:
+                logger.warning(
+                    "X 媒体下载失败 tweet_id={} kind={} index={}，跳过该段",
+                    tweet.id,
+                    item.kind,
+                    index,
+                )
+                continue
+            item.file_path = dest
+            paths.append(dest)
+    except BaseException:
+        cleanup_media_files(paths)
+        for item in tweet.media_items:
+            if item.file_path in paths:
+                item.file_path = None
+        raise
     return paths
 
 

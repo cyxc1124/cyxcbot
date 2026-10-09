@@ -16,11 +16,12 @@ from admin.schemas.x_link_parser import (
     XLinkParserUserPolicyMutationResponse,
     XLinkParserUserPolicyUpdateRequest,
 )
-from admin.services.link_parser_policy_items import onebot_list_listing_mode
+from admin.services.link_parser_access import (
+    ensure_link_parser_target_editable,
+    link_parser_policy_rows,
+)
 from admin.services.onebot_bridge import (
-    get_friend_list,
     get_friend_list_with_availability,
-    get_group_list,
     get_group_list_with_status,
     invalidate_user_list_cache,
 )
@@ -90,6 +91,8 @@ def _build_group_item(snap, group: dict) -> XLinkParserGroupPolicyItem:
         member_count=group.get("member_count"),
         customized=customized,
         enabled=enabled,
+        source=group.get("source", "onebot"),
+        editable=group.get("editable", False),
     )
 
 
@@ -103,6 +106,8 @@ def _build_user_item(snap, user: dict) -> XLinkParserUserPolicyItem:
         name=override.name if override else None,
         customized=customized,
         enabled=enabled,
+        source=user.get("source", "onebot"),
+        editable=user.get("editable", False),
     )
 
 
@@ -115,11 +120,16 @@ def _build_user_items(
     by_id: dict[str, dict] = {str(user["user_id"]): user for user in users}
     if include_configured_non_friends:
         for user_id, record in snap.x_link_parser_user_policies.items():
-            if user_id in by_id:
+            if user_id in by_id or not user_id.isdigit():
                 continue
             if not is_private_message_enabled_from_snapshot(user_id, snap):
                 continue
-            by_id[user_id] = {"user_id": user_id, "nickname": record.name}
+            by_id[user_id] = {
+                "user_id": user_id,
+                "nickname": record.name,
+                "source": "onebot",
+                "editable": True,
+            }
     return [
         _build_user_item(snap, by_id[user_id])
         for user_id in sorted(
@@ -128,39 +138,27 @@ def _build_user_items(
     ]
 
 
-async def _ensure_friend_list_complete_for_mutation() -> None:
+async def _editable_user(user_id: str) -> dict:
     invalidate_user_list_cache()
-    _, fetch_status = await get_friend_list_with_availability()
-    if fetch_status == "incomplete":
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="好友列表不完整，暂不可修改 X 链接解析策略",
-        )
+    users, fetch_status = await get_friend_list_with_availability()
+    return ensure_link_parser_target_editable(
+        user_id,
+        users,
+        fetch_status,
+        id_key="user_id",
+        detail="好友列表不可用或不完整，暂不可修改该目标的 X 链接解析策略",
+    )
 
 
-async def _ensure_group_list_complete_for_mutation() -> None:
-    _, fetch_status = await get_group_list_with_status()
-    if fetch_status == "incomplete":
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="群列表不完整，暂不可修改 X 链接解析策略",
-        )
-
-
-async def _group_meta(group_id: str) -> dict:
-    groups = await get_group_list()
-    for group in groups:
-        if str(group["group_id"]) == str(group_id):
-            return group
-    return {"group_id": str(group_id)}
-
-
-async def _user_meta(user_id: str) -> dict:
-    users = await get_friend_list()
-    for user in users:
-        if str(user["user_id"]) == str(user_id):
-            return user
-    return {"user_id": str(user_id)}
+async def _editable_group(group_id: str) -> dict:
+    groups, fetch_status = await get_group_list_with_status()
+    return ensure_link_parser_target_editable(
+        group_id,
+        groups,
+        fetch_status,
+        id_key="group_id",
+        detail="群列表不可用或不完整，暂不可修改该目标的 X 链接解析策略",
+    )
 
 
 @router.get("/policies/groups", response_model=XLinkParserGroupPolicyListResponse)
@@ -168,13 +166,13 @@ async def list_group_policies(_: AdminUser):
     svc = get_config_service()
     snap = svc.get_snapshot()
     groups, fetch_status = await get_group_list_with_status()
-    mode = onebot_list_listing_mode(fetch_status)
-    if mode == "empty":
-        return XLinkParserGroupPolicyListResponse(groups=[], group_list_available=False)
-    visible = _message_enabled_groups(snap, groups)
+    visible = _message_enabled_groups(
+        snap, link_parser_policy_rows(groups, fetch_status)
+    )
     return XLinkParserGroupPolicyListResponse(
         groups=[_build_group_item(snap, group) for group in visible],
-        group_list_available=(mode == "map"),
+        group_list_available=(fetch_status == "ok"),
+        onebot_list_status=fetch_status,
     )
 
 
@@ -187,7 +185,7 @@ async def update_group_policy(
     body: XLinkParserGroupPolicyUpdateRequest,
     _: AdminUser,
 ):
-    await _ensure_group_list_complete_for_mutation()
+    group = await _editable_group(group_id)
     svc = get_config_service()
     snap = svc.get_snapshot()
     _ensure_group_message_enabled(group_id, snap)
@@ -199,7 +197,6 @@ async def update_group_policy(
     await svc.reload()
 
     snap = svc.get_snapshot()
-    group = await _group_meta(group_id)
     return XLinkParserGroupPolicyMutationResponse(
         item=_build_group_item(snap, group),
     )
@@ -210,14 +207,13 @@ async def update_group_policy(
     response_model=XLinkParserGroupPolicyMutationResponse,
 )
 async def reset_group_policy(group_id: str, _: AdminUser):
-    await _ensure_group_list_complete_for_mutation()
+    group = await _editable_group(group_id)
     svc = get_config_service()
     snap = svc.get_snapshot()
     _ensure_group_message_enabled(group_id, snap)
     await svc.delete_x_link_parser_group_policy(group_id)
     await svc.reload()
     snap = svc.get_snapshot()
-    group = await _group_meta(group_id)
     return XLinkParserGroupPolicyMutationResponse(
         item=_build_group_item(snap, group),
     )
@@ -229,15 +225,13 @@ async def list_user_policies(_: AdminUser):
     snap = svc.get_snapshot()
     invalidate_user_list_cache()
     friends, fetch_status = await get_friend_list_with_availability()
-    mode = onebot_list_listing_mode(fetch_status)
-    if mode == "empty":
-        return XLinkParserUserPolicyListResponse(users=[], friend_list_available=False)
-    users = _message_enabled_users(snap, friends)
+    users = _message_enabled_users(snap, link_parser_policy_rows(friends, fetch_status))
     return XLinkParserUserPolicyListResponse(
         users=_build_user_items(
-            snap, users, include_configured_non_friends=(mode == "map")
+            snap, users, include_configured_non_friends=(fetch_status == "ok")
         ),
-        friend_list_available=(mode == "map"),
+        friend_list_available=(fetch_status == "ok"),
+        onebot_list_status=fetch_status,
     )
 
 
@@ -254,7 +248,7 @@ async def create_user_policy(
     if not user_id.isdigit():
         raise HTTPException(status_code=400, detail="QQ 号必须为数字")
 
-    await _ensure_friend_list_complete_for_mutation()
+    user = await _editable_user(user_id)
     svc = get_config_service()
     snap = svc.get_snapshot()
     _ensure_private_message_enabled(user_id, snap)
@@ -268,7 +262,7 @@ async def create_user_policy(
     await svc.reload()
     snap = svc.get_snapshot()
     return XLinkParserUserPolicyMutationResponse(
-        item=_build_user_item(snap, await _user_meta(user_id)),
+        item=_build_user_item(snap, user),
     )
 
 
@@ -281,7 +275,7 @@ async def update_user_policy(
     body: XLinkParserUserPolicyUpdateRequest,
     _: AdminUser,
 ):
-    await _ensure_friend_list_complete_for_mutation()
+    user = await _editable_user(user_id)
     svc = get_config_service()
     snap = svc.get_snapshot()
     _ensure_private_message_enabled(user_id, snap)
@@ -300,7 +294,7 @@ async def update_user_policy(
     await svc.reload()
     snap = svc.get_snapshot()
     return XLinkParserUserPolicyMutationResponse(
-        item=_build_user_item(snap, await _user_meta(user_id)),
+        item=_build_user_item(snap, user),
     )
 
 
@@ -309,11 +303,12 @@ async def update_user_policy(
     response_model=XLinkParserUserPolicyMutationResponse,
 )
 async def reset_user_policy(user_id: str, _: AdminUser):
-    await _ensure_friend_list_complete_for_mutation()
+    user = await _editable_user(user_id)
     svc = get_config_service()
+    _ensure_private_message_enabled(user_id, svc.get_snapshot())
     await svc.delete_x_link_parser_user_policy(user_id)
     await svc.reload()
     snap = svc.get_snapshot()
     return XLinkParserUserPolicyMutationResponse(
-        item=_build_user_item(snap, await _user_meta(user_id)),
+        item=_build_user_item(snap, user),
     )
