@@ -371,11 +371,8 @@ class DouyinAPIClient:
                         )
                         return {}
                     try:
-                        prefix = await response.content.readexactly(
-                            _GATEWAY_ERROR_READ_LIMIT
-                        )
-                    except asyncio.IncompleteReadError as exc:
-                        prefix = exc.partial
+                        # 错误流可能停在首个分片，不能为凑满前缀等待后续数据或 EOF。
+                        prefix = await response.content.read(_GATEWAY_ERROR_READ_LIMIT)
                     except Exception:
                         prefix = b""
                     snippet = _gateway_error_snippet(

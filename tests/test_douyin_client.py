@@ -208,10 +208,26 @@ async def test_request_json_does_not_retry_argus_missing(reason, suffix):
 
 
 @pytest.mark.asyncio
-async def test_request_json_recognizes_argus_across_stream_chunks_and_eof():
+@pytest.mark.parametrize("status", [403, 429, 503])
+@pytest.mark.parametrize(
+    ("chunks", "retry"),
+    [
+        ((b"Gateway unavailable",), True),
+        ((b"Blocked by Ar",), True),
+        ((b"Blocked by Ar", b"gusSecurityPlugin Uifid ", b"Not Found"), False),
+        ((b"Blocked by ArgusSecurityPlugin Signature Not Found",), False),
+    ],
+    ids=["unknown", "partial-argus", "uifid", "signature"],
+)
+async def test_request_json_handles_short_error_prefix_without_eof(
+    status, chunks, retry
+):
     client = DouyinAPIClient({"ttwid": "1"})
-    response = _FakeResp(403, b"")
+    response = _FakeResp(status, b"")
     response.content = aiohttp.StreamReader(Mock(_reading_paused=False), limit=2**16)
+    for chunk in chunks:
+        response.content.feed_data(chunk)
+    queue = [response, _FakeResp(200, b'{"ok": true}')]
     calls = {"n": 0}
 
     class _FakeSession:
@@ -219,30 +235,22 @@ async def test_request_json_recognizes_argus_across_stream_chunks_and_eof():
 
         def get(self, url, **kwargs):
             calls["n"] += 1
-            return response
-
-    real_sleep = asyncio.sleep
-
-    async def feed_response():
-        for chunk in (b"Blocked by Ar", b"gusSecurityPlugin Uifid ", b"Not Found"):
-            response.content.feed_data(chunk)
-            await real_sleep(0)
-        response.content.feed_eof()
+            return queue.pop(0)
 
     client._session = _FakeSession()
-    feeder = asyncio.create_task(feed_response())
     with patch(
         "utils.douyin_api.client.asyncio.sleep", new_callable=AsyncMock
     ) as sleep:
-        try:
-            data = await client._request_json(
-                "/aweme/v1/web/aweme/detail/", {"aweme_id": "1"}
-            )
-        finally:
-            await feeder
-    assert data == {}
-    assert calls["n"] == 1
-    sleep.assert_not_called()
+        data = await asyncio.wait_for(
+            client._request_json("/aweme/v1/web/aweme/detail/", {"aweme_id": "1"}),
+            timeout=1,
+        )
+    assert data == ({"ok": True} if retry else {})
+    assert calls["n"] == (2 if retry else 1)
+    if retry:
+        sleep.assert_awaited_once()
+    else:
+        sleep.assert_not_called()
 
 
 @pytest.mark.asyncio
