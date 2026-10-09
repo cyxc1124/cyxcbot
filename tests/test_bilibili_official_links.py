@@ -363,3 +363,71 @@ async def test_native_remaining_budget_reserves_caption(scope, pipeline, monkeyp
     assert api.await_count == (2 if scope == "group" else 1)
     assert "动态标题" in api.await_args_list[-1].kwargs["message"].extract_plain_text()
     assert outbound.official_reply_remaining(event) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "c2c"])
+async def test_exhausted_native_event_skips_resolution_and_media(
+    scope, pipeline, monkeypatch
+):
+    plugin, _, video_manager = pipeline
+    event = _event(scope, "BV1xx411c7mD")
+    bot = QQBot(MagicMock(), "app", _bot_info("app", "secret", False))
+    api = AsyncMock()
+    monkeypatch.setattr(
+        bot, "send_to_group" if scope == "group" else "send_to_c2c", api
+    )
+    while outbound.official_reply_remaining(event):
+        await outbound.send_event_message(bot, event, plugin.Message("earlier reply"))
+    assert event._reply_seq == (5 if scope == "group" else 4)
+    api.reset_mock()
+    resolve = AsyncMock(wraps=plugin._resolve_reply)
+    download, mux, send = AsyncMock(), AsyncMock(), AsyncMock()
+    monkeypatch.setattr(plugin, "_resolve_reply", resolve)
+    monkeypatch.setattr(plugin, "download_bilibili_video", download)
+    monkeypatch.setattr("utils.bilibili_api.video_download._merge_av", mux)
+    monkeypatch.setattr("bilibili_native_test.video_send.send_event_message", send)
+
+    await (
+        plugin.handle_group_link if scope == "group" else plugin.handle_private_link
+    )(bot, event)
+
+    resolve.assert_not_awaited()
+    video_manager.init.assert_not_awaited()
+    video_manager.get_video_detail.assert_not_awaited()
+    plugin.live_api_manager.init.assert_not_awaited()
+    download.assert_not_awaited()
+    mux.assert_not_awaited()
+    send.assert_not_awaited()
+    api.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "c2c"])
+async def test_single_native_reply_budget_skips_video_download(
+    scope, pipeline, monkeypatch
+):
+    plugin, _, video_manager = pipeline
+    event = _event(scope, "BV1xx411c7mD")
+    bot = QQBot(MagicMock(), "app", _bot_info("app", "secret", False))
+    api = AsyncMock()
+    monkeypatch.setattr(
+        bot, "send_to_group" if scope == "group" else "send_to_c2c", api
+    )
+    while outbound.official_reply_remaining(event) > 1:
+        await outbound.send_event_message(bot, event, plugin.Message("earlier reply"))
+    api.reset_mock()
+    download, mux = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(plugin, "download_bilibili_video", download)
+    monkeypatch.setattr("utils.bilibili_api.video_download._merge_av", mux)
+
+    await (
+        plugin.handle_group_link if scope == "group" else plugin.handle_private_link
+    )(bot, event)
+
+    video_manager.get_video_detail.assert_awaited_once()
+    download.assert_not_awaited()
+    mux.assert_not_awaited()
+    api.assert_awaited_once()
+    assert "视频标题" in api.await_args.kwargs["message"].extract_plain_text()
+    assert outbound.official_reply_remaining(event) == 0
