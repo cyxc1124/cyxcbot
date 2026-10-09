@@ -41,6 +41,7 @@ _USER_AGENT = (
 _RETRYABLE_HTTP_STATUSES = frozenset({403, 429})
 _ARGUS_NON_RETRYABLE = ("Uifid Not Found", "Signature Not Found")
 _GATEWAY_ERROR_READ_LIMIT = 512
+_GATEWAY_ERROR_READ_TIMEOUT = 1.0
 # Argus 目前只检查头存在、不验值；真验签名后日志会变成 Signature Not Found。
 _ARGUS_PLACEHOLDER = "1"
 
@@ -371,8 +372,11 @@ class DouyinAPIClient:
                         )
                         return {}
                     try:
-                        # 错误流可能停在首个分片，不能为凑满前缀等待后续数据或 EOF。
-                        prefix = await response.content.read(_GATEWAY_ERROR_READ_LIMIT)
+                        # 错误正文只用于诊断，限制首字节等待且不为凑满前缀等后续分片。
+                        async with asyncio.timeout(_GATEWAY_ERROR_READ_TIMEOUT):
+                            prefix = await response.content.read(
+                                _GATEWAY_ERROR_READ_LIMIT
+                            )
                     except Exception:
                         prefix = b""
                     snippet = _gateway_error_snippet(

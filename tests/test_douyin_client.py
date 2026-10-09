@@ -281,6 +281,40 @@ async def test_request_json_only_reads_bounded_error_prefix(status):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status", [403, 429, 503])
+async def test_request_json_retries_when_error_body_never_arrives(status):
+    client = DouyinAPIClient({"ttwid": "1"})
+    responses = []
+    for _ in range(2):
+        response = _FakeResp(status, b"")
+        response.content = aiohttp.StreamReader(
+            Mock(_reading_paused=False), limit=2**16
+        )
+        responses.append(response)
+    queue = [*responses, _FakeResp(200, b'{"ok": true}')]
+
+    class _FakeSession:
+        closed = False
+
+        def get(self, url, **kwargs):
+            return queue.pop(0)
+
+    client._session = _FakeSession()
+    with (
+        patch("utils.douyin_api.client._GATEWAY_ERROR_READ_TIMEOUT", 0.01),
+        patch("utils.douyin_api.client.asyncio.sleep", new_callable=AsyncMock) as sleep,
+    ):
+        data = await asyncio.wait_for(
+            client._request_json("/aweme/v1/web/aweme/detail/", {"aweme_id": "1"}),
+            timeout=1,
+        )
+    assert data == {"ok": True}
+    assert not queue
+    assert sleep.await_count == 2
+    assert all(not response.content.at_eof() for response in responses)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("body", "secret"),
     [
