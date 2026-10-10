@@ -690,15 +690,8 @@ class XMonitor:
             ):
                 return False
 
-            if (
-                expected_fp
-                and self.sender.plan_fingerprint(
-                    message,
-                    at_all_enabled=at_all_enabled,
-                    expected_fingerprint=expected_fp,
-                )
-                != expected_fp
-            ):
+            # 旧指纹未记录群前缀策略，无法确认下标含义，按新计划从头重试。
+            if expected_fp != plan_fp:
                 group_starts = {}
                 user_starts = {}
                 expected_fp = ""
