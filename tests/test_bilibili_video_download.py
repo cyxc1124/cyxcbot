@@ -89,6 +89,73 @@ def test_select_dash_streams_requires_dash() -> None:
         select_dash_streams({}, prefer_qn=64)
 
 
+def test_select_dash_streams_requires_video() -> None:
+    play = {"dash": {"video": None, "audio": [{"id": 30280, "baseUrl": "https://a"}]}}
+    with pytest.raises(BilibiliVideoDownloadError, match="缺少 video"):
+        select_dash_streams(play, prefer_qn=64)
+
+
+def test_select_dash_streams_allows_video_only() -> None:
+    play = {
+        "dash": {
+            "video": [{"id": 32, "codecid": 7, "baseUrl": "https://v"}],
+            "audio": None,
+            "dolby": {"type": 0, "audio": []},
+            "flac": None,
+        }
+    }
+    video, audio = select_dash_streams(play, prefer_qn=64)
+    assert video["baseUrl"] == "https://v"
+    assert audio is None
+
+
+@pytest.mark.parametrize(
+    "dash, audio_url",
+    [
+        (
+            {
+                "video": [{"id": 32, "codecid": 7, "baseUrl": "https://v"}],
+                "audio": None,
+                "dolby": {
+                    "type": 1,
+                    "audio": [{"id": 30250, "baseUrl": "https://dolby"}],
+                },
+            },
+            "https://dolby",
+        ),
+        (
+            {
+                "video": [{"id": 32, "codecid": 7, "baseUrl": "https://v"}],
+                "audio": [],
+                "flac": {
+                    "display": True,
+                    "audio": {"id": 30251, "baseUrl": "https://flac"},
+                },
+            },
+            "https://flac",
+        ),
+    ],
+)
+def test_select_dash_streams_falls_back_to_dolby_or_flac(dash, audio_url) -> None:
+    video, audio = select_dash_streams({"dash": dash}, prefer_qn=64)
+    assert video["baseUrl"] == "https://v"
+    assert audio is not None
+    assert audio["baseUrl"] == audio_url
+
+
+def test_select_dash_streams_prefers_regular_audio_over_dolby() -> None:
+    play = {
+        "dash": {
+            "video": [{"id": 32, "codecid": 7, "baseUrl": "https://v"}],
+            "audio": [{"id": 30280, "baseUrl": "https://aac"}],
+            "dolby": {"audio": [{"id": 30250, "baseUrl": "https://dolby"}]},
+        }
+    }
+    _video, audio = select_dash_streams(play, prefer_qn=64)
+    assert audio is not None
+    assert audio["baseUrl"] == "https://aac"
+
+
 @pytest.mark.asyncio
 async def test_download_cleans_owned_temp_dir_on_failure(tmp_path: Path) -> None:
     session = AsyncMock()
@@ -242,3 +309,43 @@ async def test_cancel_http_stream_cleans_all_bilibili_files(
         await task
     assert not [path for path in tmp_path.rglob("*") if path.is_file()]
     assert work.exists() is not owned
+
+
+@pytest.mark.asyncio
+async def test_download_video_only_dash_skips_audio(tmp_path, monkeypatch):
+    from utils.bilibili_api import video_download
+
+    monkeypatch.setattr(
+        video_download,
+        "fetch_playurl",
+        AsyncMock(
+            return_value={
+                "dash": {
+                    "video": [{"id": 32, "codecid": 7, "baseUrl": "https://video"}],
+                    "audio": None,
+                }
+            }
+        ),
+    )
+    monkeypatch.setattr(video_download.shutil, "which", lambda _: "ffmpeg")
+    downloaded: list[str] = []
+
+    async def fake_cdn(_session, urls, dest, **_kwargs):
+        dest.write_bytes(b"v")
+        downloaded.append(urls[0])
+
+    merged: dict[str, object] = {}
+
+    async def fake_merge(audio, video, output):
+        merged["audio"] = audio
+        output.write_bytes(b"mp4")
+
+    monkeypatch.setattr(video_download, "_download_cdn", fake_cdn)
+    monkeypatch.setattr(video_download, "_merge_av", fake_merge)
+
+    path = await download_bilibili_video(
+        AsyncMock(), bvid="BV1xx411c7mD", cid=1, output_dir=tmp_path
+    )
+    assert path.exists()
+    assert downloaded == ["https://video"]
+    assert merged["audio"] is None
