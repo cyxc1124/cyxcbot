@@ -67,9 +67,10 @@
 
 - 仅在用户明确要求时 `git commit`；推送、合并、发版和分支清理在用户已授权的范围内执行，已有授权无需重复确认。修改 Helm 文件不代表获得现网部署授权。
 - 提交格式为 `<type>: <中文说明>`，可加范围，例如 `fix(auth): 修复会话过期判断`。保留 `feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`revert` 等 type 前缀。
-- 功能分支通过 PR / MR 合入 `develop`，不得直接推 `develop` 或 `main`（下述 GitLab 同步例外除外）。发版通过 `develop` → `main` 的 PR / MR，合并后才在 `main` 打 annotated tag；只改 CI 不打发行 tag。
-- GitHub PR 合入 `develop` 后，允许将其已合并结果快进同步到 GitLab `develop`，无需另开 MR；先同步两端，再清理功能分支。分叉或无法快进时停止并询问，不强推。
-- 涉及合并后同步、发版或 Helm 变更时阅读 [维护者发布流程](deploy/README.md#维护者发布流程)，保留双端发布、仓内与仓外 chart 版本同步及现网镜像约定；不得把现网拉取密钥拷回本仓。
+- **GitHub 是主仓库**。功能分支通过 **GitHub PR** 合入 `develop`，不得直接推 `develop` 或 `main`；PR 合并后再清理对应功能分支。
+- **GitLab 暂时仅同步发行 tag**：不再同步 `develop`、`main` 或功能分支，不在 GitLab 创建功能修复 MR。`origin` 的默认推送仅指向 GitHub；发行 tag 通过 `gitlab` 远端显式同步，禁止用 `origin` 双 push URL 顺带推送代码分支。
+- 发版在 GitHub 通过 `develop` → `main` 的 PR，合并后才在 `main` 打 annotated tag，并将同一个 tag 分别推送到 `origin` 和 `gitlab`；只改 CI 不打发行 tag。
+- 涉及合并、发行 tag 同步、发版或 Helm 变更时阅读 [维护者发布流程](deploy/README.md#维护者发布流程)，保留双端 tag 发布、仓内与仓外 chart 版本同步及现网镜像约定；不得把现网拉取密钥拷回本仓。
 
 ## 日志规范（NoneBot / loguru）
 
