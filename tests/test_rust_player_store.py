@@ -258,6 +258,136 @@ async def test_concurrent_bonus_claim_is_atomic(rust_player_store, monkeypatch) 
 
 
 @pytest.mark.asyncio
+async def test_credit_preserves_concurrent_shop_deduction(
+    rust_player_store, monkeypatch
+) -> None:
+    from shared.db.models import RustPlayerPoints
+    from shared.rust_player import shop_store
+
+    store, factory = rust_player_store
+    monkeypatch.setattr(shop_store, "get_session", factory)
+    await store.set_group_points("10001", _TEST_USER, 100)
+
+    async with factory() as session, session.begin():
+        stale_balance = await session.get(
+            RustPlayerPoints, {"group_id": "10001", "user_id": _TEST_USER}
+        )
+        assert stale_balance.points == 100
+        assert await shop_store.deduct_group_points("10001", _TEST_USER, 30) == 70
+        total = await store._add_points_in_session(session, "10001", _TEST_USER, 5)
+
+    assert total == 75
+    assert await store.get_group_points("10001", _TEST_USER) == 75
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["check_in", "steam_binding"])
+async def test_reward_failure_rolls_back_record_and_balance(
+    rust_player_store, monkeypatch, operation
+) -> None:
+    from shared.db.models import (
+        RustCheckInRecord,
+        RustSteamBindBonusAwarded,
+        RustSteamBinding,
+    )
+
+    store, factory = rust_player_store
+    add_points = store._add_points_in_session
+
+    async def fail_after_credit(*args):
+        await add_points(*args)
+        raise RuntimeError("points write failed")
+
+    async def award():
+        if operation == "check_in":
+            return await store.perform_check_in(
+                "10001", _TEST_USER, min_points=5, max_points=5
+            )
+        return await store.create_steam_binding(
+            _TEST_USER, _VALID_STEAM, group_id="10001", bind_bonus_points=5
+        )
+
+    monkeypatch.setattr(store, "_add_points_in_session", fail_after_credit)
+    with pytest.raises(RuntimeError, match="points write failed"):
+        await award()
+
+    async with factory() as session:
+        assert await session.get(RustSteamBinding, _TEST_USER) is None
+        assert await session.get(RustSteamBindBonusAwarded, _TEST_USER) is None
+        assert (
+            await session.get(
+                RustCheckInRecord,
+                {
+                    "group_id": "10001",
+                    "user_id": _TEST_USER,
+                    "check_in_date": store.today_check_in_date(),
+                },
+            )
+            is None
+        )
+    assert await store.get_group_points("10001", _TEST_USER) == 0
+
+    monkeypatch.setattr(store, "_add_points_in_session", add_points)
+    result = await award()
+    assert result.total_points == 5
+    assert await store.get_group_points("10001", _TEST_USER) == 5
+
+
+@pytest.mark.asyncio
+async def test_concurrent_first_check_in_awards_once(rust_player_store) -> None:
+    store, _factory = rust_player_store
+    results = await asyncio.gather(
+        *(
+            store.perform_check_in("10001", _TEST_USER, min_points=5, max_points=5)
+            for _ in range(2)
+        )
+    )
+    assert sum(result.ok for result in results) == 1
+    assert await store.get_group_points("10001", _TEST_USER) == 5
+
+
+@pytest.mark.asyncio
+async def test_concurrent_first_balance_credits_are_added(rust_player_store) -> None:
+    store, factory = rust_player_store
+
+    async def credit(delta):
+        async with factory() as session, session.begin():
+            return await store._add_points_in_session(
+                session, "10001", _TEST_USER, delta
+            )
+
+    await asyncio.gather(credit(5), credit(7))
+    assert await store.get_group_points("10001", _TEST_USER) == 12
+
+
+@pytest.mark.asyncio
+async def test_existing_sqlite_transaction_is_preserved(
+    rust_player_store, tmp_path
+) -> None:
+    from shared.db.base import Model
+
+    store, _factory = rust_player_store
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'modern.db'}",
+        connect_args={"autocommit": False},
+    )
+    factory = async_sessionmaker(engine)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Model.metadata.create_all)
+        async with factory() as session:
+            with pytest.raises(RuntimeError, match="rollback"):
+                async with session.begin():
+                    await store._ensure_write_transaction(session)
+                    await store._add_points_in_session(session, "10001", _TEST_USER, 5)
+                    raise RuntimeError("rollback")
+        async with factory() as session:
+            assert await store._get_points_in_session(session, "10001", _TEST_USER) == 0
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_create_steam_binding_awards_first_bind_bonus(rust_player_store) -> None:
     store, _factory = rust_player_store
 

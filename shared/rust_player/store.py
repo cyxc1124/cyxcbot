@@ -100,6 +100,15 @@ async def _ensure_steam_binding_available(session, user_id: str, steam_id: str) 
         raise ValueError("该 SteamID 已被其他 QQ 号绑定")
 
 
+async def _ensure_write_transaction(session) -> None:
+    connection = await session.connection(bind_arguments={"mapper": RustPlayerPoints})
+    if connection.dialect.name == "sqlite":
+        raw = await connection.get_raw_connection()
+        if not raw.driver_connection.in_transaction:
+            # SQLite legacy mode otherwise commits the first released SAVEPOINT.
+            await connection.exec_driver_sql("BEGIN IMMEDIATE")
+
+
 async def create_steam_binding(
     user_id: str,
     steam_id: str,
@@ -112,6 +121,7 @@ async def create_steam_binding(
     bind_bonus_points = max(0, int(bind_bonus_points))
     async with get_session() as session:
         async with session.begin():
+            await _ensure_write_transaction(session)
             await _ensure_steam_binding_available(session, user_id, steam_id)
             try:
                 async with session.begin_nested():
@@ -235,6 +245,7 @@ async def perform_check_in(
 
     async with get_session() as session:
         async with session.begin():
+            await _ensure_write_transaction(session)
             existing = await session.get(
                 RustCheckInRecord,
                 {
@@ -316,24 +327,9 @@ async def perform_check_in(
                     already_checked_in=True,
                 )
             session.expire_all()
-            points_result = await session.execute(
-                update(RustPlayerPoints)
-                .where(
-                    RustPlayerPoints.group_id == group_id,
-                    RustPlayerPoints.user_id == user_id,
-                )
-                .values(points=RustPlayerPoints.points + online_bonus)
+            total = await _add_points_in_session(
+                session, group_id, user_id, online_bonus
             )
-            if points_result.rowcount != 1:
-                session.add(
-                    RustPlayerPoints(
-                        group_id=group_id,
-                        user_id=user_id,
-                        points=online_bonus,
-                    )
-                )
-                await session.flush()
-            total = await _get_points_in_session(session, group_id, user_id)
             return CheckInResult(
                 ok=True,
                 online_bonus=online_bonus,
@@ -353,17 +349,29 @@ async def _get_points_in_session(session, group_id: str, user_id: str) -> int:
 async def _add_points_in_session(
     session, group_id: str, user_id: str, delta: int
 ) -> int:
-    row = await session.get(
-        RustPlayerPoints,
-        {"group_id": group_id, "user_id": user_id},
+    increment = (
+        update(RustPlayerPoints)
+        .where(
+            RustPlayerPoints.group_id == group_id,
+            RustPlayerPoints.user_id == user_id,
+        )
+        .values(points=RustPlayerPoints.points + delta)
+        .returning(RustPlayerPoints.points)
     )
-    if row is None:
-        row = RustPlayerPoints(group_id=group_id, user_id=user_id, points=delta)
-        session.add(row)
-    else:
-        row.points += delta
-    await session.flush()
-    return row.points
+    total = await session.scalar(increment)
+    if total is not None:
+        return total
+    try:
+        async with session.begin_nested():
+            session.add(
+                RustPlayerPoints(group_id=group_id, user_id=user_id, points=delta)
+            )
+            await session.flush()
+    except IntegrityError:
+        total = await session.scalar(increment)
+        assert total is not None
+        return total
+    return delta
 
 
 async def list_player_overview() -> list[dict[str, object]]:
