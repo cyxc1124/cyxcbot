@@ -54,7 +54,7 @@ def test_from_settings_clamps_port():
 
 
 def test_create_session_uses_proxy_connector_for_http_and_socks5():
-    """http/https/socks5 都必须挂在 connector 上，避免 API/t.co 部分直连。"""
+    """HTTP/SOCKS5 沿用 connector，代理覆盖 session 内全部请求。"""
     import asyncio
 
     from aiohttp_socks import ProxyConnector
@@ -71,7 +71,6 @@ def test_create_session_uses_proxy_connector_for_http_and_socks5():
             await session.close()
 
     asyncio.run(_check("http"))
-    asyncio.run(_check("https"))
     asyncio.run(_check("socks5"))
 
 

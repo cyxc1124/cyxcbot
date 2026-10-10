@@ -702,6 +702,123 @@ async def test_official_x_persists_parts_and_cursor_across_restart(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "user"])
+@pytest.mark.parametrize("official", [False, True])
+@pytest.mark.parametrize("legacy_fp", ["t|v", ""])
+async def test_x_legacy_pending_restarts_and_saves_new_checkpoints(
+    db_context, monkeypatch, tmp_path, scope, official, legacy_fp
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from nonebot.adapters.onebot.v11 import Message, MessageSegment
+
+    from plugins.x_monitor import sender, state_store
+    from plugins.x_monitor.config import Config
+    from plugins.x_monitor.x_monitor import XMonitor
+    from shared.adapter import outbound
+    from shared.db.models import XMonitorState
+    from utils.x_api.models import TweetItem
+
+    _, factory, _, _ = db_context
+    monkeypatch.setattr(state_store, "get_session", lambda: factory())
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    target_id = f"{scope}-openid" if official else "1001"
+    async with factory() as session, session.begin():
+        session.add(
+            XMonitorState(
+                username="author",
+                last_tweet_id="100",
+                initialized=True,
+                pending_tweet_id="200" + (f"#{legacy_fp}" if legacy_fp else ""),
+                pending_group_ids=f"{target_id}@1" if scope == "group" else "",
+                pending_user_ids=f"{target_id}@1" if scope == "user" else "",
+            )
+        )
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"clip")
+    message = Message(
+        [MessageSegment.text("caption"), MessageSegment.video(video.resolve())]
+    )
+    accepted = []
+    failed_once = False
+
+    async def send(**kwargs):
+        nonlocal failed_once
+        destination = (
+            kwargs.get("group_openid")
+            or kwargs.get("openid")
+            or str(kwargs.get("group_id") or kwargs.get("user_id"))
+        )
+        assert destination == target_id
+        segment = kwargs["message"][0]
+        if segment.type in {"video", "file_video"} and not failed_once:
+            failed_once = True
+            raise RuntimeError("temporary video failure")
+        async with factory() as session:
+            row = await session.get(XMonitorState, "author")
+            assert row.pending_tweet_id.startswith("200#v2:")
+            if not accepted:
+                targets = (
+                    row.pending_group_ids if scope == "group" else row.pending_user_ids
+                )
+                assert targets == target_id
+        accepted.append(segment.type)
+
+    onebot = SimpleNamespace(
+        send_group_msg=AsyncMock(side_effect=send),
+        send_private_msg=AsyncMock(side_effect=send),
+    )
+    native = SimpleNamespace(send_to_group=send, send_to_c2c=send)
+    monkeypatch.setattr(outbound, "iter_onebot_bots", lambda: [onebot])
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [native])
+    monkeypatch.setattr(sender, "messaging_bots", lambda: [onebot, native])
+
+    def monitor():
+        result = XMonitor(
+            Config(
+                x_monitor_mapping={"author": [target_id, "already-delivered-group"]}
+                if scope == "group"
+                else {"author": []},
+                x_monitor_user_mapping={"author": [target_id, "already-delivered-user"]}
+                if scope == "user"
+                else {"author": []},
+                x_at_all={"author": False},
+            )
+        )
+        result.sender = sender.XSender()
+        result.sender.build_tweet_message = lambda _: message
+        return result
+
+    tweet = TweetItem(
+        id="200",
+        text="caption",
+        created_at="",
+        username="author",
+        name="Author",
+        url="",
+    )
+    first = monitor()
+    await first._load_persisted_states()
+    assert not await first._send_tweet_notification("author", tweet)
+    async with factory() as session:
+        row = await session.get(XMonitorState, "author")
+        assert row.pending_tweet_id == "200#" + first.sender.plan_fingerprint(message)
+        targets = row.pending_group_ids if scope == "group" else row.pending_user_ids
+        assert targets == f"{target_id}@1"
+        assert row.last_tweet_id == "100"
+
+    restarted = monitor()
+    await restarted._load_persisted_states()
+    assert await restarted._send_tweet_notification("author", tweet)
+    assert accepted == ["text", "file_video" if official else "video"]
+    async with factory() as session:
+        row = await session.get(XMonitorState, "author")
+        assert row.last_tweet_id == "200"
+        assert row.pending_tweet_id is None
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["start", "end"])
 @pytest.mark.parametrize("target", ["group", "user"])
 @pytest.mark.parametrize("failure", ["recipient", "part", "no_bot"])

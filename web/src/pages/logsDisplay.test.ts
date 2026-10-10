@@ -4,6 +4,7 @@ import {
   DISPLAY_MAX,
   LOG_FLUSH_MS,
   NEAR_BOTTOM_PX,
+  appendToLogBuffer,
   isNearBottom,
   mergeLogs,
   trimLogs,
@@ -100,5 +101,40 @@ describe('logsDisplay', () => {
     const items = Array.from({ length: DISPLAY_MAX - 1 }, (_, i) => entry(i))
     expect(trimLogs(items)).toBe(items)
     expect(trimLogs(items).length).toBe(DISPLAY_MAX - 1)
+  })
+
+  it('bounds a long paused stream to the newest DISPLAY_MAX entries in arrival order', () => {
+    let buffer: RuntimeLogEntry[] = []
+    for (let i = 0; i < 12001; i++) {
+      buffer = appendToLogBuffer(buffer, [entry(i)])
+      expect(buffer.length).toBeLessThanOrEqual(DISPLAY_MAX)
+    }
+    expect(buffer.map((item) => item.entry_id)).toEqual(
+      Array.from({ length: DISPLAY_MAX }, (_, i) => 10001 + i),
+    )
+    const resumed = mergeLogs([entry(0)], buffer)
+    expect(resumed).toEqual(buffer)
+  })
+
+  it('bounds an oversized pending batch moved into the paused buffer', () => {
+    const buffer = [entry(0)]
+    const pending = Array.from({ length: 10001 }, (_, i) => entry(i + 1))
+    const result = appendToLogBuffer(buffer, pending)
+    expect(result).toEqual(pending.slice(-DISPLAY_MAX))
+    expect(buffer).toEqual([entry(0)])
+  })
+
+  it('keeps buffered replays for the existing resume deduplication', () => {
+    const displayed = [entry(1), entry(2)]
+    const buffer = appendToLogBuffer([entry(2)], [entry(3)])
+    expect(mergeLogs(displayed, buffer).map((item) => item.entry_id)).toEqual([1, 2, 3])
+  })
+
+  it('starts a fresh buffer after clearing paused logs', () => {
+    let buffer = appendToLogBuffer([], [entry(1), entry(2)])
+    expect(buffer).toHaveLength(2)
+    buffer = []
+    buffer = appendToLogBuffer(buffer, [entry(3)])
+    expect(mergeLogs([], buffer)).toEqual([entry(3)])
   })
 })
