@@ -53,18 +53,42 @@ def _stream_urls(stream: dict[str, Any]) -> list[str]:
     return urls
 
 
+def _as_stream_list(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def _dash_audio_streams(dash: dict[str, Any]) -> list[dict[str, Any]]:
+    """普通 AAC 优先；缺轨时再取杜比 / Hi-Res（官方文档：无音轨时 audio 为 null）。"""
+    audios = _as_stream_list(dash.get("audio"))
+    if audios:
+        return audios
+    dolby = dash.get("dolby")
+    if isinstance(dolby, dict):
+        audios.extend(_as_stream_list(dolby.get("audio")))
+    flac = dash.get("flac")
+    if isinstance(flac, dict):
+        audios.extend(_as_stream_list(flac.get("audio")))
+    return audios
+
+
 def select_dash_streams(
     play: dict[str, Any], prefer_qn: int
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """选择最佳 DASH 音视频轨（同画质优先 H.264；不超过 prefer 时取最高，否则取最低）。"""
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """选择最佳 DASH 音视频轨（同画质优先 H.264；不超过 prefer 时取最高，否则取最低）。
+
+    无独立音轨的稿件（竖屏测试、静音视频）只返回视频轨，由调用方单独封装。
+    """
     dash = play.get("dash")
     if not dash:
         raise BilibiliVideoDownloadError("当前视频无 DASH 流")
 
-    videos = dash.get("video") or []
-    audios = dash.get("audio") or []
-    if not videos or not audios:
-        raise BilibiliVideoDownloadError("DASH 缺少 video 或 audio 轨")
+    videos = _as_stream_list(dash.get("video"))
+    if not videos:
+        raise BilibiliVideoDownloadError("DASH 缺少 video 轨")
 
     capped = [v for v in videos if int(v.get("id") or 0) <= prefer_qn]
     if capped:
@@ -79,6 +103,9 @@ def select_dash_streams(
     )
     video = same_qn[0]
 
+    audios = _dash_audio_streams(dash)
+    if not audios:
+        return video, None
     eligible_audio = [a for a in audios if int(a.get("id") or 0) <= 30280] or audios
     audio = max(eligible_audio, key=lambda a: int(a.get("id") or 0))
     return video, audio
@@ -179,7 +206,7 @@ async def _download_cdn(
     raise BilibiliVideoDownloadError(f"{label} 全部 CDN 均失败") from last_err
 
 
-async def _merge_av(audio: Path, video: Path, output: Path) -> None:
+async def _merge_av(audio: Path | None, video: Path, output: Path) -> None:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise BilibiliVideoDownloadError("未找到 ffmpeg，无法混流")
@@ -190,18 +217,22 @@ async def _merge_av(audio: Path, video: Path, output: Path) -> None:
         "-hide_banner",
         "-loglevel",
         "error",
-        "-i",
-        str(audio),
-        "-i",
-        str(video),
-        "-c",
-        "copy",
-        "-strict",
-        "-2",
-        "-movflags",
-        "+faststart",
-        str(output),
     ]
+    if audio is not None:
+        cmd.extend(["-i", str(audio)])
+    cmd.extend(
+        [
+            "-i",
+            str(video),
+            "-c",
+            "copy",
+            "-strict",
+            "-2",
+            "-movflags",
+            "+faststart",
+            str(output),
+        ]
+    )
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
@@ -363,15 +394,19 @@ async def _download_bilibili_video_into(
             max_bytes=max_bytes,
             label="视频轨",
         )
-        await _download_cdn(
-            session,
-            _stream_urls(audio_stream),
-            tmp_audio,
-            cookie=cookie,
-            max_bytes=max_bytes,
-            label="音频轨",
-        )
-        await _merge_av(tmp_audio, tmp_video, final)
+        if audio_stream is None:
+            logger.info("B 站视频无独立音轨，仅封装视频: bvid={} cid={}", bvid, cid)
+            await _merge_av(None, tmp_video, final)
+        else:
+            await _download_cdn(
+                session,
+                _stream_urls(audio_stream),
+                tmp_audio,
+                cookie=cookie,
+                max_bytes=max_bytes,
+                label="音频轨",
+            )
+            await _merge_av(tmp_audio, tmp_video, final)
         if not final.exists() or final.stat().st_size <= 0:
             raise BilibiliVideoDownloadError("混流产物为空")
         _reject_if_too_large(final, max_bytes)

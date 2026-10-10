@@ -216,8 +216,8 @@ async def stream_logs(
                 threshold=threshold,
             )
 
-            # Live queue delivers each entry once; dedupe set only bridges replay/catch-up.
-            sent.clear()
+            # Worker callbacks may enqueue replayed entries after handoff returns.
+            replay_end = max(sent, default=0)
 
             while True:
                 entry = await queue.get()
@@ -225,6 +225,11 @@ async def stream_logs(
                     raise _SubscriberOverloaded
                 if not _level_gte(entry.level, threshold):
                     continue
+                if entry.entry_id in sent:
+                    sent.remove(entry.entry_id)
+                    continue
+                if entry.entry_id > replay_end:
+                    sent.clear()
                 await websocket.send_json(entry.to_dict())
         finally:
             hub.unsubscribe(queue)

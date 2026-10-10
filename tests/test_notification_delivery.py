@@ -520,7 +520,7 @@ async def test_x_plan_change_then_cancel_resets_offsets_before_persisting(
     message = Message([MessageSegment.text("caption"), MessageSegment.image(b"image")])
     monitor.sender.build_tweet_message = MagicMock(return_value=message)
     old_fp = (
-        "t|v|t"
+        "ti"
         if legacy
         else monitor.sender.plan_fingerprint(message, at_all_enabled=False)
     )

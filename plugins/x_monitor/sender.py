@@ -67,12 +67,9 @@ class XSender:
         message: Message,
         *,
         at_all_enabled: bool = False,
-        expected_fingerprint: str = "",
     ) -> str:
         batches = reply_batches(message) or ([message] if message else [])
-        return _plan_fingerprint(
-            batches, at_all_enabled=at_all_enabled, expected=expected_fingerprint
-        )
+        return _plan_fingerprint(batches, at_all_enabled=at_all_enabled)
 
     async def send_to_groups(
         self,
@@ -92,9 +89,7 @@ class XSender:
         if not batches:
             batches = [message]
         expected_fp = (expected_fingerprint or "").strip()
-        plan_fp = _plan_fingerprint(
-            batches, at_all_enabled=at_all_enabled, expected=expected_fp
-        )
+        plan_fp = _plan_fingerprint(batches, at_all_enabled=at_all_enabled)
 
         starts = start_by_target or {}
         if not messaging_bots():
@@ -219,9 +214,7 @@ class XSender:
         if not batches:
             batches = [message]
         expected_fp = (expected_fingerprint or "").strip()
-        plan_fp = _plan_fingerprint(
-            batches, at_all_enabled=at_all_enabled, expected=expected_fp
-        )
+        plan_fp = _plan_fingerprint(batches, at_all_enabled=at_all_enabled)
 
         starts = start_by_target or {}
         if not messaging_bots():
@@ -399,13 +392,8 @@ class XSender:
         return group_result.merge(user_result)
 
 
-def _plan_fingerprint(
-    batches: List[Message], *, at_all_enabled: bool, expected: str = ""
-) -> str:
+def _plan_fingerprint(batches: List[Message], *, at_all_enabled: bool) -> str:
     legacy = batch_plan_fingerprint([_batch_kind_key(batch) for batch in batches])
-    # 升级前的 pending 仍按旧指纹续传；新进度同时校验群前缀策略。
-    if expected and not expected.startswith("v2:"):
-        return legacy
     return "v2:" + sha256(f"{at_all_enabled}:{legacy}".encode()).hexdigest()
 
 

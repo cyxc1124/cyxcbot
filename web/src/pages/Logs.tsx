@@ -7,6 +7,7 @@ import { formatApiError } from '../utils/apiError'
 import {
   DISPLAY_MAX,
   LOG_FLUSH_MS,
+  appendToLogBuffer,
   isNearBottom,
   mergeLogs,
   trimLogs,
@@ -95,7 +96,7 @@ export function LogsPage() {
     (incoming: RuntimeLogEntry[]) => {
       if (!incoming.length) return
       if (pausedRef.current) {
-        pausedBufferRef.current.push(...incoming)
+        pausedBufferRef.current = appendToLogBuffer(pausedBufferRef.current, incoming)
         return
       }
       pendingLogsRef.current.push(...incoming)
@@ -235,7 +236,7 @@ export function LogsPage() {
         pendingLogsRef.current = []
         flushGenerationRef.current += 1
         if (pending.length) {
-          pausedBufferRef.current.push(...pending)
+          pausedBufferRef.current = appendToLogBuffer(pausedBufferRef.current, pending)
         }
       }
       return !prev

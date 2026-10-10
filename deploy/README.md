@@ -34,21 +34,22 @@ helm install cyxcbot ./deploy/helm --set secret.name=cyxcbot-secret
 
 ### 分支与合并
 
-功能改动从功能分支开 PR / MR 合进 `develop`，不要直接推 `develop` 或 `main`，下述 GitLab 同步例外除外。GitHub PR 合并后先同步两端 `develop`，再清理功能分支。
+**GitHub 是主仓库**。功能改动从功能分支开 GitHub PR 合进 `develop`，不要直接推 `develop` 或 `main`；PR 合并后再清理对应功能分支。
 
-**GitLab 同步例外**：可以将 GitHub `develop` 的已合并结果快进推送到 GitLab `develop`，无需另开 GitLab MR。同步前先获取 GitHub 最新 `develop`，确认 GitLab `develop` 是其祖先，再通过明确的 GitLab URL 推送，避免误推 GitHub：
-
-```bash
-git push https://gitlab.cyxc.club/cyxc1124/cyxcbot.git refs/remotes/origin/develop:refs/heads/develop
-```
-
-若两端存在分叉或无法快进，停下来询问用户，不强推覆盖 GitLab 独有提交。
+**GitLab 暂时仅同步发行 tag**，不再同步 `develop`、`main` 或功能分支，也不在 GitLab 创建功能修复 MR。`origin` 的默认推送仅指向 GitHub，保留 `gitlab` 远端用于显式同步发行 tag；不要配置 `origin` 双 push URL，以免普通分支推送同时进入 GitLab。
 
 ### 版本与镜像
 
-发版时从 `develop` 开 PR / MR 到 `main`，**合并后再打 annotated tag**（如 `v2.11.8`），并 `git push origin v2.11.8`。不要在 `develop` 上直接打发行 tag。只改 CI 不用打 tag；运行时依赖或业务改动才打。
+发版时在 GitHub 从 `develop` 开 PR 到 `main`，**合并后再在 `main` 打 annotated tag**（如 `v2.11.8`）。不要在 `develop` 上直接打发行 tag。只改 CI 不用打 tag；运行时依赖或业务改动才打。
 
-`v*` tag 会触发 GitHub 推送 GHCR 镜像与 Windows 包（GitHub Release），以及 GitLab 推送 Registry 镜像。`origin` 配置为同时 push GitHub 与 GitLab 时，推一次 tag 两边都会收到。
+将同一个发行 tag 分别推送到两个远端，使用完整 tag refspec，避免推送代码分支：
+
+```bash
+git push origin refs/tags/v2.11.8:refs/tags/v2.11.8
+git push gitlab refs/tags/v2.11.8:refs/tags/v2.11.8
+```
+
+`v*` tag 会触发 GitHub 推送 GHCR 镜像与 Windows 包（GitHub Release），以及 GitLab 推送 Registry 镜像。两端 tag 应指向同一个 annotated tag 对象；若已有同名 tag 指向不同对象，停止并询问，不强推覆盖。
 
 发版变更必须同步两份 Helm chart 的 `appVersion` / `image.tag`，与发行 tag 使用同一版本号：
 

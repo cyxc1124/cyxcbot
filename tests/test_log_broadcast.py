@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 
+import pytest
 from nonebot.log import LoguruHandler
 from uvicorn.config import LOGGING_CONFIG
 
@@ -39,7 +44,7 @@ def test_distinct_hub_instances_have_distinct_session_ids() -> None:
     assert LogBroadcastHub().session_id != LogBroadcastHub().session_id
 
 
-def test_buffer_catch_up_loops_until_ring_buffer_is_stable() -> None:
+async def test_buffer_catch_up_loops_until_ring_buffer_is_stable() -> None:
     hub = LogBroadcastHub(max_history=10)
     hub.publish(_entry("first"))
     recent = hub.recent(limit=10, min_level="DEBUG")
@@ -69,7 +74,7 @@ def test_buffer_catch_up_loops_until_ring_buffer_is_stable() -> None:
         hub.unsubscribe(queue)
 
 
-def test_handoff_gap_entry_is_in_ring_buffer_before_subscribe() -> None:
+async def test_handoff_gap_entry_is_in_ring_buffer_before_subscribe() -> None:
     hub = LogBroadcastHub(max_history=10)
     hub.publish(_entry("initial"))
     sent = {entry.entry_id for entry in hub.recent(limit=10, min_level="DEBUG")}
@@ -87,6 +92,7 @@ def test_handoff_gap_entry_is_in_ring_buffer_before_subscribe() -> None:
     try:
         assert queue.qsize() == 0
         hub.publish(_entry("live"))
+        await asyncio.sleep(0)
         assert queue.qsize() == 1
     finally:
         hub.unsubscribe(queue)
@@ -114,7 +120,7 @@ def test_duplicate_fields_get_unique_entry_ids_for_dedupe() -> None:
     assert catch_up[0].entry_id == recent[1].entry_id
 
 
-def test_burst_during_replay_does_not_register_subscriber() -> None:
+async def test_burst_during_replay_does_not_register_subscriber() -> None:
     hub = LogBroadcastHub(max_history=300)
     history = hub.recent(limit=300, min_level="DEBUG")
     assert history == []
@@ -129,7 +135,7 @@ def test_burst_during_replay_does_not_register_subscriber() -> None:
         hub.unsubscribe(queue)
 
 
-def test_subscribe_filters_by_min_level_before_enqueue() -> None:
+async def test_subscribe_filters_by_min_level_before_enqueue() -> None:
     """DEBUG flood must not fill an INFO subscriber's bounded queue."""
     hub = LogBroadcastHub(max_history=10)
     queue = hub.subscribe(min_level="INFO")
@@ -137,6 +143,7 @@ def test_subscribe_filters_by_min_level_before_enqueue() -> None:
         for index in range(300):
             hub.publish(_entry(f"debug-{index}", level="DEBUG"))
         hub.publish(_entry("keep-me", level="INFO"))
+        await asyncio.sleep(0)
 
         assert queue.qsize() == 1
         assert queue.get_nowait().message == "keep-me"
@@ -169,23 +176,175 @@ def test_debug_recent_merges_tiers_in_entry_id_order() -> None:
     assert [entry.message for entry in recent] == ["i1", "d1", "i2"]
 
 
-def test_queue_full_signals_disconnect_sentinel() -> None:
+async def test_queue_full_signals_disconnect_sentinel() -> None:
     """Slow clients must get None so WS can close and reconnect."""
     hub = LogBroadcastHub(max_history=10)
     queue = hub.subscribe(min_level="DEBUG")
     try:
         for index in range(SUBSCRIBER_QUEUE_SIZE):
             hub.publish(_entry(f"fill-{index}"))
+        await asyncio.sleep(0)
         assert queue.qsize() == SUBSCRIBER_QUEUE_SIZE
         assert hub.is_subscribed(queue)
 
         hub.publish(_entry("overflow"))
+        await asyncio.sleep(0)
 
         assert not hub.is_subscribed(queue)
         assert queue.qsize() == 1
         assert queue.get_nowait() is None
     finally:
         hub.unsubscribe(queue)
+
+
+async def test_worker_publish_wakes_idle_subscriber_loop() -> None:
+    hub = LogBroadcastHub()
+    queue = hub.subscribe()
+    loop = asyncio.get_running_loop()
+    unrelated_timer_fired = False
+
+    def unrelated_timer() -> None:
+        nonlocal unrelated_timer_fired
+        unrelated_timer_fired = True
+
+    def publish() -> None:
+        time.sleep(0.02)
+        hub.publish(_entry("from-worker"))
+
+    consumer = asyncio.create_task(queue.get())
+    await asyncio.sleep(0)
+    timer = loop.call_later(0.5, unrelated_timer)
+    worker = threading.Thread(target=publish)
+    worker.start()
+    try:
+        entry = await asyncio.wait_for(consumer, timeout=1)
+        assert entry.message == "from-worker"
+        assert not unrelated_timer_fired
+    finally:
+        timer.cancel()
+        worker.join(timeout=1)
+        consumer.cancel()
+        hub.unsubscribe(queue)
+
+
+async def test_worker_overflow_only_touches_queue_on_subscriber_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hub = LogBroadcastHub()
+    queue = hub.subscribe()
+    loop = asyncio.get_running_loop()
+    put_nowait = queue.put_nowait
+    get_nowait = queue.get_nowait
+
+    def put(entry: LogEntry | None) -> None:
+        assert asyncio.get_running_loop() is loop
+        put_nowait(entry)
+
+    def get() -> LogEntry | None:
+        assert asyncio.get_running_loop() is loop
+        return get_nowait()
+
+    monkeypatch.setattr(queue, "put_nowait", put)
+    monkeypatch.setattr(queue, "get_nowait", get)
+
+    def publish() -> None:
+        for index in range(SUBSCRIBER_QUEUE_SIZE + 2):
+            hub.publish(_entry(f"worker-{index}"))
+
+    worker = threading.Thread(target=publish)
+    worker.start()
+    worker.join(timeout=1)
+    await asyncio.sleep(0)
+
+    assert not worker.is_alive()
+    assert not hub.is_subscribed(queue)
+    assert queue.qsize() == 1
+    assert queue.get_nowait() is None
+    assert hub.recent(limit=1)[0].message == f"worker-{SUBSCRIBER_QUEUE_SIZE + 1}"
+
+
+async def test_unsubscribe_discards_scheduled_queue_writes() -> None:
+    hub = LogBroadcastHub()
+    queue = hub.subscribe()
+    hub.publish(_entry("scheduled"))
+    hub.unsubscribe(queue)
+    await asyncio.sleep(0)
+    assert queue.empty()
+    assert hub.recent(limit=1)[0].message == "scheduled"
+
+
+def test_closed_subscriber_loop_does_not_break_publication() -> None:
+    hub = LogBroadcastHub()
+    loop = asyncio.new_event_loop()
+    queues = []
+
+    def subscribe() -> None:
+        queues.append(hub.subscribe())
+        hub.publish(_entry("queued-before-close"))
+        loop.stop()
+
+    try:
+        loop.call_soon(subscribe)
+        loop.run_forever()
+    finally:
+        loop.close()
+    queue = queues[0]
+    hub.publish(_entry("after-loop-close"))
+    assert not hub.is_subscribed(queue)
+    assert hub.recent(limit=1)[0].message == "after-loop-close"
+
+
+async def test_worker_burst_uses_one_bounded_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hub = LogBroadcastHub()
+    queue = hub.subscribe()
+    loop = asyncio.get_running_loop()
+    schedule = loop.call_soon_threadsafe
+    scheduled_flushes = 0
+
+    def call_soon_threadsafe(callback, *args):
+        nonlocal scheduled_flushes
+        scheduled_flushes += 1
+        return schedule(callback, *args)
+
+    monkeypatch.setattr(loop, "call_soon_threadsafe", call_soon_threadsafe)
+
+    def publish() -> None:
+        for index in range(10_000):
+            hub.publish(_entry(f"burst-{index}"))
+
+    worker = threading.Thread(target=publish)
+    worker.start()
+    worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert scheduled_flushes == 1
+    await asyncio.sleep(0)
+    assert queue.qsize() == 1
+    assert queue.get_nowait() is None
+    assert not hub.is_subscribed(queue)
+
+
+def test_subscribers_on_different_loops_receive_worker_publication() -> None:
+    hub = LogBroadcastHub()
+    ready = threading.Barrier(3)
+
+    async def receive() -> LogEntry:
+        queue = hub.subscribe()
+        try:
+            ready.wait(timeout=2)
+            return await asyncio.wait_for(queue.get(), timeout=2)
+        finally:
+            hub.unsubscribe(queue)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(asyncio.run, receive()) for _ in range(2)]
+        ready.wait(timeout=2)
+        hub.publish(_entry("both-loops"))
+        entries = [future.result(timeout=3) for future in futures]
+
+    assert [entry.message for entry in entries] == ["both-loops", "both-loops"]
+    assert entries[0].entry_id == entries[1].entry_id
 
 
 def test_install_log_broadcast_does_not_attach_uvicorn_handlers() -> None:

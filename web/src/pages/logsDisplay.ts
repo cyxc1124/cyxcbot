@@ -21,6 +21,13 @@ export function trimLogs(items: RuntimeLogEntry[]): RuntimeLogEntry[] {
   return items.slice(items.length - DISPLAY_MAX)
 }
 
+export function appendToLogBuffer(
+  buffer: RuntimeLogEntry[],
+  incoming: RuntimeLogEntry[],
+): RuntimeLogEntry[] {
+  return trimLogs([...buffer, ...incoming])
+}
+
 export function mergeLogs(
   prev: RuntimeLogEntry[],
   incoming: RuntimeLogEntry[],
