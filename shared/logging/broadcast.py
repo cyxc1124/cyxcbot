@@ -9,7 +9,7 @@ import re
 import threading
 import uuid
 from collections import deque
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from typing import Any
 
@@ -75,6 +75,13 @@ def _level_rank(level: str) -> int:
     return LEVEL_RANK.get(level.upper(), 20)
 
 
+@dataclass
+class _Subscriber:
+    threshold: int
+    loop: asyncio.AbstractEventLoop
+    pending: deque[LogEntry | None] = field(default_factory=deque)
+
+
 class LogBroadcastHub:
     """Thread-safe hub storing recent logs and broadcasting to asyncio subscribers."""
 
@@ -83,9 +90,9 @@ class LogBroadcastHub:
         # Split tiers: default Web view is INFO; DEBUG must not evict it.
         self._info_history: deque[LogEntry] = deque(maxlen=max_history)
         self._debug_history: deque[LogEntry] = deque(maxlen=max_history)
-        # queue -> min level rank; filter before enqueue so DEBUG flood cannot
+        # Filter before enqueue so DEBUG flood cannot
         # fill INFO subscribers' 256-slot queues.
-        self._subscribers: dict[asyncio.Queue[LogEntry | None], int] = {}
+        self._subscribers: dict[asyncio.Queue[LogEntry | None], _Subscriber] = {}
         self._lock = threading.Lock()
         self._seq = 0
         self._session_id = uuid.uuid4().hex
@@ -104,14 +111,43 @@ class LogBroadcastHub:
             else:
                 self._debug_history.append(entry)
             dead: list[asyncio.Queue[LogEntry | None]] = []
-            for queue, threshold in self._subscribers.items():
-                if entry_rank < threshold:
-                    continue
-                try:
-                    queue.put_nowait(entry)
-                except asyncio.QueueFull:
+            for queue, subscriber in self._subscribers.items():
+                if subscriber.loop.is_closed():
                     dead.append(queue)
+                    continue
+                if entry_rank < subscriber.threshold:
+                    continue
+                pending = subscriber.pending
+                if not pending:
+                    try:
+                        subscriber.loop.call_soon_threadsafe(self._flush, queue)
+                    except RuntimeError:
+                        dead.append(queue)
+                        continue
+                elif pending[0] is None:
+                    continue
+                # Bound worker handoff too, rather than scheduling one callback per log.
+                if len(pending) >= SUBSCRIBER_QUEUE_SIZE:
+                    pending.clear()
+                    pending.append(None)
+                else:
+                    pending.append(entry)
             for queue in dead:
+                self._subscribers.pop(queue, None)
+
+    def _flush(self, queue: asyncio.Queue[LogEntry | None]) -> None:
+        with self._lock:
+            subscriber = self._subscribers.get(queue)
+            if subscriber is None:
+                return
+            while subscriber.pending:
+                entry = subscriber.pending.popleft()
+                if entry is not None:
+                    try:
+                        queue.put_nowait(entry)
+                        continue
+                    except asyncio.QueueFull:
+                        pass
                 self._subscribers.pop(queue, None)
                 # Drop backlog so None is next; otherwise a slow send_json loop
                 # may never reach the sentinel. Ring buffer still has history.
@@ -120,10 +156,8 @@ class LogBroadcastHub:
                         queue.get_nowait()
                     except asyncio.QueueEmpty:
                         break
-                try:
-                    queue.put_nowait(None)
-                except asyncio.QueueFull:
-                    pass
+                queue.put_nowait(None)
+                return
 
     def recent(self, *, limit: int = 500, min_level: str = "DEBUG") -> list[LogEntry]:
         threshold = _level_rank(min_level)
@@ -149,11 +183,12 @@ class LogBroadcastHub:
         return items[-limit:]
 
     def subscribe(self, *, min_level: str = "DEBUG") -> asyncio.Queue[LogEntry | None]:
+        loop = asyncio.get_running_loop()
         queue: asyncio.Queue[LogEntry | None] = asyncio.Queue(
             maxsize=SUBSCRIBER_QUEUE_SIZE
         )
         with self._lock:
-            self._subscribers[queue] = _level_rank(min_level)
+            self._subscribers[queue] = _Subscriber(_level_rank(min_level), loop)
         return queue
 
     def unsubscribe(self, queue: asyncio.Queue[LogEntry | None]) -> None:
