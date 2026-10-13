@@ -316,13 +316,16 @@ def _matching_argument_commands(
 
 
 def _match_extract_command(
-    message_text: str, config: Dict[str, CommandAliasEntry]
+    message_text: str,
+    config: Dict[str, CommandAliasEntry],
+    *,
+    prefixes: frozenset[str] | None = None,
 ) -> tuple[str, str] | None:
     alternation = trigger_alternation("dynamic_extract", config)
     if alternation is None:
         return None
     match = re.match(
-        rf"^(?:{prefix_alternation()})(?P<trigger>{alternation})(?:"
+        rf"^(?:{prefix_alternation(prefixes)})(?P<trigger>{alternation})(?:"
         r"https?://(?:www\.)?bilibili\.com/opus/(\d+)|"
         r"https?://t\.bilibili\.com/(\d+)|"
         r"(\d{10,})"
@@ -336,10 +339,13 @@ def _match_extract_command(
 
 
 def parse_extract_dynamic_id(
-    message_text: str, config: Dict[str, CommandAliasEntry]
+    message_text: str,
+    config: Dict[str, CommandAliasEntry],
+    *,
+    prefixes: frozenset[str] | None = None,
 ) -> str | None:
     """Return dynamic ID from the complete prefixed extraction command."""
-    command = _match_extract_command(message_text, config)
+    command = _match_extract_command(message_text, config, prefixes=prefixes)
     return command[1] if command else None
 
 
@@ -500,7 +506,7 @@ def command_prefixes(extra_prefixes: list[str] | None = None) -> frozenset[str]:
     return _configured_command_starts() | extra
 
 
-def prefix_alternation() -> str:
+def prefix_alternation(prefixes: frozenset[str] | None = None) -> str:
     """Regex-escaped ``a|b|c`` alternation of :func:`command_prefixes`, longest first.
 
     For commands (``dynamic_extract``/``group_special_title``) that embed the
@@ -508,7 +514,10 @@ def prefix_alternation() -> str:
     :func:`match_plain`/:func:`match_command_arg`.
     """
     return "|".join(
-        re.escape(p) for p in sorted(command_prefixes(), key=len, reverse=True)
+        re.escape(p)
+        for p in sorted(
+            command_prefixes() if prefixes is None else prefixes, key=len, reverse=True
+        )
     )
 
 
@@ -573,6 +582,7 @@ def match_plain(
     config: Dict[str, CommandAliasEntry],
     *,
     is_tome: bool = False,
+    prefixes: frozenset[str] | None = None,
 ) -> bool:
     """Whole-message trigger match: bare text, prefixed text, or ``@机器人`` mention.
 
@@ -599,7 +609,7 @@ def match_plain(
     # 存量带前缀触发词优先于剥离前缀后的触发词，避免旧配置重复响应。
     if _shadowed_by_exact_trigger_elsewhere(text, command_id, config):
         return False
-    stripped = _strip_command_prefix(text)
+    stripped = _strip_command_prefix(text, prefixes)
     return stripped is not None and stripped.strip() in entry.triggers
 
 

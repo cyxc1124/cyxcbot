@@ -18,14 +18,21 @@ from admin.services.connection_status import (
 )
 from shared.adapter.ids import is_qq_user_id
 from shared.config.command_aliases import (
+    CommandAliasEntry,
+    command_prefixes,
+    match_plain,
     merge_partial_command_aliases,
     normalize_command_aliases,
     normalize_extra_prefixes,
+    parse_extract_dynamic_id,
     serialize_command_aliases,
     validation_error,
 )
 from shared.config.message_templates import MESSAGE_TEMPLATE_KEYS
-from shared.config.rust_rcon import command_aliases_rust_rcon_conflict
+from shared.config.rust_rcon import (
+    command_aliases_rust_rcon_conflict,
+    match_rust_rcon_binding,
+)
 from shared.config.rust_rcon_custom import command_aliases_custom_command_conflict
 from shared.config.service import get_config_service
 from shared.security.crypto import encrypt_value
@@ -35,6 +42,55 @@ router = APIRouter(
     tags=["settings"],
     dependencies=[RequireSetup],
 )
+
+
+def _new_rcon_private_prefix_conflict(config, snapshot, extra_prefixes) -> str | None:
+    """Reject newly overlapping private command grammars, preserving legacy pairs."""
+    old_prefixes = command_prefixes(snapshot.command_extra_prefixes)
+    new_prefixes = command_prefixes(extra_prefixes)
+    for record in snapshot.rust_rcon_bindings:
+        if not record.enabled:
+            continue
+        name = record.alias
+        for cid in ("status", "dynamic_extract"):
+            entry = config.get(cid)
+            if entry is None or not entry.enabled:
+                continue
+            for trigger in entry.triggers:
+                single = {cid: CommandAliasEntry(enabled=True, triggers=[trigger])}
+                bases = {trigger, name}
+                if cid == "dynamic_extract":
+                    bases.update(
+                        {
+                            trigger + "1234567890",
+                            trigger + "https://t.bilibili.com/123",
+                            trigger + "https://www.bilibili.com/opus/123",
+                        }
+                    )
+                inputs = bases | {
+                    prefix + text
+                    for prefix in old_prefixes | new_prefixes
+                    for text in bases
+                }
+                collisions = [
+                    any(
+                        (
+                            match_plain(text, "status", single, prefixes=prefixes)
+                            if cid == "status"
+                            else parse_extract_dynamic_id(
+                                text, single, prefixes=prefixes
+                            )
+                            is not None
+                        )
+                        and match_rust_rcon_binding(text, [record], prefixes=prefixes)
+                        is not None
+                        for text in inputs
+                    )
+                    for prefixes in (old_prefixes, new_prefixes)
+                ]
+                if collisions == [False, True]:
+                    return f"新增前缀使触发词「{trigger}」与RCON 绑定「{name}」冲突"
+    return None
 
 
 @router.get("", response_model=SettingsResponse)
@@ -151,6 +207,11 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
                 serialize_command_aliases(normalized), ensure_ascii=False
             )
         if body.command_extra_prefixes is not None:
+            prefix_conflict = _new_rcon_private_prefix_conflict(
+                normalized, snap, extra_prefixes
+            )
+            if prefix_conflict:
+                raise HTTPException(status_code=400, detail=prefix_conflict)
             updates["command_extra_prefixes"] = json.dumps(
                 extra_prefixes, ensure_ascii=False
             )

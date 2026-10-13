@@ -727,3 +727,151 @@ async def test_settings_rejects_reverse_prefix_required_argument_overlap(
         SettingsUpdateRequest(command_aliases=aliases), None
     )
     assert saved.command_aliases["live_status"].triggers == ["/status"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "trigger,name,old_prefixes,new_prefixes,rejected",
+    [
+        ("status", "!status", [], ["!"], True),
+        ("!status", "status", [], ["!"], True),
+        ("status", "!!status", ["!"], ["!", "!!"], True),
+        ("!rcon1 status", "rcon1", [], ["!"], True),
+        ("con1 status", "rcon1", [], ["r"], True),
+        ("!status", ".status", [], ["!", "."], False),
+        ("status", "!status", [], ["!", "!sta"], False),
+        ("status", "!status", ["!"], [], False),
+        ("status", "status", [], ["~"], False),
+    ],
+)
+async def test_prefix_patch_rejects_only_new_private_rcon_collisions(
+    db_context, monkeypatch, trigger, name, old_prefixes, new_prefixes, rejected
+):
+    import json
+
+    from fastapi import HTTPException
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+    from shared.config.command_aliases import (
+        normalize_command_aliases,
+        serialize_command_aliases,
+    )
+    from shared.db.models import RustRconBinding
+
+    _, factory, ConfigService, *_, SystemSetting = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    monkeypatch.setattr(
+        "shared.config.command_aliases._configured_command_starts",
+        lambda: frozenset({"/"}),
+    )
+    aliases = normalize_command_aliases({"status": {"triggers": [trigger]}})
+    await service.set_settings(
+        {
+            "command_extra_prefixes": json.dumps(old_prefixes),
+            "command_aliases": json.dumps(serialize_command_aliases(aliases)),
+        }
+    )
+    async with factory() as session, session.begin():
+        binding = RustRconBinding(alias=name, host="localhost")
+        session.add(binding)
+        await session.flush()
+    await service.load()
+    body = SettingsUpdateRequest(command_extra_prefixes=new_prefixes)
+    if rejected:
+        with pytest.raises(HTTPException, match="冲突") as exc:
+            await settings_api.update_settings(body, None)
+        assert exc.value.status_code == 400
+    else:
+        saved = await settings_api.update_settings(body, None)
+        assert saved.command_extra_prefixes == new_prefixes
+    async with factory() as session:
+        assert json.loads(
+            (await session.get(SystemSetting, "command_extra_prefixes")).value
+        ) == (old_prefixes if rejected else new_prefixes)
+    assert service.get_snapshot().command_extra_prefixes == (
+        old_prefixes if rejected else new_prefixes
+    )
+
+
+@pytest.mark.asyncio
+async def test_prefix_patch_rejects_new_private_extract_rcon_collision(
+    db_context, monkeypatch
+):
+    import json
+
+    from fastapi import HTTPException
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+    from shared.db.models import RustRconBinding
+
+    _, factory, ConfigService, *_, SystemSetting = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    monkeypatch.setattr(
+        "shared.config.command_aliases._configured_command_starts",
+        lambda: frozenset({"/"}),
+    )
+    await service.set_settings({"command_extra_prefixes": "[]"})
+    async with factory() as session, session.begin():
+        binding = RustRconBinding(
+            alias="!提取1234567890",
+            host="localhost",
+        )
+        session.add(binding)
+        await session.flush()
+    await service.load()
+    with pytest.raises(HTTPException, match="冲突") as exc:
+        await settings_api.update_settings(
+            SettingsUpdateRequest(command_extra_prefixes=["!"]), None
+        )
+    assert exc.value.status_code == 400
+    async with factory() as session:
+        assert (
+            json.loads(
+                (await session.get(SystemSetting, "command_extra_prefixes")).value
+            )
+            == []
+        )
+
+
+@pytest.mark.asyncio
+async def test_prefix_only_patch_preserves_legacy_group_only_custom_collision(
+    db_context, monkeypatch
+):
+    from fastapi import HTTPException
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+    from shared.db.models import RustRconBinding, RustRconCustomCommand
+
+    _, factory, ConfigService, *_ = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    await service.set_settings({"command_extra_prefixes": "[]"})
+    async with factory() as session, session.begin():
+        binding = RustRconBinding(alias="rcon1", host="localhost")
+        session.add(binding)
+        await session.flush()
+        session.add(
+            RustRconCustomCommand(
+                name="!status", template="status", binding_id=binding.id
+            )
+        )
+    await service.load()
+    saved = await settings_api.update_settings(
+        SettingsUpdateRequest(command_extra_prefixes=["!"]), None
+    )
+    assert saved.command_extra_prefixes == ["!"]
+    with pytest.raises(HTTPException, match="冲突"):
+        await settings_api.update_settings(
+            SettingsUpdateRequest(
+                command_aliases={"live_status": {"triggers": ["直播状态"]}}
+            ),
+            None,
+        )
