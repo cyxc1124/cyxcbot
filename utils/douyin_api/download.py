@@ -146,20 +146,22 @@ async def download_file(
             proxy=proxy or None,
         ) as response:
             if response.status == 200:
-                if (
-                    response.content_length is not None
-                    and response.content_length > max_bytes
-                ):
+                expected_size = (
+                    response.content_length
+                    if not response.headers.get("Content-Encoding")
+                    else None
+                )
+                if expected_size is not None and expected_size > max_bytes:
                     logger.warning(
                         "Content-Length {} 超过上限 {}",
-                        response.content_length,
+                        expected_size,
                         max_bytes,
                     )
                     return False
                 return await _persist_stream(
                     response.content.iter_chunked(_DOWNLOAD_CHUNK_BYTES),
                     save_path,
-                    response.content_length,
+                    expected_size,
                     max_bytes=max_bytes,
                 )
             if response.status == 206:
@@ -173,7 +175,18 @@ async def download_file(
                         else None,
                     )
                     return False
-                if expected_size > max_bytes:
+                if response.headers.get("Content-Encoding"):
+                    # shortcut: 编码 Range 需 Content-Length，支持 chunked 206 时增加原始流计数。
+                    if response.content_length != expected_size:
+                        logger.warning(
+                            "编码 Range 响应大小不匹配 {}: expected={}, got={}",
+                            save_path.name,
+                            expected_size,
+                            response.content_length,
+                        )
+                        return False
+                    expected_size = None
+                if expected_size is not None and expected_size > max_bytes:
                     return False
                 return await _persist_stream(
                     response.content.iter_chunked(_DOWNLOAD_CHUNK_BYTES),
