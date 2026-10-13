@@ -106,6 +106,7 @@ class LiveMonitor:
             get_user_mapping=lambda: self.config.live_monitor_user_mapping,
             get_at_all=lambda: self.config.live_at_all,
             persist_state=lambda room_id: self._persist_state(room_id),
+            is_current_state=self._is_current_room_state,
         )
         self._cycle_logger = CheckCycleLogger("直播监控")
         self.last_check_at: Optional[str] = None
