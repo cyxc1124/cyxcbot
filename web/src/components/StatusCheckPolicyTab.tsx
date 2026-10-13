@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
 import { useMountAsync } from '../hooks/useMountAsync'
 import { createRetryHandler } from '../utils/retryLoad'
@@ -89,8 +89,8 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
   })
   const [loading, setLoading] = useLoadingOnKeyChange(isGroup ? 'status-group' : 'status-friend')
   const [error, setError] = useState('')
-  const [togglingId, setTogglingId] = useState<string | null>(null)
-  const [savingDisplay, setSavingDisplay] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const savingRef = useRef(false)
   const [listAvailable, setListAvailable] = useState(true)
 
   const items = isGroup
@@ -145,13 +145,16 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
   }
 
   const handleToggle = async (itemId: string, enabled: boolean) => {
+    if (savingRef.current) return
+    savingRef.current = true
+
     const next = computePolicyAfterToggle(itemId, enabled, allIds, restrict, enabledIds)
 
     const prevRestrict = restrict
     const prevEnabledIds = enabledIds
     setRestrict(next.restrict)
     setEnabledIds(next.enabled_ids)
-    setTogglingId(itemId)
+    setBusy(true)
 
     try {
       if (isGroup) {
@@ -172,18 +175,22 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
       setEnabledIds(prevEnabledIds)
       showToast('error', err instanceof Error ? err.message : '保存失败')
     } finally {
-      setTogglingId(null)
+      savingRef.current = false
+      setBusy(false)
     }
   }
 
   const handleToggleAll = async (enabled: boolean) => {
+    if (savingRef.current) return
+    savingRef.current = true
+
     const next = computeToggleAllPolicy(enabled)
 
     const prevRestrict = restrict
     const prevEnabledIds = enabledIds
     setRestrict(next.restrict)
     setEnabledIds(next.enabled_ids)
-    setTogglingId('__all__')
+    setBusy(true)
 
     try {
       if (isGroup) {
@@ -205,14 +212,18 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
       setEnabledIds(prevEnabledIds)
       showToast('error', err instanceof Error ? err.message : '保存失败')
     } finally {
-      setTogglingId(null)
+      savingRef.current = false
+      setBusy(false)
     }
   }
 
   const handleDisplayChange = async (next: StatusCheckDisplayOptions) => {
+    if (savingRef.current) return
+    savingRef.current = true
+
     const prev = display
     setDisplay(next)
-    setSavingDisplay(true)
+    setBusy(true)
     try {
       if (isGroup) {
         const updated = await updateGroupStatusPolicy({
@@ -233,7 +244,8 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
       setDisplay(prev)
       showToast('error', err instanceof Error ? err.message : '保存失败')
     } finally {
-      setSavingDisplay(false)
+      savingRef.current = false
+      setBusy(false)
     }
   }
 
@@ -241,7 +253,6 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
 
   const allEnabled = !restrict
   const noneEnabled = restrict && enabledIds.length === 0
-  const busy = togglingId !== null || savingDisplay
   const policyEditable = listAvailable
 
   return (
@@ -317,7 +328,6 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
               <tbody>
                 {items.map((item) => {
                   const enabled = isItemEnabled(item.id, restrict, enabledIds)
-                  const rowBusy = busy && (togglingId === item.id || togglingId === '__all__')
                   return (
                     <tr
                       key={item.id}
@@ -341,7 +351,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
                           </span>
                           <ToggleSwitch
                             checked={enabled}
-                            disabled={rowBusy || !policyEditable}
+                            disabled={busy || !policyEditable}
                             onChange={(checked) => void handleToggle(item.id, checked)}
                           />
                         </div>
