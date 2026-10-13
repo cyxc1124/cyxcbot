@@ -3,6 +3,7 @@
 负责构建和发送动态通知消息
 """
 
+from collections.abc import Callable
 from functools import partial
 from typing import Iterable, List, Optional, Union
 
@@ -13,6 +14,7 @@ from shared.adapter.outbound import send_group, send_user
 from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.message_templates import DynamicMessageTemplates
 from shared.notify.delivery import (
+    DeliveryCancelledError,
     DeliveryProgressCallback,
     DeliveryResult,
     TargetDelivery,
@@ -98,6 +100,7 @@ class DynamicSender:
         at_all_enabled: bool = False,
         starts: dict[str, int] | None = None,
         on_part_sent: DeliveryProgressCallback | None = None,
+        is_target_active: Callable[[str, str], bool] | None = None,
     ) -> DeliveryResult:
         """发送消息到多个群组，返回结构化投递结果。"""
         if not group_ids:
@@ -105,6 +108,8 @@ class DynamicSender:
 
         targets: List[TargetDelivery] = []
         for group_id in group_ids:
+            if is_target_active is not None and not is_target_active("group", group_id):
+                continue
             try:
                 await send_group(
                     group_id,
@@ -114,9 +119,14 @@ class DynamicSender:
                     on_part_sent=partial(on_part_sent, "group", group_id)
                     if on_part_sent
                     else None,
+                    can_send=(lambda target=group_id: is_target_active("group", target))
+                    if is_target_active is not None
+                    else None,
                 )
                 logger.info("动态消息已发送到群组 {}", group_id)
                 targets.append(TargetDelivery("group", group_id, True))
+            except DeliveryCancelledError:
+                continue
             except LoggedQQApiError as exc:
                 targets.append(TargetDelivery("group", group_id, False, str(exc)))
             except Exception as exc:
@@ -131,6 +141,7 @@ class DynamicSender:
         *,
         starts: dict[str, int] | None = None,
         on_part_sent: DeliveryProgressCallback | None = None,
+        is_target_active: Callable[[str, str], bool] | None = None,
     ) -> DeliveryResult:
         """发送消息到多个好友，返回结构化投递结果。"""
         if not user_ids:
@@ -138,6 +149,8 @@ class DynamicSender:
 
         targets: List[TargetDelivery] = []
         for user_id in user_ids:
+            if is_target_active is not None and not is_target_active("user", user_id):
+                continue
             try:
                 await send_user(
                     user_id,
@@ -146,9 +159,14 @@ class DynamicSender:
                     on_part_sent=partial(on_part_sent, "user", user_id)
                     if on_part_sent
                     else None,
+                    can_send=(lambda target=user_id: is_target_active("user", target))
+                    if is_target_active is not None
+                    else None,
                 )
                 logger.info("动态消息已发送到好友 {}", user_id)
                 targets.append(TargetDelivery("user", user_id, True))
+            except DeliveryCancelledError:
+                continue
             except LoggedQQApiError as exc:
                 targets.append(TargetDelivery("user", user_id, False, str(exc)))
             except Exception as exc:
@@ -166,6 +184,7 @@ class DynamicSender:
         group_starts: dict[str, int] | None = None,
         user_starts: dict[str, int] | None = None,
         on_part_sent: DeliveryProgressCallback | None = None,
+        is_target_active: Callable[[str, str], bool] | None = None,
     ) -> DeliveryResult:
         """向群组与好友发送同一条消息，并合并投递结果。"""
         group_result = await self.send_to_groups(
@@ -174,11 +193,13 @@ class DynamicSender:
             at_all_enabled=at_all_enabled,
             starts=group_starts,
             on_part_sent=on_part_sent,
+            is_target_active=is_target_active,
         )
         user_result = await self.send_to_users(
             message,
             user_ids,
             starts=user_starts,
             on_part_sent=on_part_sent,
+            is_target_active=is_target_active,
         )
         return group_result.merge(user_result)
