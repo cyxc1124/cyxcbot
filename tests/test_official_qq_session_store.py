@@ -158,11 +158,19 @@ async def test_postgresql_upsert_compiles_with_correct_name_update(
     monkeypatch.setattr(sessions, "_orm_session", lambda: session)
     await sessions.upsert_session("openid", "c2c", name)
     statement = session.execute.await_args.args[0]
-    compiled = statement.compile(dialect=postgresql.dialect())
-    assert "ON CONFLICT (openid) DO UPDATE SET" in str(compiled)
-    updates = dict(statement._post_values_clause.update_values_to_set)
-    assert updates["kind"] == "c2c"
-    assert "last_seen" in updates
-    assert updates.get("name") == (name or None)
-    assert compiled.params["name"] == (name or sessions._fallback_name("c2c", "openid"))
+    compiled = statement.compile(
+        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+    )
+    insert_sql, separator, update_sql = str(compiled).partition(
+        "ON CONFLICT (openid) DO UPDATE SET "
+    )
+    assert separator
+    assert "kind = 'c2c'" in update_sql
+    assert "last_seen = '" in update_sql
+    if name:
+        assert "name = 'User'" in update_sql
+    else:
+        assert "name =" not in update_sql
+    stored_name = name or sessions._fallback_name("c2c", "openid")
+    assert f"VALUES ('openid', 'c2c', '{stored_name}'," in insert_sql
     session.get_bind.assert_called_once_with(mapper=model)
