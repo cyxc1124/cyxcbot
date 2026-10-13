@@ -3,8 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ApiClientError } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 import {
-  acceptPasswordInput,
-  getPasswordValidationError,
+  getLoginPasswordValidationError,
   MIN_PASSWORD_LENGTH,
 } from '../utils/password'
 
@@ -20,7 +19,7 @@ export function LoginPage() {
     e.preventDefault()
     setError('')
 
-    const passwordError = getPasswordValidationError(password)
+    const passwordError = getLoginPasswordValidationError(password)
     if (passwordError) {
       setError(passwordError)
       return
@@ -72,9 +71,7 @@ export function LoginPage() {
               type="password"
               className="input"
               value={password}
-              onChange={(e) =>
-                setPassword(acceptPasswordInput(password, e.target.value))
-              }
+              onChange={(e) => setPassword(e.target.value)}
               required
               minLength={MIN_PASSWORD_LENGTH}
               autoComplete="current-password"
