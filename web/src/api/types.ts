@@ -264,6 +264,7 @@ export interface GroupStatusPolicy {
   groups: Group[]
   display: StatusCheckDisplayOptions
   group_list_available: boolean
+  onebot_list_status?: OneBotListStatus | null
 }
 
 export interface GroupSpecialTitlePolicy {
@@ -280,6 +281,7 @@ export interface PrivateStatusPolicy {
   users: Friend[]
   display: StatusCheckDisplayOptions
   friend_list_available: boolean
+  onebot_list_status?: OneBotListStatus | null
 }
 
 export interface LinkParserGroupPolicyItem {

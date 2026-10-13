@@ -8,7 +8,7 @@ import {
   updateGroupStatusPolicy,
   updatePrivateStatusPolicy,
 } from '../api/client'
-import type { Friend, Group, StatusCheckDisplayOptions } from '../api/types'
+import type { Friend, Group, OneBotListStatus, StatusCheckDisplayOptions } from '../api/types'
 import { LoadErrorBanner } from './LoadErrorBanner'
 import { PageLoading } from './LoadingSpinner'
 import { ToggleSwitch } from './ToggleSwitch'
@@ -92,10 +92,11 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [savingDisplay, setSavingDisplay] = useState(false)
   const [listAvailable, setListAvailable] = useState(true)
+  const [onebotListStatus, setOnebotListStatus] = useState<OneBotListStatus>('ok')
 
   const items = isGroup
-    ? groups.map((g) => ({ id: g.group_id, name: g.group_name, extra: g.member_count }))
-    : friends.map((f) => ({ id: f.user_id, name: f.nickname, extra: null as number | null }))
+    ? groups.map((g) => ({ id: g.group_id, name: g.group_name, extra: g.member_count, source: g.source }))
+    : friends.map((f) => ({ id: f.user_id, name: f.nickname, extra: null as number | null, source: f.source }))
 
   const allIds = items.map((item) => item.id)
 
@@ -108,6 +109,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
         setEnabledIds(data.enabled_group_ids)
         setDisplay(data.display)
         setListAvailable(data.group_list_available)
+        setOnebotListStatus(data.onebot_list_status ?? (data.group_list_available ? 'ok' : 'incomplete'))
       } else {
         const data = await getPrivateStatusPolicy()
         setFriends(data.users)
@@ -115,6 +117,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
         setEnabledIds(data.enabled_user_ids)
         setDisplay(data.display)
         setListAvailable(data.friend_list_available)
+        setOnebotListStatus(data.onebot_list_status ?? (data.friend_list_available ? 'ok' : 'incomplete'))
       }
       setError('')
     } catch (err) {
@@ -134,6 +137,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
     setEnabledIds(data.enabled_group_ids)
     setDisplay(data.display)
     setListAvailable(data.group_list_available)
+    setOnebotListStatus(data.onebot_list_status ?? (data.group_list_available ? 'ok' : 'incomplete'))
   }
 
   const applyFriendResponse = (data: Awaited<ReturnType<typeof getPrivateStatusPolicy>>) => {
@@ -142,10 +146,11 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
     setEnabledIds(data.enabled_user_ids)
     setDisplay(data.display)
     setListAvailable(data.friend_list_available)
+    setOnebotListStatus(data.onebot_list_status ?? (data.friend_list_available ? 'ok' : 'incomplete'))
   }
 
   const handleToggle = async (itemId: string, enabled: boolean) => {
-    const next = computePolicyAfterToggle(itemId, enabled, allIds, restrict, enabledIds)
+    const next = computePolicyAfterToggle(itemId, enabled, allIds, restrict, enabledIds, listAvailable)
 
     const prevRestrict = restrict
     const prevEnabledIds = enabledIds
@@ -282,9 +287,13 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
 
       {!listAvailable && items.length > 0 && (
         <p className="text-sm text-amber-700 dark:text-amber-300">
-          {isGroup
-            ? '群列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改状态查询白名单；可先调整回复内容，待连接恢复后再改群组开关。'
-            : '好友列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改状态查询白名单；可先调整回复内容，待连接恢复后再改好友开关。'}
+          {onebotListStatus === 'offline'
+            ? '当前未连接 OneBot，官方会话可独立配置。'
+            : 'OneBot 会话列表获取失败，暂不可批量调整或修改 OneBot 会话。'}
+          {restrict
+            ? '白名单模式下可单独调整已发现且启用消息的官方会话，其他会话的白名单保持不变。'
+            : '当前为全部启用模式，请等待 OneBot 列表恢复后再调整白名单。'}
+          回复内容仍可调整。
         </p>
       )}
 
@@ -309,13 +318,14 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
               <thead>
                 <tr className="border-b border-border text-muted-foreground border-border">
                   <th className="pb-3 pr-4 font-medium">{isGroup ? '群名称' : '昵称'}</th>
-                  <th className="pb-3 pr-4 font-medium">{isGroup ? '群号' : 'QQ 号'}</th>
+                  <th className="pb-3 pr-4 font-medium">{isGroup ? '群号 / OpenID' : 'QQ 号 / OpenID'}</th>
                   {isGroup && <th className="pb-3 pr-4 font-medium">成员数</th>}
                   <th className="pb-3 font-medium text-right">允许状态查询</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((item) => {
+                  const policyEditable = listAvailable || (restrict && item.source === 'official')
                   const enabled = isItemEnabled(item.id, restrict, enabledIds)
                   const rowBusy = busy && (togglingId === item.id || togglingId === '__all__')
                   return (
@@ -325,6 +335,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
                     >
                       <td className="py-3.5 pr-4 font-medium text-foreground">
                         {item.name ?? '—'}
+                        {item.source === 'official' && <span className="ml-2 text-xs text-muted-foreground">官方</span>}
                       </td>
                       <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">{item.id}</td>
                       {isGroup && (
