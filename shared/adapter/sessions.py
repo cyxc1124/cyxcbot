@@ -6,6 +6,9 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from nonebot.message import event_preprocessor
 from sqlalchemy import select
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shared.adapter.inbound import (
     group_id_of,
@@ -59,20 +62,31 @@ async def upsert_session(openid: str, kind: SessionKind, name: str = "") -> None
     model = _session_model()
     async with _orm_session() as session:
         async with session.begin():
-            row = await session.get(model, oid)
-            if row is None:
-                session.add(
-                    model(
-                        openid=oid,
-                        kind=kind,
-                        name=name or _fallback_name(kind, oid),
-                    )
-                )
-                return
-            row.kind = kind
+            dialect = session.get_bind(mapper=model).dialect.name
+            insert = {
+                "sqlite": sqlite_insert,
+                "postgresql": postgresql_insert,
+                "mysql": mysql_insert,
+                "mariadb": mysql_insert,
+            }[dialect]
+            now = utcnow()
+            updates = {"kind": kind, "last_seen": now}
             if name:
-                row.name = name[:128]
-            row.last_seen = utcnow()
+                updates["name"] = name[:128]
+            # 守卫和缓存预处理器并行写入，由数据库唯一键保证跨进程原子更新。
+            statement = insert(model).values(
+                openid=oid,
+                kind=kind,
+                name=name[:128] or _fallback_name(kind, oid),
+                last_seen=now,
+            )
+            if dialect in {"mysql", "mariadb"}:
+                statement = statement.on_duplicate_key_update(**updates)
+            else:
+                statement = statement.on_conflict_do_update(
+                    index_elements=[model.openid], set_=updates
+                )
+            await session.execute(statement)
 
 
 async def delete_session(openid: str) -> None:
