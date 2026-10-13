@@ -118,23 +118,18 @@ def parse_shop_redeem_args(
     arg = match_command_arg(text, "rust_player_shop_redeem", command_aliases)
     if arg is None or not arg.strip():
         return None
-    parts = arg.split()
+    arg = arg.strip()
+    parts = arg.rsplit(None, 1)
     if len(parts) == 1:
-        return parts[0], 1
-    last = parts[-1]
-    quantity_token = parse_quantity_token(last)
+        return arg, 1
+    quantity_token = parse_quantity_token(parts[1])
     if quantity_token is not None:
-        identifier = " ".join(parts[:-1]).strip()
-        if not identifier:
-            return None
         try:
             quantity = normalize_shop_quantity(quantity_token)
         except ValueError:
             return None
-        return identifier, quantity
-    if any(ch.isdigit() for ch in last):
-        return None
-    return " ".join(parts), 1
+        return parts[0], quantity
+    return arg, 1
 
 
 def normalize_shop_quantity(quantity: int) -> int:
