@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
 import { useMountAsync } from '../hooks/useMountAsync'
 import { createRetryHandler } from '../utils/retryLoad'
@@ -19,6 +19,18 @@ import {
   computeToggleAllPolicy,
   isItemEnabled,
 } from '../utils/restrictPolicy'
+
+// A tab remount must wait for the old save before reading its replacement allowlist.
+let pendingSave: Promise<unknown> | null = null
+
+async function saveStatusPolicy<T>(request: Promise<T>): Promise<T> {
+  pendingSave = request
+  try {
+    return await request
+  } finally {
+    pendingSave = null
+  }
+}
 
 type StatusScope = 'group' | 'friend'
 
@@ -89,8 +101,8 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
   })
   const [loading, setLoading] = useLoadingOnKeyChange(isGroup ? 'status-group' : 'status-friend')
   const [error, setError] = useState('')
-  const [togglingId, setTogglingId] = useState<string | null>(null)
-  const [savingDisplay, setSavingDisplay] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const savingRef = useRef(false)
   const [listAvailable, setListAvailable] = useState(true)
   const [onebotListStatus, setOnebotListStatus] = useState<OneBotListStatus>('ok')
 
@@ -102,6 +114,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
 
   const load = useCallback(async () => {
     try {
+      await pendingSave?.catch(() => {})
       if (isGroup) {
         const data = await getGroupStatusPolicy()
         setGroups(data.groups)
@@ -154,22 +167,25 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
 
     const prevRestrict = restrict
     const prevEnabledIds = enabledIds
+    if (savingRef.current || pendingSave) return
+    savingRef.current = true
+
     setRestrict(next.restrict)
     setEnabledIds(next.enabled_ids)
-    setTogglingId(itemId)
+    setBusy(true)
 
     try {
       if (isGroup) {
-        const updated = await updateGroupStatusPolicy({
+        const updated = await saveStatusPolicy(updateGroupStatusPolicy({
           restrict: next.restrict,
           enabled_group_ids: next.enabled_ids,
-        })
+        }))
         applyGroupResponse(updated)
       } else {
-        const updated = await updatePrivateStatusPolicy({
+        const updated = await saveStatusPolicy(updatePrivateStatusPolicy({
           restrict: next.restrict,
           enabled_user_ids: next.enabled_ids,
-        })
+        }))
         applyFriendResponse(updated)
       }
     } catch (err) {
@@ -177,31 +193,35 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
       setEnabledIds(prevEnabledIds)
       showToast('error', err instanceof Error ? err.message : '保存失败')
     } finally {
-      setTogglingId(null)
+      savingRef.current = false
+      setBusy(false)
     }
   }
 
   const handleToggleAll = async (enabled: boolean) => {
+    if (savingRef.current || pendingSave) return
+    savingRef.current = true
+
     const next = computeToggleAllPolicy(enabled)
 
     const prevRestrict = restrict
     const prevEnabledIds = enabledIds
     setRestrict(next.restrict)
     setEnabledIds(next.enabled_ids)
-    setTogglingId('__all__')
+    setBusy(true)
 
     try {
       if (isGroup) {
-        const updated = await updateGroupStatusPolicy({
+        const updated = await saveStatusPolicy(updateGroupStatusPolicy({
           restrict: next.restrict,
           enabled_group_ids: next.enabled_ids,
-        })
+        }))
         applyGroupResponse(updated)
       } else {
-        const updated = await updatePrivateStatusPolicy({
+        const updated = await saveStatusPolicy(updatePrivateStatusPolicy({
           restrict: next.restrict,
           enabled_user_ids: next.enabled_ids,
-        })
+        }))
         applyFriendResponse(updated)
       }
       showToast('success', enabled ? `已启用全部${isGroup ? '群组' : '好友'}` : `已关闭全部${isGroup ? '群组' : '好友'}`)
@@ -210,35 +230,40 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
       setEnabledIds(prevEnabledIds)
       showToast('error', err instanceof Error ? err.message : '保存失败')
     } finally {
-      setTogglingId(null)
+      savingRef.current = false
+      setBusy(false)
     }
   }
 
   const handleDisplayChange = async (next: StatusCheckDisplayOptions) => {
+    if (savingRef.current || pendingSave) return
+    savingRef.current = true
+
     const prev = display
     setDisplay(next)
-    setSavingDisplay(true)
+    setBusy(true)
     try {
       if (isGroup) {
-        const updated = await updateGroupStatusPolicy({
+        const updated = await saveStatusPolicy(updateGroupStatusPolicy({
           restrict,
           enabled_group_ids: enabledIds,
           display: next,
-        })
+        }))
         applyGroupResponse(updated)
       } else {
-        const updated = await updatePrivateStatusPolicy({
+        const updated = await saveStatusPolicy(updatePrivateStatusPolicy({
           restrict,
           enabled_user_ids: enabledIds,
           display: next,
-        })
+        }))
         applyFriendResponse(updated)
       }
     } catch (err) {
       setDisplay(prev)
       showToast('error', err instanceof Error ? err.message : '保存失败')
     } finally {
-      setSavingDisplay(false)
+      savingRef.current = false
+      setBusy(false)
     }
   }
 
@@ -246,7 +271,6 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
 
   const allEnabled = !restrict
   const noneEnabled = restrict && enabledIds.length === 0
-  const busy = togglingId !== null || savingDisplay
   const policyEditable = listAvailable
 
   return (
@@ -327,7 +351,6 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
                 {items.map((item) => {
                   const policyEditable = listAvailable || (restrict && item.source === 'official')
                   const enabled = isItemEnabled(item.id, restrict, enabledIds)
-                  const rowBusy = busy && (togglingId === item.id || togglingId === '__all__')
                   return (
                     <tr
                       key={item.id}
@@ -352,7 +375,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
                           </span>
                           <ToggleSwitch
                             checked={enabled}
-                            disabled={rowBusy || !policyEditable}
+                            disabled={busy || !policyEditable}
                             onChange={(checked) => void handleToggle(item.id, checked)}
                           />
                         </div>
