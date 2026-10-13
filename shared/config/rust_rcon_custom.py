@@ -5,7 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from shared.config.command_aliases import COMMAND_LABELS, match_plain
+from shared.config.command_aliases import (
+    COMMAND_LABELS,
+    match_plain,
+)
+from shared.config.command_aliases import (
+    _strip_command_prefix as _strip_with_prefixes,
+)
 from shared.config.rust_player import normalize_steam_id
 from shared.config.rust_rcon import MAX_ALIAS_LENGTH, normalize_alias
 
@@ -88,6 +94,7 @@ def match_rust_rcon_custom_command(
     commands: list[RustRconCustomCommandRecord],
     *,
     enabled_binding_ids: set[int] | None = None,
+    prefixes: frozenset[str] | None = None,
 ) -> tuple[RustRconCustomCommandRecord, str] | None:
     """Match ``[prefix]name [args]``; return (command, remainder) or None."""
     enabled = [
@@ -101,7 +108,11 @@ def match_rust_rcon_custom_command(
 
     text = text.strip()
     candidates = [text]
-    stripped = _strip_command_prefix(text)
+    stripped = (
+        _strip_command_prefix(text)
+        if prefixes is None
+        else _strip_with_prefixes(text, prefixes)
+    )
     if stripped is not None:
         candidates.append(stripped.strip())
 
@@ -176,6 +187,7 @@ def custom_command_name_conflict(
     snapshot: AppConfigSnapshot,
     *,
     exclude_id: int | None = None,
+    check_builtin_commands: bool = True,
 ) -> str | None:
     """Return error if *name* collides with aliases / other custom commands.
 
@@ -183,10 +195,11 @@ def custom_command_name_conflict(
     semantics as runtime ``match_plain(..., is_tome=True)``, so names like
     ``签到奖励`` conflict with trigger ``签到``.
     """
-    for command_id in COMMAND_LABELS:
-        if match_plain(name, command_id, snapshot.command_aliases, is_tome=True):
-            label = COMMAND_LABELS[command_id]
-            return f"指令名「{name}」与命令「{label}」冲突"
+    if check_builtin_commands:
+        for command_id in COMMAND_LABELS:
+            if match_plain(name, command_id, snapshot.command_aliases, is_tome=True):
+                label = COMMAND_LABELS[command_id]
+                return f"指令名「{name}」与命令「{label}」冲突"
 
     for binding in snapshot.rust_rcon_bindings:
         if binding.enabled and triggers_conflict(binding.alias, name):

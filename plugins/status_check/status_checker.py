@@ -7,17 +7,15 @@ from nonebot import on_message
 from nonebot.adapters import Bot, Event
 from nonebot.exception import FinishedException
 from nonebot.log import logger
-from nonebot.permission import SUPERUSER
 
 from shared.adapter.inbound import (
-    group_id_of,
     is_group_event,
     is_private_event,
     is_tome,
     plaintext_of,
     user_id_of,
 )
-from shared.config.command_aliases import match_plain
+from shared.config.command_aliases import command_aliases_for_event, match_plain
 from shared.config.service import get_config_service
 from shared.monitor.system_metrics import (
     detect_container_environment,
@@ -25,55 +23,22 @@ from shared.monitor.system_metrics import (
     get_container_cpu_limit,
     get_container_memory_info,
 )
-from shared.status_check_policy import (
-    is_status_check_enabled_for_group_from_snapshot,
-    is_status_check_enabled_for_user_from_snapshot,
-)
+from shared.status_check_policy import is_status_check_allowed
 
 # 记录机器人启动时间
 start_time = time.time()
 
 
-def _allowed_user_ids() -> set[str]:
-    try:
-        return {
-            str(qq).strip()
-            for qq in get_config_service().get_snapshot().status_check_allowed_qq
-            if str(qq).strip()
-        }
-    except Exception:
-        logger.opt(exception=True).warning("读取状态查询权限配置失败")
-        return set()
-
-
 async def check_status_permission(bot: Bot, event: Event) -> bool:
     """检查用户是否有查询状态的权限"""
-    user_id = user_id_of(event)
-
-    try:
-        if await SUPERUSER(bot, event):
-            logger.info("NoneBot 超级用户 {} 查询机器人状态", user_id)
-            return True
-    except Exception:
-        logger.debug("官方事件无法按 OneBot 超级用户判定，改走白名单")
-
-    if user_id in _allowed_user_ids():
-        logger.info("允许的用户 {} 查询机器人状态", user_id)
-        return True
-
-    snap = get_config_service().get_snapshot()
-    if is_group_event(event):
-        group_id = group_id_of(event)
-        if group_id and is_status_check_enabled_for_group_from_snapshot(group_id, snap):
-            logger.info("群组 {} 内用户 {} 查询机器人状态", group_id, user_id)
-            return True
-    elif is_private_event(event):
-        if is_status_check_enabled_for_user_from_snapshot(user_id, snap):
-            logger.info("好友 {} 查询机器人状态", user_id)
-            return True
-
-    logger.warning("用户 {} 尝试查询机器人状态，但无权限", user_id)
-    return False
+    allowed = await is_status_check_allowed(
+        bot, event, get_config_service().get_snapshot()
+    )
+    if allowed:
+        logger.info("允许用户 {} 查询机器人状态", user_id_of(event))
+    else:
+        logger.warning("用户 {} 尝试查询机器人状态，但无权限", user_id_of(event))
+    return allowed
 
 
 # 创建状态查询命令处理器（触发词可在 Web Admin 设置 → 命令 中自定义）
@@ -89,7 +54,12 @@ async def handle_status_command(bot: Bot, event: Event):
     config = get_config_service().get_snapshot()
     # 仅群聊里"被 @/回复"才算模糊匹配；私聊与官方 C2C 强制精确匹配。
     mentioned = is_group_event(event) and is_tome(event)
-    if not match_plain(text, "status", config.command_aliases, is_tome=mentioned):
+    if not match_plain(
+        text,
+        "status",
+        await command_aliases_for_event(config, bot, event),
+        is_tome=mentioned,
+    ):
         return
 
     # 检查权限

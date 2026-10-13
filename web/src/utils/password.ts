@@ -23,3 +23,15 @@ export function getPasswordValidationError(password: string): string | null {
   }
   return null
 }
+
+/** 登录允许旧 bcrypt 密码超过 72 字节，字符数边界与 LoginRequest 保持一致。 */
+export function getLoginPasswordValidationError(password: string): string | null {
+  const length = [...password].length
+  if (length < MIN_PASSWORD_LENGTH) {
+    return '密码至少需要 8 个字符'
+  }
+  if (length > 128) {
+    return '密码过长'
+  }
+  return null
+}

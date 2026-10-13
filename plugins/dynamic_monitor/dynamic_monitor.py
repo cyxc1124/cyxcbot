@@ -479,16 +479,11 @@ class DynamicMonitor:
         new_dynamics = collect_new_dynamics(dynamics, last_dynamic_id)
         # feed 可能已翻页或删除动态；已有快照仍应先完成投递。
         pending_ids = sorted(
-            {
-                key[1]
-                for key in self._pending_targets
-                if key[0] == uid and not key[2] and key[1] > last_dynamic_id
-            }
+            {key[1] for key in self._pending_targets if key[0] == uid and not key[2]}
         )
         if pending_ids:
             new_dynamics = [
-                SimpleNamespace(id=dynamic_id, timestamp=0)
-                for dynamic_id in pending_ids
+                SimpleNamespace(id=dynamic_id) for dynamic_id in pending_ids
             ] + [dynamic for dynamic in new_dynamics if dynamic.id not in pending_ids]
 
         # 首次检查只记录基准状态，不推送（避免启动时刷屏）
@@ -564,8 +559,7 @@ class DynamicMonitor:
             if not self._check_still_valid(uid, check_generation):
                 return True
 
-            for dynamic in sorted(new_dynamics, key=lambda x: x.timestamp):
-                to_deliver.append(dynamic)
+            to_deliver.extend(new_dynamics)
 
         if to_deliver:
             self._spawn_delivery_task(
@@ -588,11 +582,14 @@ class DynamicMonitor:
         *,
         persist_pinned: bool = False,
     ) -> None:
-        """后台顺序投递新动态，失败时保留游标待下次重试。"""
+        """后台按 ID 顺序投递动态，失败时保留游标待下次重试。"""
         async with self._delivery_locks[uid]:
             delivered_dynamic_ids: List[int] = []
-            for dynamic in dynamics:
-                if dynamic.id <= self.last_dynamic_ids.get(uid, 0):
+            for dynamic in sorted(dynamics, key=lambda x: x.id):
+                if (
+                    dynamic.id <= self.last_dynamic_ids.get(uid, 0)
+                    and (uid, dynamic.id, False) not in self._pending_targets
+                ):
                     continue
                 if not self._check_still_valid(uid, check_generation):
                     break
@@ -615,7 +612,9 @@ class DynamicMonitor:
                 uid, check_generation
             ):
                 if delivered_dynamic_ids:
-                    self.last_dynamic_ids[uid] = max(delivered_dynamic_ids)
+                    self.last_dynamic_ids[uid] = max(
+                        self.last_dynamic_ids.get(uid, 0), max(delivered_dynamic_ids)
+                    )
                     for dynamic_id in delivered_dynamic_ids:
                         self._pending_targets.pop((uid, dynamic_id, False), None)
                 await self._persist_state(uid, check_generation=check_generation)
@@ -793,6 +792,20 @@ class DynamicMonitor:
             starts[target_id] = next_part
             await self._persist_state(uid, check_generation=check_generation)
 
+        def is_target_active(target_type: str, target_id: str) -> bool:
+            if pending_targets.get(pending_key) is not pending:
+                return False
+            if check_generation is not None and not self._check_still_valid(
+                uid, check_generation
+            ):
+                return False
+            mapping = (
+                self.config.dynamic_monitor_mapping
+                if target_type == "group"
+                else self.config.dynamic_monitor_user_mapping
+            )
+            return target_id in mapping.get(uid, [])
+
         delivery = await self.sender.send_message(
             pending.message,
             pending.groups,
@@ -801,6 +814,7 @@ class DynamicMonitor:
             group_starts=pending.group_starts,
             user_starts=pending.user_starts,
             on_part_sent=checkpoint,
+            is_target_active=is_target_active,
         )
         if check_generation is not None and not self._check_still_valid(
             uid, check_generation

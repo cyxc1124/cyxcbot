@@ -24,9 +24,8 @@ from shared.config.command_aliases import (
     serialize_command_aliases,
     validation_error,
 )
+from shared.config.command_conflicts import new_rcon_command_conflict
 from shared.config.message_templates import MESSAGE_TEMPLATE_KEYS
-from shared.config.rust_rcon import command_aliases_rust_rcon_conflict
-from shared.config.rust_rcon_custom import command_aliases_custom_command_conflict
 from shared.config.service import get_config_service
 from shared.security.crypto import encrypt_value
 
@@ -111,7 +110,13 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
                     status_code=400, detail="用户 ID 须为 QQ 号或 8–64 位官方 openid"
                 )
             updates[key] = json.dumps(cleaned, ensure_ascii=False)
-    if body.command_aliases is not None:
+    if body.command_aliases is not None or body.command_extra_prefixes is not None:
+        snap = svc.get_snapshot()
+        extra_prefixes = (
+            normalize_extra_prefixes(body.command_extra_prefixes)
+            if body.command_extra_prefixes is not None
+            else snap.command_extra_prefixes
+        )
         # 与当前快照合并后再 normalize：
         # 1) 只传部分命令时，未提及的命令保留原有配置（而非被
         #    normalize_command_aliases 的缺省填充逻辑重置为出厂默认）；
@@ -119,35 +124,28 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         #    只取客户端真正传入的字段与当前值合并，而不是用 Pydantic 为未传
         #    字段填的默认值（enabled=True/triggers=[]）整条覆盖，否则单独
         #    改开关会清空触发词、单独改触发词会误重启用。
-        current = serialize_command_aliases(svc.get_snapshot().command_aliases)
+        current = serialize_command_aliases(snap.command_aliases)
         patch = {
             cid: entry.model_dump(exclude_unset=True)
-            for cid, entry in body.command_aliases.items()
+            for cid, entry in (body.command_aliases or {}).items()
         }
         normalized = normalize_command_aliases(
             merge_partial_command_aliases(current, patch)
         )
-        error = validation_error(normalized)
+        error = validation_error(normalized, extra_prefixes)
         if error:
             raise HTTPException(status_code=400, detail=error)
-        snap = svc.get_snapshot()
-        rcon_conflict = command_aliases_rust_rcon_conflict(
-            normalized, snap.rust_rcon_bindings
-        )
+        rcon_conflict = new_rcon_command_conflict(normalized, snap, extra_prefixes)
         if rcon_conflict:
             raise HTTPException(status_code=400, detail=rcon_conflict)
-        custom_conflict = command_aliases_custom_command_conflict(
-            normalized, snap.rust_rcon_custom_commands
-        )
-        if custom_conflict:
-            raise HTTPException(status_code=400, detail=custom_conflict)
-        updates["command_aliases"] = json.dumps(
-            serialize_command_aliases(normalized), ensure_ascii=False
-        )
-    if body.command_extra_prefixes is not None:
-        updates["command_extra_prefixes"] = json.dumps(
-            normalize_extra_prefixes(body.command_extra_prefixes), ensure_ascii=False
-        )
+        if body.command_aliases is not None:
+            updates["command_aliases"] = json.dumps(
+                serialize_command_aliases(normalized), ensure_ascii=False
+            )
+        if body.command_extra_prefixes is not None:
+            updates["command_extra_prefixes"] = json.dumps(
+                extra_prefixes, ensure_ascii=False
+            )
     if body.official_qq_app_id is not None:
         updates["official_qq_app_id"] = body.official_qq_app_id.strip()
     if body.official_qq_app_secret is not None:

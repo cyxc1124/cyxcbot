@@ -285,6 +285,7 @@ async def test_cancel_http_stream_cleans_all_bilibili_files(
         response = SimpleNamespace(
             status=200,
             content_length=None,
+            headers={},
             content=SimpleNamespace(
                 iter_chunked=lambda _: stream(url),
             ),

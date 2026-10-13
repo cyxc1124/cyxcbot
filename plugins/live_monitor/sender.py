@@ -18,6 +18,7 @@ from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.message_templates import LiveMessageTemplates
 from shared.notify.at_all import LIVE_AT_ALL_FALLBACK
 from shared.notify.delivery import (
+    DeliveryCancelledError,
     DeliveryProgressCallback,
     DeliveryResult,
     PendingDelivery,
@@ -230,7 +231,8 @@ class LiveNotificationSender:
         *,
         pending: PendingDelivery,
         on_part_sent: DeliveryProgressCallback,
-    ) -> TargetDelivery:
+        can_send: Callable[[], bool] | None = None,
+    ) -> TargetDelivery | None:
         try:
             await send_group(
                 group_id,
@@ -239,9 +241,12 @@ class LiveNotificationSender:
                 at_all_fallback=LIVE_AT_ALL_FALLBACK,
                 start=pending.group_starts.get(group_id, 0),
                 on_part_sent=partial(on_part_sent, "group", group_id),
+                can_send=can_send,
             )
             logger.success("直播{}通知已发送到群组 {}", status, group_id)
             return TargetDelivery("group", group_id, True)
+        except DeliveryCancelledError:
+            return None
         except LoggedQQApiError as exc:
             return TargetDelivery("group", group_id, False, str(exc))
         except Exception as exc:
@@ -258,16 +263,20 @@ class LiveNotificationSender:
         *,
         pending: PendingDelivery,
         on_part_sent: DeliveryProgressCallback,
-    ) -> TargetDelivery:
+        can_send: Callable[[], bool] | None = None,
+    ) -> TargetDelivery | None:
         try:
             await send_user(
                 user_id,
                 message,
                 start=pending.user_starts.get(user_id, 0),
                 on_part_sent=partial(on_part_sent, "user", user_id),
+                can_send=can_send,
             )
             logger.success("直播{}通知已发送到好友 {}", status, user_id)
             return TargetDelivery("user", user_id, True)
+        except DeliveryCancelledError:
+            return None
         except LoggedQQApiError as exc:
             return TargetDelivery("user", user_id, False, str(exc))
         except Exception as exc:
@@ -288,6 +297,7 @@ class LiveNotificationSender:
         pending: PendingDelivery | None = None,
         on_prepared: Callable[[PendingDelivery], Awaitable[None]] | None = None,
         on_part_sent: DeliveryProgressCallback | None = None,
+        is_target_active: Callable[[str, str], bool] | None = None,
     ) -> DeliveryResult:
         """沿目标协议发送开播/下播通知，续传复用已准备的消息。"""
         target_users = target_users or []
@@ -332,6 +342,7 @@ class LiveNotificationSender:
                         ("user", pending.users),
                     )
                     for target in ids
+                    if is_target_active is None or is_target_active(kind, target)
                 ]
             )
 
@@ -343,25 +354,35 @@ class LiveNotificationSender:
 
         targets = []
         for group in pending.groups:
-            targets.append(
-                await self._send_group_message(
-                    group,
-                    pending.message,
-                    status,
-                    pending=pending,
-                    on_part_sent=checkpoint,
-                )
+            if is_target_active is not None and not is_target_active("group", group):
+                continue
+            result = await self._send_group_message(
+                group,
+                pending.message,
+                status,
+                pending=pending,
+                on_part_sent=checkpoint,
+                can_send=(lambda target=group: is_target_active("group", target))
+                if is_target_active is not None
+                else None,
             )
+            if result is not None:
+                targets.append(result)
         for user in pending.users:
-            targets.append(
-                await self._send_private_message(
-                    user,
-                    pending.message,
-                    status,
-                    pending=pending,
-                    on_part_sent=checkpoint,
-                )
+            if is_target_active is not None and not is_target_active("user", user):
+                continue
+            result = await self._send_private_message(
+                user,
+                pending.message,
+                status,
+                pending=pending,
+                on_part_sent=checkpoint,
+                can_send=(lambda target=user: is_target_active("user", target))
+                if is_target_active is not None
+                else None,
             )
+            if result is not None:
+                targets.append(result)
         return DeliveryResult(targets=targets)
 
 

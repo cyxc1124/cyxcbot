@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
+import zlib
 from collections.abc import AsyncIterator
+from compression.zstd import ZstdDecompressor
+from contextlib import aclosing
 from pathlib import Path
 from typing import Optional
 
 import aiohttp
+import brotli
 import httpx
 from nonebot.log import logger
 
@@ -34,6 +39,151 @@ def _complete_content_range_size(response_headers) -> Optional[int]:
     if start != 0 or end + 1 != total:
         return None
     return total
+
+
+async def _decode_deflate_stream(
+    chunk_iter: AsyncIterator[bytes], max_bytes: int, temp_dir: Path | None
+) -> AsyncIterator[bytes]:
+    # raw 正文也可能有合法 zlib 头；完整验证候选后才能输出，避免错误前缀进入文件。
+    with (
+        tempfile.TemporaryFile(dir=temp_dir) as wrapped,
+        tempfile.TemporaryFile(dir=temp_dir) as raw,
+    ):
+        candidates = [
+            {
+                "mode": mode,
+                "decoder": zlib.decompressobj(mode),
+                "file": handle,
+                "written": 0,
+                "valid": True,
+            }
+            for mode, handle in [(zlib.MAX_WBITS, wrapped), (-zlib.MAX_WBITS, raw)]
+        ]
+        async for chunk in chunk_iter:
+            for candidate in candidates:
+                if not candidate["valid"]:
+                    continue
+                pending = chunk
+                try:
+                    while pending:
+                        decoder = candidate["decoder"]
+                        if decoder.eof:
+                            decoder = zlib.decompressobj(candidate["mode"])
+                            candidate["decoder"] = decoder
+                        decoded = decoder.decompress(pending, _DOWNLOAD_CHUNK_BYTES)
+                        candidate["written"] += len(decoded)
+                        if candidate["written"] > max_bytes:
+                            candidate["valid"] = False
+                            break
+                        candidate["file"].write(decoded)
+                        pending = (
+                            decoder.unused_data
+                            if decoder.eof
+                            else decoder.unconsumed_tail
+                        )
+                except zlib.error:
+                    candidate["valid"] = False
+                if not candidate["valid"]:
+                    candidate["file"].close()
+            if not any(candidate["valid"] for candidate in candidates):
+                raise ValueError("deflate 响应损坏或超过大小上限")
+        for candidate in candidates:
+            if candidate["valid"] and candidate["decoder"].eof:
+                for other in candidates:
+                    if other is not candidate:
+                        other["file"].close()
+                candidate["file"].seek(0)
+                while chunk := candidate["file"].read(_DOWNLOAD_CHUNK_BYTES):
+                    yield chunk
+                return
+        raise ValueError("不完整的 deflate 响应")
+
+
+async def _decode_stream(
+    chunk_iter: AsyncIterator[bytes],
+    encoding: str,
+    *,
+    max_bytes: int = DEFAULT_MAX_BYTES,
+    temp_dir: Path | None = None,
+) -> AsyncIterator[bytes]:
+    try:
+        if "," in encoding:
+            codings = list(reversed(encoding.split(",")))
+            for index, coding in enumerate(codings):
+                # 中间层仍是压缩表示，可大于最终正文；磁盘暂存保留有限的媒体上限。
+                limit = (
+                    max_bytes
+                    if index == len(codings) - 1
+                    else max(DEFAULT_MAX_BYTES, max_bytes)
+                )
+                chunk_iter = _decode_stream(
+                    chunk_iter, coding.strip(), max_bytes=limit, temp_dir=temp_dir
+                )
+            async for chunk in chunk_iter:
+                yield chunk
+            return
+        if encoding == "deflate":
+            async with aclosing(
+                _decode_deflate_stream(chunk_iter, max_bytes, temp_dir)
+            ) as decoded:
+                async for chunk in decoded:
+                    yield chunk
+            return
+        if encoding in {"", "identity"}:
+            async for chunk in chunk_iter:
+                yield chunk
+            return
+        if encoding == "br":
+            decoder = brotli.Decompressor()
+            async for chunk in chunk_iter:
+                while True:
+                    decoded = decoder.process(chunk, _DOWNLOAD_CHUNK_BYTES)
+                    if not decoded:
+                        break
+                    for offset in range(0, len(decoded), _DOWNLOAD_CHUNK_BYTES):
+                        yield decoded[offset : offset + _DOWNLOAD_CHUNK_BYTES]
+                    chunk = b""
+                    if decoder.is_finished():
+                        break
+            if not decoder.is_finished():
+                raise ValueError("不完整的 br 响应")
+            return
+        if encoding not in {"gzip", "zstd"}:
+            raise ValueError(f"不支持的 Content-Encoding: {encoding}")
+
+        decoder = None
+        async for chunk in chunk_iter:
+            pending = chunk
+            while True:
+                if decoder is None or decoder.eof:
+                    if not pending:
+                        break
+                    if encoding == "zstd":
+                        decoder = ZstdDecompressor()
+                    else:
+                        mode = zlib.MAX_WBITS
+                        if encoding == "gzip":
+                            mode += 16
+                        decoder = zlib.decompressobj(mode)
+                decoded = decoder.decompress(pending, _DOWNLOAD_CHUNK_BYTES)
+                if decoded:
+                    yield decoded
+                if decoder.eof:
+                    pending = decoder.unused_data
+                elif encoding == "zstd":
+                    pending = b""
+                    if decoder.needs_input:
+                        break
+                else:
+                    pending = decoder.unconsumed_tail
+                    if not pending:
+                        break
+        # aiohttp/httpx 的自动解压不会可靠地检查 gzip 尾部，完整后才允许替换文件。
+        if decoder is None or not decoder.eof:
+            raise ValueError(f"不完整的 {encoding} 响应")
+    finally:
+        if close := getattr(chunk_iter, "aclose", None):
+            await close()
 
 
 async def _persist_stream(
@@ -72,6 +222,9 @@ async def _persist_stream(
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise
+    finally:
+        if close := getattr(chunk_iter, "aclose", None):
+            await close()
 
 
 async def _download_via_httpx(
@@ -101,7 +254,8 @@ async def _download_via_httpx(
                     )
                     return False
                 expected_size: Optional[int] = None
-                if not response.headers.get("Content-Encoding"):
+                encoding = response.headers.get("Content-Encoding", "").strip().lower()
+                if encoding in {"", "identity"}:
                     content_length = response.headers.get("Content-Length")
                     if content_length is not None and content_length.isdigit():
                         expected_size = int(content_length)
@@ -113,7 +267,12 @@ async def _download_via_httpx(
                             )
                             return False
                 return await _persist_stream(
-                    response.aiter_bytes(),
+                    _decode_stream(
+                        response.aiter_raw(chunk_size=_DOWNLOAD_CHUNK_BYTES),
+                        encoding,
+                        max_bytes=max_bytes,
+                        temp_dir=save_path.parent,
+                    ),
                     save_path,
                     expected_size,
                     max_bytes=max_bytes,
@@ -144,22 +303,29 @@ async def download_file(
             ),
             headers=headers,
             proxy=proxy or None,
+            auto_decompress=False,
         ) as response:
+            encoding = response.headers.get("Content-Encoding", "").strip().lower()
             if response.status == 200:
-                if (
-                    response.content_length is not None
-                    and response.content_length > max_bytes
-                ):
+                expected_size = (
+                    response.content_length if encoding in {"", "identity"} else None
+                )
+                if expected_size is not None and expected_size > max_bytes:
                     logger.warning(
                         "Content-Length {} 超过上限 {}",
-                        response.content_length,
+                        expected_size,
                         max_bytes,
                     )
                     return False
                 return await _persist_stream(
-                    response.content.iter_chunked(_DOWNLOAD_CHUNK_BYTES),
+                    _decode_stream(
+                        response.content.iter_chunked(_DOWNLOAD_CHUNK_BYTES),
+                        encoding,
+                        max_bytes=max_bytes,
+                        temp_dir=save_path.parent,
+                    ),
                     save_path,
-                    response.content_length,
+                    expected_size,
                     max_bytes=max_bytes,
                 )
             if response.status == 206:
@@ -173,10 +339,26 @@ async def download_file(
                         else None,
                     )
                     return False
-                if expected_size > max_bytes:
+                if encoding not in {"", "identity"}:
+                    # shortcut: 编码 Range 需 Content-Length，支持 chunked 206 时增加原始流计数。
+                    if response.content_length != expected_size:
+                        logger.warning(
+                            "编码 Range 响应大小不匹配 {}: expected={}, got={}",
+                            save_path.name,
+                            expected_size,
+                            response.content_length,
+                        )
+                        return False
+                    expected_size = None
+                if expected_size is not None and expected_size > max_bytes:
                     return False
                 return await _persist_stream(
-                    response.content.iter_chunked(_DOWNLOAD_CHUNK_BYTES),
+                    _decode_stream(
+                        response.content.iter_chunked(_DOWNLOAD_CHUNK_BYTES),
+                        encoding,
+                        max_bytes=max_bytes,
+                        temp_dir=save_path.parent,
+                    ),
                     save_path,
                     expected_size,
                     max_bytes=max_bytes,

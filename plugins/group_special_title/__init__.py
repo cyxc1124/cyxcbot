@@ -7,6 +7,7 @@ from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 from nonebot.rule import Rule
 
+from shared.config.command_aliases import command_aliases_for_event
 from shared.config.service import get_config_service
 from shared.group_special_title import parse_title_from_message
 from shared.group_special_title_policy import daily_usage_limit_from_snapshot
@@ -24,10 +25,12 @@ __plugin_meta__ = PluginMetadata(
 driver = get_driver()
 
 
-async def _is_group_title_command(event: Event) -> bool:
+async def _is_group_title_command(bot: Bot, event: Event) -> bool:
     if not isinstance(event, GroupMessageEvent):
         return False
-    command_aliases = get_config_service().get_snapshot().command_aliases
+    command_aliases = await command_aliases_for_event(
+        get_config_service().get_snapshot(), bot, event
+    )
     return parse_title_from_message(event.message, command_aliases) is not None
 
 
