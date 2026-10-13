@@ -650,8 +650,6 @@ async def test_prefix_only_patch_preserves_legacy_rcon_alias_collisions(
 ):
     import json
 
-    from fastapi import HTTPException
-
     from admin.api.v1 import settings as settings_api
     from admin.schemas.settings import SettingsUpdateRequest
     from shared.db.models import RustRconBinding, RustRconCustomCommand
@@ -677,14 +675,13 @@ async def test_prefix_only_patch_preserves_legacy_rcon_alias_collisions(
         SettingsUpdateRequest(command_extra_prefixes=[]), None
     )
     assert saved.command_extra_prefixes == []
-    with pytest.raises(HTTPException, match="冲突") as exc:
-        await settings_api.update_settings(
-            SettingsUpdateRequest(
-                command_aliases={"live_status": {"triggers": ["直播状态"]}}
-            ),
-            None,
-        )
-    assert exc.value.status_code == 400
+    saved = await settings_api.update_settings(
+        SettingsUpdateRequest(
+            command_aliases={"live_status": {"triggers": ["直播状态"]}}
+        ),
+        None,
+    )
+    assert saved.command_aliases["live_status"].triggers == ["直播状态"]
     async with factory() as session:
         assert (
             json.loads(
@@ -692,7 +689,7 @@ async def test_prefix_only_patch_preserves_legacy_rcon_alias_collisions(
             )
             == []
         )
-        assert await session.get(SystemSetting, "command_aliases") is None
+        assert await session.get(SystemSetting, "command_aliases") is not None
 
 
 @pytest.mark.asyncio
@@ -846,8 +843,6 @@ async def test_prefix_patch_rejects_new_private_extract_rcon_collision(
 async def test_prefix_only_patch_preserves_legacy_group_only_custom_collision(
     db_context, monkeypatch
 ):
-    from fastapi import HTTPException
-
     from admin.api.v1 import settings as settings_api
     from admin.schemas.settings import SettingsUpdateRequest
     from shared.db.models import RustRconBinding, RustRconCustomCommand
@@ -871,13 +866,13 @@ async def test_prefix_only_patch_preserves_legacy_group_only_custom_collision(
         SettingsUpdateRequest(command_extra_prefixes=[]), None
     )
     assert saved.command_extra_prefixes == []
-    with pytest.raises(HTTPException, match="冲突"):
-        await settings_api.update_settings(
-            SettingsUpdateRequest(
-                command_aliases={"live_status": {"triggers": ["直播状态"]}}
-            ),
-            None,
-        )
+    saved = await settings_api.update_settings(
+        SettingsUpdateRequest(
+            command_aliases={"live_status": {"triggers": ["直播状态"]}}
+        ),
+        None,
+    )
+    assert saved.command_aliases["live_status"].triggers == ["直播状态"]
 
 
 @pytest.mark.asyncio
@@ -1023,3 +1018,527 @@ async def test_prefix_patch_compares_group_custom_extract_grammar(
         )
     assert exc.value.status_code == 400
     assert service.get_snapshot().command_extra_prefixes == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("custom", [False, True], ids=["binding", "custom"])
+@pytest.mark.parametrize(
+    "cid,old_trigger,old_enabled,patch,name,old_prefixes,new_prefixes,parent_enabled,rejected",
+    [
+        (
+            "live_status",
+            "live",
+            True,
+            {"triggers": ["server"]},
+            "server",
+            ["!"],
+            None,
+            True,
+            True,
+        ),
+        (
+            "live_status",
+            "live",
+            True,
+            {"triggers": ["!server"]},
+            "server",
+            ["!"],
+            None,
+            True,
+            True,
+        ),
+        (
+            "live_status",
+            "!server",
+            False,
+            {"enabled": True},
+            "server",
+            ["!"],
+            None,
+            True,
+            True,
+        ),
+        (
+            "live_status",
+            "live",
+            True,
+            {"triggers": ["!server"]},
+            "server",
+            [],
+            ["!"],
+            True,
+            True,
+        ),
+        (
+            "status",
+            "status",
+            True,
+            {"triggers": ["!server"]},
+            "server",
+            ["!"],
+            None,
+            True,
+            True,
+        ),
+        (
+            "dynamic_extract",
+            "提取",
+            True,
+            {"triggers": ["server"]},
+            "!server1234567890",
+            ["!"],
+            None,
+            True,
+            True,
+        ),
+        (
+            "group_special_title",
+            "头衔",
+            True,
+            {"triggers": ["server"]},
+            "server",
+            ["!"],
+            None,
+            True,
+            True,
+        ),
+        (
+            "live_status",
+            "server",
+            True,
+            {"triggers": ["server"]},
+            "server",
+            ["!"],
+            None,
+            True,
+            False,
+        ),
+        (
+            "live_status",
+            "server",
+            True,
+            {"enabled": True},
+            "server",
+            ["!"],
+            None,
+            True,
+            False,
+        ),
+        (
+            "live_status",
+            "server",
+            True,
+            {"triggers": ["safe"]},
+            "server",
+            ["!"],
+            None,
+            True,
+            False,
+        ),
+        (
+            "live_status",
+            "server",
+            True,
+            {"enabled": False},
+            "server",
+            ["!"],
+            None,
+            True,
+            False,
+        ),
+        (
+            "live_status",
+            "server",
+            True,
+            {"triggers": ["!server"]},
+            "server",
+            ["!"],
+            [],
+            True,
+            False,
+        ),
+        (
+            "live_status",
+            "live",
+            True,
+            {"triggers": ["!server"]},
+            "server",
+            [],
+            None,
+            True,
+            False,
+        ),
+        (
+            "live_status",
+            "live",
+            True,
+            {"triggers": ["!server"]},
+            "server",
+            ["!", "!ser"],
+            None,
+            True,
+            False,
+        ),
+        (
+            "rust_player_bind",
+            "bind",
+            True,
+            {"triggers": ["!server"]},
+            ".server",
+            ["!", "."],
+            None,
+            True,
+            False,
+        ),
+        (
+            "live_status",
+            "live",
+            True,
+            {"triggers": ["!server"]},
+            "server",
+            ["!"],
+            None,
+            False,
+            False,
+        ),
+    ],
+)
+async def test_alias_patch_compares_actual_old_and_new_rcon_grammars(
+    db_context,
+    monkeypatch,
+    custom,
+    cid,
+    old_trigger,
+    old_enabled,
+    patch,
+    name,
+    old_prefixes,
+    new_prefixes,
+    parent_enabled,
+    rejected,
+):
+    import json
+
+    from fastapi import HTTPException
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+    from shared.config.command_aliases import (
+        COMMAND_DEFAULTS,
+        normalize_command_aliases,
+        serialize_command_aliases,
+    )
+    from shared.db.models import RustRconBinding, RustRconCustomCommand
+
+    _, factory, ConfigService, *_, SystemSetting = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    monkeypatch.setattr(
+        "shared.config.command_aliases._configured_command_starts",
+        lambda: frozenset({"/"}),
+    )
+    aliases = normalize_command_aliases(
+        {
+            command_id: {
+                "enabled": command_id == cid and old_enabled,
+                "triggers": [old_trigger] if command_id == cid else [],
+            }
+            for command_id in COMMAND_DEFAULTS
+        }
+    )
+    original_settings = {
+        "command_aliases": json.dumps(serialize_command_aliases(aliases)),
+        "command_extra_prefixes": json.dumps(old_prefixes),
+    }
+    await service.set_settings(original_settings)
+    async with factory() as session, session.begin():
+        binding = RustRconBinding(
+            alias="rcon1" if custom else name, host="localhost", enabled=parent_enabled
+        )
+        session.add(binding)
+        await session.flush()
+        if custom:
+            session.add(
+                RustRconCustomCommand(
+                    name=name, template="status", binding_id=binding.id
+                )
+            )
+    await service.load()
+    body = SettingsUpdateRequest(
+        command_aliases={cid: patch}, command_extra_prefixes=new_prefixes
+    )
+    if rejected:
+        with pytest.raises(HTTPException, match="冲突") as exc:
+            await settings_api.update_settings(body, None)
+        assert exc.value.status_code == 400
+    else:
+        saved = await settings_api.update_settings(body, None)
+        assert saved.command_aliases[cid].triggers == patch.get(
+            "triggers", [old_trigger]
+        )
+        assert saved.command_aliases[cid].enabled == patch.get("enabled", old_enabled)
+        assert saved.command_extra_prefixes == (
+            old_prefixes if new_prefixes is None else new_prefixes
+        )
+    async with factory() as session:
+        persisted = {
+            key: (await session.get(SystemSetting, key)).value
+            for key in original_settings
+        }
+    if rejected:
+        assert persisted == original_settings
+        assert serialize_command_aliases(
+            service.get_snapshot().command_aliases
+        ) == serialize_command_aliases(aliases)
+        assert service.get_snapshot().command_extra_prefixes == old_prefixes
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("custom", [False, True], ids=["binding", "custom"])
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "create",
+        "rename",
+        "enable",
+        "raw_create",
+        "disable_rename",
+        "safe_rename",
+        "noop",
+        "metadata",
+        "create_disabled",
+        "longest_create",
+        "delete",
+    ],
+)
+async def test_rcon_crud_rejects_only_new_builtin_grammar_collisions(
+    db_context, monkeypatch, custom, operation
+):
+    import json
+    from unittest.mock import AsyncMock
+
+    from fastapi import HTTPException
+    from sqlalchemy import select
+
+    from admin.api.v1 import rust_rcon as binding_api
+    from admin.api.v1 import rust_rcon_custom as custom_api
+    from admin.schemas.rust_rcon import RustRconBindingCreate, RustRconBindingUpdate
+    from admin.schemas.rust_rcon_custom import (
+        RustRconCustomCommandCreateRequest,
+        RustRconCustomCommandUpdateRequest,
+    )
+    from shared.config.command_aliases import (
+        COMMAND_DEFAULTS,
+        normalize_command_aliases,
+        serialize_command_aliases,
+    )
+    from shared.db.models import RustRconBinding, RustRconCustomCommand
+
+    _, factory, ConfigService, *_ = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    for module in (binding_api, custom_api):
+        monkeypatch.setattr(module, "get_session", lambda: factory())
+        monkeypatch.setattr(module, "get_config_service", lambda: service)
+    monkeypatch.setattr(binding_api, "encrypt_value", lambda value: "")
+    monkeypatch.setattr(
+        "shared.config.command_aliases._configured_command_starts",
+        lambda: frozenset({"/"}),
+    )
+    aliases = normalize_command_aliases(
+        {
+            cid: {
+                "enabled": cid == "live_status",
+                "triggers": ["server" if operation == "raw_create" else "!server"],
+            }
+            for cid in COMMAND_DEFAULTS
+        }
+    )
+    await service.set_settings(
+        {
+            "command_aliases": json.dumps(serialize_command_aliases(aliases)),
+            "command_extra_prefixes": json.dumps(
+                ["!", "!ser"] if operation == "longest_create" else ["!"]
+            ),
+        }
+    )
+    model = RustRconCustomCommand if custom else RustRconBinding
+    creating = operation in (
+        "create",
+        "raw_create",
+        "create_disabled",
+        "longest_create",
+    )
+    row_id = None
+    async with factory() as session, session.begin():
+        parent = RustRconBinding(alias="rcon1", host="localhost") if custom else None
+        if parent:
+            session.add(parent)
+            await session.flush()
+        if not creating:
+            name = "safe" if operation in ("rename", "disable_rename") else "server"
+            row = (
+                RustRconCustomCommand(
+                    name=name,
+                    template="status",
+                    binding_id=parent.id,
+                    enabled=operation != "enable",
+                )
+                if custom
+                else RustRconBinding(
+                    alias=name, host="localhost", enabled=operation != "enable"
+                )
+            )
+            session.add(row)
+            await session.flush()
+            row_id = row.id
+        parent_id = parent.id if parent else None
+    await service.load()
+    reload = AsyncMock(wraps=service.reload)
+    monkeypatch.setattr(service, "reload", reload)
+
+    async def rows():
+        async with factory() as session:
+            return [
+                (row.id, row.name if custom else row.alias, row.enabled)
+                for row in (
+                    await session.scalars(select(model).order_by(model.id))
+                ).all()
+            ]
+
+    before = await rows()
+    if creating:
+        if custom:
+            request = RustRconCustomCommandCreateRequest(
+                name="server",
+                template="status",
+                binding_id=parent_id,
+                allowed_qq_ids=["123"],
+                enabled=operation != "create_disabled",
+            )
+            action = custom_api.create_rust_rcon_custom_command(request, None)
+        else:
+            request = RustRconBindingCreate(
+                alias="server",
+                host="localhost",
+                password="test-only",
+                allowed_qq_ids=["123"],
+                enabled=operation != "create_disabled",
+            )
+            action = binding_api.create_rust_rcon_binding(request, None)
+    elif operation == "delete":
+        action = (
+            custom_api.delete_rust_rcon_custom_command(row_id, None)
+            if custom
+            else binding_api.delete_rust_rcon_binding(row_id, None)
+        )
+    else:
+        changes = {}
+        if operation in ("rename", "disable_rename", "safe_rename", "noop"):
+            changes["name" if custom else "alias"] = (
+                "safe" if operation == "safe_rename" else "server"
+            )
+        if operation in ("enable", "disable_rename"):
+            changes["enabled"] = operation == "enable"
+        if operation == "metadata":
+            changes["template" if custom else "host"] = (
+                "status " if custom else "127.0.0.1"
+            )
+        action = (
+            custom_api.update_rust_rcon_custom_command(
+                row_id, RustRconCustomCommandUpdateRequest(**changes), None
+            )
+            if custom
+            else binding_api.update_rust_rcon_binding(
+                row_id, RustRconBindingUpdate(**changes), None
+            )
+        )
+    if operation in ("create", "rename", "enable", "raw_create"):
+        with pytest.raises(HTTPException, match="冲突") as exc:
+            await action
+        assert exc.value.status_code in (400, 409)
+        assert await rows() == before
+        reload.assert_not_awaited()
+    else:
+        await action
+        reload.assert_awaited_once()
+        if operation == "delete":
+            assert await rows() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "operation,rejected",
+    [("enable", True), ("rename_enable", True), ("stable_rename", False)],
+)
+async def test_parent_binding_enable_checks_existing_custom_grammar(
+    db_context, monkeypatch, operation, rejected
+):
+    import json
+
+    from fastapi import HTTPException
+
+    from admin.api.v1 import rust_rcon as binding_api
+    from admin.schemas.rust_rcon import RustRconBindingUpdate
+    from shared.config.command_aliases import (
+        COMMAND_DEFAULTS,
+        normalize_command_aliases,
+        serialize_command_aliases,
+    )
+    from shared.db.models import RustRconBinding, RustRconCustomCommand
+
+    _, factory, ConfigService, *_ = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(binding_api, "get_session", lambda: factory())
+    monkeypatch.setattr(binding_api, "get_config_service", lambda: service)
+    monkeypatch.setattr(
+        "shared.config.command_aliases._configured_command_starts",
+        lambda: frozenset({"/"}),
+    )
+    aliases = normalize_command_aliases(
+        {
+            cid: {"enabled": cid == "live_status", "triggers": ["!server"]}
+            for cid in COMMAND_DEFAULTS
+        }
+    )
+    await service.set_settings(
+        {
+            "command_aliases": json.dumps(serialize_command_aliases(aliases)),
+            "command_extra_prefixes": '["!"]',
+        }
+    )
+    async with factory() as session, session.begin():
+        parent = RustRconBinding(
+            alias="rcon1", host="localhost", enabled=operation == "stable_rename"
+        )
+        session.add(parent)
+        await session.flush()
+        parent_id = parent.id
+        session.add(
+            RustRconCustomCommand(
+                name="server", template="status", binding_id=parent_id
+            )
+        )
+    await service.load()
+    changes = (
+        {"enabled": True}
+        if operation == "enable"
+        else {"alias": "rcon2", "enabled": True}
+    )
+    if rejected:
+        with pytest.raises(HTTPException, match="冲突"):
+            await binding_api.update_rust_rcon_binding(
+                parent_id, RustRconBindingUpdate(**changes), None
+            )
+        async with factory() as session:
+            row = await session.get(RustRconBinding, parent_id)
+            assert row.alias == "rcon1"
+            assert not row.enabled
+    else:
+        saved = await binding_api.update_rust_rcon_binding(
+            parent_id, RustRconBindingUpdate(**changes), None
+        )
+        assert saved.alias == "rcon2"
+        assert saved.enabled

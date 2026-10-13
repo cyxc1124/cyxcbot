@@ -36,19 +36,29 @@ async def _run(handler, bot, event):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("custom", [False, True], ids=["binding", "custom"])
 @pytest.mark.parametrize(
-    "name,text,old_prefixes,new_prefixes,old_rcon,new_rcon",
+    "name,text,old_prefixes,new_prefixes,old_rcon,new_rcon,edit_alias",
     [
-        ("server", "$server status", [], ["$"], False, True),
-        ("server", "server status", [], ["$"], True, True),
-        ("!status", "!!status", [], ["!"], False, True),
-        ("server", "$server status", ["$"], [], True, False),
+        ("server", "$server status", [], ["$"], False, True, False),
+        ("server", "server status", [], ["$"], True, True, False),
+        ("!status", "!!status", [], ["!"], False, True, False),
+        ("server", "$server status", ["$"], [], True, False, False),
+        ("server", "!server status", ["!"], ["!"], True, True, True),
     ],
 )
 async def test_rcon_prefix_remainder_collisions_use_concrete_group_inputs(
-    monkeypatch, custom, name, text, old_prefixes, new_prefixes, old_rcon, new_rcon
+    monkeypatch,
+    custom,
+    name,
+    text,
+    old_prefixes,
+    new_prefixes,
+    old_rcon,
+    new_rcon,
+    edit_alias,
 ):
     from nonebot.adapters.onebot.v11 import GroupMessageEvent
 
+    import plugins.live_monitor as live_plugin
     import plugins.rust_rcon as rcon_plugin
     from plugins.status_check import status_checker
     from shared.config.command_aliases import COMMAND_DEFAULTS
@@ -83,7 +93,7 @@ async def test_rcon_prefix_remainder_collisions_use_concrete_group_inputs(
             )
         ]
     service = SimpleNamespace(get_snapshot=lambda: snap)
-    for module in (rcon_plugin, status_checker):
+    for module in (rcon_plugin, status_checker, live_plugin):
         monkeypatch.setattr(module, "get_config_service", lambda: service)
     monkeypatch.setattr("shared.config.service.get_config_service", lambda: service)
     monkeypatch.setattr(
@@ -94,6 +104,7 @@ async def test_rcon_prefix_remainder_collisions_use_concrete_group_inputs(
     rcon_finish = AsyncMock(side_effect=FinishedException)
     execute = AsyncMock(return_value="RCON 状态")
     monkeypatch.setattr(status_checker.status_cmd, "finish", status_finish)
+    monkeypatch.setattr(live_plugin.live_status_cmd, "finish", status_finish)
     monkeypatch.setattr(rcon_plugin.rust_rcon_cmd, "finish", rcon_finish)
     monkeypatch.setattr(rcon_plugin, "execute_rcon_command", execute)
     monkeypatch.setattr(
@@ -119,14 +130,32 @@ async def test_rcon_prefix_remainder_collisions_use_concrete_group_inputs(
         sender={"user_id": 123},
         to_me=True,
     )
-    for prefixes, expected in ((old_prefixes, old_rcon), (new_prefixes, new_rcon)):
+    for index, (prefixes, expected) in enumerate(
+        ((old_prefixes, old_rcon), (new_prefixes, new_rcon))
+    ):
         snap.command_extra_prefixes = prefixes
+        if edit_alias:
+            snap.command_aliases = normalize_command_aliases(
+                {
+                    cid: {
+                        "enabled": cid == "live_status",
+                        "triggers": ["live" if index == 0 else "!server"],
+                    }
+                    for cid in COMMAND_DEFAULTS
+                }
+            )
         status_finish.reset_mock()
         rcon_finish.reset_mock()
         execute.reset_mock()
-        await _run(status_checker.handle_status_command, bot, event)
+        await _run(
+            live_plugin.handle_live_status
+            if edit_alias
+            else status_checker.handle_status_command,
+            bot,
+            event,
+        )
         await _run(rcon_plugin.handle_rust_rcon, bot, event)
-        assert status_finish.await_count == 1
+        assert status_finish.await_count == (index if edit_alias else 1)
         assert rcon_finish.await_count == int(expected)
         assert execute.await_count == int(expected and (custom or " " in text))
         if execute.await_count:
