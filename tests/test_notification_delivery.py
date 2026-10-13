@@ -3039,3 +3039,243 @@ async def test_live_finish_write_failure_retains_acknowledged_parts(
     assert await delivery.deliver_start("1", state, room_info=None, user_info=None)
     assert bot.send_to_group.await_count == 2
     assert not state.pending_start
+
+
+@pytest.fixture
+def monitor_target_reload(dynamic_monitor_module, live_monitor_module, monkeypatch):
+    from nonebot.adapters.onebot.v11 import MessageSegment
+
+    from shared.adapter import outbound
+
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    monkeypatch.setattr(outbound, "_official_last_sent", {})
+    monkeypatch.setattr(outbound, "_official_locks", {})
+    monkeypatch.setattr(live_monitor_module.api_manager, "init", AsyncMock())
+
+    def make(kind, scope, *, official=True):
+        target_ids = (
+            ["current", "later", "kept"] if official else ["1001", "1002", "1003"]
+        )
+        module = dynamic_monitor_module if kind == "dynamic" else live_monitor_module
+        prefix = "dynamic" if kind == "dynamic" else "live"
+        config = module.Config(
+            **{
+                f"{prefix}_monitor_mapping": {
+                    "111": target_ids if scope == "group" else []
+                },
+                f"{prefix}_monitor_user_mapping": {
+                    "111": target_ids if scope == "user" else []
+                },
+                f"{prefix}_at_all": {"111": False},
+                "enable_screenshot": False,
+                "use_websocket": False,
+            }
+        )
+        monitor = (
+            module.DynamicMonitor(config)
+            if kind == "dynamic"
+            else module.LiveMonitor(config)
+        )
+        monitor._persist_state = AsyncMock()
+        monitor._delete_persisted_state = AsyncMock()
+        message = Message(
+            [
+                MessageSegment.text("original-caption"),
+                MessageSegment.image(b"original-image"),
+                MessageSegment.text("original-last"),
+            ]
+        )
+        if kind == "dynamic":
+            monitor.sender = module.DynamicSender()
+            monitor._resolve_author_name = AsyncMock(return_value="author")
+            monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
+            monitor.sender.build_dynamic_message = MagicMock(return_value=message)
+            item = SimpleNamespace(
+                id=200, uid="111", get_type_description=lambda: "text"
+            )
+            generation = monitor._check_generation.get("111", 0)
+
+            async def deliver():
+                return await monitor._send_dynamic_notification(
+                    "111", item, check_generation=generation
+                )
+
+            def pending():
+                return monitor._pending_targets.get(("111", 200, False))
+
+        else:
+            sender = monitor._sender
+            sender._generate_card_if_needed = AsyncMock(return_value=None)
+            sender.build_start_message = MagicMock(return_value=message)
+            sender.build_end_message = MagicMock(return_value=message)
+            state = module.LiveRoomState(room_id=111)
+            monitor.room_states["111"] = state
+            monitor.initialized_rooms["111"] = True
+            status = "start" if kind == "live_start" else "end"
+
+            async def deliver():
+                return await getattr(monitor._delivery, f"deliver_{status}")(
+                    "111", state, room_info=None, user_info=None
+                )
+
+            def pending():
+                return getattr(state, f"pending_{status}_delivery")
+
+        bot = SimpleNamespace(
+            send_to_group=AsyncMock(),
+            send_to_c2c=AsyncMock(),
+            send_group_msg=AsyncMock(),
+            send_private_msg=AsyncMock(),
+        )
+        monkeypatch.setattr(
+            outbound, "iter_official_bots", lambda: [bot] if official else []
+        )
+        monkeypatch.setattr(
+            outbound, "iter_onebot_bots", lambda: [] if official else [bot]
+        )
+        if kind != "dynamic":
+            monkeypatch.setitem(
+                monitor._sender.send_notification.__func__.__globals__,
+                "messaging_bots",
+                lambda: [bot],
+            )
+
+        async def reload_targets(targets):
+            new_config = monitor.config.model_copy(deep=True)
+            mapping = getattr(
+                new_config,
+                f"{prefix}_monitor_{'user_mapping' if scope == 'user' else 'mapping'}",
+            )
+            mapping["111"] = targets
+            with patch.object(module.Config, "from_service", return_value=new_config):
+                await monitor.reload_config()
+
+        async def remove_and_readd():
+            original = monitor.config.model_copy(deep=True)
+            empty = original.model_copy(deep=True)
+            getattr(empty, f"{prefix}_monitor_mapping").clear()
+            getattr(empty, f"{prefix}_monitor_user_mapping").clear()
+            with patch.object(
+                module.Config, "from_service", side_effect=[empty, original]
+            ):
+                await monitor.reload_config()
+                await monitor.reload_config()
+
+        return (
+            monitor,
+            bot,
+            deliver,
+            pending,
+            reload_targets,
+            remove_and_readd,
+            target_ids,
+        )
+
+    return make
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["dynamic", "live_start", "live_end"])
+@pytest.mark.parametrize("scope", ["group", "user"])
+@pytest.mark.parametrize("official", [False, True])
+async def test_monitor_reload_skips_removed_later_targets(
+    monitor_target_reload, kind, scope, official
+):
+    _, bot, deliver, pending, reload_targets, _, ids = monitor_target_reload(
+        kind, scope, official=official
+    )
+    accepted = []
+
+    async def send(**kwargs):
+        target = (
+            kwargs["group_openid" if scope == "group" else "openid"]
+            if official
+            else str(kwargs[f"{scope if scope == 'group' else 'user'}_id"])
+        )
+        accepted.append(target)
+        if len(accepted) == 1:
+            await reload_targets([ids[0], ids[2], "added"])
+
+    api = (
+        (bot.send_to_group if scope == "group" else bot.send_to_c2c)
+        if official
+        else (bot.send_group_msg if scope == "group" else bot.send_private_msg)
+    )
+    api.side_effect = send
+    assert await deliver()
+    assert accepted == [ids[0]] * (3 if official else 1) + [ids[2]] * (
+        3 if official else 1
+    )
+    saved = pending()
+    assert saved is None or saved.groups == saved.users == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["dynamic", "live_start", "live_end"])
+@pytest.mark.parametrize("scope", ["group", "user"])
+async def test_monitor_reload_cancels_official_parts_and_resumes_kept_target(
+    monitor_target_reload, kind, scope
+):
+    _, bot, deliver, pending, reload_targets, _, ids = monitor_target_reload(
+        kind, scope
+    )
+    accepted = []
+    failed_once = False
+
+    async def send(**kwargs):
+        nonlocal failed_once
+        target = kwargs["group_openid" if scope == "group" else "openid"]
+        part = kwargs["message"][0]
+        if target == "kept" and part.type == "file_image" and not failed_once:
+            failed_once = True
+            raise RuntimeError("temporary failure")
+        accepted.append((target, part.type))
+        if accepted == [("current", "text")]:
+            await reload_targets(["kept", "added"])
+
+    api = bot.send_to_group if scope == "group" else bot.send_to_c2c
+    api.side_effect = send
+    assert not await deliver()
+    assert accepted == [("current", "text"), ("kept", "text")]
+    saved = pending()
+    assert saved.groups == (["kept"] if scope == "group" else [])
+    assert saved.users == (["kept"] if scope == "user" else [])
+    starts = saved.group_starts if scope == "group" else saved.user_starts
+    assert starts["kept"] == 1
+    assert starts["current"] == 1
+    assert await deliver()
+    assert accepted == [
+        ("current", "text"),
+        ("kept", "text"),
+        ("kept", "file_image"),
+        ("kept", "text"),
+    ]
+    assert pending() is None or pending().groups == pending().users == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["dynamic", "live_start", "live_end"])
+@pytest.mark.parametrize("scope", ["group", "user"])
+async def test_monitor_remove_and_readd_stops_old_delivery(
+    monitor_target_reload, kind, scope
+):
+    monitor, bot, deliver, pending, _, remove_and_readd, _ = monitor_target_reload(
+        kind, scope
+    )
+    accepted = []
+
+    async def send(**kwargs):
+        accepted.append(kwargs["group_openid" if scope == "group" else "openid"])
+        await remove_and_readd()
+
+    api = bot.send_to_group if scope == "group" else bot.send_to_c2c
+    api.side_effect = send
+    result = await deliver()
+    assert accepted == ["current"]
+    if kind == "dynamic":
+        assert not result
+        assert pending() is None
+    else:
+        state = monitor.room_states["111"]
+        assert not state.pending_start and not state.pending_end
+        assert state.pending_start_delivery is state.pending_end_delivery is None

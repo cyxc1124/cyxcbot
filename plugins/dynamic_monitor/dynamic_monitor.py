@@ -792,6 +792,20 @@ class DynamicMonitor:
             starts[target_id] = next_part
             await self._persist_state(uid, check_generation=check_generation)
 
+        def is_target_active(target_type: str, target_id: str) -> bool:
+            if pending_targets.get(pending_key) is not pending:
+                return False
+            if check_generation is not None and not self._check_still_valid(
+                uid, check_generation
+            ):
+                return False
+            mapping = (
+                self.config.dynamic_monitor_mapping
+                if target_type == "group"
+                else self.config.dynamic_monitor_user_mapping
+            )
+            return target_id in mapping.get(uid, [])
+
         delivery = await self.sender.send_message(
             pending.message,
             pending.groups,
@@ -800,6 +814,7 @@ class DynamicMonitor:
             group_starts=pending.group_starts,
             user_starts=pending.user_starts,
             on_part_sent=checkpoint,
+            is_target_active=is_target_active,
         )
         if check_generation is not None and not self._check_still_valid(
             uid, check_generation

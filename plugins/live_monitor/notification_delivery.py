@@ -48,12 +48,14 @@ class LiveNotificationDelivery:
         get_user_mapping: Callable[[], dict[str, list[str]]],
         get_at_all: Callable[[], dict[str, bool]],
         persist_state: Callable[[str], Awaitable[None]] | None = None,
+        is_current_state: Callable[[str, LiveRoomState], bool] | None = None,
     ):
         self._sender = sender
         self._get_group_mapping = get_group_mapping
         self._get_user_mapping = get_user_mapping
         self._get_at_all = get_at_all
         self._persist_state = persist_state
+        self._is_current_state = is_current_state
         # ponytail: per-room lock；短播时 end 须等 in-flight start 写完 pending
         self._room_locks: dict[str, asyncio.Lock] = {}
 
@@ -564,16 +566,24 @@ class LiveNotificationDelivery:
         setattr(state, f"pending_{status}", True)
         await self._persist(room_id)
 
+        def is_target_active(target_type: str, target_id: str) -> bool:
+            if self._is_current_state is not None and not self._is_current_state(
+                room_id, state
+            ):
+                return False
+            mapping = (
+                self._get_group_mapping()
+                if target_type == "group"
+                else self._get_user_mapping()
+            )
+            return target_id in mapping.get(room_id, [])
+
         async def prepared(pending: PendingDelivery) -> None:
             pending.groups = [
-                gid
-                for gid in pending.groups
-                if gid in self._get_group_mapping().get(room_id, [])
+                gid for gid in pending.groups if is_target_active("group", gid)
             ]
             pending.users = [
-                uid
-                for uid in pending.users
-                if uid in self._get_user_mapping().get(room_id, [])
+                uid for uid in pending.users if is_target_active("user", uid)
             ]
             setattr(state, f"pending_{status}_delivery", pending)
             await self._persist(room_id)
@@ -594,6 +604,7 @@ class LiveNotificationDelivery:
             pending=getattr(state, f"pending_{status}_delivery"),
             on_prepared=prepared,
             on_part_sent=checkpoint,
+            is_target_active=is_target_active,
         )
         if delivery.all_succeeded:
             return delivery
