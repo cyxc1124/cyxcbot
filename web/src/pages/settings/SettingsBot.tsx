@@ -33,9 +33,13 @@ export function SettingsBotPage() {
   const { showToast } = useToast()
   const { settings, setSettings, formDisabled, load } = useSettingsForm()
   const [saving, setSaving] = useState(false)
-  const [superuserText, setSuperuserText] = useState('')
-  const [statusCheckText, setStatusCheckText] = useState('')
-  const [sharedMediaDir, setSharedMediaDir] = useState('')
+  const [superuserText, setSuperuserText] = useState(() =>
+    formatQqInput(settings?.nonebot_superusers ?? []),
+  )
+  const [statusCheckText, setStatusCheckText] = useState(() =>
+    formatQqInput(settings?.status_check_allowed_qq ?? []),
+  )
+  const [sharedMediaDir, setSharedMediaDir] = useState(settings?.link_parser_shared_media_dir ?? '')
   const [syncedSettings, setSyncedSettings] = useState(settings)
 
   if (settings !== syncedSettings) {
