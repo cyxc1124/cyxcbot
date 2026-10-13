@@ -98,11 +98,6 @@ async def handle_dynamic_commands(bot: Bot, event: Event):
         dynamic_monitor_instance.is_running if dynamic_monitor_instance else "N/A",
     )
 
-    if not dynamic_monitor_instance:
-        logger.debug("动态监控实例不存在")
-        # 不回复，让其他处理器处理
-        return
-
     # 注释掉 is_running 检查，因为后台任务可能在运行但标志位有问题
     # if not dynamic_monitor_instance.is_running:
     #     logger.debug("动态监控服务未运行")
@@ -110,8 +105,8 @@ async def handle_dynamic_commands(bot: Bot, event: Event):
     #     return
 
     # 检查是否是动态查询命令（触发词可在 Web Admin 设置 → 命令 中自定义）
-    command_aliases = command_aliases_for_event(
-        get_config_service().get_snapshot().command_aliases, event
+    command_aliases = await command_aliases_for_event(
+        get_config_service().get_snapshot(), bot, event
     )
     mentioned = is_tome(event)
     is_latest = match_plain(
@@ -124,6 +119,10 @@ async def handle_dynamic_commands(bot: Bot, event: Event):
     if not (is_latest or is_pinned):
         logger.debug("消息 '{}' 不是动态查询命令", message_text)
         # 不是我们的命令，让其他处理器处理
+        return
+
+    if not dynamic_monitor_instance:
+        await send_event_text(bot, event, "动态查询服务暂不可用，请稍后重试")
         return
 
     try:

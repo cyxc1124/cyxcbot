@@ -16,7 +16,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import TYPE_CHECKING, Dict, List
+
+if TYPE_CHECKING:
+    from shared.config.types import AppConfigSnapshot
+
 
 # 额外“习惯性”前缀的出厂默认值：与 NoneBot 的 COMMAND_START 无关，
 # 可在 Web Admin → 设置 → 命令 中自定义（见 normalize_extra_prefixes）。
@@ -162,26 +166,39 @@ def merge_partial_command_aliases(current: dict, patch: Dict[str, dict]) -> dict
     return merged
 
 
-def command_aliases_for_event(
-    config: Dict[str, CommandAliasEntry], event: object
+async def command_aliases_for_event(
+    snapshot: AppConfigSnapshot, bot: object, event: object
 ) -> Dict[str, CommandAliasEntry]:
-    """Limit runtime arbitration to commands supported in the event's chat scope."""
+    """Limit arbitration to commands enabled for this actor and chat scope."""
     from nonebot.adapters.onebot.v11 import GroupMessageEvent
 
-    from shared.adapter.inbound import is_group_event, is_tome
+    from shared.adapter.inbound import group_id_of, is_group_event, is_tome
+    from shared.config.rust_rcon_policy import is_rust_rcon_enabled
+    from shared.status_check_policy import is_status_check_allowed
 
-    if not is_group_event(event):
-        return {
-            cid: entry
-            for cid, entry in config.items()
-            if cid in {"status", "dynamic_extract"}
-        }
-    onebot_group = isinstance(event, GroupMessageEvent)
+    config = snapshot.command_aliases
+    allowed = {"dynamic_extract"}
+    if await is_status_check_allowed(bot, event, snapshot):
+        allowed.add("status")
+    group_id = (group_id_of(event) or "").strip()
+    if is_group_event(event) and group_id:
+        allowed.update({"live_status", "live_monitor_list"})
+        if any(
+            group_id in group_ids
+            for group_ids in snapshot.dynamic_monitor_mapping.values()
+        ):
+            allowed.update(
+                {"dynamic_query_latest", "dynamic_query_pinned", "video_query_latest"}
+            )
+        if isinstance(event, GroupMessageEvent):
+            allowed.add("group_special_title")
+            if is_tome(event) and is_rust_rcon_enabled(snapshot, group_id=group_id):
+                allowed.update(cid for cid in config if cid.startswith("rust_player_"))
     return {
         cid: entry
+        if cid in allowed
+        else CommandAliasEntry(enabled=False, triggers=entry.triggers)
         for cid, entry in config.items()
-        if (cid != "group_special_title" or onebot_group)
-        and (not cid.startswith("rust_player_") or (onebot_group and is_tome(event)))
     }
 
 

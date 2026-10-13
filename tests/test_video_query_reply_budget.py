@@ -16,6 +16,8 @@ from nonebot.adapters.qq.event import GroupAtMessageCreateEvent
 
 from shared.adapter import outbound
 from shared.adapter.official_runtime import _bot_info
+from shared.config.command_aliases import normalize_command_aliases
+from shared.config.types import AppConfigSnapshot
 from utils.bilibili_api import VideoInfo
 
 
@@ -74,7 +76,8 @@ def _official_event():
 @pytest.fixture
 def pipeline(monkeypatch):
     plugin = _load_plugin()
-    service = SimpleNamespace(get_snapshot=lambda: SimpleNamespace(command_aliases={}))
+    snapshot = AppConfigSnapshot(command_aliases=normalize_command_aliases({}))
+    service = SimpleNamespace(get_snapshot=lambda: snapshot)
     monkeypatch.setattr(plugin, "get_config_service", lambda: service)
     monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
     monkeypatch.setattr(
@@ -85,6 +88,7 @@ def pipeline(monkeypatch):
     monkeypatch.setattr(bot, "send_to_group", api)
 
     def set_results(results, group_id="video-group"):
+        snapshot.dynamic_monitor_mapping = {str(uid): [group_id] for uid in results}
         monkeypatch.setattr(
             plugin,
             "get_cached_config",

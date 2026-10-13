@@ -141,7 +141,7 @@ async def test_check_status_permission_allows_superuser(monkeypatch):
     async def fake_superuser(bot, event):
         return True
 
-    monkeypatch.setattr(status_checker, "SUPERUSER", fake_superuser)
+    monkeypatch.setattr("nonebot.permission.SUPERUSER", fake_superuser)
 
     class FakeEvent:
         user_id = 12345
@@ -163,6 +163,9 @@ async def test_handle_status_command_private_message_requires_exact_trigger(
         return True
 
     monkeypatch.setattr(status_checker, "check_status_permission", fake_permission)
+    snapshot = status_checker.get_config_service().get_snapshot()
+    monkeypatch.setattr(snapshot, "status_check_group_restrict", False)
+    monkeypatch.setattr(snapshot, "status_check_private_restrict", False)
 
     private_event = MagicMock(spec=PrivateMessageEvent)
     private_event.is_tome.return_value = True
@@ -191,6 +194,9 @@ async def test_handle_status_command_group_at_bot_keeps_fuzzy_match(monkeypatch)
         return True
 
     monkeypatch.setattr(status_checker, "check_status_permission", fake_permission)
+    snapshot = status_checker.get_config_service().get_snapshot()
+    monkeypatch.setattr(snapshot, "status_check_group_restrict", False)
+    monkeypatch.setattr(snapshot, "status_check_private_restrict", False)
 
     group_event = MagicMock(spec=GroupMessageEvent)
     group_event.is_tome.return_value = True

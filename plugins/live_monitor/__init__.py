@@ -94,7 +94,7 @@ async def handle_live_status(bot: Bot, event: Event):
     text = plaintext_of(event)
     snap = get_config_service().get_snapshot()
     room_id_arg = match_command_arg(
-        text, "live_status", command_aliases_for_event(snap.command_aliases, event)
+        text, "live_status", await command_aliases_for_event(snap, bot, event)
     )
     if room_id_arg is None:
         return
@@ -184,7 +184,7 @@ async def handle_list_monitor(bot: Bot, event: Event):
     if not match_plain(
         text,
         "live_monitor_list",
-        command_aliases_for_event(snap.command_aliases, event),
+        await command_aliases_for_event(snap, bot, event),
         is_tome=is_tome(event),
     ):
         return

@@ -66,7 +66,7 @@ async def handle_rust_player(bot: Bot, event: GroupMessageEvent) -> None:
         return
 
     snap = get_config_service().get_snapshot()
-    command_aliases = command_aliases_for_event(snap.command_aliases, event)
+    command_aliases = await command_aliases_for_event(snap, bot, event)
     text = event.get_plaintext().strip()
     group_id = str(event.group_id)
     user_id = str(event.user_id)

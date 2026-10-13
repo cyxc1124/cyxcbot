@@ -98,8 +98,8 @@ async def handle_video_commands(bot: Bot, event: Event):
         return
 
     # 检查是否是视频查询命令（触发词可在 Web Admin 设置 → 命令 中自定义）
-    command_aliases = command_aliases_for_event(
-        get_config_service().get_snapshot().command_aliases, event
+    command_aliases = await command_aliases_for_event(
+        get_config_service().get_snapshot(), bot, event
     )
     is_command = match_plain(
         message_text,
