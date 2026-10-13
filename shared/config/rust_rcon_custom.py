@@ -187,6 +187,7 @@ def custom_command_name_conflict(
     snapshot: AppConfigSnapshot,
     *,
     exclude_id: int | None = None,
+    check_builtin_commands: bool = True,
 ) -> str | None:
     """Return error if *name* collides with aliases / other custom commands.
 
@@ -194,10 +195,11 @@ def custom_command_name_conflict(
     semantics as runtime ``match_plain(..., is_tome=True)``, so names like
     ``签到奖励`` conflict with trigger ``签到``.
     """
-    for command_id in COMMAND_LABELS:
-        if match_plain(name, command_id, snapshot.command_aliases, is_tome=True):
-            label = COMMAND_LABELS[command_id]
-            return f"指令名「{name}」与命令「{label}」冲突"
+    if check_builtin_commands:
+        for command_id in COMMAND_LABELS:
+            if match_plain(name, command_id, snapshot.command_aliases, is_tome=True):
+                label = COMMAND_LABELS[command_id]
+                return f"指令名「{name}」与命令「{label}」冲突"
 
     for binding in snapshot.rust_rcon_bindings:
         if binding.enabled and triggers_conflict(binding.alias, name):
