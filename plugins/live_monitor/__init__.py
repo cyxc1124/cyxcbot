@@ -6,12 +6,17 @@ B 站直播监控插件：WebSocket 弹幕 + API 轮询，开播/下播推送。
 
 from nonebot import get_driver, on_message
 from nonebot.adapters import Bot, Event
+from nonebot.exception import FinishedException
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
 from shared.adapter.bots import is_console_bot
 from shared.adapter.inbound import group_id_of, is_group_event, is_tome, plaintext_of
-from shared.config.command_aliases import match_command_arg, match_plain
+from shared.config.command_aliases import (
+    command_aliases_for_event,
+    match_command_arg,
+    match_plain,
+)
 from shared.config.service import get_config_service
 from shared.notify.message_template import safe_text_message
 from shared.onebot.lifecycle import stop_monitor_if_no_bots
@@ -89,7 +94,9 @@ async def handle_live_status(bot: Bot, event: Event):
         return
     text = plaintext_of(event)
     snap = get_config_service().get_snapshot()
-    room_id_arg = match_command_arg(text, "live_status", snap.command_aliases)
+    room_id_arg = match_command_arg(
+        text, "live_status", await command_aliases_for_event(snap, bot, event)
+    )
     if room_id_arg is None:
         return
     room_id = room_id_arg.strip()
@@ -159,6 +166,8 @@ async def handle_live_status(bot: Bot, event: Event):
                 )
             )
 
+    except FinishedException:
+        raise
     except Exception as e:
         logger.error(f"查询直播状态失败: {e}")
         await live_status_cmd.finish(safe_text_message(f"查询失败：{str(e)}"))
@@ -176,7 +185,10 @@ async def handle_list_monitor(bot: Bot, event: Event):
     text = plaintext_of(event)
     snap = get_config_service().get_snapshot()
     if not match_plain(
-        text, "live_monitor_list", snap.command_aliases, is_tome=is_tome(event)
+        text,
+        "live_monitor_list",
+        await command_aliases_for_event(snap, bot, event),
+        is_tome=is_tome(event),
     ):
         return
 

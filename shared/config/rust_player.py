@@ -76,9 +76,12 @@ def shop_list_trigger_hint(command_aliases: Dict[str, CommandAliasEntry]) -> str
     return entry.triggers[0] if entry.triggers else "商品列表"
 
 
-def parse_shop_list_page(
-    text: str, command_aliases: Dict[str, CommandAliasEntry]
-) -> int | None:
+def _match_shop_list_command(
+    text: str,
+    command_aliases: Dict[str, CommandAliasEntry],
+    *,
+    prefixes: frozenset[str] | None = None,
+) -> tuple[str, int] | None:
     """Match shop list command; return 1-based page number or None."""
     entry = resolve_entry("rust_player_shop_list", command_aliases)
     if not entry.enabled or not entry.triggers:
@@ -87,21 +90,32 @@ def parse_shop_list_page(
     candidates = [text]
     from shared.config.command_aliases import _strip_command_prefix
 
-    stripped = _strip_command_prefix(text)
+    stripped = _strip_command_prefix(text, prefixes)
     if stripped is not None:
         candidates.append(stripped.strip())
     for candidate in candidates:
         for trigger in sorted(entry.triggers, key=len, reverse=True):
             if candidate == trigger:
-                return 1
+                return trigger, 1
             if candidate.startswith(trigger):
                 suffix = candidate[len(trigger) :]
                 if not suffix:
-                    return 1
+                    return trigger, 1
                 if suffix.isdigit():
                     page = int(suffix)
-                    return page if page >= 1 else None
+                    return (trigger, page) if page >= 1 else None
     return None
+
+
+def parse_shop_list_page(
+    text: str,
+    command_aliases: Dict[str, CommandAliasEntry],
+    *,
+    prefixes: frozenset[str] | None = None,
+) -> int | None:
+    """Match shop list command; return 1-based page number or None."""
+    command = _match_shop_list_command(text, command_aliases, prefixes=prefixes)
+    return command[1] if command else None
 
 
 def shop_redeem_trigger_hint(command_aliases: Dict[str, CommandAliasEntry]) -> str:
@@ -110,12 +124,17 @@ def shop_redeem_trigger_hint(command_aliases: Dict[str, CommandAliasEntry]) -> s
 
 
 def parse_shop_redeem_args(
-    text: str, command_aliases: Dict[str, CommandAliasEntry]
+    text: str,
+    command_aliases: Dict[str, CommandAliasEntry],
+    *,
+    prefixes: frozenset[str] | None = None,
 ) -> tuple[str, int] | None:
     """Return ``(identifier, quantity)`` when redeem command matches."""
     from utils.rust_rcon.give import parse_quantity_token
 
-    arg = match_command_arg(text, "rust_player_shop_redeem", command_aliases)
+    arg = match_command_arg(
+        text, "rust_player_shop_redeem", command_aliases, prefixes=prefixes
+    )
     if arg is None or not arg.strip():
         return None
     arg = arg.strip()

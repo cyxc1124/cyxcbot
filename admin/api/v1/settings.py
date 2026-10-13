@@ -18,16 +18,29 @@ from admin.services.connection_status import (
 )
 from shared.adapter.ids import is_qq_user_id
 from shared.config.command_aliases import (
+    CommandAliasEntry,
+    command_prefixes,
+    match_command_arg,
+    match_plain,
     merge_partial_command_aliases,
     normalize_command_aliases,
     normalize_extra_prefixes,
+    parse_extract_dynamic_id,
     serialize_command_aliases,
     validation_error,
 )
 from shared.config.message_templates import MESSAGE_TEMPLATE_KEYS
-from shared.config.rust_rcon import command_aliases_rust_rcon_conflict
-from shared.config.rust_rcon_custom import command_aliases_custom_command_conflict
+from shared.config.rust_player import parse_shop_list_page, parse_shop_redeem_args
+from shared.config.rust_rcon import (
+    command_aliases_rust_rcon_conflict,
+    match_rust_rcon_binding,
+)
+from shared.config.rust_rcon_custom import (
+    command_aliases_custom_command_conflict,
+    match_rust_rcon_custom_command,
+)
 from shared.config.service import get_config_service
+from shared.group_special_title import parse_title_command
 from shared.security.crypto import encrypt_value
 
 router = APIRouter(
@@ -35,6 +48,89 @@ router = APIRouter(
     tags=["settings"],
     dependencies=[RequireSetup],
 )
+
+
+def _matches_builtin(text, cid, config, prefixes, *, group: bool) -> bool:
+    if cid == "dynamic_extract":
+        return parse_extract_dynamic_id(text, config, prefixes=prefixes) is not None
+    if cid == "group_special_title":
+        return parse_title_command(text, config, prefixes=prefixes) is not None
+    if cid in ("live_status", "rust_player_bind"):
+        return match_command_arg(text, cid, config, prefixes=prefixes) is not None
+    if cid == "rust_player_shop_list":
+        return parse_shop_list_page(text, config, prefixes=prefixes) is not None
+    if cid == "rust_player_shop_redeem":
+        return parse_shop_redeem_args(text, config, prefixes=prefixes) is not None
+    return match_plain(text, cid, config, is_tome=group, prefixes=prefixes)
+
+
+def _new_rcon_prefix_conflict(config, snapshot, extra_prefixes) -> str | None:
+    """Reject inputs newly shared by actual command grammars in each chat scope."""
+    old_prefixes = command_prefixes(snapshot.command_extra_prefixes)
+    new_prefixes = command_prefixes(extra_prefixes)
+    bindings = [record for record in snapshot.rust_rcon_bindings if record.enabled]
+    binding_ids = {record.id for record in bindings}
+    for group in (False, True):
+        records = [(record, record.alias, False) for record in bindings]
+        if group:
+            records.extend(
+                (record, record.name, True)
+                for record in snapshot.rust_rcon_custom_commands
+                if record.enabled and record.binding_id in binding_ids
+            )
+        command_ids = config if group else ("status", "dynamic_extract")
+        for record, name, custom in records:
+            for cid in command_ids:
+                entry = config.get(cid)
+                if entry is None or not entry.enabled:
+                    continue
+                for trigger in entry.triggers:
+                    single = {cid: CommandAliasEntry(enabled=True, triggers=[trigger])}
+                    bases = {trigger, name, f"{name} {trigger}"}
+                    if cid == "dynamic_extract":
+                        bases.update(
+                            {
+                                trigger + "1234567890",
+                                trigger + "https://t.bilibili.com/123",
+                                trigger + "https://www.bilibili.com/opus/123",
+                            }
+                        )
+                    elif cid == "rust_player_shop_list":
+                        bases.add(trigger + "1")
+                    elif cid in (
+                        "group_special_title",
+                        "live_status",
+                        "rust_player_bind",
+                        "rust_player_shop_redeem",
+                    ):
+                        bases.add(trigger + " status")
+                    inputs = bases | {
+                        prefix + text
+                        for prefix in old_prefixes | new_prefixes
+                        for text in bases
+                    }
+                    for text in inputs:
+                        collisions = [
+                            _matches_builtin(text, cid, single, prefixes, group=group)
+                            and (
+                                match_rust_rcon_custom_command(
+                                    text,
+                                    [record],
+                                    enabled_binding_ids=binding_ids,
+                                    prefixes=prefixes,
+                                )
+                                if custom
+                                else match_rust_rcon_binding(
+                                    text, [record], prefixes=prefixes
+                                )
+                            )
+                            is not None
+                            for prefixes in (old_prefixes, new_prefixes)
+                        ]
+                        if collisions == [False, True]:
+                            kind = "自定义指令" if custom else "绑定"
+                            return f"新增前缀使触发词「{trigger}」与RCON {kind}「{name}」冲突"
+    return None
 
 
 @router.get("", response_model=SettingsResponse)
@@ -111,7 +207,13 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
                     status_code=400, detail="用户 ID 须为 QQ 号或 8–64 位官方 openid"
                 )
             updates[key] = json.dumps(cleaned, ensure_ascii=False)
-    if body.command_aliases is not None:
+    if body.command_aliases is not None or body.command_extra_prefixes is not None:
+        snap = svc.get_snapshot()
+        extra_prefixes = (
+            normalize_extra_prefixes(body.command_extra_prefixes)
+            if body.command_extra_prefixes is not None
+            else snap.command_extra_prefixes
+        )
         # 与当前快照合并后再 normalize：
         # 1) 只传部分命令时，未提及的命令保留原有配置（而非被
         #    normalize_command_aliases 的缺省填充逻辑重置为出厂默认）；
@@ -119,35 +221,40 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         #    只取客户端真正传入的字段与当前值合并，而不是用 Pydantic 为未传
         #    字段填的默认值（enabled=True/triggers=[]）整条覆盖，否则单独
         #    改开关会清空触发词、单独改触发词会误重启用。
-        current = serialize_command_aliases(svc.get_snapshot().command_aliases)
+        current = serialize_command_aliases(snap.command_aliases)
         patch = {
             cid: entry.model_dump(exclude_unset=True)
-            for cid, entry in body.command_aliases.items()
+            for cid, entry in (body.command_aliases or {}).items()
         }
         normalized = normalize_command_aliases(
             merge_partial_command_aliases(current, patch)
         )
-        error = validation_error(normalized)
+        error = validation_error(normalized, extra_prefixes)
         if error:
             raise HTTPException(status_code=400, detail=error)
-        snap = svc.get_snapshot()
-        rcon_conflict = command_aliases_rust_rcon_conflict(
-            normalized, snap.rust_rcon_bindings
-        )
-        if rcon_conflict:
-            raise HTTPException(status_code=400, detail=rcon_conflict)
-        custom_conflict = command_aliases_custom_command_conflict(
-            normalized, snap.rust_rcon_custom_commands
-        )
-        if custom_conflict:
-            raise HTTPException(status_code=400, detail=custom_conflict)
-        updates["command_aliases"] = json.dumps(
-            serialize_command_aliases(normalized), ensure_ascii=False
-        )
-    if body.command_extra_prefixes is not None:
-        updates["command_extra_prefixes"] = json.dumps(
-            normalize_extra_prefixes(body.command_extra_prefixes), ensure_ascii=False
-        )
+        if body.command_aliases is not None:
+            rcon_conflict = command_aliases_rust_rcon_conflict(
+                normalized, snap.rust_rcon_bindings
+            )
+            if rcon_conflict:
+                raise HTTPException(status_code=400, detail=rcon_conflict)
+            custom_conflict = command_aliases_custom_command_conflict(
+                normalized, snap.rust_rcon_custom_commands
+            )
+            if custom_conflict:
+                raise HTTPException(status_code=400, detail=custom_conflict)
+            updates["command_aliases"] = json.dumps(
+                serialize_command_aliases(normalized), ensure_ascii=False
+            )
+        if body.command_extra_prefixes is not None:
+            prefix_conflict = _new_rcon_prefix_conflict(
+                normalized, snap, extra_prefixes
+            )
+            if prefix_conflict:
+                raise HTTPException(status_code=400, detail=prefix_conflict)
+            updates["command_extra_prefixes"] = json.dumps(
+                extra_prefixes, ensure_ascii=False
+            )
     if body.official_qq_app_id is not None:
         updates["official_qq_app_id"] = body.official_qq_app_id.strip()
     if body.official_qq_app_secret is not None:

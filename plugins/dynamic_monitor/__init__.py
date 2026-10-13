@@ -11,7 +11,7 @@ from nonebot.log import logger
 from shared.adapter.bots import is_console_bot
 from shared.adapter.inbound import group_id_of, is_group_event, is_tome, plaintext_of
 from shared.adapter.outbound import send_event_message, send_event_text
-from shared.config.command_aliases import match_plain
+from shared.config.command_aliases import command_aliases_for_event, match_plain
 from shared.config.service import get_config_service
 from shared.onebot.lifecycle import stop_monitor_if_no_bots
 
@@ -98,11 +98,6 @@ async def handle_dynamic_commands(bot: Bot, event: Event):
         dynamic_monitor_instance.is_running if dynamic_monitor_instance else "N/A",
     )
 
-    if not dynamic_monitor_instance:
-        logger.debug("动态监控实例不存在")
-        # 不回复，让其他处理器处理
-        return
-
     # 注释掉 is_running 检查，因为后台任务可能在运行但标志位有问题
     # if not dynamic_monitor_instance.is_running:
     #     logger.debug("动态监控服务未运行")
@@ -110,7 +105,9 @@ async def handle_dynamic_commands(bot: Bot, event: Event):
     #     return
 
     # 检查是否是动态查询命令（触发词可在 Web Admin 设置 → 命令 中自定义）
-    command_aliases = get_config_service().get_snapshot().command_aliases
+    command_aliases = await command_aliases_for_event(
+        get_config_service().get_snapshot(), bot, event
+    )
     mentioned = is_tome(event)
     is_latest = match_plain(
         message_text, "dynamic_query_latest", command_aliases, is_tome=mentioned
@@ -122,6 +119,10 @@ async def handle_dynamic_commands(bot: Bot, event: Event):
     if not (is_latest or is_pinned):
         logger.debug("消息 '{}' 不是动态查询命令", message_text)
         # 不是我们的命令，让其他处理器处理
+        return
+
+    if not dynamic_monitor_instance:
+        await send_event_text(bot, event, "动态查询服务暂不可用，请稍后重试")
         return
 
     try:

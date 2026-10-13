@@ -5,7 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from shared.config.command_aliases import COMMAND_LABELS, match_plain
+from shared.config.command_aliases import (
+    COMMAND_LABELS,
+    match_plain,
+)
+from shared.config.command_aliases import (
+    _strip_command_prefix as _strip_with_prefixes,
+)
 from shared.config.rust_player import normalize_steam_id
 from shared.config.rust_rcon import MAX_ALIAS_LENGTH, normalize_alias
 
@@ -88,6 +94,7 @@ def match_rust_rcon_custom_command(
     commands: list[RustRconCustomCommandRecord],
     *,
     enabled_binding_ids: set[int] | None = None,
+    prefixes: frozenset[str] | None = None,
 ) -> tuple[RustRconCustomCommandRecord, str] | None:
     """Match ``[prefix]name [args]``; return (command, remainder) or None."""
     enabled = [
@@ -101,7 +108,11 @@ def match_rust_rcon_custom_command(
 
     text = text.strip()
     candidates = [text]
-    stripped = _strip_command_prefix(text)
+    stripped = (
+        _strip_command_prefix(text)
+        if prefixes is None
+        else _strip_with_prefixes(text, prefixes)
+    )
     if stripped is not None:
         candidates.append(stripped.strip())
 

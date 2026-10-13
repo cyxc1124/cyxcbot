@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Literal
 
 import aiohttp
@@ -19,9 +18,8 @@ from shared.adapter.inbound import (
 )
 from shared.adapter.outbound import send_event_message
 from shared.config.command_aliases import (
-    CommandAliasEntry,
-    prefix_alternation,
-    trigger_alternation,
+    command_aliases_for_event,
+    parse_extract_dynamic_id,
 )
 from shared.config.message_templates import DynamicMessageTemplates
 from shared.config.service import get_config_service
@@ -41,23 +39,6 @@ group_dynamic_extract = on_message(priority=4, block=False)
 private_dynamic_extract = on_message(priority=4, block=False)
 
 
-def _build_extract_pattern(
-    command_aliases: dict[str, CommandAliasEntry],
-) -> re.Pattern[str] | None:
-    """Build the ``{prefix}{触发词}{id|url}`` pattern from configured trigger words."""
-    alternation = trigger_alternation("dynamic_extract", command_aliases)
-    if alternation is None:
-        return None
-    return re.compile(
-        rf"^(?:{prefix_alternation()})(?:{alternation})(?:"
-        r"https?://(?:www\.)?bilibili\.com/opus/(\d+)|"
-        r"https?://t\.bilibili\.com/(\d+)|"
-        r"(\d{10,})"
-        r")\s*$",
-        re.IGNORECASE,
-    )
-
-
 def _register_extract_startup() -> None:
     try:
         from nonebot import get_driver
@@ -74,19 +55,6 @@ def _register_extract_startup() -> None:
 
 
 _register_extract_startup()
-
-
-def parse_extract_dynamic_id(
-    message_text: str, command_aliases: dict[str, CommandAliasEntry]
-) -> str | None:
-    """Return dynamic ID from '{prefix}{触发词}{id|url}' message, or None."""
-    pattern = _build_extract_pattern(command_aliases)
-    if pattern is None:
-        return None
-    match = pattern.match(message_text.strip())
-    if not match:
-        return None
-    return next((group for group in match.groups() if group), None)
 
 
 def build_extract_reply_message(
@@ -156,7 +124,9 @@ async def _handle_extract(bot: Bot, event: Event) -> None:
 
     message_text = event.get_plaintext().strip()
     snap = get_config_service().get_snapshot()
-    dynamic_id = parse_extract_dynamic_id(message_text, snap.command_aliases)
+    dynamic_id = parse_extract_dynamic_id(
+        message_text, await command_aliases_for_event(snap, bot, event)
+    )
     if not dynamic_id:
         return
 

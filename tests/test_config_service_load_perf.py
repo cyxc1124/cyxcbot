@@ -556,3 +556,470 @@ async def test_official_settings_permissions_and_friend_cache_round_trip(
     )
     assert not cleared.official_qq.secret.configured
     assert not service.get_snapshot().official_qq_app_secret
+
+
+@pytest.mark.asyncio
+async def test_settings_validates_aliases_with_proposed_prefixes(
+    db_context, monkeypatch
+):
+    import json
+
+    from fastapi import HTTPException
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+
+    _, factory, ConfigService, *_, SystemSetting = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    monkeypatch.setattr(
+        "shared.config.command_aliases._configured_command_starts",
+        lambda: frozenset({"/"}),
+    )
+    await service.load()
+    aliases = {"live_status": {"triggers": ["/status"]}}
+    with pytest.raises(HTTPException, match="触发词冲突") as exc:
+        await settings_api.update_settings(
+            SettingsUpdateRequest(command_aliases=aliases), None
+        )
+    assert exc.value.status_code == 400
+    async with factory() as session:
+        assert await session.get(SystemSetting, "command_aliases") is None
+
+    saved = await settings_api.update_settings(
+        SettingsUpdateRequest(
+            command_aliases={"live_status": {"triggers": ["~status"]}},
+            command_extra_prefixes=[],
+        ),
+        None,
+    )
+    assert saved.command_extra_prefixes == []
+    with pytest.raises(HTTPException, match="触发词冲突"):
+        await settings_api.update_settings(
+            SettingsUpdateRequest(command_extra_prefixes=["~"]), None
+        )
+    async with factory() as session:
+        assert (
+            json.loads(
+                (await session.get(SystemSetting, "command_extra_prefixes")).value
+            )
+            == []
+        )
+    saved = await settings_api.update_settings(
+        SettingsUpdateRequest(
+            command_aliases={"live_status": {"triggers": ["~直播状态"]}},
+            command_extra_prefixes=["~"],
+        ),
+        None,
+    )
+    assert saved.command_extra_prefixes == ["~"]
+    assert saved.command_aliases["live_status"].triggers == ["~直播状态"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command_id", ["dynamic_extract", "group_special_title"])
+async def test_settings_accepts_prefix_required_argument_alias(
+    db_context, monkeypatch, command_id
+):
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+
+    _, factory, ConfigService, *_ = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    monkeypatch.setattr(
+        "shared.config.command_aliases._configured_command_starts",
+        lambda: frozenset({"/"}),
+    )
+    await service.load()
+    saved = await settings_api.update_settings(
+        SettingsUpdateRequest(command_aliases={command_id: {"triggers": ["/status"]}}),
+        None,
+    )
+    assert saved.command_aliases[command_id].triggers == ["/status"]
+    await service.load()
+    assert service.get_snapshot().command_aliases[command_id].triggers == ["/status"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("collision_kind", ["binding", "custom"])
+async def test_prefix_only_patch_preserves_legacy_rcon_alias_collisions(
+    db_context, monkeypatch, collision_kind
+):
+    import json
+
+    from fastapi import HTTPException
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+    from shared.db.models import RustRconBinding, RustRconCustomCommand
+
+    _, factory, ConfigService, *_, SystemSetting = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    async with factory() as session, session.begin():
+        binding = RustRconBinding(
+            alias="status" if collision_kind == "binding" else "rcon1", host="localhost"
+        )
+        session.add(binding)
+        await session.flush()
+        if collision_kind == "custom":
+            session.add(
+                RustRconCustomCommand(
+                    name="status", template="status", binding_id=binding.id
+                )
+            )
+    await service.load()
+    saved = await settings_api.update_settings(
+        SettingsUpdateRequest(command_extra_prefixes=[]), None
+    )
+    assert saved.command_extra_prefixes == []
+    with pytest.raises(HTTPException, match="冲突") as exc:
+        await settings_api.update_settings(
+            SettingsUpdateRequest(
+                command_aliases={"live_status": {"triggers": ["直播状态"]}}
+            ),
+            None,
+        )
+    assert exc.value.status_code == 400
+    async with factory() as session:
+        assert (
+            json.loads(
+                (await session.get(SystemSetting, "command_extra_prefixes")).value
+            )
+            == []
+        )
+        assert await session.get(SystemSetting, "command_aliases") is None
+
+
+@pytest.mark.asyncio
+async def test_settings_rejects_reverse_prefix_required_argument_overlap(
+    db_context, monkeypatch
+):
+    from fastapi import HTTPException
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+
+    _, factory, ConfigService, *_, SystemSetting = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    monkeypatch.setattr(
+        "shared.config.command_aliases._configured_command_starts",
+        lambda: frozenset({"/"}),
+    )
+    await service.load()
+    aliases = {
+        "status": {"enabled": False},
+        "live_status": {"triggers": ["/status"]},
+        "group_special_title": {"triggers": ["status"]},
+    }
+    with pytest.raises(HTTPException, match="触发词冲突") as exc:
+        await settings_api.update_settings(
+            SettingsUpdateRequest(command_aliases=aliases), None
+        )
+    assert exc.value.status_code == 400
+    async with factory() as session:
+        assert await session.get(SystemSetting, "command_aliases") is None
+    aliases["group_special_title"]["enabled"] = False
+    saved = await settings_api.update_settings(
+        SettingsUpdateRequest(command_aliases=aliases), None
+    )
+    assert saved.command_aliases["live_status"].triggers == ["/status"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "trigger,name,old_prefixes,new_prefixes,rejected",
+    [
+        ("status", "!status", [], ["!"], True),
+        ("!status", "status", [], ["!"], True),
+        ("status", "!!status", ["!"], ["!", "!!"], True),
+        ("!rcon1 status", "rcon1", [], ["!"], True),
+        ("con1 status", "rcon1", [], ["r"], True),
+        ("!status", ".status", [], ["!", "."], True),
+        ("status", "!status", [], ["!", "!sta"], True),
+        ("status", "!status", ["!"], [], False),
+        ("status", "status", [], ["~"], True),
+    ],
+)
+async def test_prefix_patch_rejects_new_inputs_in_either_chat_scope(
+    db_context, monkeypatch, trigger, name, old_prefixes, new_prefixes, rejected
+):
+    import json
+
+    from fastapi import HTTPException
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+    from shared.config.command_aliases import (
+        normalize_command_aliases,
+        serialize_command_aliases,
+    )
+    from shared.db.models import RustRconBinding
+
+    _, factory, ConfigService, *_, SystemSetting = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    monkeypatch.setattr(
+        "shared.config.command_aliases._configured_command_starts",
+        lambda: frozenset({"/"}),
+    )
+    aliases = normalize_command_aliases({"status": {"triggers": [trigger]}})
+    await service.set_settings(
+        {
+            "command_extra_prefixes": json.dumps(old_prefixes),
+            "command_aliases": json.dumps(serialize_command_aliases(aliases)),
+        }
+    )
+    async with factory() as session, session.begin():
+        binding = RustRconBinding(alias=name, host="localhost")
+        session.add(binding)
+        await session.flush()
+    await service.load()
+    body = SettingsUpdateRequest(command_extra_prefixes=new_prefixes)
+    if rejected:
+        with pytest.raises(HTTPException, match="冲突") as exc:
+            await settings_api.update_settings(body, None)
+        assert exc.value.status_code == 400
+    else:
+        saved = await settings_api.update_settings(body, None)
+        assert saved.command_extra_prefixes == new_prefixes
+    async with factory() as session:
+        assert json.loads(
+            (await session.get(SystemSetting, "command_extra_prefixes")).value
+        ) == (old_prefixes if rejected else new_prefixes)
+    assert service.get_snapshot().command_extra_prefixes == (
+        old_prefixes if rejected else new_prefixes
+    )
+
+
+@pytest.mark.asyncio
+async def test_prefix_patch_rejects_new_private_extract_rcon_collision(
+    db_context, monkeypatch
+):
+    import json
+
+    from fastapi import HTTPException
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+    from shared.db.models import RustRconBinding
+
+    _, factory, ConfigService, *_, SystemSetting = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    monkeypatch.setattr(
+        "shared.config.command_aliases._configured_command_starts",
+        lambda: frozenset({"/"}),
+    )
+    await service.set_settings({"command_extra_prefixes": "[]"})
+    async with factory() as session, session.begin():
+        binding = RustRconBinding(
+            alias="!提取1234567890",
+            host="localhost",
+        )
+        session.add(binding)
+        await session.flush()
+    await service.load()
+    with pytest.raises(HTTPException, match="冲突") as exc:
+        await settings_api.update_settings(
+            SettingsUpdateRequest(command_extra_prefixes=["!"]), None
+        )
+    assert exc.value.status_code == 400
+    async with factory() as session:
+        assert (
+            json.loads(
+                (await session.get(SystemSetting, "command_extra_prefixes")).value
+            )
+            == []
+        )
+
+
+@pytest.mark.asyncio
+async def test_prefix_only_patch_preserves_legacy_group_only_custom_collision(
+    db_context, monkeypatch
+):
+    from fastapi import HTTPException
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+    from shared.db.models import RustRconBinding, RustRconCustomCommand
+
+    _, factory, ConfigService, *_ = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    await service.set_settings({"command_extra_prefixes": '["!"]'})
+    async with factory() as session, session.begin():
+        binding = RustRconBinding(alias="rcon1", host="localhost")
+        session.add(binding)
+        await session.flush()
+        session.add(
+            RustRconCustomCommand(
+                name="!status", template="status", binding_id=binding.id
+            )
+        )
+    await service.load()
+    saved = await settings_api.update_settings(
+        SettingsUpdateRequest(command_extra_prefixes=[]), None
+    )
+    assert saved.command_extra_prefixes == []
+    with pytest.raises(HTTPException, match="冲突"):
+        await settings_api.update_settings(
+            SettingsUpdateRequest(
+                command_aliases={"live_status": {"triggers": ["直播状态"]}}
+            ),
+            None,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("custom", [False, True], ids=["binding", "custom"])
+@pytest.mark.parametrize(
+    "cid,trigger,name,old_prefixes,new_prefixes,enabled,parent_enabled,rejected",
+    [
+        ("status", "status", "server", [], ["$"], True, True, True),
+        ("live_monitor_list", "list", "server", [], ["$"], True, True, True),
+        ("status", "status", "server", ["$"], [], True, True, False),
+        ("status", "status", "server", ["$"], ["$"], True, True, False),
+        ("rust_player_bind", "!bind", "bind", ["!"], ["!", "$"], True, True, False),
+        ("rust_player_bind", "!bind", "bind", ["!", "!bin"], ["!"], True, True, True),
+        ("live_monitor_list", "!list", "list", [], ["!"], True, True, True),
+        ("live_status", "!live", "live", [], ["!"], True, True, True),
+        ("dynamic_query_latest", "!latest", "latest", [], ["!"], True, True, True),
+        ("dynamic_query_pinned", "!pinned", "pinned", [], ["!"], True, True, True),
+        ("video_query_latest", "!video", "video", [], ["!"], True, True, True),
+        ("group_special_title", "头衔", "!头衔", [], ["!"], True, True, True),
+        ("rust_player_bind", "!bind", "bind", [], ["!"], True, True, True),
+        ("rust_player_checkin", "!checkin", "checkin", [], ["!"], True, True, True),
+        ("rust_player_points", "!points", "points", [], ["!"], True, True, True),
+        ("rust_player_shop_list", "!items", "items", [], ["!"], True, True, True),
+        ("rust_player_shop_redeem", "!redeem", "redeem", [], ["!"], True, True, True),
+        ("live_monitor_list", "list", "!list", [], ["!"], True, True, True),
+        ("live_monitor_list", "!list", "list", ["!"], ["!"], True, True, False),
+        ("live_monitor_list", "!list", "list", ["!"], [], True, True, False),
+        ("rust_player_bind", "!bind", "bind", [], ["!", "!bin"], True, True, False),
+        ("rust_player_bind", "!bind", ".bind", [], ["!", "."], True, True, False),
+        ("live_monitor_list", "!list", "list", [], ["!"], False, True, False),
+        ("live_monitor_list", "!list", "list", [], ["!"], True, False, False),
+    ],
+)
+async def test_prefix_patch_compares_group_rcon_collisions_separately(
+    db_context,
+    monkeypatch,
+    custom,
+    cid,
+    trigger,
+    name,
+    old_prefixes,
+    new_prefixes,
+    enabled,
+    parent_enabled,
+    rejected,
+):
+    import json
+
+    from fastapi import HTTPException
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+    from shared.config.command_aliases import (
+        COMMAND_DEFAULTS,
+        normalize_command_aliases,
+        serialize_command_aliases,
+    )
+    from shared.db.models import RustRconBinding, RustRconCustomCommand
+
+    _, factory, ConfigService, *_, SystemSetting = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    monkeypatch.setattr(
+        "shared.config.command_aliases._configured_command_starts",
+        lambda: frozenset({"/"}),
+    )
+    raw_aliases = {command_id: {"enabled": False} for command_id in COMMAND_DEFAULTS}
+    raw_aliases[cid] = {"triggers": [trigger], "enabled": enabled}
+    aliases = normalize_command_aliases(raw_aliases)
+    await service.set_settings(
+        {
+            "command_extra_prefixes": json.dumps(old_prefixes),
+            "command_aliases": json.dumps(serialize_command_aliases(aliases)),
+        }
+    )
+    async with factory() as session, session.begin():
+        binding = RustRconBinding(
+            alias="rcon1" if custom else name,
+            host="localhost",
+            enabled=parent_enabled,
+        )
+        session.add(binding)
+        await session.flush()
+        if custom:
+            session.add(
+                RustRconCustomCommand(
+                    name=name, template="status", binding_id=binding.id
+                )
+            )
+    await service.load()
+    body = SettingsUpdateRequest(command_extra_prefixes=new_prefixes)
+    if rejected:
+        with pytest.raises(HTTPException, match="冲突") as exc:
+            await settings_api.update_settings(body, None)
+        assert exc.value.status_code == 400
+    else:
+        saved = await settings_api.update_settings(body, None)
+        assert saved.command_extra_prefixes == new_prefixes
+    expected = old_prefixes if rejected else new_prefixes
+    async with factory() as session:
+        assert (
+            json.loads(
+                (await session.get(SystemSetting, "command_extra_prefixes")).value
+            )
+            == expected
+        )
+    assert service.get_snapshot().command_extra_prefixes == expected
+
+
+@pytest.mark.asyncio
+async def test_prefix_patch_compares_group_custom_extract_grammar(
+    db_context, monkeypatch
+):
+    from fastapi import HTTPException
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+    from shared.db.models import RustRconBinding, RustRconCustomCommand
+
+    _, factory, ConfigService, *_ = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    monkeypatch.setattr(
+        "shared.config.command_aliases._configured_command_starts",
+        lambda: frozenset({"/"}),
+    )
+    await service.set_settings({"command_extra_prefixes": "[]"})
+    async with factory() as session, session.begin():
+        binding = RustRconBinding(alias="rcon1", host="localhost")
+        session.add(binding)
+        await session.flush()
+        session.add(
+            RustRconCustomCommand(
+                name="!提取1234567890", template="status", binding_id=binding.id
+            )
+        )
+    await service.load()
+    with pytest.raises(HTTPException, match="冲突") as exc:
+        await settings_api.update_settings(
+            SettingsUpdateRequest(command_extra_prefixes=["!"]), None
+        )
+    assert exc.value.status_code == 400
+    assert service.get_snapshot().command_extra_prefixes == []

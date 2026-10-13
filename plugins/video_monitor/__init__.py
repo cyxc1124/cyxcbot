@@ -24,7 +24,7 @@ from shared.adapter.outbound import (
     send_event_message,
     send_event_text,
 )
-from shared.config.command_aliases import match_plain
+from shared.config.command_aliases import command_aliases_for_event, match_plain
 from shared.config.service import get_config_service
 from shared.notify.message_template import safe_text
 
@@ -98,7 +98,9 @@ async def handle_video_commands(bot: Bot, event: Event):
         return
 
     # 检查是否是视频查询命令（触发词可在 Web Admin 设置 → 命令 中自定义）
-    command_aliases = get_config_service().get_snapshot().command_aliases
+    command_aliases = await command_aliases_for_event(
+        get_config_service().get_snapshot(), bot, event
+    )
     is_command = match_plain(
         message_text,
         "video_query_latest",
