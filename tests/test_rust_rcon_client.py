@@ -221,13 +221,14 @@ async def test_execute_rcon_command_success(webrcon_server) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_command_packet_matches_webrcon_format() -> None:
+@pytest.mark.parametrize("command", ["status", "server.password\ts3cr3t\nvalue"])
+async def test_build_command_packet_matches_webrcon_format(command: str) -> None:
     from utils.rust_rcon.client import _build_command_packet
 
-    payload = json.loads(_build_command_packet("status", REQUEST_IDENTIFIER))
+    payload = json.loads(_build_command_packet(command, REQUEST_IDENTIFIER))
     assert payload == {
         "Identifier": REQUEST_IDENTIFIER,
-        "Message": "status",
+        "Message": command,
         "Name": "WebRcon",
     }
 
@@ -324,6 +325,23 @@ def test_summarize_rcon_command_for_log_redacts_arguments() -> None:
         == "rcon.password <6 chars>"
     )
     assert summarize_rcon_command_for_log("  say hello  ") == "say <5 chars>"
+    assert summarize_rcon_command_for_log(" \t\n ") == "(empty)"
+    assert summarize_rcon_command_for_log("\tstatus\n") == "status"
+
+
+@pytest.mark.parametrize(
+    "separator",
+    [" ", "  ", "\t", "\n", "\r\n", "\v", "\f", "\u00a0", "\u3000", " \t\n "],
+)
+def test_summarize_rcon_command_for_log_redacts_all_whitespace_arguments(
+    separator: str,
+) -> None:
+    from utils.rust_rcon.client import summarize_rcon_command_for_log
+
+    assert (
+        summarize_rcon_command_for_log(f"server.password{separator}s3cr3t\tvalue")
+        == "server.password <12 chars>"
+    )
 
 
 @pytest.mark.asyncio
