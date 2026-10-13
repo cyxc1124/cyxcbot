@@ -25,14 +25,27 @@ def _ensure_nonebot() -> None:
 
 
 @pytest.mark.asyncio
-async def test_set_title_network_error_releases_quota() -> None:
+@pytest.mark.parametrize(
+    ("daily_limit", "failure_date"),
+    [(1, "2026-07-04"), (1, "2026-07-05"), (0, "2026-07-05")],
+)
+async def test_set_title_network_error_releases_reserved_date(
+    daily_limit: int, failure_date: str
+) -> None:
     _ensure_nonebot()
     from plugins.group_special_title.handler import handle_group_special_title
 
     bot = MagicMock()
     bot.self_id = "100"
     bot.get_group_member_info = AsyncMock(return_value={"role": "owner"})
-    bot.set_group_special_title = AsyncMock(side_effect=NetworkError("timeout"))
+    current_date = "2026-07-04"
+
+    async def fail_title(**kwargs):
+        nonlocal current_date
+        current_date = failure_date
+        raise NetworkError("timeout")
+
+    bot.set_group_special_title = AsyncMock(side_effect=fail_title)
 
     event = MagicMock()
     event.group_id = 123
@@ -41,7 +54,7 @@ async def test_set_title_network_error_releases_quota() -> None:
 
     snap = MagicMock()
     snap.group_special_title_restrict = False
-    snap.group_special_title_daily_limit = 1
+    snap.group_special_title_daily_limit = daily_limit
 
     with (
         patch(
@@ -53,9 +66,13 @@ async def test_set_title_network_error_releases_quota() -> None:
             return_value=MagicMock(get_snapshot=lambda: snap),
         ),
         patch(
+            "plugins.group_special_title.handler.today_usage_date",
+            side_effect=lambda: current_date,
+        ) as date_mock,
+        patch(
             "plugins.group_special_title.handler.try_consume_daily_quota",
             new=AsyncMock(return_value=True),
-        ),
+        ) as consume_mock,
         patch(
             "plugins.group_special_title.handler.release_daily_quota",
             new=AsyncMock(),
@@ -63,7 +80,14 @@ async def test_set_title_network_error_releases_quota() -> None:
     ):
         await handle_group_special_title(bot, event)
 
-    release_mock.assert_awaited_once_with("123", "456")
+    date_mock.assert_called_once_with()
+    consume_mock.assert_awaited_once_with(
+        "123", "456", daily_limit, usage_date="2026-07-04"
+    )
+    if daily_limit > 0:
+        release_mock.assert_awaited_once_with("123", "456", usage_date="2026-07-04")
+    else:
+        release_mock.assert_not_awaited()
 
 
 def test_action_failed_exposes_retcode_via_info() -> None:
