@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -28,6 +28,7 @@ class GroupStatusPolicyResponse(BaseModel):
     groups: List[GroupInfo]
     display: StatusCheckDisplayOptions
     group_list_available: bool = True
+    onebot_list_status: Optional[Literal["ok", "offline", "incomplete"]] = None
 
 
 class GroupStatusPolicyUpdateRequest(BaseModel):
@@ -42,6 +43,7 @@ class PrivateStatusPolicyResponse(BaseModel):
     users: List[FriendInfo]
     display: StatusCheckDisplayOptions
     friend_list_available: bool = True
+    onebot_list_status: Optional[Literal["ok", "offline", "incomplete"]] = None
 
 
 class PrivateStatusPolicyUpdateRequest(BaseModel):
