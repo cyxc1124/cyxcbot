@@ -27,6 +27,9 @@ MAX_TRIGGERS_PER_COMMAND = 20
 MAX_EXTRA_PREFIX_LENGTH = 4
 MAX_EXTRA_PREFIXES = 10
 
+# 这两条命令使用 prefix+trigger+必需参数的正则，不能裸触发。
+_PREFIX_REQUIRED_COMMANDS = frozenset({"dynamic_extract", "group_special_title"})
+
 COMMAND_DEFAULTS: Dict[str, List[str]] = {
     "status": ["status", "状态", "运行状态"],
     "live_status": ["直播状态", "查直播", "live"],
@@ -180,9 +183,14 @@ def find_trigger_conflicts(
     conflicts: Dict[str, List[str]] = {}
     for trigger, ids in seen.items():
         stripped = _strip_command_prefix(trigger, prefixes)
-        matched_ids = list(
-            dict.fromkeys(ids + seen.get(stripped.strip() if stripped else "", []))
-        )
+        matched_ids = list(ids)
+        if stripped and any(cid not in _PREFIX_REQUIRED_COMMANDS for cid in ids):
+            matched_ids.extend(
+                cid
+                for cid in seen.get(stripped.strip(), [])
+                if cid not in _PREFIX_REQUIRED_COMMANDS
+            )
+        matched_ids = list(dict.fromkeys(matched_ids))
         if len(matched_ids) > 1:
             conflicts[trigger] = matched_ids
     return conflicts
@@ -307,6 +315,7 @@ def _more_specific_match_elsewhere(
     """
     return any(
         other_id != command_id
+        and other_id not in _PREFIX_REQUIRED_COMMANDS
         and other_entry.enabled
         and (other_best := _best_own_match_length(text, other_entry)) is not None
         and (
@@ -369,6 +378,7 @@ def _shadowed_by_exact_trigger_elsewhere(
     """
     return any(
         other_id != command_id
+        and other_id not in _PREFIX_REQUIRED_COMMANDS
         and other_entry.enabled
         and candidate in other_entry.triggers
         for other_id, other_entry in config.items()

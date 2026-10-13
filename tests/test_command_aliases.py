@@ -532,3 +532,24 @@ def test_legacy_prefixed_argument_trigger_takes_precedence(text):
     expected = "12345" if "12345" in text else ""
     assert match_command_arg(text, "rust_player_bind", config) == expected
     assert match_command_arg("查询 12345", "live_status", config) == "12345"
+
+
+@pytest.mark.parametrize("command_id", ["dynamic_extract", "group_special_title"])
+def test_prefixed_required_argument_alias_is_not_plain_conflict(command_id):
+    config = normalize_command_aliases({command_id: {"triggers": ["/status"]}})
+    assert validation_error(config) is None
+
+
+@pytest.mark.parametrize("command_id", ["dynamic_extract", "group_special_title"])
+@pytest.mark.parametrize("mentioned", [False, True])
+def test_prefix_required_alias_does_not_shadow_plain_trigger(command_id, mentioned):
+    config = normalize_command_aliases({command_id: {"triggers": ["/status"]}})
+    assert match_plain("/status", "status", config, is_tome=mentioned)
+
+
+@pytest.mark.parametrize("command_id", ["dynamic_extract", "group_special_title"])
+def test_prefix_required_alias_does_not_shadow_argument_trigger(command_id):
+    config = normalize_command_aliases(
+        {command_id: {"triggers": ["/查询"]}, "live_status": {"triggers": ["查询"]}}
+    )
+    assert match_command_arg("/查询 12345", "live_status", config) == "12345"

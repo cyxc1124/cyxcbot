@@ -136,17 +136,17 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         error = validation_error(normalized, extra_prefixes)
         if error:
             raise HTTPException(status_code=400, detail=error)
-        rcon_conflict = command_aliases_rust_rcon_conflict(
-            normalized, snap.rust_rcon_bindings
-        )
-        if rcon_conflict:
-            raise HTTPException(status_code=400, detail=rcon_conflict)
-        custom_conflict = command_aliases_custom_command_conflict(
-            normalized, snap.rust_rcon_custom_commands
-        )
-        if custom_conflict:
-            raise HTTPException(status_code=400, detail=custom_conflict)
         if body.command_aliases is not None:
+            rcon_conflict = command_aliases_rust_rcon_conflict(
+                normalized, snap.rust_rcon_bindings
+            )
+            if rcon_conflict:
+                raise HTTPException(status_code=400, detail=rcon_conflict)
+            custom_conflict = command_aliases_custom_command_conflict(
+                normalized, snap.rust_rcon_custom_commands
+            )
+            if custom_conflict:
+                raise HTTPException(status_code=400, detail=custom_conflict)
             updates["command_aliases"] = json.dumps(
                 serialize_command_aliases(normalized), ensure_ascii=False
             )

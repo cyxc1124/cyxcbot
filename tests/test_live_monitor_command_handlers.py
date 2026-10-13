@@ -221,3 +221,47 @@ async def test_prefixed_alias_only_runs_one_real_command_handler(
         except FinishedException:
             pass
     assert replies == [expected]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command_id", ["dynamic_extract", "group_special_title"])
+@pytest.mark.parametrize("mentioned", [False, True])
+async def test_prefix_required_alias_preserves_real_status_reply(
+    monkeypatch, command_id, mentioned
+):
+    from types import SimpleNamespace
+
+    from nonebot.exception import FinishedException
+
+    from plugins.dynamic_monitor.dynamic_extract import parse_extract_dynamic_id
+    from plugins.status_check import status_checker
+    from shared.config.command_aliases import normalize_command_aliases
+    from shared.group_special_title import parse_title_command
+
+    aliases = normalize_command_aliases({command_id: {"triggers": ["/status"]}})
+    service = SimpleNamespace(
+        get_snapshot=lambda: SimpleNamespace(command_aliases=aliases)
+    )
+    monkeypatch.setattr(status_checker, "get_config_service", lambda: service)
+    monkeypatch.setattr(
+        status_checker, "check_status_permission", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(
+        status_checker, "get_bot_status", AsyncMock(return_value="机器人状态")
+    )
+    monkeypatch.setattr(
+        "shared.config.command_aliases.command_prefixes", lambda: frozenset({"/"})
+    )
+    finish = AsyncMock(side_effect=FinishedException)
+    monkeypatch.setattr(status_checker.status_cmd, "finish", finish)
+    with pytest.raises(FinishedException):
+        await status_checker.handle_status_command(
+            MagicMock(), _make_event(text="/status", is_tome=mentioned)
+        )
+    finish.assert_awaited_once_with("机器人状态")
+    assert parse_extract_dynamic_id("/status", aliases) is None
+    assert parse_title_command("/status", aliases) is None
+    if command_id == "dynamic_extract":
+        assert parse_extract_dynamic_id("//status1234567890", aliases) == "1234567890"
+    else:
+        assert parse_title_command("//status 测试", aliases) == "测试"
