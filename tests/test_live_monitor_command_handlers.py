@@ -171,3 +171,53 @@ async def test_list_monitor_without_instance_falls_back_to_offline() -> None:
     message = str(mocks["finish"].await_args.args[0])
     assert "房间12345" in message
     assert "⚫" in message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text, expected", [("/status", "live"), ("status", "status")])
+async def test_prefixed_alias_only_runs_one_real_command_handler(
+    monkeypatch, text, expected
+):
+    from types import SimpleNamespace
+
+    from nonebot.exception import FinishedException
+
+    from plugins.status_check import status_checker
+    from shared.config.command_aliases import normalize_command_aliases
+
+    aliases = normalize_command_aliases({"live_status": {"triggers": ["/status"]}})
+    service = SimpleNamespace(
+        get_snapshot=lambda: SimpleNamespace(command_aliases=aliases)
+    )
+    monkeypatch.setattr(live_monitor_plugin, "get_config_service", lambda: service)
+    monkeypatch.setattr(status_checker, "get_config_service", lambda: service)
+    monkeypatch.setattr(
+        status_checker, "check_status_permission", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(
+        status_checker, "get_bot_status", AsyncMock(return_value="机器人状态")
+    )
+    monkeypatch.setattr(
+        "shared.config.command_aliases.command_prefixes", lambda: frozenset({"/"})
+    )
+    replies = []
+
+    def finish(label):
+        async def record(message):
+            replies.append(label)
+            raise FinishedException
+
+        return record
+
+    monkeypatch.setattr(status_checker.status_cmd, "finish", finish("status"))
+    monkeypatch.setattr(live_monitor_plugin.live_status_cmd, "finish", finish("live"))
+    bot, event = MagicMock(), _make_event(text=text)
+    for handler in (
+        status_checker.handle_status_command,
+        live_monitor_plugin.handle_live_status,
+    ):
+        try:
+            await handler(bot, event)
+        except FinishedException:
+            pass
+    assert replies == [expected]

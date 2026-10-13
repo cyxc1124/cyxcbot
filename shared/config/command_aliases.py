@@ -161,8 +161,9 @@ def merge_partial_command_aliases(current: dict, patch: Dict[str, dict]) -> dict
 
 def find_trigger_conflicts(
     config: Dict[str, CommandAliasEntry],
+    extra_prefixes: list[str] | None = None,
 ) -> Dict[str, List[str]]:
-    """Return ``{trigger: [command_id, ...]}`` for triggers shared by 2+ *enabled* commands.
+    """Return ``{text: [command_id, ...]}`` for inputs shared by 2+ *enabled* commands.
 
     禁用命令的触发词不参与冲突判定：所有匹配函数都先检查 ``enabled``，一条
     已关闭的命令即使保留了触发词也不会真正响应，因此不应阻止别的命令启用
@@ -175,17 +176,28 @@ def find_trigger_conflicts(
             continue
         for trigger in entry.triggers:
             seen.setdefault(trigger, []).append(command_id)
-    return {trigger: ids for trigger, ids in seen.items() if len(ids) > 1}
+    prefixes = command_prefixes(extra_prefixes)
+    conflicts: Dict[str, List[str]] = {}
+    for trigger, ids in seen.items():
+        stripped = _strip_command_prefix(trigger, prefixes)
+        matched_ids = list(
+            dict.fromkeys(ids + seen.get(stripped.strip() if stripped else "", []))
+        )
+        if len(matched_ids) > 1:
+            conflicts[trigger] = matched_ids
+    return conflicts
 
 
-def validation_error(config: Dict[str, CommandAliasEntry]) -> str | None:
+def validation_error(
+    config: Dict[str, CommandAliasEntry], extra_prefixes: list[str] | None = None
+) -> str | None:
     """Return a Chinese error message if *config* is invalid to persist, else None."""
     for command_id, entry in config.items():
         if entry.enabled and not entry.triggers:
             label = COMMAND_LABELS.get(command_id, command_id)
             return f"「{label}」已启用但未配置触发词"
 
-    conflicts = find_trigger_conflicts(config)
+    conflicts = find_trigger_conflicts(config, extra_prefixes)
     if conflicts:
         parts = [
             f"{trigger}（{'、'.join(COMMAND_LABELS.get(cid, cid) for cid in ids)}）"
@@ -231,10 +243,11 @@ def _extra_prefixes() -> frozenset[str]:
     return frozenset(get_config_service().get_snapshot().command_extra_prefixes)
 
 
-def command_prefixes() -> frozenset[str]:
+def command_prefixes(extra_prefixes: list[str] | None = None) -> frozenset[str]:
     """Prefixes accepted before a trigger word: configured ``COMMAND_START`` plus
     the configurable convenience prefixes."""
-    return _configured_command_starts() | _extra_prefixes()
+    extra = _extra_prefixes() if extra_prefixes is None else frozenset(extra_prefixes)
+    return _configured_command_starts() | extra
 
 
 def prefix_alternation() -> str:
@@ -249,8 +262,12 @@ def prefix_alternation() -> str:
     )
 
 
-def _strip_command_prefix(text: str) -> str | None:
-    for prefix in sorted(command_prefixes(), key=len, reverse=True):
+def _strip_command_prefix(
+    text: str, prefixes: frozenset[str] | None = None
+) -> str | None:
+    if prefixes is None:
+        prefixes = command_prefixes()
+    for prefix in sorted(prefixes, key=len, reverse=True):
         if text.startswith(prefix):
             return text[len(prefix) :]
     return None
@@ -326,10 +343,13 @@ def match_plain(
         if own_best is None:
             return False
         return not _more_specific_match_elsewhere(text, command_id, own_best, config)
-    stripped = _strip_command_prefix(text)
-    if stripped is not None and stripped.strip() in entry.triggers:
+    if text in entry.triggers:
         return True
-    return text in entry.triggers
+    # 存量带前缀触发词优先于剥离前缀后的触发词，避免旧配置重复响应。
+    if _shadowed_by_exact_trigger_elsewhere(text, command_id, config):
+        return False
+    stripped = _strip_command_prefix(text)
+    return stripped is not None and stripped.strip() in entry.triggers
 
 
 def _shadowed_by_exact_trigger_elsewhere(
@@ -365,12 +385,21 @@ def match_command_arg(
     if not entry.enabled or not entry.triggers:
         return None
     text = text.strip()
+    if text not in entry.triggers and _shadowed_by_exact_trigger_elsewhere(
+        text, command_id, config
+    ):
+        return None
     candidates = [text]
     stripped = _strip_command_prefix(text)
     if stripped is not None:
         candidates.append(stripped.strip())
     for candidate in candidates:
         for trigger in sorted(entry.triggers, key=len, reverse=True):
+            # 参数命令也让位给消息中完整写出的存量触发词。
+            if candidate != text and _shadowed_by_exact_trigger_elsewhere(
+                text.removesuffix(candidate[len(trigger) :]), command_id, config
+            ):
+                continue
             if candidate == trigger:
                 return ""
             if (

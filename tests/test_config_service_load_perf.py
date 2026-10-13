@@ -556,3 +556,62 @@ async def test_official_settings_permissions_and_friend_cache_round_trip(
     )
     assert not cleared.official_qq.secret.configured
     assert not service.get_snapshot().official_qq_app_secret
+
+
+@pytest.mark.asyncio
+async def test_settings_validates_aliases_with_proposed_prefixes(
+    db_context, monkeypatch
+):
+    import json
+
+    from fastapi import HTTPException
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+
+    _, factory, ConfigService, *_, SystemSetting = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    monkeypatch.setattr(
+        "shared.config.command_aliases._configured_command_starts",
+        lambda: frozenset({"/"}),
+    )
+    await service.load()
+    aliases = {"live_status": {"triggers": ["/status"]}}
+    with pytest.raises(HTTPException, match="触发词冲突") as exc:
+        await settings_api.update_settings(
+            SettingsUpdateRequest(command_aliases=aliases), None
+        )
+    assert exc.value.status_code == 400
+    async with factory() as session:
+        assert await session.get(SystemSetting, "command_aliases") is None
+
+    saved = await settings_api.update_settings(
+        SettingsUpdateRequest(
+            command_aliases={"live_status": {"triggers": ["~status"]}},
+            command_extra_prefixes=[],
+        ),
+        None,
+    )
+    assert saved.command_extra_prefixes == []
+    with pytest.raises(HTTPException, match="触发词冲突"):
+        await settings_api.update_settings(
+            SettingsUpdateRequest(command_extra_prefixes=["~"]), None
+        )
+    async with factory() as session:
+        assert (
+            json.loads(
+                (await session.get(SystemSetting, "command_extra_prefixes")).value
+            )
+            == []
+        )
+    saved = await settings_api.update_settings(
+        SettingsUpdateRequest(
+            command_aliases={"live_status": {"triggers": ["~直播状态"]}},
+            command_extra_prefixes=["~"],
+        ),
+        None,
+    )
+    assert saved.command_extra_prefixes == ["~"]
+    assert saved.command_aliases["live_status"].triggers == ["~直播状态"]
