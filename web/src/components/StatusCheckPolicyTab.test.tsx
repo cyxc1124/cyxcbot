@@ -20,9 +20,10 @@ const hooks = vi.hoisted(() => ({
 vi.mock('react', async (importOriginal) => ({
   ...await importOriginal<typeof import('react')>(),
   useState(initial: unknown) {
+    const slots = hooks.slots
     const index = hooks.cursor++
-    if (!(index in hooks.slots)) hooks.slots[index] = initial
-    return [hooks.slots[index], (value: unknown) => { hooks.slots[index] = value }]
+    if (!(index in slots)) slots[index] = initial
+    return [slots[index], (value: unknown) => { slots[index] = value }]
   },
   useRef(initial: unknown) {
     const index = hooks.cursor++
@@ -39,9 +40,10 @@ vi.mock('../api/client', () => ({
   updatePrivateStatusPolicy: vi.fn(),
 }))
 vi.mock('../contexts/ToastContext', () => ({ useToast: () => hooks }))
-vi.mock('../hooks/useLoadingOnKeyChange', () => ({
-  useLoadingOnKeyChange: () => [false, vi.fn()],
-}))
+vi.mock('../hooks/useLoadingOnKeyChange', async () => {
+  const { useState } = await import('react')
+  return { useLoadingOnKeyChange: () => useState(true) }
+})
 vi.mock('../hooks/useMountAsync', () => ({
   useMountAsync: (load: () => Promise<void>) => { hooks.load = load },
 }))
@@ -102,9 +104,9 @@ beforeEach(() => {
 })
 
 describe.each(['group', 'friend'] as const)('%s status policy saves', (scope) => {
-  function render() {
+  function render(renderScope: 'group' | 'friend' = scope) {
     hooks.cursor = 0
-    const controls = buttons(StatusCheckPolicyTab({ scope }))
+    const controls = buttons(StatusCheckPolicyTab({ scope: renderScope }))
     return {
       all: controls,
       switches: controls.filter((button) => button.props.role === 'switch'),
@@ -185,4 +187,89 @@ describe.each(['group', 'friend'] as const)('%s status policy saves', (scope) =>
       await pending.promise.catch(() => {})
     },
   )
+
+  it.each([
+    ['row', 'success'], ['all', 'success'], ['display', 'success'],
+    ['row', 'failure'], ['all', 'failure'], ['display', 'failure'],
+  ] as const)('waits for a %s save before loading a remounted tab after %s', async (operation, outcome) => {
+    render()
+    await hooks.load()
+    const controls = render()
+    const pending = deferred<typeof groupPolicy & typeof friendPolicy>()
+    vi.mocked(updateGroupStatusPolicy).mockReturnValue(pending.promise)
+    vi.mocked(updatePrivateStatusPolicy).mockReturnValue(pending.promise)
+    const get = scope === 'group' ? getGroupStatusPolicy : getPrivateStatusPolicy
+    const update = scope === 'group' ? updateGroupStatusPolicy : updatePrivateStatusPolicy
+    click(operation === 'row' ? controls.switches[4]
+      : operation === 'all' ? controls.enableAll : controls.switches[0])
+
+    hooks.slots = []
+    render()
+    const remountLoad = hooks.load()
+    const saved = outcome === 'failure' ? { restrict: true, display }
+      : { restrict: operation !== 'all', display: operation === 'display'
+        ? { ...display, show_detailed: false } : display }
+    const savedIds = outcome === 'failure' ? ['1001']
+      : operation === 'row' ? ['1001', '1002'] : operation === 'all' ? [] : ['1001']
+    const savedGroup = { ...groupPolicy, ...saved, enabled_group_ids: savedIds }
+    const savedFriend = { ...friendPolicy, ...saved, enabled_user_ids: savedIds }
+    try {
+      await Promise.resolve()
+      expect(get).toHaveBeenCalledTimes(1)
+      expect(render().all).toHaveLength(0)
+      expect(update).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.mocked(getGroupStatusPolicy).mockResolvedValue(savedGroup)
+      vi.mocked(getPrivateStatusPolicy).mockResolvedValue(savedFriend)
+      if (outcome === 'failure') pending.reject(new Error('保存失败'))
+      else pending.resolve({ ...savedGroup, ...savedFriend })
+      await remountLoad
+    }
+
+    expect(get).toHaveBeenCalledTimes(2)
+    const remounted = render()
+    expect(remounted.switches.map((button) => button.props['aria-checked']))
+      .toEqual([
+        saved.display.show_detailed, true, true,
+        !saved.restrict || savedIds.includes('1001'),
+        !saved.restrict || savedIds.includes('1002'),
+        !saved.restrict,
+      ])
+    click(remounted.switches[5])
+    expect(update).toHaveBeenCalledTimes(2)
+    const nextIds = outcome === 'failure' || operation === 'display' ? ['1001', '1003']
+      : operation === 'all' ? ['1001', '1002'] : []
+    expect(update).toHaveBeenLastCalledWith(scope === 'group'
+      ? { restrict: nextIds.length !== 0, enabled_group_ids: nextIds }
+      : { restrict: nextIds.length !== 0, enabled_user_ids: nextIds })
+    await pending.promise.catch(() => {})
+  })
+
+  it('waits for an old save when navigating to the other status policy scope', async () => {
+    render()
+    await hooks.load()
+    const pending = deferred<typeof groupPolicy & typeof friendPolicy>()
+    vi.mocked(updateGroupStatusPolicy).mockReturnValue(pending.promise)
+    vi.mocked(updatePrivateStatusPolicy).mockReturnValue(pending.promise)
+    click(render().switches[0])
+    const nextScope = scope === 'group' ? 'friend' : 'group'
+    const nextGet = scope === 'group' ? getPrivateStatusPolicy : getGroupStatusPolicy
+
+    hooks.slots = []
+    render(nextScope)
+    const remountLoad = hooks.load()
+    try {
+      await Promise.resolve()
+      expect(nextGet).not.toHaveBeenCalled()
+      expect(render(nextScope).all).toHaveLength(0)
+    } finally {
+      const savedDisplay = { ...display, show_detailed: false }
+      vi.mocked(getGroupStatusPolicy).mockResolvedValue({ ...groupPolicy, display: savedDisplay })
+      vi.mocked(getPrivateStatusPolicy).mockResolvedValue({ ...friendPolicy, display: savedDisplay })
+      pending.resolve({ ...groupPolicy, ...friendPolicy, display: savedDisplay })
+      await remountLoad
+    }
+    expect(nextGet).toHaveBeenCalledTimes(1)
+    expect(render(nextScope).switches[0].props['aria-checked']).toBe(false)
+  })
 })
