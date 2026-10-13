@@ -249,7 +249,34 @@ async def command_aliases_for_event(
         ),
         None,
     )
-    owner = exact_owner or (argument_matches[0][0] if argument_matches else None)
+    candidates = list(argument_matches)
+    if argument_matches and is_group_event(event) and is_tome(event):
+        for cid, entry in scoped.items():
+            if not entry.enabled or cid in _ARGUMENT_COMMAND_IDS:
+                continue
+            length = max(
+                (
+                    len(trigger)
+                    for trigger in entry.triggers
+                    if text.startswith(trigger)
+                ),
+                default=0,
+            )
+            if length and match_plain(text, cid, scoped, is_tome=True):
+                candidates.append((cid, length))
+    ranked = sorted(
+        candidates,
+        key=lambda item: (
+            -item[1],
+            4
+            if item[0] == "dynamic_extract"
+            else 5
+            if item[0] in {"group_special_title", "status"}
+            else 10,
+            item[0],
+        ),
+    )
+    owner = exact_owner or (ranked[0][0] if ranked else None)
     if owner is not None:
         scoped = {
             cid: entry
@@ -657,11 +684,6 @@ def _match_command_arg(
         candidates.append(stripped.strip())
     for candidate in candidates:
         for trigger in sorted(entry.triggers, key=len, reverse=True):
-            # 参数命令也让位给消息中完整写出的存量触发词。
-            if candidate != text and _shadowed_by_exact_trigger_elsewhere(
-                text.removesuffix(candidate[len(trigger) :]), command_id, config
-            ):
-                continue
             if candidate == trigger:
                 return trigger, ""
             if (

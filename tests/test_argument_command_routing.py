@@ -345,3 +345,82 @@ async def test_incomplete_argument_grammar_does_not_swallow_fuzzy(text, status_t
     event, bot = _event(text), _actor()
     scoped = await command_aliases_for_event(snap, bot, event)
     assert match_plain(event.get_plaintext(), "status", scoped, is_tome=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mentioned,list_trigger,list_enabled,expected",
+    [
+        (False, "/status", True, "live"),
+        (True, "/status", True, "list"),
+        (False, "/status 12345", True, "list"),
+        (True, "/status 12345", True, "list"),
+        (False, "/status", False, "live"),
+    ],
+)
+async def test_partial_list_head_does_not_hide_live_room_query(
+    monkeypatch, mentioned, list_trigger, list_enabled, expected
+):
+    import plugins.live_monitor as live_plugin
+    from plugins.live_monitor import live_monitor as live_mod
+
+    aliases = normalize_command_aliases(
+        {
+            "live_status": {"triggers": ["status"]},
+            "live_monitor_list": {"enabled": list_enabled, "triggers": [list_trigger]},
+        }
+    )
+    snap = _command_snapshot(aliases)
+    service = SimpleNamespace(get_snapshot=lambda: snap)
+    monkeypatch.setattr(live_plugin, "get_config_service", lambda: service)
+    monkeypatch.setattr(
+        live_plugin.Config,
+        "from_service",
+        lambda: SimpleNamespace(live_monitor_mapping={}),
+    )
+    check = AsyncMock(
+        return_value={
+            "room_id": 12345,
+            "streamer_name": "测试主播",
+            "title": "测试标题",
+            "is_living": False,
+        }
+    )
+    monkeypatch.setattr(
+        live_mod, "live_monitor_instance", SimpleNamespace(check_room_now=check)
+    )
+    live_finish, list_finish = (
+        AsyncMock(side_effect=FinishedException),
+        AsyncMock(side_effect=FinishedException),
+    )
+    monkeypatch.setattr(live_plugin.live_status_cmd, "finish", live_finish)
+    monkeypatch.setattr(live_plugin.live_status_cmd, "send", AsyncMock())
+    monkeypatch.setattr(live_plugin.list_monitor_cmd, "finish", list_finish)
+    event, bot = _event("/status 12345"), _actor()
+    event.is_tome.return_value = mentioned
+    await _run(live_plugin.handle_live_status, bot, event)
+    await _run(live_plugin.handle_list_monitor, bot, event)
+    if expected == "live":
+        check.assert_awaited_once_with("12345")
+        live_finish.assert_awaited_once()
+        list_finish.assert_not_awaited()
+    else:
+        check.assert_not_awaited()
+        live_finish.assert_not_awaited()
+        list_finish.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_more_specific_actual_argument_trigger_owns_legacy_overlap():
+    from shared.config.command_aliases import command_aliases_for_event
+
+    aliases = normalize_command_aliases(
+        {
+            "live_status": {"triggers": ["查询"]},
+            "rust_player_bind": {"triggers": ["/查询"]},
+        }
+    )
+    snap = _command_snapshot(aliases)
+    scoped = await command_aliases_for_event(snap, _actor(), _event("/查询 12345"))
+    assert scoped["rust_player_bind"].enabled
+    assert not scoped["live_status"].enabled

@@ -528,8 +528,10 @@ def test_legacy_prefixed_argument_trigger_takes_precedence(text):
             "rust_player_bind": {"triggers": ["/查询"]},
         }
     )
-    assert match_command_arg(text, "live_status", config) is None
     expected = "12345" if "12345" in text else ""
+    assert match_command_arg(text, "live_status", config) == (
+        expected if expected else None
+    )
     assert match_command_arg(text, "rust_player_bind", config) == expected
     assert match_command_arg("查询 12345", "live_status", config) == "12345"
 

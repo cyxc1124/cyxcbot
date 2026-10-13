@@ -6,6 +6,7 @@ B 站直播监控插件：WebSocket 弹幕 + API 轮询，开播/下播推送。
 
 from nonebot import get_driver, on_message
 from nonebot.adapters import Bot, Event
+from nonebot.exception import FinishedException
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
@@ -165,6 +166,8 @@ async def handle_live_status(bot: Bot, event: Event):
                 )
             )
 
+    except FinishedException:
+        raise
     except Exception as e:
         logger.error(f"查询直播状态失败: {e}")
         await live_status_cmd.finish(safe_text_message(f"查询失败：{str(e)}"))
