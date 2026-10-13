@@ -162,6 +162,29 @@ def merge_partial_command_aliases(current: dict, patch: Dict[str, dict]) -> dict
     return merged
 
 
+def command_aliases_for_event(
+    config: Dict[str, CommandAliasEntry], event: object
+) -> Dict[str, CommandAliasEntry]:
+    """Limit runtime arbitration to commands supported in the event's chat scope."""
+    from nonebot.adapters.onebot.v11 import GroupMessageEvent
+
+    from shared.adapter.inbound import is_group_event, is_tome
+
+    if not is_group_event(event):
+        return {
+            cid: entry
+            for cid, entry in config.items()
+            if cid in {"status", "dynamic_extract"}
+        }
+    onebot_group = isinstance(event, GroupMessageEvent)
+    return {
+        cid: entry
+        for cid, entry in config.items()
+        if (cid != "group_special_title" or onebot_group)
+        and (not cid.startswith("rust_player_") or (onebot_group and is_tome(event)))
+    }
+
+
 def find_trigger_conflicts(
     config: Dict[str, CommandAliasEntry],
     extra_prefixes: list[str] | None = None,
@@ -193,6 +216,67 @@ def find_trigger_conflicts(
         matched_ids = list(dict.fromkeys(matched_ids))
         if len(matched_ids) > 1:
             conflicts[trigger] = matched_ids
+    # 外层前缀也可能组成别人的完整触发词；按必需参数的分隔方式检查反向冲突。
+    argument_commands = {"live_status", "rust_player_bind", "rust_player_shop_redeem"}
+    fuzzy_commands = set(COMMAND_DEFAULTS) - (
+        _PREFIX_REQUIRED_COMMANDS | argument_commands | {"rust_player_shop_list"}
+    )
+    for command_id in _PREFIX_REQUIRED_COMMANDS:
+        entry = config.get(command_id)
+        if not entry or not entry.enabled:
+            continue
+        for trigger in entry.triggers:
+            for prefix in prefixes:
+                head = prefix + trigger
+                stripped = _strip_command_prefix(head, prefixes)
+                candidates = [head] + ([stripped.strip()] if stripped else [])
+                match_head = head
+                if command_id == "dynamic_extract":
+                    # 提取正则忽略大小写，交集检查也需覆盖对应的真实输入。
+                    match_head = head.casefold()
+                    candidates = [candidate.casefold() for candidate in candidates]
+                matched_ids = []
+                for other_trigger, ids in seen.items():
+                    if command_id == "dynamic_extract":
+                        other_trigger = other_trigger.casefold()
+                    for cid in ids:
+                        if cid in fuzzy_commands:
+                            shared_input = match_head.startswith(other_trigger)
+                        elif cid in argument_commands:
+                            shared_input = any(
+                                (
+                                    candidate == other_trigger
+                                    and command_id == "group_special_title"
+                                )
+                                or (
+                                    candidate.startswith(other_trigger)
+                                    and len(candidate) > len(other_trigger)
+                                    and candidate[len(other_trigger)].isspace()
+                                )
+                                for candidate in candidates
+                            )
+                        elif (
+                            command_id == "dynamic_extract"
+                            and cid == "rust_player_shop_list"
+                        ):
+                            shared_input = any(
+                                candidate.startswith(other_trigger)
+                                and (
+                                    not (suffix := candidate[len(other_trigger) :])
+                                    or suffix.isdigit()
+                                )
+                                for candidate in candidates
+                            )
+                        else:
+                            shared_input = False
+                        if shared_input:
+                            matched_ids.append(cid)
+                if matched_ids:
+                    conflicts[head] = list(
+                        dict.fromkeys(
+                            conflicts.get(head, []) + matched_ids + [command_id]
+                        )
+                    )
     return conflicts
 
 

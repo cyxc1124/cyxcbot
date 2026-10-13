@@ -690,3 +690,40 @@ async def test_prefix_only_patch_preserves_legacy_rcon_alias_collisions(
             (await session.get(SystemSetting, "command_extra_prefixes")).value
         ) == ["~"]
         assert await session.get(SystemSetting, "command_aliases") is None
+
+
+@pytest.mark.asyncio
+async def test_settings_rejects_reverse_prefix_required_argument_overlap(
+    db_context, monkeypatch
+):
+    from fastapi import HTTPException
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+
+    _, factory, ConfigService, *_, SystemSetting = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    monkeypatch.setattr(
+        "shared.config.command_aliases._configured_command_starts",
+        lambda: frozenset({"/"}),
+    )
+    await service.load()
+    aliases = {
+        "status": {"enabled": False},
+        "live_status": {"triggers": ["/status"]},
+        "group_special_title": {"triggers": ["status"]},
+    }
+    with pytest.raises(HTTPException, match="触发词冲突") as exc:
+        await settings_api.update_settings(
+            SettingsUpdateRequest(command_aliases=aliases), None
+        )
+    assert exc.value.status_code == 400
+    async with factory() as session:
+        assert await session.get(SystemSetting, "command_aliases") is None
+    aliases["group_special_title"]["enabled"] = False
+    saved = await settings_api.update_settings(
+        SettingsUpdateRequest(command_aliases=aliases), None
+    )
+    assert saved.command_aliases["live_status"].triggers == ["/status"]

@@ -11,7 +11,7 @@ from nonebot.log import logger
 from shared.adapter.bots import is_console_bot
 from shared.adapter.inbound import group_id_of, is_group_event, is_tome, plaintext_of
 from shared.adapter.outbound import send_event_message, send_event_text
-from shared.config.command_aliases import match_plain
+from shared.config.command_aliases import command_aliases_for_event, match_plain
 from shared.config.service import get_config_service
 from shared.onebot.lifecycle import stop_monitor_if_no_bots
 
@@ -110,7 +110,9 @@ async def handle_dynamic_commands(bot: Bot, event: Event):
     #     return
 
     # 检查是否是动态查询命令（触发词可在 Web Admin 设置 → 命令 中自定义）
-    command_aliases = get_config_service().get_snapshot().command_aliases
+    command_aliases = command_aliases_for_event(
+        get_config_service().get_snapshot().command_aliases, event
+    )
     mentioned = is_tome(event)
     is_latest = match_plain(
         message_text, "dynamic_query_latest", command_aliases, is_tome=mentioned

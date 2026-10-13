@@ -5,6 +5,7 @@ from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
+from shared.config.command_aliases import command_aliases_for_event
 from shared.config.rust_player import (
     bind_trigger_hint,
     is_bind_command,
@@ -65,7 +66,7 @@ async def handle_rust_player(bot: Bot, event: GroupMessageEvent) -> None:
         return
 
     snap = get_config_service().get_snapshot()
-    command_aliases = snap.command_aliases
+    command_aliases = command_aliases_for_event(snap.command_aliases, event)
     text = event.get_plaintext().strip()
     group_id = str(event.group_id)
     user_id = str(event.user_id)

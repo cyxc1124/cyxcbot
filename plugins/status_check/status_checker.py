@@ -17,7 +17,7 @@ from shared.adapter.inbound import (
     plaintext_of,
     user_id_of,
 )
-from shared.config.command_aliases import match_plain
+from shared.config.command_aliases import command_aliases_for_event, match_plain
 from shared.config.service import get_config_service
 from shared.monitor.system_metrics import (
     detect_container_environment,
@@ -89,7 +89,12 @@ async def handle_status_command(bot: Bot, event: Event):
     config = get_config_service().get_snapshot()
     # 仅群聊里"被 @/回复"才算模糊匹配；私聊与官方 C2C 强制精确匹配。
     mentioned = is_group_event(event) and is_tome(event)
-    if not match_plain(text, "status", config.command_aliases, is_tome=mentioned):
+    if not match_plain(
+        text,
+        "status",
+        command_aliases_for_event(config.command_aliases, event),
+        is_tome=mentioned,
+    ):
         return
 
     # 检查权限
