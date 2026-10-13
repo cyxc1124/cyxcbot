@@ -17,13 +17,15 @@ MAX_TITLE_LENGTH = 6
 
 def _build_title_pattern(
     command_aliases: dict[str, CommandAliasEntry],
+    *,
+    prefixes: frozenset[str] | None = None,
 ) -> re.Pattern[str] | None:
     """Build the ``{prefix}{触发词} …`` pattern from configured trigger words."""
     alternation = trigger_alternation("group_special_title", command_aliases)
     if alternation is None:
         return None
     return re.compile(
-        rf"^(?:{prefix_alternation()})(?P<trigger>{alternation})\s+(?P<title>.+)$"
+        rf"^(?:{prefix_alternation(prefixes)})(?P<trigger>{alternation})\s+(?P<title>.+)$"
     )
 
 
@@ -47,9 +49,11 @@ def compose_command_text(message: Message) -> str:
 def _match_title_command(
     message_text: str,
     command_aliases: dict[str, CommandAliasEntry] | None = None,
+    *,
+    prefixes: frozenset[str] | None = None,
 ) -> tuple[str, str] | None:
     """Return the actual trigger and title from the complete command."""
-    pattern = _build_title_pattern(command_aliases or {})
+    pattern = _build_title_pattern(command_aliases or {}, prefixes=prefixes)
     if pattern is None:
         return None
     match = pattern.match(message_text.strip())
@@ -59,10 +63,13 @@ def _match_title_command(
 
 
 def parse_title_command(
-    message_text: str, command_aliases: dict[str, CommandAliasEntry] | None = None
+    message_text: str,
+    command_aliases: dict[str, CommandAliasEntry] | None = None,
+    *,
+    prefixes: frozenset[str] | None = None,
 ) -> str | None:
     """Return title from ``{prefix}{触发词} …``, or None if not matched."""
-    command = _match_title_command(message_text, command_aliases)
+    command = _match_title_command(message_text, command_aliases, prefixes=prefixes)
     return command[1] if command else None
 
 

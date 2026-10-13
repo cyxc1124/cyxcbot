@@ -20,6 +20,7 @@ from shared.adapter.ids import is_qq_user_id
 from shared.config.command_aliases import (
     CommandAliasEntry,
     command_prefixes,
+    match_command_arg,
     match_plain,
     merge_partial_command_aliases,
     normalize_command_aliases,
@@ -29,12 +30,17 @@ from shared.config.command_aliases import (
     validation_error,
 )
 from shared.config.message_templates import MESSAGE_TEMPLATE_KEYS
+from shared.config.rust_player import parse_shop_list_page, parse_shop_redeem_args
 from shared.config.rust_rcon import (
     command_aliases_rust_rcon_conflict,
     match_rust_rcon_binding,
 )
-from shared.config.rust_rcon_custom import command_aliases_custom_command_conflict
+from shared.config.rust_rcon_custom import (
+    command_aliases_custom_command_conflict,
+    match_rust_rcon_custom_command,
+)
 from shared.config.service import get_config_service
+from shared.group_special_title import parse_title_command
 from shared.security.crypto import encrypt_value
 
 router = APIRouter(
@@ -44,52 +50,90 @@ router = APIRouter(
 )
 
 
-def _new_rcon_private_prefix_conflict(config, snapshot, extra_prefixes) -> str | None:
-    """Reject newly overlapping private command grammars, preserving legacy pairs."""
+def _matches_builtin(text, cid, config, prefixes, *, group: bool) -> bool:
+    if cid == "dynamic_extract":
+        return parse_extract_dynamic_id(text, config, prefixes=prefixes) is not None
+    if cid == "group_special_title":
+        return parse_title_command(text, config, prefixes=prefixes) is not None
+    if cid in ("live_status", "rust_player_bind"):
+        return match_command_arg(text, cid, config, prefixes=prefixes) is not None
+    if cid == "rust_player_shop_list":
+        return parse_shop_list_page(text, config, prefixes=prefixes) is not None
+    if cid == "rust_player_shop_redeem":
+        return parse_shop_redeem_args(text, config, prefixes=prefixes) is not None
+    return match_plain(text, cid, config, is_tome=group, prefixes=prefixes)
+
+
+def _new_rcon_prefix_conflict(config, snapshot, extra_prefixes) -> str | None:
+    """Compare actual command grammars per chat scope, preserving legacy pairs."""
     old_prefixes = command_prefixes(snapshot.command_extra_prefixes)
     new_prefixes = command_prefixes(extra_prefixes)
-    for record in snapshot.rust_rcon_bindings:
-        if not record.enabled:
-            continue
-        name = record.alias
-        for cid in ("status", "dynamic_extract"):
-            entry = config.get(cid)
-            if entry is None or not entry.enabled:
-                continue
-            for trigger in entry.triggers:
-                single = {cid: CommandAliasEntry(enabled=True, triggers=[trigger])}
-                bases = {trigger, name}
-                if cid == "dynamic_extract":
-                    bases.update(
-                        {
-                            trigger + "1234567890",
-                            trigger + "https://t.bilibili.com/123",
-                            trigger + "https://www.bilibili.com/opus/123",
-                        }
-                    )
-                inputs = bases | {
-                    prefix + text
-                    for prefix in old_prefixes | new_prefixes
-                    for text in bases
-                }
-                collisions = [
-                    any(
-                        (
-                            match_plain(text, "status", single, prefixes=prefixes)
-                            if cid == "status"
-                            else parse_extract_dynamic_id(
-                                text, single, prefixes=prefixes
+    bindings = [record for record in snapshot.rust_rcon_bindings if record.enabled]
+    binding_ids = {record.id for record in bindings}
+    for group in (False, True):
+        records = [(record, record.alias, False) for record in bindings]
+        if group:
+            records.extend(
+                (record, record.name, True)
+                for record in snapshot.rust_rcon_custom_commands
+                if record.enabled and record.binding_id in binding_ids
+            )
+        command_ids = config if group else ("status", "dynamic_extract")
+        for record, name, custom in records:
+            for cid in command_ids:
+                entry = config.get(cid)
+                if entry is None or not entry.enabled:
+                    continue
+                for trigger in entry.triggers:
+                    single = {cid: CommandAliasEntry(enabled=True, triggers=[trigger])}
+                    bases = {trigger, name}
+                    if cid == "dynamic_extract":
+                        bases.update(
+                            {
+                                trigger + "1234567890",
+                                trigger + "https://t.bilibili.com/123",
+                                trigger + "https://www.bilibili.com/opus/123",
+                            }
+                        )
+                    elif cid == "rust_player_shop_list":
+                        bases.add(trigger + "1")
+                    elif cid in (
+                        "group_special_title",
+                        "live_status",
+                        "rust_player_bind",
+                        "rust_player_shop_redeem",
+                    ):
+                        bases.add(trigger + " status")
+                    inputs = bases | {
+                        prefix + text
+                        for prefix in old_prefixes | new_prefixes
+                        for text in bases
+                    }
+                    collisions = [
+                        any(
+                            _matches_builtin(text, cid, single, prefixes, group=group)
+                            and (
+                                match_rust_rcon_custom_command(
+                                    text,
+                                    [record],
+                                    enabled_binding_ids=binding_ids,
+                                    prefixes=prefixes,
+                                )
+                                if custom
+                                else match_rust_rcon_binding(
+                                    text, [record], prefixes=prefixes
+                                )
                             )
                             is not None
+                            for text in inputs
                         )
-                        and match_rust_rcon_binding(text, [record], prefixes=prefixes)
-                        is not None
-                        for text in inputs
-                    )
-                    for prefixes in (old_prefixes, new_prefixes)
-                ]
-                if collisions == [False, True]:
-                    return f"新增前缀使触发词「{trigger}」与RCON 绑定「{name}」冲突"
+                        for prefixes in (old_prefixes, new_prefixes)
+                    ]
+                    if collisions == [False, True]:
+                        kind = "自定义指令" if custom else "绑定"
+                        return (
+                            f"新增前缀使触发词「{trigger}」与RCON {kind}「{name}」冲突"
+                        )
     return None
 
 
@@ -207,7 +251,7 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
                 serialize_command_aliases(normalized), ensure_ascii=False
             )
         if body.command_extra_prefixes is not None:
-            prefix_conflict = _new_rcon_private_prefix_conflict(
+            prefix_conflict = _new_rcon_prefix_conflict(
                 normalized, snap, extra_prefixes
             )
             if prefix_conflict:

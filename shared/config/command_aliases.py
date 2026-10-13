@@ -668,6 +668,8 @@ def _match_command_arg(
     text: str,
     command_id: str,
     config: Dict[str, CommandAliasEntry],
+    *,
+    prefixes: frozenset[str] | None = None,
 ) -> tuple[str, str] | None:
     """Return the actual trigger and trailing arg, or None if unmatched."""
     entry = resolve_entry(command_id, config)
@@ -679,7 +681,7 @@ def _match_command_arg(
     ):
         return None
     candidates = [text]
-    stripped = _strip_command_prefix(text)
+    stripped = _strip_command_prefix(text, prefixes)
     if stripped is not None:
         candidates.append(stripped.strip())
     for candidate in candidates:
@@ -698,8 +700,12 @@ def _match_command_arg(
 
 
 def match_command_arg(
-    text: str, command_id: str, config: Dict[str, CommandAliasEntry]
+    text: str,
+    command_id: str,
+    config: Dict[str, CommandAliasEntry],
+    *,
+    prefixes: frozenset[str] | None = None,
 ) -> str | None:
     """Match ``[prefix]trigger[ arg]``; return the trailing arg or None."""
-    command = _match_command_arg(text, command_id, config)
+    command = _match_command_arg(text, command_id, config, prefixes=prefixes)
     return command[1] if command else None
