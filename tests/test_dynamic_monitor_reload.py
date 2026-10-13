@@ -969,3 +969,56 @@ async def test_new_dynamics_total_increments_only_after_successful_delivery(
 
         await monitor._deliver_new_dynamics("111", [_dynamic(200)], 0)
         assert monitor.new_dynamics_total == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failed_id", [150, 200])
+async def test_same_timestamp_dynamics_retry_in_id_order_without_duplicates(
+    dynamic_monitor_modules: tuple[Any, Any], failed_id: int
+) -> None:
+    from shared.notify.delivery import DeliveryResult, TargetDelivery
+
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.fetcher = SimpleNamespace(
+        fetch_user_dynamics=AsyncMock(
+            return_value=([_dynamic(200, 1), _dynamic(150, 1)], 42)
+        )
+    )
+    monitor._resolve_author_name = AsyncMock(return_value="author")
+    monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
+    attempts: list[int] = []
+
+    async def send(message, *_args, **_kwargs):
+        dynamic_id = int(str(message))
+        attempts.append(dynamic_id)
+        success = dynamic_id != failed_id or attempts.count(dynamic_id) > 1
+        return DeliveryResult(
+            targets=[
+                TargetDelivery("group", "1001", success, None if success else "down")
+            ]
+        )
+
+    monitor.sender = SimpleNamespace(
+        build_dynamic_message=MagicMock(
+            side_effect=lambda dynamic, *_args, **_kwargs: str(dynamic.id)
+        ),
+        send_message=AsyncMock(side_effect=send),
+    )
+
+    await monitor._check_user_dynamic("111")
+    await monitor._drain_pending_deliveries()
+    assert attempts == ([150] if failed_id == 150 else [150, 200])
+    assert monitor.last_dynamic_ids["111"] == (100 if failed_id == 150 else 150)
+    assert ("111", failed_id, False) in monitor._pending_targets
+
+    await monitor._check_user_dynamic("111")
+    await monitor._drain_pending_deliveries()
+    assert attempts == ([150, 150, 200] if failed_id == 150 else [150, 200, 200])
+    assert monitor.last_dynamic_ids["111"] == 200
+    assert monitor.new_dynamics_total == 2
+    assert not monitor._pending_targets
+
+    await monitor._check_user_dynamic("111")
+    await monitor._drain_pending_deliveries()
+    assert monitor.sender.send_message.await_count == 3

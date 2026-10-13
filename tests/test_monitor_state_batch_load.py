@@ -119,11 +119,13 @@ async def db_context():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["recipient", "part", "completed"])
 @pytest.mark.parametrize("is_pinned", [False, True])
+@pytest.mark.parametrize("cursor", [100, 300])
 async def test_dynamic_delivery_restart_restores_targets_snapshot_and_part_offset(
     db_context,
     monkeypatch,
     failure,
     is_pinned,
+    cursor,
 ):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
@@ -199,7 +201,7 @@ async def test_dynamic_delivery_restart_restores_targets_snapshot_and_part_offse
         return monitor
 
     original = make_monitor()
-    original.last_dynamic_ids["111"] = 100
+    original.last_dynamic_ids["111"] = cursor
     original.initialized_uids["111"] = True
     original.pinned_dynamic_ids["111"] = 42
     dynamic = SimpleNamespace(id=200, uid="111", get_type_description=lambda: "text")
@@ -208,7 +210,7 @@ async def test_dynamic_delivery_restart_restores_targets_snapshot_and_part_offse
     )
     async with factory() as session:
         row = await session.get(DynamicMonitorState, "111")
-        assert row.last_dynamic_id == 100
+        assert row.last_dynamic_id == cursor
         assert row.pending_deliveries != "[]"
 
     restarted = make_monitor()
@@ -246,7 +248,7 @@ async def test_dynamic_delivery_restart_restores_targets_snapshot_and_part_offse
         row = await session.get(DynamicMonitorState, "111")
         assert row.pending_deliveries == "[]"
         assert row.pinned_dynamic_id == (200 if is_pinned else 42)
-        assert row.last_dynamic_id == (100 if is_pinned else 200)
+        assert row.last_dynamic_id == (cursor if is_pinned else max(cursor, 200))
 
 
 @pytest.mark.asyncio
