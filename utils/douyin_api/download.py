@@ -71,11 +71,16 @@ async def _decode_stream(
         raise ValueError(f"不支持的 Content-Encoding: {encoding}")
 
     decoder = None
+    prefix = b""
     async for chunk in chunk_iter:
-        pending = chunk
+        pending = prefix + chunk
+        prefix = b""
         while True:
             if decoder is None or decoder.eof:
                 if not pending:
+                    break
+                if encoding == "deflate" and len(pending) < 2:
+                    prefix = pending
                     break
                 if encoding == "zstd":
                     decoder = ZstdDecompressor()
@@ -83,7 +88,12 @@ async def _decode_stream(
                     mode = zlib.MAX_WBITS
                     if encoding == "gzip":
                         mode += 16
-                    elif pending[0] & 0xF != 8:
+                    # raw deflate 的填充位可像 CMF，须检查完整 zlib 头。
+                    elif (
+                        pending[0] & 0xF != 8
+                        or pending[0] >> 4 > 7
+                        or int.from_bytes(pending[:2], "big") % 31 != 0
+                    ):
                         mode = -mode
                     decoder = zlib.decompressobj(mode)
             decoded = decoder.decompress(pending, _DOWNLOAD_CHUNK_BYTES)
@@ -100,7 +110,7 @@ async def _decode_stream(
                 if not pending:
                     break
     # aiohttp/httpx 的自动解压不会可靠地检查 gzip 尾部，完整后才允许替换文件。
-    if decoder is None or not decoder.eof:
+    if prefix or decoder is None or not decoder.eof:
         raise ValueError(f"不完整的 {encoding} 响应")
 
 

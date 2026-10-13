@@ -355,3 +355,94 @@ async def test_cancelled_gzip_stream_preserves_existing_file(tmp_path: Path):
         await task
     assert destination.read_bytes() == b"previous"
     assert not destination.with_suffix(".mp4.tmp").exists()
+
+
+_DEFLATE_HEADERS = [
+    pytest.param(bytes.fromhex("08 01 00 fe ff 41 03 00"), id="raw-padding-08"),
+    pytest.param(bytes.fromhex("88 01 00 fe ff 41 03 00"), id="raw-padding-88"),
+    pytest.param(zlib.compress(b"A"), id="wrapped"),
+]
+
+
+@pytest.mark.parametrize("chunk_size", [1, 2])
+@pytest.mark.parametrize("body", _DEFLATE_HEADERS)
+async def test_deflate_headers_across_small_chunks(body, chunk_size):
+    async def chunks():
+        for offset in range(0, len(body), chunk_size):
+            yield body[offset : offset + chunk_size]
+
+    result = b"".join([chunk async for chunk in _decode_stream(chunks(), "deflate")])
+    assert result == b"A"
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+@pytest.mark.parametrize("body", _DEFLATE_HEADERS)
+async def test_deflate_headers_download_successfully(
+    media_server, tmp_path: Path, fallback, body
+):
+    url, responses = media_server
+    if fallback:
+        responses.append(_response(b"", status=403))
+    responses.append(_response(body, encoding="deflate"))
+    destination = tmp_path / "video.mp4"
+    async with aiohttp.ClientSession() as session:
+        assert await download_file(url, destination, session, max_bytes=1)
+    assert destination.read_bytes() == b"A"
+    assert not destination.with_suffix(".mp4.tmp").exists()
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+async def test_corrupt_wrapped_deflate_preserves_existing_file(
+    media_server, tmp_path: Path, fallback
+):
+    url, responses = media_server
+    body = zlib.compress(b"media content")[:-4] + b"\0\0\0\0"
+    if fallback:
+        responses.append(_response(b"", status=403))
+    responses.append(_response(body, encoding="deflate"))
+    destination = tmp_path / "video.mp4"
+    destination.write_bytes(b"previous")
+    async with aiohttp.ClientSession() as session:
+        assert not await download_file(url, destination, session)
+    assert destination.read_bytes() == b"previous"
+    assert not destination.with_suffix(".mp4.tmp").exists()
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+@pytest.mark.parametrize("body", [b"\x78", zlib.compress(b"A") + b"\x78"])
+async def test_incomplete_deflate_header_preserves_existing_file(
+    media_server, tmp_path: Path, fallback, body
+):
+    url, responses = media_server
+    if fallback:
+        responses.append(_response(b"", status=403))
+    responses.append(_response(body, encoding="deflate"))
+    destination = tmp_path / "video.mp4"
+    destination.write_bytes(b"previous")
+    async with aiohttp.ClientSession() as session:
+        assert not await download_file(url, destination, session)
+    assert destination.read_bytes() == b"previous"
+    assert not destination.with_suffix(".mp4.tmp").exists()
+
+
+async def test_cancelled_deflate_header_preserves_existing_file(tmp_path: Path):
+    started = asyncio.Event()
+
+    async def chunks():
+        yield b"\x78"
+        started.set()
+        await asyncio.Event().wait()
+
+    destination = tmp_path / "video.mp4"
+    destination.write_bytes(b"previous")
+    task = asyncio.create_task(
+        _persist_stream(
+            _decode_stream(chunks(), "deflate"), destination, None, max_bytes=8192
+        )
+    )
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert destination.read_bytes() == b"previous"
+    assert not destination.with_suffix(".mp4.tmp").exists()
