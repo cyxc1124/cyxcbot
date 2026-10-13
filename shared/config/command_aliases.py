@@ -172,17 +172,36 @@ async def command_aliases_for_event(
     """Limit arbitration to commands enabled for this actor and chat scope."""
     from nonebot.adapters.onebot.v11 import GroupMessageEvent
 
-    from shared.adapter.inbound import group_id_of, is_group_event, is_tome
+    from shared.adapter.inbound import (
+        group_id_of,
+        is_group_event,
+        is_private_event,
+        is_tome,
+        plaintext_of,
+        user_id_of,
+    )
     from shared.config.rust_rcon_policy import is_rust_rcon_enabled
+    from shared.dynamic_subscription import (
+        is_group_dynamic_subscribed,
+        is_user_dynamic_subscribed,
+    )
+    from shared.group_special_title import compose_command_text
+    from shared.group_special_title_policy import (
+        is_group_special_title_enabled_from_snapshot,
+    )
     from shared.status_check_policy import is_status_check_allowed
 
     config = snapshot.command_aliases
-    allowed = {"dynamic_extract"}
+    allowed = set()
     if await is_status_check_allowed(bot, event, snapshot):
         allowed.add("status")
     group_id = (group_id_of(event) or "").strip()
     if is_group_event(event) and group_id:
         allowed.update({"live_status", "live_monitor_list"})
+        if user_id_of(event) != str(
+            getattr(bot, "self_id", "")
+        ) and is_group_dynamic_subscribed(group_id, snapshot):
+            allowed.add("dynamic_extract")
         if any(
             group_id in group_ids
             for group_ids in snapshot.dynamic_monitor_mapping.values()
@@ -191,15 +210,137 @@ async def command_aliases_for_event(
                 {"dynamic_query_latest", "dynamic_query_pinned", "video_query_latest"}
             )
         if isinstance(event, GroupMessageEvent):
-            allowed.add("group_special_title")
+            if is_group_special_title_enabled_from_snapshot(group_id, snapshot):
+                allowed.add("group_special_title")
             if is_tome(event) and is_rust_rcon_enabled(snapshot, group_id=group_id):
                 allowed.update(cid for cid in config if cid.startswith("rust_player_"))
-    return {
+    elif is_private_event(event) and is_user_dynamic_subscribed(
+        user_id_of(event), snapshot
+    ):
+        allowed.add("dynamic_extract")
+    scoped = {
         cid: entry
         if cid in allowed
         else CommandAliasEntry(enabled=False, triggers=entry.triggers)
         for cid, entry in config.items()
     }
+    text = plaintext_of(event)
+    message = getattr(event, "message", None)
+    title_text = (
+        compose_command_text(message)
+        if isinstance(event, GroupMessageEvent) and message is not None
+        else text
+    )
+    argument_matches = _matching_argument_commands(text, title_text, scoped)
+    matched_ids = {cid for cid, _ in argument_matches}
+    for cid in _ARGUMENT_COMMAND_IDS:
+        if cid in scoped and cid not in matched_ids:
+            scoped[cid] = CommandAliasEntry(
+                enabled=False, triggers=scoped[cid].triggers
+            )
+    exact_owner = next(
+        (
+            cid
+            for cid, entry in scoped.items()
+            if entry.enabled
+            and text in entry.triggers
+            and cid not in _PREFIX_REQUIRED_COMMANDS
+            and (cid not in _ARGUMENT_COMMAND_IDS or cid in matched_ids)
+        ),
+        None,
+    )
+    owner = exact_owner or (argument_matches[0][0] if argument_matches else None)
+    if owner is not None:
+        scoped = {
+            cid: entry
+            if cid == owner
+            else CommandAliasEntry(enabled=False, triggers=entry.triggers)
+            for cid, entry in scoped.items()
+        }
+    return scoped
+
+
+_ARGUMENT_COMMAND_IDS = (
+    "group_special_title",
+    "dynamic_extract",
+    "live_status",
+    "rust_player_bind",
+    "rust_player_shop_list",
+    "rust_player_shop_redeem",
+)
+
+
+def _matching_argument_commands(
+    text: str, title_text: str, config: Dict[str, CommandAliasEntry]
+) -> list[tuple[str, int]]:
+    from shared.config.rust_player import (
+        _match_shop_list_command,
+        parse_shop_redeem_args,
+    )
+    from shared.group_special_title import _match_title_command
+
+    matched = []
+    for cid in _ARGUMENT_COMMAND_IDS:
+        entry = config.get(cid)
+        if not entry or not entry.enabled:
+            continue
+        if cid == "group_special_title":
+            command = _match_title_command(title_text, config)
+        elif cid == "dynamic_extract":
+            command = _match_extract_command(text, config)
+        elif cid == "rust_player_shop_list":
+            command = _match_shop_list_command(text, config)
+        elif cid == "rust_player_shop_redeem":
+            command = (
+                _match_command_arg(text, cid, config)
+                if parse_shop_redeem_args(text, config) is not None
+                else None
+            )
+        else:
+            command = _match_command_arg(text, cid, config)
+        if command is not None:
+            matched.append((cid, len(command[0])))
+    # 用实际命中的触发词比较具体程度，平局沿用提取4、头衔5、其它10的 matcher 优先级。
+    return sorted(
+        matched,
+        key=lambda item: (
+            -item[1],
+            4
+            if item[0] == "dynamic_extract"
+            else 5
+            if item[0] == "group_special_title"
+            else 10,
+            item[0],
+        ),
+    )
+
+
+def _match_extract_command(
+    message_text: str, config: Dict[str, CommandAliasEntry]
+) -> tuple[str, str] | None:
+    alternation = trigger_alternation("dynamic_extract", config)
+    if alternation is None:
+        return None
+    match = re.match(
+        rf"^(?:{prefix_alternation()})(?P<trigger>{alternation})(?:"
+        r"https?://(?:www\.)?bilibili\.com/opus/(\d+)|"
+        r"https?://t\.bilibili\.com/(\d+)|"
+        r"(\d{10,})"
+        r")\s*$",
+        message_text.strip(),
+        re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    return match.group("trigger"), next(group for group in match.groups()[1:] if group)
+
+
+def parse_extract_dynamic_id(
+    message_text: str, config: Dict[str, CommandAliasEntry]
+) -> str | None:
+    """Return dynamic ID from the complete prefixed extraction command."""
+    command = _match_extract_command(message_text, config)
+    return command[1] if command else None
 
 
 def find_trigger_conflicts(
@@ -486,12 +627,12 @@ def _shadowed_by_exact_trigger_elsewhere(
     )
 
 
-def match_command_arg(
+def _match_command_arg(
     text: str,
     command_id: str,
     config: Dict[str, CommandAliasEntry],
-) -> str | None:
-    """Match ``[prefix]trigger[ arg]``; return the trailing arg text, or None if unmatched."""
+) -> tuple[str, str] | None:
+    """Return the actual trigger and trailing arg, or None if unmatched."""
     entry = resolve_entry(command_id, config)
     if not entry.enabled or not entry.triggers:
         return None
@@ -512,7 +653,7 @@ def match_command_arg(
             ):
                 continue
             if candidate == trigger:
-                return ""
+                return trigger, ""
             if (
                 candidate.startswith(trigger)
                 and candidate[len(trigger)].isspace()
@@ -520,5 +661,13 @@ def match_command_arg(
                     candidate, command_id, config
                 )
             ):
-                return candidate[len(trigger) :].strip()
+                return trigger, candidate[len(trigger) :].strip()
     return None
+
+
+def match_command_arg(
+    text: str, command_id: str, config: Dict[str, CommandAliasEntry]
+) -> str | None:
+    """Match ``[prefix]trigger[ arg]``; return the trailing arg or None."""
+    command = _match_command_arg(text, command_id, config)
+    return command[1] if command else None

@@ -76,9 +76,9 @@ def shop_list_trigger_hint(command_aliases: Dict[str, CommandAliasEntry]) -> str
     return entry.triggers[0] if entry.triggers else "商品列表"
 
 
-def parse_shop_list_page(
+def _match_shop_list_command(
     text: str, command_aliases: Dict[str, CommandAliasEntry]
-) -> int | None:
+) -> tuple[str, int] | None:
     """Match shop list command; return 1-based page number or None."""
     entry = resolve_entry("rust_player_shop_list", command_aliases)
     if not entry.enabled or not entry.triggers:
@@ -93,15 +93,23 @@ def parse_shop_list_page(
     for candidate in candidates:
         for trigger in sorted(entry.triggers, key=len, reverse=True):
             if candidate == trigger:
-                return 1
+                return trigger, 1
             if candidate.startswith(trigger):
                 suffix = candidate[len(trigger) :]
                 if not suffix:
-                    return 1
+                    return trigger, 1
                 if suffix.isdigit():
                     page = int(suffix)
-                    return page if page >= 1 else None
+                    return (trigger, page) if page >= 1 else None
     return None
+
+
+def parse_shop_list_page(
+    text: str, command_aliases: Dict[str, CommandAliasEntry]
+) -> int | None:
+    """Match shop list command; return 1-based page number or None."""
+    command = _match_shop_list_command(text, command_aliases)
+    return command[1] if command else None
 
 
 def shop_redeem_trigger_hint(command_aliases: Dict[str, CommandAliasEntry]) -> str:
