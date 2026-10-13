@@ -34,6 +34,106 @@ async def _run(handler, bot, event):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("custom", [False, True], ids=["binding", "custom"])
+@pytest.mark.parametrize(
+    "name,text,old_prefixes,new_prefixes,old_rcon,new_rcon",
+    [
+        ("server", "$server status", [], ["$"], False, True),
+        ("server", "server status", [], ["$"], True, True),
+        ("!status", "!!status", [], ["!"], False, True),
+        ("server", "$server status", ["$"], [], True, False),
+    ],
+)
+async def test_rcon_prefix_remainder_collisions_use_concrete_group_inputs(
+    monkeypatch, custom, name, text, old_prefixes, new_prefixes, old_rcon, new_rcon
+):
+    from nonebot.adapters.onebot.v11 import GroupMessageEvent
+
+    import plugins.rust_rcon as rcon_plugin
+    from plugins.status_check import status_checker
+    from shared.config.command_aliases import COMMAND_DEFAULTS
+    from shared.config.rust_rcon import RustRconBindingRecord
+    from shared.config.rust_rcon_custom import RustRconCustomCommandRecord
+
+    aliases = normalize_command_aliases(
+        {
+            cid: {"enabled": cid == "status", "triggers": ["status"]}
+            for cid in COMMAND_DEFAULTS
+        }
+    )
+    snap = _command_snapshot(aliases)
+    snap.rust_rcon_bindings = [
+        RustRconBindingRecord(
+            id=1,
+            alias="rcon1" if custom else name,
+            host="localhost",
+            port=28016,
+            password="",
+            allowed_qq_ids=("123",),
+        )
+    ]
+    if custom:
+        snap.rust_rcon_custom_commands = [
+            RustRconCustomCommandRecord(
+                id=1,
+                name=name,
+                template="status",
+                binding_id=1,
+                allowed_qq_ids=("123",),
+            )
+        ]
+    service = SimpleNamespace(get_snapshot=lambda: snap)
+    for module in (rcon_plugin, status_checker):
+        monkeypatch.setattr(module, "get_config_service", lambda: service)
+    monkeypatch.setattr("shared.config.service.get_config_service", lambda: service)
+    monkeypatch.setattr(
+        "shared.config.command_aliases._configured_command_starts",
+        lambda: frozenset({"/"}),
+    )
+    status_finish = AsyncMock(side_effect=FinishedException)
+    rcon_finish = AsyncMock(side_effect=FinishedException)
+    execute = AsyncMock(return_value="RCON 状态")
+    monkeypatch.setattr(status_checker.status_cmd, "finish", status_finish)
+    monkeypatch.setattr(rcon_plugin.rust_rcon_cmd, "finish", rcon_finish)
+    monkeypatch.setattr(rcon_plugin, "execute_rcon_command", execute)
+    monkeypatch.setattr(
+        status_checker, "get_bot_status", AsyncMock(return_value="机器人状态")
+    )
+    adapter = MagicMock()
+    adapter.config = SimpleNamespace(superusers=set())
+    adapter.get_name.return_value = "OneBot V11"
+    bot = Bot(adapter, "999")
+    event = GroupMessageEvent(
+        time=0,
+        self_id=999,
+        post_type="message",
+        sub_type="normal",
+        message_type="group",
+        message_id=1,
+        user_id=123,
+        group_id=456,
+        message=Message(text),
+        original_message=Message(text),
+        raw_message=text,
+        font=0,
+        sender={"user_id": 123},
+        to_me=True,
+    )
+    for prefixes, expected in ((old_prefixes, old_rcon), (new_prefixes, new_rcon)):
+        snap.command_extra_prefixes = prefixes
+        status_finish.reset_mock()
+        rcon_finish.reset_mock()
+        execute.reset_mock()
+        await _run(status_checker.handle_status_command, bot, event)
+        await _run(rcon_plugin.handle_rust_rcon, bot, event)
+        assert status_finish.await_count == 1
+        assert rcon_finish.await_count == int(expected)
+        assert execute.await_count == int(expected and (custom or " " in text))
+        if execute.await_count:
+            assert execute.await_args.args[-1] == "status"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "kind, title_expected",
     [

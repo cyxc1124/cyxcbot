@@ -674,9 +674,9 @@ async def test_prefix_only_patch_preserves_legacy_rcon_alias_collisions(
             )
     await service.load()
     saved = await settings_api.update_settings(
-        SettingsUpdateRequest(command_extra_prefixes=["~"]), None
+        SettingsUpdateRequest(command_extra_prefixes=[]), None
     )
-    assert saved.command_extra_prefixes == ["~"]
+    assert saved.command_extra_prefixes == []
     with pytest.raises(HTTPException, match="冲突") as exc:
         await settings_api.update_settings(
             SettingsUpdateRequest(
@@ -686,9 +686,12 @@ async def test_prefix_only_patch_preserves_legacy_rcon_alias_collisions(
         )
     assert exc.value.status_code == 400
     async with factory() as session:
-        assert json.loads(
-            (await session.get(SystemSetting, "command_extra_prefixes")).value
-        ) == ["~"]
+        assert (
+            json.loads(
+                (await session.get(SystemSetting, "command_extra_prefixes")).value
+            )
+            == []
+        )
         assert await session.get(SystemSetting, "command_aliases") is None
 
 
@@ -738,13 +741,13 @@ async def test_settings_rejects_reverse_prefix_required_argument_overlap(
         ("status", "!!status", ["!"], ["!", "!!"], True),
         ("!rcon1 status", "rcon1", [], ["!"], True),
         ("con1 status", "rcon1", [], ["r"], True),
-        ("!status", ".status", [], ["!", "."], False),
-        ("status", "!status", [], ["!", "!sta"], False),
+        ("!status", ".status", [], ["!", "."], True),
+        ("status", "!status", [], ["!", "!sta"], True),
         ("status", "!status", ["!"], [], False),
-        ("status", "status", [], ["~"], False),
+        ("status", "status", [], ["~"], True),
     ],
 )
-async def test_prefix_patch_rejects_only_new_private_rcon_collisions(
+async def test_prefix_patch_rejects_new_inputs_in_either_chat_scope(
     db_context, monkeypatch, trigger, name, old_prefixes, new_prefixes, rejected
 ):
     import json
@@ -853,7 +856,7 @@ async def test_prefix_only_patch_preserves_legacy_group_only_custom_collision(
     service = ConfigService()
     monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
     monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
-    await service.set_settings({"command_extra_prefixes": "[]"})
+    await service.set_settings({"command_extra_prefixes": '["!"]'})
     async with factory() as session, session.begin():
         binding = RustRconBinding(alias="rcon1", host="localhost")
         session.add(binding)
@@ -865,9 +868,9 @@ async def test_prefix_only_patch_preserves_legacy_group_only_custom_collision(
         )
     await service.load()
     saved = await settings_api.update_settings(
-        SettingsUpdateRequest(command_extra_prefixes=["!"]), None
+        SettingsUpdateRequest(command_extra_prefixes=[]), None
     )
-    assert saved.command_extra_prefixes == ["!"]
+    assert saved.command_extra_prefixes == []
     with pytest.raises(HTTPException, match="冲突"):
         await settings_api.update_settings(
             SettingsUpdateRequest(
@@ -882,6 +885,12 @@ async def test_prefix_only_patch_preserves_legacy_group_only_custom_collision(
 @pytest.mark.parametrize(
     "cid,trigger,name,old_prefixes,new_prefixes,enabled,parent_enabled,rejected",
     [
+        ("status", "status", "server", [], ["$"], True, True, True),
+        ("live_monitor_list", "list", "server", [], ["$"], True, True, True),
+        ("status", "status", "server", ["$"], [], True, True, False),
+        ("status", "status", "server", ["$"], ["$"], True, True, False),
+        ("rust_player_bind", "!bind", "bind", ["!"], ["!", "$"], True, True, False),
+        ("rust_player_bind", "!bind", "bind", ["!", "!bin"], ["!"], True, True, True),
         ("live_monitor_list", "!list", "list", [], ["!"], True, True, True),
         ("live_status", "!live", "live", [], ["!"], True, True, True),
         ("dynamic_query_latest", "!latest", "latest", [], ["!"], True, True, True),
@@ -893,11 +902,11 @@ async def test_prefix_only_patch_preserves_legacy_group_only_custom_collision(
         ("rust_player_points", "!points", "points", [], ["!"], True, True, True),
         ("rust_player_shop_list", "!items", "items", [], ["!"], True, True, True),
         ("rust_player_shop_redeem", "!redeem", "redeem", [], ["!"], True, True, True),
-        ("live_monitor_list", "list", "!list", [], ["!"], True, True, False),
-        ("live_monitor_list", "!list", "list", ["!"], ["!", "~"], True, True, False),
+        ("live_monitor_list", "list", "!list", [], ["!"], True, True, True),
+        ("live_monitor_list", "!list", "list", ["!"], ["!"], True, True, False),
         ("live_monitor_list", "!list", "list", ["!"], [], True, True, False),
-        ("live_monitor_list", "!list", "list", [], ["!", "!lis"], True, True, False),
-        ("live_monitor_list", "!list", ".list", [], ["!", "."], True, True, False),
+        ("rust_player_bind", "!bind", "bind", [], ["!", "!bin"], True, True, False),
+        ("rust_player_bind", "!bind", ".bind", [], ["!", "."], True, True, False),
         ("live_monitor_list", "!list", "list", [], ["!"], False, True, False),
         ("live_monitor_list", "!list", "list", [], ["!"], True, False, False),
     ],
@@ -922,6 +931,7 @@ async def test_prefix_patch_compares_group_rcon_collisions_separately(
     from admin.api.v1 import settings as settings_api
     from admin.schemas.settings import SettingsUpdateRequest
     from shared.config.command_aliases import (
+        COMMAND_DEFAULTS,
         normalize_command_aliases,
         serialize_command_aliases,
     )
@@ -935,9 +945,9 @@ async def test_prefix_patch_compares_group_rcon_collisions_separately(
         "shared.config.command_aliases._configured_command_starts",
         lambda: frozenset({"/"}),
     )
-    aliases = normalize_command_aliases(
-        {cid: {"triggers": [trigger], "enabled": enabled}}
-    )
+    raw_aliases = {command_id: {"enabled": False} for command_id in COMMAND_DEFAULTS}
+    raw_aliases[cid] = {"triggers": [trigger], "enabled": enabled}
+    aliases = normalize_command_aliases(raw_aliases)
     await service.set_settings(
         {
             "command_extra_prefixes": json.dumps(old_prefixes),

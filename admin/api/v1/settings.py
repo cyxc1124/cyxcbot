@@ -65,7 +65,7 @@ def _matches_builtin(text, cid, config, prefixes, *, group: bool) -> bool:
 
 
 def _new_rcon_prefix_conflict(config, snapshot, extra_prefixes) -> str | None:
-    """Compare actual command grammars per chat scope, preserving legacy pairs."""
+    """Reject inputs newly shared by actual command grammars in each chat scope."""
     old_prefixes = command_prefixes(snapshot.command_extra_prefixes)
     new_prefixes = command_prefixes(extra_prefixes)
     bindings = [record for record in snapshot.rust_rcon_bindings if record.enabled]
@@ -86,7 +86,7 @@ def _new_rcon_prefix_conflict(config, snapshot, extra_prefixes) -> str | None:
                     continue
                 for trigger in entry.triggers:
                     single = {cid: CommandAliasEntry(enabled=True, triggers=[trigger])}
-                    bases = {trigger, name}
+                    bases = {trigger, name, f"{name} {trigger}"}
                     if cid == "dynamic_extract":
                         bases.update(
                             {
@@ -109,8 +109,8 @@ def _new_rcon_prefix_conflict(config, snapshot, extra_prefixes) -> str | None:
                         for prefix in old_prefixes | new_prefixes
                         for text in bases
                     }
-                    collisions = [
-                        any(
+                    for text in inputs:
+                        collisions = [
                             _matches_builtin(text, cid, single, prefixes, group=group)
                             and (
                                 match_rust_rcon_custom_command(
@@ -125,15 +125,11 @@ def _new_rcon_prefix_conflict(config, snapshot, extra_prefixes) -> str | None:
                                 )
                             )
                             is not None
-                            for text in inputs
-                        )
-                        for prefixes in (old_prefixes, new_prefixes)
-                    ]
-                    if collisions == [False, True]:
-                        kind = "自定义指令" if custom else "绑定"
-                        return (
-                            f"新增前缀使触发词「{trigger}」与RCON {kind}「{name}」冲突"
-                        )
+                            for prefixes in (old_prefixes, new_prefixes)
+                        ]
+                        if collisions == [False, True]:
+                            kind = "自定义指令" if custom else "绑定"
+                            return f"新增前缀使触发词「{trigger}」与RCON {kind}「{name}」冲突"
     return None
 
 
