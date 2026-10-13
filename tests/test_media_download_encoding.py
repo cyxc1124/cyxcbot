@@ -11,6 +11,7 @@ import aiohttp
 import brotli
 import pytest
 
+import utils.douyin_api.download as media_download
 from utils.douyin_api.download import (
     _DOWNLOAD_CHUNK_BYTES,
     _decode_stream,
@@ -59,6 +60,20 @@ async def media_server():
     finally:
         server.close()
         await server.wait_closed()
+
+
+@pytest.fixture
+def tracked_spools(monkeypatch):
+    original = media_download.tempfile.TemporaryFile
+    opened = []
+
+    def open_spool(*args, **kwargs):
+        handle = original(*args, **kwargs)
+        opened.append((handle, kwargs.get("dir")))
+        return handle
+
+    monkeypatch.setattr(media_download.tempfile, "TemporaryFile", open_spool)
+    return opened
 
 
 @pytest.mark.parametrize("status", [200, 206])
@@ -393,7 +408,7 @@ async def test_deflate_headers_download_successfully(
 
 @pytest.mark.parametrize("fallback", [False, True])
 async def test_corrupt_wrapped_deflate_preserves_existing_file(
-    media_server, tmp_path: Path, fallback
+    media_server, tmp_path: Path, fallback, tracked_spools
 ):
     url, responses = media_server
     body = zlib.compress(b"media content")[:-4] + b"\0\0\0\0"
@@ -406,6 +421,10 @@ async def test_corrupt_wrapped_deflate_preserves_existing_file(
         assert not await download_file(url, destination, session)
     assert destination.read_bytes() == b"previous"
     assert not destination.with_suffix(".mp4.tmp").exists()
+    assert len(tracked_spools) == 2
+    assert all(
+        handle.closed and directory == tmp_path for handle, directory in tracked_spools
+    )
 
 
 @pytest.mark.parametrize("fallback", [False, True])
@@ -425,7 +444,9 @@ async def test_incomplete_deflate_header_preserves_existing_file(
     assert not destination.with_suffix(".mp4.tmp").exists()
 
 
-async def test_cancelled_deflate_header_preserves_existing_file(tmp_path: Path):
+async def test_cancelled_deflate_header_preserves_existing_file(
+    tmp_path: Path, tracked_spools
+):
     started = asyncio.Event()
 
     async def chunks():
@@ -437,7 +458,10 @@ async def test_cancelled_deflate_header_preserves_existing_file(tmp_path: Path):
     destination.write_bytes(b"previous")
     task = asyncio.create_task(
         _persist_stream(
-            _decode_stream(chunks(), "deflate"), destination, None, max_bytes=8192
+            _decode_stream(chunks(), "deflate", max_bytes=8192, temp_dir=tmp_path),
+            destination,
+            None,
+            max_bytes=8192,
         )
     )
     await started.wait()
@@ -446,3 +470,122 @@ async def test_cancelled_deflate_header_preserves_existing_file(tmp_path: Path):
         await task
     assert destination.read_bytes() == b"previous"
     assert not destination.with_suffix(".mp4.tmp").exists()
+    assert len(tracked_spools) == 2
+    assert all(
+        handle.closed and directory == tmp_path for handle, directory in tracked_spools
+    )
+
+
+_COLLIDING_DEFLATE = [
+    pytest.param(
+        b"\x78\x9c\x00\x63\xff" + b"A" * 156 + b"\x03\x00", b"A" * 156, id="early-error"
+    ),
+    pytest.param(
+        b"\x78\x9c\x01\x63\xfe" + b"\x9c\x01" + b"A" * 410 + b"\x03\x00",
+        b"\x9c\x01" + b"A" * 410,
+        id="after-output",
+    ),
+]
+
+
+@pytest.mark.parametrize("body, payload", _COLLIDING_DEFLATE)
+@pytest.mark.parametrize("chunk_size", [1, 4096])
+async def test_colliding_raw_deflate_stream(body, payload, chunk_size):
+    assert zlib.decompress(body, -zlib.MAX_WBITS) == payload
+
+    async def chunks():
+        for offset in range(0, len(body), chunk_size):
+            yield body[offset : offset + chunk_size]
+
+    result = b"".join([chunk async for chunk in _decode_stream(chunks(), "deflate")])
+    assert result == payload
+
+
+@pytest.mark.parametrize("body, payload", _COLLIDING_DEFLATE)
+@pytest.mark.parametrize("fallback", [False, True])
+async def test_colliding_raw_deflate_download(
+    media_server, tmp_path, body, payload, fallback, tracked_spools
+):
+    url, responses = media_server
+    if fallback:
+        responses.append(_response(b"", status=403))
+    responses.append(_response(body, encoding="deflate"))
+    destination = tmp_path / "video.mp4"
+    destination.write_bytes(b"previous")
+    async with aiohttp.ClientSession() as session:
+        assert await download_file(url, destination, session, max_bytes=len(payload))
+    assert destination.read_bytes() == payload
+    assert not destination.with_suffix(".mp4.tmp").exists()
+    assert len(tracked_spools) == 2
+    assert all(
+        handle.closed and directory == tmp_path for handle, directory in tracked_spools
+    )
+
+
+async def test_unselected_deflate_spool_closes_before_output(tmp_path, tracked_spools):
+    body = _COLLIDING_DEFLATE[1].values[0]
+
+    async def chunks():
+        yield body
+
+    decoded = _decode_stream(chunks(), "deflate", temp_dir=tmp_path)
+    assert await anext(decoded) == zlib.decompress(body, -zlib.MAX_WBITS)
+    assert [handle.closed for handle, _ in tracked_spools] == [True, False]
+    await decoded.aclose()
+    assert all(handle.closed for handle, _ in tracked_spools)
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+async def test_deflate_candidate_limit_preserves_existing_file(
+    media_server, tmp_path, fallback, tracked_spools
+):
+    url, responses = media_server
+    if fallback:
+        responses.append(_response(b"", status=403))
+    responses.append(_response(zlib.compress(b"A" * 4096), encoding="deflate"))
+    destination = tmp_path / "video.mp4"
+    destination.write_bytes(b"previous")
+    async with aiohttp.ClientSession() as session:
+        assert not await download_file(url, destination, session, max_bytes=32)
+    assert destination.read_bytes() == b"previous"
+    assert not destination.with_suffix(".mp4.tmp").exists()
+    assert len(tracked_spools) == 2
+    assert all(
+        handle.closed and directory == tmp_path for handle, directory in tracked_spools
+    )
+
+
+async def test_deflate_candidate_limit_stops_before_more_input(
+    tmp_path, tracked_spools
+):
+    reached_end = False
+
+    async def chunks():
+        nonlocal reached_end
+        yield zlib.compress(b"A" * 4096)
+        reached_end = True
+        await asyncio.Event().wait()
+
+    with pytest.raises(ValueError, match="大小上限"):
+        async for _ in _decode_stream(
+            chunks(), "deflate", max_bytes=32, temp_dir=tmp_path
+        ):
+            pytest.fail("候选完整验证前不可输出")
+    assert not reached_end
+    assert all(handle.closed for handle, _ in tracked_spools)
+
+
+async def test_stacked_deflate_keeps_small_final_size(
+    media_server, tmp_path, tracked_spools
+):
+    url, responses = media_server
+    responses.append(
+        _response(zlib.compress(gzip.compress(b"x")), encoding="gzip, deflate")
+    )
+    destination = tmp_path / "video.mp4"
+    async with aiohttp.ClientSession() as session:
+        assert await download_file(url, destination, session, max_bytes=1)
+    assert destination.read_bytes() == b"x"
+    assert all(
+        handle.closed and directory == tmp_path for handle, directory in tracked_spools
+    )
