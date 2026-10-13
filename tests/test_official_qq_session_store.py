@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib.util
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -12,7 +13,8 @@ import nonebot.message
 import pytest
 from nonebot.adapters.qq import Bot as QQBot
 from sqlalchemy import select
-from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects import mysql, postgresql
+from sqlalchemy.dialects.mysql.mariadb import MariaDBDialect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from shared.adapter import sessions
@@ -147,30 +149,55 @@ async def test_first_message_survives_guard_and_cache_preprocessors(
 
 
 @pytest.mark.parametrize("name", ["", "User"])
-async def test_postgresql_upsert_compiles_with_correct_name_update(
-    session_db, monkeypatch, name
+@pytest.mark.parametrize(
+    "dialect, conflict_clause",
+    [
+        pytest.param(
+            postgresql.dialect(),
+            "ON CONFLICT (openid) DO UPDATE SET ",
+            id="postgresql",
+        ),
+        pytest.param(
+            mysql.aiomysql.dialect(),
+            "ON DUPLICATE KEY UPDATE ",
+            id="mysql-aiomysql",
+        ),
+        pytest.param(
+            mysql.asyncmy.dialect(),
+            "ON DUPLICATE KEY UPDATE ",
+            id="mysql-asyncmy",
+        ),
+        pytest.param(MariaDBDialect(), "ON DUPLICATE KEY UPDATE ", id="mariadb"),
+    ],
+)
+async def test_upsert_compiles_with_correct_name_update(
+    session_db, monkeypatch, name, dialect, conflict_clause
 ):
     _, _, model = session_db
     session = MagicMock(spec=AsyncSession)
     session.__aenter__.return_value = session
-    session.get_bind.return_value = SimpleNamespace(dialect=postgresql.dialect())
+    session.get_bind.return_value = SimpleNamespace(dialect=dialect)
     session.execute = AsyncMock()
     monkeypatch.setattr(sessions, "_orm_session", lambda: session)
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    monkeypatch.setattr(sessions, "utcnow", lambda: now)
     await sessions.upsert_session("openid", "c2c", name)
     statement = session.execute.await_args.args[0]
-    compiled = statement.compile(
-        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
-    )
-    insert_sql, separator, update_sql = str(compiled).partition(
-        "ON CONFLICT (openid) DO UPDATE SET "
-    )
-    assert separator
-    assert "kind = 'c2c'" in update_sql
-    assert "last_seen = '" in update_sql
-    if name:
-        assert "name = 'User'" in update_sql
-    else:
-        assert "name =" not in update_sql
+    bound = statement.compile(dialect=dialect)
+    assert bound.params["openid"] == "openid"
+    assert bound.params["kind"] == "c2c"
+    assert bound.params["last_seen"] == now
     stored_name = name or sessions._fallback_name("c2c", "openid")
-    assert f"VALUES ('openid', 'c2c', '{stored_name}'," in insert_sql
+    assert bound.params["name"] == stored_name
+    compiled = statement.compile(dialect=type(dialect)(paramstyle="named"))
+    insert_sql, separator, update_sql = str(compiled).partition(conflict_clause)
+    assert separator
+    expected_updates = {"kind": "c2c", "last_seen": now}
+    if name:
+        expected_updates["name"] = name
+    update_bindings = re.findall(r"(\w+) = :(\w+)", update_sql)
+    assert {
+        column: compiled.params[parameter] for column, parameter in update_bindings
+    } == expected_updates
+    assert "VALUES (:openid, :kind, :name, :last_seen)" in insert_sql
     session.get_bind.assert_called_once_with(mapper=model)

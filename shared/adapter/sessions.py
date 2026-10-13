@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from nonebot.message import event_preprocessor
 from sqlalchemy import select
+from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -61,11 +62,13 @@ async def upsert_session(openid: str, kind: SessionKind, name: str = "") -> None
     model = _session_model()
     async with _orm_session() as session:
         async with session.begin():
-            insert = (
-                sqlite_insert
-                if session.get_bind(mapper=model).dialect.name == "sqlite"
-                else postgresql_insert
-            )
+            dialect = session.get_bind(mapper=model).dialect.name
+            insert = {
+                "sqlite": sqlite_insert,
+                "postgresql": postgresql_insert,
+                "mysql": mysql_insert,
+                "mariadb": mysql_insert,
+            }[dialect]
             now = utcnow()
             updates = {"kind": kind, "last_seen": now}
             if name:
@@ -77,11 +80,13 @@ async def upsert_session(openid: str, kind: SessionKind, name: str = "") -> None
                 name=name[:128] or _fallback_name(kind, oid),
                 last_seen=now,
             )
-            await session.execute(
-                statement.on_conflict_do_update(
+            if dialect in {"mysql", "mariadb"}:
+                statement = statement.on_duplicate_key_update(**updates)
+            else:
+                statement = statement.on_conflict_do_update(
                     index_elements=[model.openid], set_=updates
                 )
-            )
+            await session.execute(statement)
 
 
 async def delete_session(openid: str) -> None:
