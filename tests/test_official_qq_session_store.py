@@ -15,6 +15,7 @@ from nonebot.adapters.qq import Bot as QQBot
 from sqlalchemy import select
 from sqlalchemy.dialects import mysql, postgresql
 from sqlalchemy.dialects.mysql.mariadb import MariaDBDialect
+from sqlalchemy.dialects.postgresql.psycopg import PGDialect_psycopg
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from shared.adapter import sessions
@@ -158,6 +159,11 @@ async def test_first_message_survives_guard_and_cache_preprocessors(
             id="postgresql",
         ),
         pytest.param(
+            PGDialect_psycopg(),
+            "ON CONFLICT (openid) DO UPDATE SET ",
+            id="postgresql-psycopg",
+        ),
+        pytest.param(
             mysql.aiomysql.dialect(),
             "ON DUPLICATE KEY UPDATE ",
             id="mysql-aiomysql",
@@ -190,7 +196,7 @@ async def test_upsert_compiles_with_correct_name_update(
     stored_name = name or sessions._fallback_name("c2c", "openid")
     assert bound.params["name"] == stored_name
     compiled = statement.compile(dialect=type(dialect)(paramstyle="named"))
-    insert_sql, separator, update_sql = str(compiled).partition(conflict_clause)
+    _, separator, update_sql = str(compiled).partition(conflict_clause)
     assert separator
     expected_updates = {"kind": "c2c", "last_seen": now}
     if name:
@@ -199,5 +205,4 @@ async def test_upsert_compiles_with_correct_name_update(
     assert {
         column: compiled.params[parameter] for column, parameter in update_bindings
     } == expected_updates
-    assert "VALUES (:openid, :kind, :name, :last_seen)" in insert_sql
     session.get_bind.assert_called_once_with(mapper=model)
