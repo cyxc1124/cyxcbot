@@ -145,13 +145,13 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
   }
 
   const handleToggle = async (itemId: string, enabled: boolean) => {
-    if (savingRef.current) return
-    savingRef.current = true
-
     const next = computePolicyAfterToggle(itemId, enabled, allIds, restrict, enabledIds)
 
     const prevRestrict = restrict
     const prevEnabledIds = enabledIds
+    if (savingRef.current) return
+    savingRef.current = true
+
     setRestrict(next.restrict)
     setEnabledIds(next.enabled_ids)
     setBusy(true)
