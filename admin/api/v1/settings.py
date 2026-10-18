@@ -154,7 +154,11 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
             encrypt_value(secret) if secret else ""
         )
     if body.official_qq_is_sandbox is not None:
-        updates["official_qq_is_sandbox"] = str(body.official_qq_is_sandbox).lower()
+        if body.official_qq_is_sandbox:
+            raise HTTPException(
+                status_code=400, detail="官方 QQ 已统一 API，不再支持沙箱环境开关"
+            )
+        updates["official_qq_is_sandbox"] = "false"
     if body.official_qq_use_websocket is not None:
         updates["official_qq_use_websocket"] = str(
             body.official_qq_use_websocket

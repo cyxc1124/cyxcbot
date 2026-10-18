@@ -10,7 +10,7 @@ from nonebot.log import logger
 if TYPE_CHECKING:
     from shared.config.types import AppConfigSnapshot
 
-_applied_key: tuple[str, str, bool, bool] | None = None
+_applied_key: tuple[str, str, bool] | None = None
 
 
 def _mask_app_id(app_id: str) -> str:
@@ -37,7 +37,6 @@ def _bot_info(app_id: str, secret: str, use_websocket: bool):
     return BotInfo.model_validate(
         {
             "id": app_id,
-            "token": "",
             "secret": secret,
             "intent": intents,
             "use_websocket": use_websocket,
@@ -80,17 +79,14 @@ async def apply_official_runtime(
 
     app_id = (snapshot.official_qq_app_id or "").strip()
     secret = snapshot.official_qq_app_secret or ""
-    sandbox = bool(snapshot.official_qq_is_sandbox)
     use_ws = bool(snapshot.official_qq_use_websocket)
-    key = (app_id, secret, sandbox, use_ws)
+    key = (app_id, secret, use_ws)
 
     try:
         adapter = _get_adapter()
     except Exception:
         logger.debug("官方 QQ 适配器尚未注册，跳过热连接")
         return
-
-    adapter.qq_config.qq_is_sandbox = sandbox
 
     if not app_id or not secret:
         if _applied_key is not None:

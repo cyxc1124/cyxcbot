@@ -24,7 +24,9 @@ class CookieStatusResponse(BaseModel):
 class OfficialQQSettingsResponse(BaseModel):
     app_id: str = ""
     secret: CookieStatusResponse
-    is_sandbox: bool = False
+    is_sandbox: bool = Field(
+        default=False, description="兼容旧客户端，固定为 false；官方 QQ 已统一 API"
+    )
     use_websocket: bool = False
 
 
@@ -151,5 +153,7 @@ class SettingsUpdateRequest(BaseModel):
     link_parser_shared_media_dir: Optional[str] = Field(default=None, max_length=512)
     official_qq_app_id: Optional[str] = Field(default=None, max_length=64)
     official_qq_app_secret: Optional[str] = None
-    official_qq_is_sandbox: Optional[bool] = None
+    official_qq_is_sandbox: Optional[bool] = Field(
+        default=None, description="兼容旧客户端，仅接受 false"
+    )
     official_qq_use_websocket: Optional[bool] = None

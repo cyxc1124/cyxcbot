@@ -14,12 +14,10 @@ export function SettingsOfficialQQPage() {
   const [saving, setSaving] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
-  const [sandboxDraft, setSandboxDraft] = useState<boolean | null>(null)
   const [websocketDraft, setWebsocketDraft] = useState<boolean | null>(null)
 
   const configured = Boolean(settings?.official_qq?.secret.configured)
   const currentAppId = settings?.official_qq?.app_id ?? ''
-  const isSandbox = sandboxDraft ?? settings?.official_qq?.is_sandbox ?? false
   const useWebsocket = websocketDraft ?? settings?.official_qq?.use_websocket ?? false
 
   const handleSave = async () => {
@@ -36,7 +34,7 @@ export function SettingsOfficialQQPage() {
     try {
       const payload: Parameters<typeof patchSettings>[0] = {
         official_qq_app_id: nextAppId,
-        official_qq_is_sandbox: isSandbox,
+        official_qq_is_sandbox: false,
         official_qq_use_websocket: useWebsocket,
       }
       if (secret.trim()) {
@@ -46,7 +44,6 @@ export function SettingsOfficialQQPage() {
       setSettings(updated)
       setAppId('')
       setSecret('')
-      setSandboxDraft(null)
       setWebsocketDraft(null)
       showToast('success', useWebsocket ? '设置已保存，将尝试旧版 WebSocket 连接' : '设置已保存，等待官方 Webhook 回调')
       await load()
@@ -98,6 +95,7 @@ export function SettingsOfficialQQPage() {
         <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm space-y-2">
           <p>推荐使用 Webhook：将公网 HTTPS 地址的 <code>/qq/webhook</code> 转发到机器人监听端口（默认 8080），在开放平台完成回调验证、事件订阅和出口 IP 白名单配置。Web Admin 端口 8081 不接收回调。</p>
           <p>保存凭证不代表已连接；首次有效事件到达后，可在仪表盘查看连接状态。</p>
+          <p>官方 QQ 已统一 API，无需切换沙箱环境；测试成员和测试群请在开放平台配置。</p>
           <p>被动回复仍受平台限制：同一条用户消息在群聊最多回复 5 次、私聊最多 4 次，较多图片或视频可能无法一次全部返回。</p>
         </div>
 
@@ -141,21 +139,6 @@ export function SettingsOfficialQQPage() {
             disabled={formDisabled || saving}
             onChange={(e) => setSecret(e.target.value)}
             autoComplete="new-password"
-          />
-        </div>
-
-        <div className="flex items-center gap-4 rounded-lg border border-border bg-muted/30 px-3 py-3">
-          <div className="min-w-0 flex-1">
-            <div id="official-qq-sandbox-label" className="text-sm font-medium text-foreground">沙箱环境</div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              仅调试时开启；正式使用请关闭
-            </p>
-          </div>
-          <ToggleSwitch
-            ariaLabelledBy="official-qq-sandbox-label"
-            checked={isSandbox}
-            disabled={formDisabled || saving}
-            onChange={(checked) => setSandboxDraft(checked)}
           />
         </div>
 

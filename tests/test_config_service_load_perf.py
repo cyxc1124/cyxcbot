@@ -559,6 +559,64 @@ async def test_official_settings_permissions_and_friend_cache_round_trip(
 
 
 @pytest.mark.asyncio
+async def test_official_sandbox_legacy_read_and_patch_compatibility(
+    db_context, monkeypatch
+):
+    from unittest.mock import AsyncMock
+
+    from fastapi import HTTPException
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+    from admin.services import connection_status
+
+    _, factory, ConfigService, *_, SystemSetting = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    monkeypatch.setattr(connection_status, "get_config_service", lambda: service)
+    monkeypatch.setattr(connection_status, "iter_official_bots", lambda: [])
+    await service.set_settings(
+        {"official_qq_is_sandbox": "true", "official_qq_app_id": "existing-app"}
+    )
+    await service.load()
+    callback = AsyncMock()
+    service.register_reload_callback(callback)
+
+    assert not (await settings_api.get_settings(None)).official_qq.is_sandbox
+    assert not (await connection_status.get_official_qq_connection_status())[
+        "is_sandbox"
+    ]
+    with pytest.raises(HTTPException, match="沙箱") as exc:
+        await settings_api.update_settings(
+            SettingsUpdateRequest(
+                official_qq_is_sandbox=True, official_qq_app_id="must-not-save"
+            ),
+            None,
+        )
+    assert exc.value.status_code == 400
+    assert service.get_snapshot().official_qq_app_id == "existing-app"
+    callback.assert_not_awaited()
+    async with factory() as session:
+        assert (
+            await session.get(SystemSetting, "official_qq_app_id")
+        ).value == "existing-app"
+        assert (
+            await session.get(SystemSetting, "official_qq_is_sandbox")
+        ).value == "true"
+
+    updated = await settings_api.update_settings(
+        SettingsUpdateRequest(official_qq_is_sandbox=False), None
+    )
+    assert not updated.official_qq.is_sandbox
+    callback.assert_awaited_once()
+    async with factory() as session:
+        assert (
+            await session.get(SystemSetting, "official_qq_is_sandbox")
+        ).value == "false"
+
+
+@pytest.mark.asyncio
 async def test_settings_validates_aliases_with_proposed_prefixes(
     db_context, monkeypatch
 ):
