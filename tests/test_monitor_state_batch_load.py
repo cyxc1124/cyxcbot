@@ -1009,7 +1009,7 @@ async def test_x_retry_reconciles_recipients_after_restart(
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
-    from nonebot.adapters.onebot.v11 import Message
+    from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
     from plugins.x_monitor import sender, state_store
     from plugins.x_monitor.config import Config
@@ -1106,9 +1106,17 @@ async def test_x_retry_reconciles_recipients_after_restart(
     if change == "move":
         groups, users = ([], [new]) if scope == "group" else ([new], [])
     restarted = monitor(
-        groups, users, "changed caption" if change == "template" else "caption"
+        groups,
+        users,
+        Message([MessageSegment.image(b"changed")])
+        if change == "template"
+        else "caption",
     )
     await restarted._load_persisted_states()
+    if change == "template":
+        assert restarted.sender.plan_fingerprint(
+            restarted.sender.build_tweet_message(tweet)
+        ) != first.sender.plan_fingerprint(first.sender.build_tweet_message(tweet))
     if change == "cancel_crash":
         persist = restarted._persist_state
 
