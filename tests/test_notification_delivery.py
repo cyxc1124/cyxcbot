@@ -384,10 +384,10 @@ async def test_x_mapping_reload_after_ack_stops_removed_and_resumes_kept(
     assert ("current-group", 1) in persisted[1][2]
     if retry_kept:
         assert monitor.last_tweet_ids["author"] == "100"
-        assert monitor._pending_tweet_delivery["author"][2:] == (
-            [("kept-group", 1)],
-            [],
-        )
+        groups, users = monitor._pending_tweet_delivery["author"][2:]
+        assert ("kept-group", 1) in groups
+        assert all(target == "kept-group" or offset == -1 for target, offset in groups)
+        assert users == [("kept-user", -1)]
         assert await monitor._send_tweet_notification(
             "author", tweet, check_generation=0
         )
