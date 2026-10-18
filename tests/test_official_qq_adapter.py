@@ -354,6 +354,8 @@ async def test_disconnect_cancels_adapter_forward_tasks() -> None:
 
 @pytest.mark.asyncio
 async def test_apply_skips_webhook_when_already_applied() -> None:
+    from nonebot.adapters.qq.config import Config as QQConfig
+
     from shared.adapter import official_runtime as runtime
 
     snap = SimpleNamespace(
@@ -363,16 +365,18 @@ async def test_apply_skips_webhook_when_already_applied() -> None:
         official_qq_use_websocket=False,
     )
     adapter = SimpleNamespace(
-        qq_config=SimpleNamespace(qq_is_sandbox=False, qq_bots=[]),
+        qq_config=QQConfig(),
         run_bot_websocket=AsyncMock(),
     )
-    runtime._applied_key = ("123456", "secret", False, False)
+    runtime._applied_key = ("123456", "secret", False)
     try:
         with (
             patch.object(runtime, "_get_adapter", return_value=adapter),
             patch("shared.adapter.bots.iter_official_bots", return_value=[]),
             patch.object(runtime, "_disconnect", new=AsyncMock()) as disconnect,
         ):
+            await runtime.apply_official_runtime(snap)
+            snap.official_qq_is_sandbox = True
             await runtime.apply_official_runtime(snap)
         disconnect.assert_not_awaited()
         adapter.run_bot_websocket.assert_not_called()
@@ -381,8 +385,9 @@ async def test_apply_skips_webhook_when_already_applied() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("legacy_sandbox", [False, True])
 async def test_startup_starts_official_websocket_once_and_reload_reconnects(
-    monkeypatch,
+    monkeypatch, legacy_sandbox
 ):
     import importlib.util
     import sys
@@ -426,7 +431,7 @@ async def test_startup_starts_official_websocket_once_and_reload_reconnects(
     snapshot = SimpleNamespace(
         official_qq_app_id="test-app",
         official_qq_app_secret="first-secret",
-        official_qq_is_sandbox=False,
+        official_qq_is_sandbox=legacy_sandbox,
         official_qq_use_websocket=True,
     )
     config = SimpleNamespace(
@@ -455,7 +460,10 @@ async def test_startup_starts_official_websocket_once_and_reload_reconnects(
 
 
 @pytest.mark.asyncio
-async def test_webhook_credentials_verify_signed_event_and_clear(monkeypatch):
+@pytest.mark.parametrize("legacy_sandbox", [False, True])
+async def test_webhook_credentials_verify_signed_event_and_clear(
+    monkeypatch, legacy_sandbox
+):
     from nonebot.adapters.qq import Adapter as QQAdapter
     from nonebot.adapters.qq.config import Config as QQConfig
     from nonebot.drivers import Request
@@ -476,12 +484,14 @@ async def test_webhook_credentials_verify_signed_event_and_clear(monkeypatch):
     snap = SimpleNamespace(
         official_qq_app_id="test-app",
         official_qq_app_secret="test-secret",
-        official_qq_is_sandbox=False,
+        official_qq_is_sandbox=legacy_sandbox,
         official_qq_use_websocket=False,
     )
     await runtime.apply_official_runtime(snap)
     info = adapter.qq_config.qq_bots[0]
     assert not info.use_websocket
+    assert "token" not in info.model_dump()
+    assert str(adapter.qq_config.qq_api_base) == "https://api.bot.qq.com/"
     assert not adapter.tasks
     headers = {"X-Bot-Appid": info.id}
     challenge = json.dumps(
@@ -526,9 +536,26 @@ async def test_webhook_credentials_verify_signed_event_and_clear(monkeypatch):
         response = await adapter._handle_http(
             Request("POST", "http://test/qq/webhook", headers=headers, content=payload)
         )
-    assert response.status_code == 200
-    assert info.id in adapter.bots
-    dispatch.assert_called_once()
+        assert response.status_code == 200
+        assert info.id in adapter.bots
+        dispatch.assert_called_once()
+
+        snap.official_qq_app_secret = "rotated-secret"
+        await runtime.apply_official_runtime(snap)
+        assert not adapter.bots
+        response = await adapter._handle_http(
+            Request("POST", "http://test/qq/webhook", headers=headers, content=payload)
+        )
+        assert response.status_code == 403
+        rotated = adapter.qq_config.qq_bots[0]
+        key = adapter._get_ed25519_key(QQBot(adapter, rotated.id, rotated))
+        headers["X-Signature-Ed25519"] = key.sign(b"123" + payload.encode()).hex()
+        response = await adapter._handle_http(
+            Request("POST", "http://test/qq/webhook", headers=headers, content=payload)
+        )
+        assert response.status_code == 200
+        assert rotated.id in adapter.bots
+        assert dispatch.call_count == 2
     snap.official_qq_app_secret = ""
     await runtime.apply_official_runtime(snap)
     assert not adapter.bots

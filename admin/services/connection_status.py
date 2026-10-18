@@ -165,7 +165,7 @@ async def get_official_qq_connection_status() -> Dict[str, Any]:
         "configured": configured,
         "connected": connected,
         "app_id": app_id,
-        "is_sandbox": snap.official_qq_is_sandbox,
+        "is_sandbox": False,
         "use_websocket": snap.official_qq_use_websocket,
         "message": message,
     }
