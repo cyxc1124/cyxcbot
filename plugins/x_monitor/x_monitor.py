@@ -699,6 +699,14 @@ class XMonitor:
             ):
                 logger.warning("X 博主 {} 没有配置推送目标", username)
                 return False
+            if not group_ids and not user_ids:
+                self._pending_tweet_delivery.pop(username, None)
+                if tweet_id_as_int(tweet.id) > tweet_id_as_int(
+                    self.last_tweet_ids.get(username, "0")
+                ):
+                    self.last_tweet_ids[username] = tweet.id
+                await self._persist_state(username, check_generation=check_generation)
+                return True
             known_groups = set(group_starts) | set(group_ids)
             known_users = set(user_starts) | set(user_ids)
             group_ids = [gid for gid in group_ids if gid not in completed_groups]

@@ -998,6 +998,7 @@ async def test_official_live_retry_restores_snapshot_targets_and_parts(
         "move",
         "template",
         "crash",
+        "cancel_crash",
     ],
 )
 async def test_x_retry_reconciles_recipients_after_restart(
@@ -1099,6 +1100,7 @@ async def test_x_retry_reconciles_recipients_after_restart(
         "move": [],
         "template": [old, kept, new],
         "crash": [old, kept, new],
+        "cancel_crash": [],
     }[change]
     groups, users = (destinations, []) if scope == "group" else ([], destinations)
     if change == "move":
@@ -1107,10 +1109,24 @@ async def test_x_retry_reconciles_recipients_after_restart(
         groups, users, "changed caption" if change == "template" else "caption"
     )
     await restarted._load_persisted_states()
-    assert await restarted._send_tweet_notification("author", tweet)
+    if change == "cancel_crash":
+        persist = restarted._persist_state
+
+        async def interrupted(*args, **kwargs):
+            await persist(*args, **kwargs)
+            raise asyncio.CancelledError
+
+        restarted._persist_state = interrupted
+        with pytest.raises(asyncio.CancelledError):
+            await restarted._send_tweet_notification("author", tweet)
+        restarted = monitor(groups, users)
+        await restarted._load_persisted_states()
+        await restarted._deliver_new_tweets("author", [tweet], 0)
+    else:
+        assert await restarted._send_tweet_notification("author", tweet)
     assert accepted[kept] == before[kept]
     assert accepted[new] - before[new] == (
-        0 if change in ("cancel", "only_done") else 1
+        0 if change in ("cancel", "only_done", "cancel_crash") else 1
     )
     assert accepted[old] - before[old] == (
         1 if change in ("add", "template", "crash") else 0
