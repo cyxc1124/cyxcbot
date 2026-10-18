@@ -1289,3 +1289,71 @@ async def test_x_inflight_replacement_retains_cursor_until_new_target_sent(
         (["2002"], []) if scope == "group" else ([], ["2002"])
     )
     assert monitor.last_tweet_ids["author"] == "200"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "user"])
+@pytest.mark.parametrize("has_pending", [False, True])
+async def test_x_target_skipped_then_readded_during_send_is_retried(
+    db_context, monkeypatch, scope, has_pending
+):
+    from unittest.mock import AsyncMock
+
+    from nonebot.adapters.onebot.v11 import Message
+
+    from plugins.x_monitor import sender, state_store
+    from plugins.x_monitor.config import Config
+    from plugins.x_monitor.x_monitor import XMonitor
+    from utils.x_api.models import TweetItem
+
+    _, factory, _, _ = db_context
+    monkeypatch.setattr(state_store, "get_session", lambda: factory())
+    cfg = Config(
+        x_monitor_mapping={
+            "author": ["3003", "1001", "2002"] if scope == "group" else []
+        },
+        x_monitor_user_mapping={
+            "author": ["3003", "1001", "2002"] if scope == "user" else []
+        },
+    )
+    monitor = XMonitor(cfg)
+    monitor.last_tweet_ids["author"] = "100"
+    monitor.sender = sender.XSender()
+    monitor.sender.build_tweet_message = lambda _: Message("caption")
+    mapping = cfg.x_monitor_mapping if scope == "group" else cfg.x_monitor_user_mapping
+    sent = []
+
+    async def send(target, message, **kwargs):
+        assert kwargs["can_send"]()
+        sent.append(target)
+        if target == "3003":
+            mapping["author"] = ["3003", "2002"]
+        elif target == "2002":
+            mapping["author"] = ["3003", "1001", "2002"]
+
+    monkeypatch.setattr(sender, "messaging_bots", lambda: [object()])
+    monkeypatch.setattr(sender, "send_group" if scope == "group" else "send_user", send)
+    monitor.sender.send_message = AsyncMock(wraps=monitor.sender.send_message)
+    if has_pending:
+        targets = [(target, 0) for target in mapping["author"]]
+        monitor._pending_tweet_delivery["author"] = (
+            "200",
+            "roster:" + monitor.sender.plan_fingerprint(Message("caption")),
+            targets if scope == "group" else [],
+            targets if scope == "user" else [],
+        )
+    tweet = TweetItem(
+        id="200",
+        text="caption",
+        created_at="",
+        username="author",
+        name="Author",
+        url="",
+    )
+
+    assert not await monitor._send_tweet_notification("author", tweet)
+    assert sent == ["3003", "2002"]
+    assert monitor.last_tweet_ids["author"] == "100"
+    assert await monitor._send_tweet_notification("author", tweet)
+    assert sent == ["3003", "2002", "1001"]
+    assert monitor.last_tweet_ids["author"] == "200"

@@ -196,7 +196,12 @@ async def test_official_monitor_targets_route_alongside_onebot(
         build_dynamic_message=MagicMock(return_value=Message("result")),
         build_tweet_message=MagicMock(return_value=Message("result")),
         plan_fingerprint=MagicMock(return_value="plan"),
-        send_message=AsyncMock(return_value=_delivery_succeeded()),
+        send_message=AsyncMock(
+            side_effect=lambda message, groups, users, **kwargs: DeliveryResult(
+                [TargetDelivery("group", target, True) for target in groups]
+                + [TargetDelivery("user", target, True) for target in users]
+            )
+        ),
     )
     monitor._pending_tweet_delivery = {
         "target": ("tweet", "", [("official-group", 0)], [])
@@ -249,7 +254,12 @@ async def test_x_mapping_reload_during_plan_persist_filters_old_targets(
     monitor.sender = SimpleNamespace(
         build_tweet_message=MagicMock(return_value=Message("caption")),
         plan_fingerprint=MagicMock(return_value="plan"),
-        send_message=AsyncMock(return_value=_delivery_succeeded()),
+        send_message=AsyncMock(
+            side_effect=lambda message, groups, users, **kwargs: DeliveryResult(
+                [TargetDelivery("group", target, True) for target in groups]
+                + [TargetDelivery("user", target, True) for target in users]
+            )
+        ),
     )
     monitor._pending_tweet_delivery = {}
     if legacy:

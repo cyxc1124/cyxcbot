@@ -711,8 +711,6 @@ class XMonitor:
                     self.last_tweet_ids[username] = tweet.id
                 await self._persist_state(username, check_generation=check_generation)
                 return True
-            known_groups = set(group_ids)
-            known_users = set(user_ids)
             group_ids = [gid for gid in group_ids if gid not in completed_groups]
             user_ids = [uid for uid in user_ids if uid not in completed_users]
 
@@ -831,6 +829,16 @@ class XMonitor:
                 pair for pair in failed_users if is_target_active("user", pair[0])
             ]
             if full_roster:
+                known_groups = completed_groups | {
+                    target.target_id
+                    for target in delivery.targets
+                    if target.target_type == "group"
+                }
+                known_users = completed_users | {
+                    target.target_id
+                    for target in delivery.targets
+                    if target.target_type == "user"
+                }
                 failed_groups.extend(
                     (gid, 0)
                     for gid in self.config.x_monitor_mapping.get(username, [])
