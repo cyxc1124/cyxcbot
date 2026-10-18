@@ -664,10 +664,14 @@ class XMonitor:
                 group_starts = dict(pending[2])
                 user_starts = dict(pending[3])
                 completed_groups = {
-                    gid for gid, start in pending[2] if start == COMPLETED_TARGET
+                    gid
+                    for gid, start in pending[2]
+                    if start == COMPLETED_TARGET and gid in configured_groups
                 }
                 completed_users = {
-                    uid for uid, start in pending[3] if start == COMPLETED_TARGET
+                    uid
+                    for uid, start in pending[3]
+                    if start == COMPLETED_TARGET and uid in configured_users
                 }
                 retained_groups = [
                     gid for gid in configured_groups if gid in group_starts
@@ -707,8 +711,8 @@ class XMonitor:
                     self.last_tweet_ids[username] = tweet.id
                 await self._persist_state(username, check_generation=check_generation)
                 return True
-            known_groups = set(group_starts) | set(group_ids)
-            known_users = set(user_starts) | set(user_ids)
+            known_groups = set(group_ids)
+            known_users = set(user_ids)
             group_ids = [gid for gid in group_ids if gid not in completed_groups]
             user_ids = [uid for uid in user_ids if uid not in completed_users]
 

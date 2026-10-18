@@ -1199,7 +1199,9 @@ async def test_x_legacy_replaced_recipient_is_not_counted_without_send(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scope", ["group", "user"])
-@pytest.mark.parametrize("replace_during", ["persist", "failure", "success"])
+@pytest.mark.parametrize(
+    "replace_during", ["persist", "failure", "success", "readd_pending", "readd_done"]
+)
 async def test_x_inflight_replacement_retains_cursor_until_new_target_sent(
     db_context, monkeypatch, scope, replace_during
 ):
@@ -1238,17 +1240,30 @@ async def test_x_inflight_replacement_retains_cursor_until_new_target_sent(
     async def send(message, groups, users, **kwargs):
         destination = (groups or users)[0]
         if destination == "1001":
-            mapping["author"] = ["2002"]
+            mapping["author"] = (
+                ["1001", "2002"] if replace_during.startswith("readd") else ["2002"]
+            )
             return DeliveryResult(
                 [
                     TargetDelivery(
-                        scope, "1001", replace_during == "success", "temporary failure"
+                        scope,
+                        "1001",
+                        replace_during in ("success", "readd_pending", "readd_done"),
+                        "temporary failure",
                     )
                 ]
             )
         assert destination == "2002"
         return DeliveryResult([TargetDelivery(scope, "2002", True)])
 
+    if replace_during.startswith("readd"):
+        targets = [("2002", -1 if replace_during == "readd_done" else 0), ("1001", 0)]
+        monitor._pending_tweet_delivery["author"] = (
+            "200",
+            "roster:" + monitor.sender.plan_fingerprint(Message("caption")),
+            targets if scope == "group" else [],
+            targets if scope == "user" else [],
+        )
     monitor._persist_state = persist
     monitor.sender.send_message = AsyncMock(side_effect=send)
     tweet = TweetItem(
