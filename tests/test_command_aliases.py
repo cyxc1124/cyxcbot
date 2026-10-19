@@ -555,3 +555,20 @@ def test_prefix_required_alias_does_not_shadow_argument_trigger(command_id):
         {command_id: {"triggers": ["/查询"]}, "live_status": {"triggers": ["查询"]}}
     )
     assert match_command_arg("/查询 12345", "live_status", config) == "12345"
+
+
+@pytest.mark.parametrize(
+    "other_command", ["live_status", "rust_player_bind", "rust_player_shop_redeem"]
+)
+def test_quoted_extract_head_conflicts_with_whole_argument_alias(other_command):
+    from shared.config.command_aliases import parse_extract_dynamic_id
+
+    config = normalize_command_aliases(
+        {
+            "dynamic_extract": {"triggers": ["采图"]},
+            other_command: {"triggers": ["/采图"]},
+        }
+    )
+    assert parse_extract_dynamic_id("/采图", config, prefixes=frozenset({"/"})) == ""
+    assert match_command_arg("/采图", other_command, config) == ""
+    assert validation_error(config, extra_prefixes=["/"]) is not None

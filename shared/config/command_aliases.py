@@ -409,7 +409,7 @@ def find_trigger_conflicts(
         matched_ids = list(dict.fromkeys(matched_ids))
         if len(matched_ids) > 1:
             conflicts[trigger] = matched_ids
-    # 外层前缀也可能组成别人的完整触发词；按必需参数的分隔方式检查反向冲突。
+    # 外层前缀也可能组成别人的完整触发词；按实际参数语法检查反向冲突。
     argument_commands = {"live_status", "rust_player_bind", "rust_player_shop_redeem"}
     fuzzy_commands = set(COMMAND_DEFAULTS) - (
         _PREFIX_REQUIRED_COMMANDS | argument_commands | {"rust_player_shop_list"}
@@ -437,10 +437,7 @@ def find_trigger_conflicts(
                             shared_input = match_head.startswith(other_trigger)
                         elif cid in argument_commands:
                             shared_input = any(
-                                (
-                                    candidate == other_trigger
-                                    and command_id == "group_special_title"
-                                )
+                                candidate == other_trigger
                                 or (
                                     candidate.startswith(other_trigger)
                                     and len(candidate) > len(other_trigger)
