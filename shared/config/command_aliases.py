@@ -31,7 +31,7 @@ MAX_TRIGGERS_PER_COMMAND = 20
 MAX_EXTRA_PREFIX_LENGTH = 4
 MAX_EXTRA_PREFIXES = 10
 
-# 这两条命令使用 prefix+trigger+必需参数的正则，不能裸触发。
+# 这两条命令使用带前缀的自定义正则，不能裸触发。
 _PREFIX_REQUIRED_COMMANDS = frozenset({"dynamic_extract", "group_special_title"})
 
 COMMAND_DEFAULTS: Dict[str, List[str]] = {
@@ -356,13 +356,15 @@ def _match_extract_command(
         r"https?://(?:www\.)?bilibili\.com/opus/(\d+)|"
         r"https?://t\.bilibili\.com/(\d+)|"
         r"(\d{10,})"
-        r")\s*$",
+        r")?\s*$",
         message_text.strip(),
         re.IGNORECASE,
     )
     if match is None:
         return None
-    return match.group("trigger"), next(group for group in match.groups()[1:] if group)
+    return match.group("trigger"), next(
+        (group for group in match.groups()[1:] if group), ""
+    )
 
 
 def parse_extract_dynamic_id(
@@ -371,7 +373,7 @@ def parse_extract_dynamic_id(
     *,
     prefixes: frozenset[str] | None = None,
 ) -> str | None:
-    """Return dynamic ID from the complete prefixed extraction command."""
+    """Return the dynamic ID, an empty string for a quoted target, or None if unmatched."""
     command = _match_extract_command(message_text, config, prefixes=prefixes)
     return command[1] if command else None
 
@@ -407,7 +409,7 @@ def find_trigger_conflicts(
         matched_ids = list(dict.fromkeys(matched_ids))
         if len(matched_ids) > 1:
             conflicts[trigger] = matched_ids
-    # 外层前缀也可能组成别人的完整触发词；按必需参数的分隔方式检查反向冲突。
+    # 外层前缀也可能组成别人的完整触发词；按实际参数语法检查反向冲突。
     argument_commands = {"live_status", "rust_player_bind", "rust_player_shop_redeem"}
     fuzzy_commands = set(COMMAND_DEFAULTS) - (
         _PREFIX_REQUIRED_COMMANDS | argument_commands | {"rust_player_shop_list"}
@@ -435,10 +437,7 @@ def find_trigger_conflicts(
                             shared_input = match_head.startswith(other_trigger)
                         elif cid in argument_commands:
                             shared_input = any(
-                                (
-                                    candidate == other_trigger
-                                    and command_id == "group_special_title"
-                                )
+                                candidate == other_trigger
                                 or (
                                     candidate.startswith(other_trigger)
                                     and len(candidate) > len(other_trigger)

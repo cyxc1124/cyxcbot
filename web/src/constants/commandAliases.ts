@@ -71,7 +71,7 @@ export const COMMAND_FIELDS: CommandField[] = [
     label: '动态图片提取',
     description: '提取动态内全部图片（群聊或私聊，需已订阅动态）。',
     defaultTriggers: ['提取', '获取'],
-    hint: '需带前缀，格式为“前缀+触发词+动态ID或链接”，例如“/提取123456789”',
+    hint: '需带前缀；填写动态ID或链接，或引用机器人动态消息后只发“/提取”（OneBot，原消息需保留动态链接）。',
   },
   {
     id: 'group_special_title',
