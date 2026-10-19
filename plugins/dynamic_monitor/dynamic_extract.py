@@ -1,4 +1,4 @@
-"""Extract all images from a Bilibili dynamic via {prefix}提取/获取{dynamic_id}."""
+"""Extract dynamic images by ID or by quoting a bot message with a dynamic URL."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Literal
 import aiohttp
 from nonebot import on_message
 from nonebot.adapters import Bot, Event
-from nonebot.adapters.onebot.v11 import Message, MessageSegment
+from nonebot.adapters.onebot.v11 import Message, MessageEvent, MessageSegment
 from nonebot.log import logger
 
 from shared.adapter.inbound import (
@@ -32,6 +32,7 @@ from shared.notify.message_template import (
     render_message_template,
 )
 from utils.bilibili_api import DynamicFetcher
+from utils.bilibili_api.link_parser import DYNAMIC_URL_PATTERN
 
 from .config import Config
 
@@ -109,6 +110,19 @@ async def _send_reply(bot: Bot, event: Event, message: Message | str) -> None:
     await send_event_message(bot, event, payload)
 
 
+def _quoted_dynamic_id(bot: Bot, event: Event) -> str | None:
+    if not isinstance(event, MessageEvent):
+        return None
+    reply = event.reply
+    if reply is None or str(reply.sender.user_id) != str(bot.self_id):
+        return None
+    dynamic_ids = {
+        next(group for group in match.groups() if group)
+        for match in DYNAMIC_URL_PATTERN.finditer(reply.message.extract_plain_text())
+    }
+    return dynamic_ids.pop() if len(dynamic_ids) == 1 else None
+
+
 def _subscription_allowed(event: Event) -> bool:
     snap = get_config_service().get_snapshot()
     if is_group_event(event):
@@ -127,7 +141,7 @@ async def _handle_extract(bot: Bot, event: Event) -> None:
     dynamic_id = parse_extract_dynamic_id(
         message_text, await command_aliases_for_event(snap, bot, event)
     )
-    if not dynamic_id:
+    if dynamic_id is None:
         return
 
     if not _subscription_allowed(event):
@@ -142,6 +156,17 @@ async def _handle_extract(bot: Bot, event: Event) -> None:
             f"scope={scope} reason=no_subscription"
         )
         return
+
+    if not dynamic_id:
+        dynamic_id = _quoted_dynamic_id(bot, event)
+        if not dynamic_id:
+            await _send_reply(
+                bot,
+                event,
+                "无法确定要提取的动态，请引用机器人发送且包含动态链接的消息，"
+                "或在提取命令后填写动态ID。",
+            )
+            return
 
     config = Config.from_service()
     templates = config.message_templates

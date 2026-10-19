@@ -177,7 +177,7 @@ async def handle_dynamic_commands(bot: Bot, event: Event):
 __plugin_meta__ = {
     "name": "UP主动态监控",
     "description": "监控B站UP主动态更新并在群组发送通知，支持主动查询与动态图片提取",
-    "usage": "发送'最新动态'或'置顶动态'可主动查询；发送'#提取{动态ID}'可提取动态内全部图片",
+    "usage": "发送'最新动态'或'置顶动态'可主动查询；发送'#提取{动态ID}'，或引用机器人动态消息发送'#提取'，可提取动态内全部图片",
     "version": "1.2.0",
     "author": "cyxcbot",
 }

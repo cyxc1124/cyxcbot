@@ -31,7 +31,7 @@ MAX_TRIGGERS_PER_COMMAND = 20
 MAX_EXTRA_PREFIX_LENGTH = 4
 MAX_EXTRA_PREFIXES = 10
 
-# 这两条命令使用 prefix+trigger+必需参数的正则，不能裸触发。
+# 这两条命令使用带前缀的自定义正则，不能裸触发。
 _PREFIX_REQUIRED_COMMANDS = frozenset({"dynamic_extract", "group_special_title"})
 
 COMMAND_DEFAULTS: Dict[str, List[str]] = {
@@ -356,13 +356,15 @@ def _match_extract_command(
         r"https?://(?:www\.)?bilibili\.com/opus/(\d+)|"
         r"https?://t\.bilibili\.com/(\d+)|"
         r"(\d{10,})"
-        r")\s*$",
+        r")?\s*$",
         message_text.strip(),
         re.IGNORECASE,
     )
     if match is None:
         return None
-    return match.group("trigger"), next(group for group in match.groups()[1:] if group)
+    return match.group("trigger"), next(
+        (group for group in match.groups()[1:] if group), ""
+    )
 
 
 def parse_extract_dynamic_id(
@@ -371,7 +373,7 @@ def parse_extract_dynamic_id(
     *,
     prefixes: frozenset[str] | None = None,
 ) -> str | None:
-    """Return dynamic ID from the complete prefixed extraction command."""
+    """Return the dynamic ID, an empty string for a quoted target, or None if unmatched."""
     command = _match_extract_command(message_text, config, prefixes=prefixes)
     return command[1] if command else None
 
