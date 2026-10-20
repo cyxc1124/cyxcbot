@@ -924,13 +924,12 @@ class DynamicMonitor:
             latest_dynamic.get_type_description(),
         )
 
-        screenshot_image = await self._fetch_dynamic_screenshot(latest_dynamic)
-
         # 构建主动查询的消息（包含截图）
         logger.debug("开始构建UP主 {} 的主动查询消息", uid)
 
         # 获取用户名
         latest_dynamic.name = await self._resolve_author_name(latest_dynamic)
+        screenshot_image = await self._fetch_dynamic_screenshot(latest_dynamic)
 
         # 使用统一的消息构建方法
         message = self.sender.build_dynamic_message(
@@ -972,10 +971,9 @@ class DynamicMonitor:
             logger.warning("未找到UP主 {} 的置顶动态 {}", uid, pinned_id)
             raise Exception(f"未找到UP主 {uid} 的置顶动态")
 
-        screenshot_image = await self._fetch_dynamic_screenshot(pinned_dynamic)
-
         # 获取用户名
         pinned_dynamic.name = await self._resolve_author_name(pinned_dynamic)
+        screenshot_image = await self._fetch_dynamic_screenshot(pinned_dynamic)
 
         # 构建主动查询的消息（包含截图）
         logger.debug("开始构建UP主 {} 的置顶动态主动查询消息", uid)
