@@ -5,6 +5,7 @@ import { useSidebar } from '../contexts/SidebarContext'
 import { getAbout } from '../api/client'
 import type { AboutInfo } from '../api/types'
 import { ThemeModeSwitch } from './ThemeModeSwitch'
+import { AppBrand, AppFooter } from './AppBrand'
 
 type NavItem = { to: string; label: string }
 type NavSection = { section: string; items: NavItem[] }
@@ -204,17 +205,15 @@ export function Layout() {
         }}
       >
         <div
-          className={`flex h-16 shrink-0 items-center border-b border-sidebar-border ${
-            showFullNav ? 'gap-3 px-6' : 'justify-center px-0'
+          className={`flex min-h-24 shrink-0 items-center border-b border-sidebar-border ${
+            showFullNav ? 'gap-3 px-4 py-4' : 'justify-center px-0'
           }`}
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
-            C
-          </span>
+          {!showFullNav && <img src="/brand-avatar.png" alt="机器草头像" className="size-9 rounded-xl border border-border" width={36} height={36} />}
           {showFullNav && (
             <div className="min-w-0">
-              <h1 className="flex items-center gap-1.5 truncate text-sm font-bold text-sidebar-foreground">
-                <span>机器草</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <AppBrand compact version={versionLine ?? undefined} />
                 {about?.update_available && about?.update_url && (
                   <a
                     href={about.update_url}
@@ -225,10 +224,7 @@ export function Layout() {
                     有新版本
                   </a>
                 )}
-              </h1>
-              <p className="truncate text-xs text-muted-foreground">
-                {versionLine}
-              </p>
+              </div>
             </div>
           )}
         </div>
@@ -335,6 +331,7 @@ export function Layout() {
         <main className="flex-1 p-4 lg:p-8">
           <Outlet />
         </main>
+        <AppFooter />
       </div>
     </div>
   )

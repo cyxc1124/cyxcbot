@@ -2,7 +2,7 @@ type IconName = 'sun' | 'moon' | 'user' | 'lock-closed' | 'eye' | 'eye-slash' | 
 
 export function Icon({ name, className = 'size-4' }: { name: IconName; className?: string }) {
   return (
-    <svg className={className} aria-hidden="true" focusable="false">
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" focusable="false">
       <use href={`/ui-icons.svg#${name}`} />
     </svg>
   )

@@ -1,5 +1,6 @@
 import { Navigate, Outlet } from 'react-router-dom'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
+import { AuthShell } from '../components/AuthShell'
 import { PageLoading } from '../components/LoadingSpinner'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -12,14 +13,12 @@ function InitStatusError() {
   const { initError, refresh } = useAuth()
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-linear-to-br from-muted to-secondary p-4 dark:from-background dark:to-card">
-      <div className="card w-full max-w-md">
-        <LoadErrorBanner
-          message={initError ?? '无法获取初始化状态，请重试'}
-          onRetry={() => void refresh()}
-        />
-      </div>
-    </div>
+    <AuthShell subtitle="连接管理服务">
+      <LoadErrorBanner
+        message={initError ?? '无法获取初始化状态，请重试'}
+        onRetry={() => void refresh()}
+      />
+    </AuthShell>
   )
 }
 
