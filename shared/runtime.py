@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import time
 
-STARTED_AT = time.time()
+import psutil
+
+STARTED_AT = psutil.Process().create_time()
 
 
 def get_uptime_seconds() -> int:
