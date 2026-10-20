@@ -23,7 +23,7 @@ export interface LogViewOptions {
 
 export const LOG_VIEW_PRESETS: Record<'开发' | '运维' | '精简', LogViewOptions> = {
   开发: { levels: WEB_LOG_LEVELS, limit: 2000, wrap: true },
-  运维: { levels: WEB_LOG_LEVELS.filter((level) => level !== 'DEBUG'), limit: 1000, wrap: true },
+  运维: { levels: WEB_LOG_LEVELS.filter((level) => level !== 'DEBUG'), limit: 2000, wrap: true },
   精简: { levels: ['WARNING', 'ERROR', 'CRITICAL'], limit: 500, wrap: false },
 }
 

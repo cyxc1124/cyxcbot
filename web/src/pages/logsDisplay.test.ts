@@ -48,6 +48,7 @@ describe('logsDisplay', () => {
   })
 
   it('recognizes presets and derives the server threshold without losing the default INFO history', () => {
+    expect(LOG_VIEW_PRESETS.运维.limit).toBe(DISPLAY_MAX)
     expect(logViewPreset(LOG_VIEW_PRESETS.开发)).toBe('开发')
     expect(logViewPreset(LOG_VIEW_PRESETS.运维)).toBe('运维')
     expect(logViewPreset(LOG_VIEW_PRESETS.精简)).toBe('精简')

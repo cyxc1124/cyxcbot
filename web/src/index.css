@@ -149,10 +149,15 @@
 }
 
 @utility log-tool-button {
-  @apply inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-40;
+  @apply relative inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-40;
 
   & > svg { @apply size-4; }
   &[aria-pressed="true"] { @apply bg-primary/10 text-primary; }
+  &::after {
+    content: attr(aria-label);
+    @apply pointer-events-none invisible absolute top-full left-1/2 z-40 mt-1.5 -translate-x-1/2 rounded-md bg-foreground px-2 py-1 text-xs font-normal whitespace-nowrap text-background shadow-sm;
+  }
+  &:hover::after, &:focus-visible::after { @apply visible; }
 }
 
 @utility log-level-group {

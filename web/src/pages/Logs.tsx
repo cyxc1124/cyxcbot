@@ -280,13 +280,13 @@ export function LogsPage() {
             <input type="search" aria-label="搜索日志" placeholder="搜索消息 / 模块 / 级别" className="input min-h-8 rounded-full py-1 pl-8 text-xs" value={query} onChange={(event) => setQuery(event.target.value)} />
           </div>
           <div className="flex flex-wrap items-center gap-0.5">
-            <button type="button" className="log-tool-button" aria-label="跟随最新" title="跟随最新" aria-pressed={autoScroll} onClick={() => handleFollowChecked(!autoScroll)}><ArrowDownIcon aria-hidden="true" /></button>
-            <button type="button" className="log-tool-button" aria-label={paused ? '继续显示' : '暂停显示'} title={paused ? '继续显示' : '暂停显示'} aria-pressed={paused} onClick={handleTogglePause}>{paused ? <PlayIcon aria-hidden="true" /> : <PauseIcon aria-hidden="true" />}</button>
-            <button type="button" className="log-tool-button" aria-label="自动换行" title="自动换行" aria-pressed={view.wrap} onClick={() => setView((current) => ({ ...current, wrap: !current.wrap }))}><ArrowUturnLeftIcon aria-hidden="true" /></button>
-            <button type="button" className="log-tool-button" aria-label="显示选项" title="显示选项" aria-expanded={showOptions} aria-controls="logs-options" aria-pressed={showOptions} onClick={() => setShowOptions((current) => !current)}><AdjustmentsHorizontalIcon aria-hidden="true" /></button>
-            <button type="button" className="log-tool-button" aria-label="刷新日志" title="刷新日志" onClick={() => setReloadKey((current) => current + 1)}><ArrowPathIcon aria-hidden="true" /></button>
-            <button type="button" className="log-tool-button" aria-label="导出当前视图" title="导出当前视图" disabled={!visibleLogs.length} onClick={handleExport}><ArrowDownTrayIcon aria-hidden="true" /></button>
-            <button type="button" className="log-tool-button" aria-label="清空视图" title="清空视图" onClick={handleClear}><TrashIcon aria-hidden="true" /></button>
+            <button type="button" className="log-tool-button" aria-label="跟随最新" aria-pressed={autoScroll} onClick={() => handleFollowChecked(!autoScroll)}><ArrowDownIcon aria-hidden="true" /></button>
+            <button type="button" className="log-tool-button" aria-label={paused ? '继续显示' : '暂停显示'} aria-pressed={paused} onClick={handleTogglePause}>{paused ? <PlayIcon aria-hidden="true" /> : <PauseIcon aria-hidden="true" />}</button>
+            <button type="button" className="log-tool-button" aria-label="自动换行" aria-pressed={view.wrap} onClick={() => setView((current) => ({ ...current, wrap: !current.wrap }))}><ArrowUturnLeftIcon aria-hidden="true" /></button>
+            <button type="button" className="log-tool-button" aria-label="显示选项" aria-expanded={showOptions} aria-controls="logs-options" aria-pressed={showOptions} onClick={() => setShowOptions((current) => !current)}><AdjustmentsHorizontalIcon aria-hidden="true" /></button>
+            <button type="button" className="log-tool-button" aria-label="刷新日志" onClick={() => setReloadKey((current) => current + 1)}><ArrowPathIcon aria-hidden="true" /></button>
+            <button type="button" className="log-tool-button" aria-label="导出当前视图" disabled={!visibleLogs.length} onClick={handleExport}><ArrowDownTrayIcon aria-hidden="true" /></button>
+            <button type="button" className="log-tool-button" aria-label="清空视图" onClick={handleClear}><TrashIcon aria-hidden="true" /></button>
           </div>
         </div>
       </div>
