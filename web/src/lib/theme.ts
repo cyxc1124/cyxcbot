@@ -3,8 +3,10 @@ export type ThemeMode = 'light' | 'dark' | 'system'
 const MODE_KEY = 'cyxcbot_theme'
 const THEME_EVENT = 'cyxcbot:theme-change'
 let sessionMode: ThemeMode = 'light'
+let sessionOnly = false
 
 export function getSavedThemeMode(): ThemeMode {
+  if (sessionOnly) return sessionMode
   try {
     const mode = localStorage.getItem(MODE_KEY)
     return mode === 'dark' || mode === 'system' ? mode : 'light'
@@ -20,7 +22,9 @@ export function setThemeMode(mode: ThemeMode): void {
   sessionMode = mode
   try {
     localStorage.setItem(MODE_KEY, mode)
+    sessionOnly = false
   } catch {
+    sessionOnly = true
     // Storage may be unavailable; keep the current tab usable.
   }
   window.dispatchEvent(new Event(THEME_EVENT))
@@ -45,7 +49,10 @@ export function initTheme(): () => void {
     if (getSavedThemeMode() === 'system') refresh()
   }
   const onStorage = (event: StorageEvent) => {
-    if (event.key === null || event.key === MODE_KEY) refresh()
+    if (event.key === null || event.key === MODE_KEY) {
+      sessionOnly = false
+      refresh()
+    }
   }
   refresh()
   media.addEventListener('change', onSystemChange)
