@@ -80,3 +80,14 @@ def test_missing_picture_falls_back_instead_of_hiding_content():
     dynamic = DynamicItem(1, 1, "作者", 1700000000, 2)
     with pytest.raises(ValueError, match="配图不完整"):
         _draw_card(dynamic, None, [None])
+
+
+@pytest.mark.parametrize("prefix", ["http:", "https:", ""])
+async def test_cdn_assets_always_use_https(prefix):
+    session = MagicMock()
+    response = session.get.return_value.__aenter__.return_value
+    response.status = 404
+    assert await _asset(session, prefix + "//i0.hdslb.com/bfs/new_dyn/test.png") is None
+    session.get.assert_called_once_with(
+        "https://i0.hdslb.com/bfs/new_dyn/test.png", allow_redirects=False
+    )

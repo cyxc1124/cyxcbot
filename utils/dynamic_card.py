@@ -45,9 +45,12 @@ async def _asset(session: aiohttp.ClientSession, url: str) -> Image.Image | None
     # API media must stay on Bilibili's CDN; never follow arbitrary redirects.
     if url.startswith("//"):
         url = "https:" + url
-    host = urlsplit(url).hostname or ""
-    if urlsplit(url).scheme != "https" or not host.endswith(".hdslb.com"):
+    parsed = urlsplit(url)
+    host = parsed.hostname or ""
+    if parsed.scheme not in ("http", "https") or not host.endswith(".hdslb.com"):
         return None
+    # Bilibili still returns HTTP media URLs; fetch approved CDN assets over TLS.
+    url = parsed._replace(scheme="https").geturl()
     try:
         async with session.get(url, allow_redirects=False) as response:
             if response.status != 200:
