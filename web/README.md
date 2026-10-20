@@ -79,7 +79,7 @@ npm run build
 | `/bilibili/parser`、`/x/parser`、`/douyin/parser` | 对应平台的群组 / 好友解析策略 |
 | `/rust/remote/servers`、`groups`、`friends`、`commands`、`custom` | Rust 远控与权限下的服务器、会话权限、命令 |
 | `/rust/players/accounts`、`/rust/players/shop` | Rust 玩家积分与绑定、积分商城 |
-| `/logs` | 实时运行日志（WebSocket） |
+| `/logs` | 实时运行日志（SSE，Bearer Token 鉴权，断线重连） |
 | `/about` | 版本与构建信息 |
 
 旧版页面路径不再保留专用重定向。群组、好友页支持 `?tab=status` 等标签直达；平台解析页支持 `?scope=friends`，刷新和浏览器前进后退会保留所选视角。

@@ -22,7 +22,7 @@ MAX_HISTORY = 2000
 # Per-subscriber queue size; slow clients drop instead of blocking producers
 SUBSCRIBER_QUEUE_SIZE = 256
 
-# Cap websocket replay loops so sustained DEBUG cannot spin forever pre-subscribe.
+# Cap replay loops so sustained DEBUG cannot spin forever pre-subscribe.
 MAX_BUFFER_CATCH_UP_PASSES = 5
 MAX_HANDOFF_PASSES = 5
 
@@ -149,7 +149,7 @@ class LogBroadcastHub:
                     except asyncio.QueueFull:
                         pass
                 self._subscribers.pop(queue, None)
-                # Drop backlog so None is next; otherwise a slow send_json loop
+                # Drop backlog so None is next; otherwise a slow stream
                 # may never reach the sentinel. Ring buffer still has history.
                 while True:
                     try:
