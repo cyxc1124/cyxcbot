@@ -19,10 +19,10 @@ function elements(node: ReactNode): Record<string, unknown>[] {
     ? [child.props, ...elements(child.props.children as ReactNode)] : [])
 }
 
-function setup(mode: 'card' | 'screenshot' = 'card') {
+function setup(mode: 'card' | 'screenshot' = 'card', stagger = true) {
   const settings = {
     dynamic_image_mode: mode, dynamic_card_color_source: 'image',
-    dynamic_monitor_interval: 30, dynamic_monitor_use_stagger: true, dynamic_enable_screenshot: true,
+    dynamic_monitor_interval: 30, dynamic_monitor_use_stagger: stagger, dynamic_enable_screenshot: true,
     live_monitor_interval: 60, live_monitor_use_websocket: true, live_monitor_include_info: true,
   } as Settings
   const context = { settings, setSettings: vi.fn(), formDisabled: false, saving: false, savePartial: vi.fn() }
@@ -49,5 +49,12 @@ describe('monitor card choices', () => {
     const html = renderToStaticMarkup(page)
     expect(html).not.toContain('卡片取色来源')
     expect(html.match(/type="radio"/g)).toHaveLength(2)
+  })
+
+  it('describes the actual polling strategy when staggered checks are disabled', () => {
+    const { page } = setup('card', false)
+    const html = renderToStaticMarkup(page)
+    expect(html).toContain('每 N 秒依次检查全部 UP 主')
+    expect(html).not.toContain('分散检查的单次间隔不低于 3 秒')
   })
 })

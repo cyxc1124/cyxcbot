@@ -107,7 +107,11 @@ export function SettingsBilibiliMonitorPage() {
             <input id="dynamic_interval" type="number" min={10} max={3600} className="setting-input"
               value={settings?.dynamic_monitor_interval ?? ''} disabled={formDisabled || saving}
               onChange={(e) => setSettings((s) => s ? { ...s, dynamic_monitor_interval: Number(e.target.value) } : s)} />
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">期望每个 UP 主约每 N 秒检查一次，分散检查的单次间隔不低于 3 秒。</p>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              {settings?.dynamic_monitor_use_stagger ?? true
+                ? '期望每个 UP 主约每 N 秒检查一次，分散检查的单次间隔不低于 3 秒。'
+                : '每 N 秒依次检查全部 UP 主；订阅较多时可能短时集中请求 API。'}
+            </p>
           </div>
         </div>
         <SettingToggleRow label="启用分散检查（推荐）" checked={settings?.dynamic_monitor_use_stagger ?? true}
