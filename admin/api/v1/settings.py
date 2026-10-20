@@ -48,6 +48,11 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
     svc = get_config_service()
     updates: dict[str, str] = {}
 
+    for key in ("log_level", "log_file_level"):
+        value = getattr(body, key)
+        if value is not None:
+            updates[key] = value
+
     if body.dynamic_monitor_interval is not None:
         updates["dynamic_monitor_interval"] = str(body.dynamic_monitor_interval)
     if body.dynamic_monitor_use_stagger is not None:

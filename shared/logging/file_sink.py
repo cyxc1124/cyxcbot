@@ -9,6 +9,12 @@ from pathlib import Path
 
 from nonebot.log import logger as nb_logger
 
+from shared.logging.levels import (
+    default_log_levels,
+    file_log_filter,
+    set_file_log_level,
+)
+
 DEFAULT_LOG_FILE = "data/logs/cyxcbot.log"
 DEFAULT_ROTATION = "10 MB"
 DEFAULT_RETENTION = "7 days"
@@ -157,7 +163,8 @@ def install_file_log_sink() -> Path | None:
         )
 
         file_path = build_session_log_path(base_path)
-        level = os.getenv("LOG_FILE_LEVEL") or os.getenv("LOG_LEVEL", "INFO")
+        _, level = default_log_levels()
+        set_file_log_level(level)
         rotation = (
             os.getenv("LOG_FILE_ROTATION", DEFAULT_ROTATION).strip() or DEFAULT_ROTATION
         )
@@ -165,7 +172,8 @@ def install_file_log_sink() -> Path | None:
         nb_logger.add(
             str(file_path),
             format=_FILE_LOG_FORMAT,
-            level=level.upper(),
+            level=0,
+            filter=file_log_filter,
             rotation=rotation,
             retention=retention_raw,
             encoding="utf-8",

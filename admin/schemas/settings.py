@@ -14,6 +14,7 @@ from shared.config.message_templates import (
     X_LINK_TEMPLATE_KEYS,
     X_TEMPLATE_KEYS,
 )
+from shared.logging.levels import LogLevel
 
 
 class CookieStatusResponse(BaseModel):
@@ -45,6 +46,8 @@ class CommandAliasEntryModel(BaseModel):
 
 
 class SettingsResponse(BaseModel):
+    log_level: LogLevel = "INFO"
+    log_file_level: LogLevel = "INFO"
     dynamic_monitor_interval: int
     dynamic_monitor_use_stagger: bool = True
     dynamic_image_mode: Literal["screenshot", "card"] = "screenshot"
@@ -116,6 +119,8 @@ class CookieTestResultResponse(BaseModel):
 
 
 class SettingsUpdateRequest(BaseModel):
+    log_level: Optional[LogLevel] = None
+    log_file_level: Optional[LogLevel] = None
     dynamic_monitor_interval: Optional[int] = Field(default=None, ge=10, le=3600)
     dynamic_monitor_use_stagger: Optional[bool] = None
     dynamic_image_mode: Optional[Literal["screenshot", "card"]] = None

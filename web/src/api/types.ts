@@ -58,7 +58,11 @@ export interface OfficialQQSettings {
   use_websocket: boolean
 }
 
+export type LogLevel = 'TRACE' | 'DEBUG' | 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' | 'CRITICAL'
+
 export interface Settings {
+  log_level: LogLevel
+  log_file_level: LogLevel
   dynamic_monitor_interval: number
   dynamic_monitor_use_stagger: boolean
   dynamic_image_mode?: 'screenshot' | 'card'
