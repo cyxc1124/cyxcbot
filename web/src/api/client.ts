@@ -43,6 +43,7 @@ import type {
   MonitorActionResult,
   MonitorStatus,
   RecentLogsResponse,
+  RuntimeLogEntry,
   XBearerStatus,
   XBearerTestResult,
   XMonitorStatus,
@@ -75,6 +76,8 @@ import type {
   ConnectionsStatus,
   User,
 } from './types'
+
+import { readLogStream } from './logStream'
 
 const TOKEN_KEY = 'cyxcbot_access_token'
 const API_BASE = '/api/v1'
@@ -121,6 +124,62 @@ function getInflightKey(method: string, path: string, auth: boolean): string | n
   return `${path}:${token}`
 }
 
+async function requestResponse(
+  path: string,
+  options: RequestInit = {},
+  auth = true,
+): Promise<Response> {
+  const headers = new Headers(options.headers)
+  if (!headers.has('Content-Type') && options.body) {
+    headers.set('Content-Type', 'application/json')
+  }
+
+  if (auth) {
+    const token = getToken()
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`)
+    }
+  }
+
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers,
+    })
+  } catch {
+    throw new ApiClientError('后端服务暂不可用，数据暂时无法加载', 0)
+  }
+
+  if (response.status === 401 && auth) {
+    clearToken()
+    if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/setup')) {
+      window.location.href = '/login'
+    }
+    throw new ApiClientError('未授权，请重新登录', 401)
+  }
+
+  if (!response.ok) {
+    let message = `请求失败 (${response.status})`
+    if (response.status === 502 || response.status === 503 || response.status === 504) {
+      message = '后端服务暂不可用，数据暂时无法加载'
+    } else {
+      try {
+        const data = await response.json()
+        if (typeof data.detail === 'string') {
+          message = data.detail
+        } else if (Array.isArray(data.detail)) {
+          message = data.detail.map((d: { msg?: string }) => d.msg ?? '').join('; ')
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+    throw new ApiClientError(message, response.status)
+  }
+  return response
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -138,55 +197,7 @@ async function request<T>(
   }
 
   const execute = async (): Promise<T> => {
-    const headers = new Headers(options.headers)
-    if (!headers.has('Content-Type') && options.body) {
-      headers.set('Content-Type', 'application/json')
-    }
-
-    if (auth) {
-      const token = getToken()
-      if (token) {
-        headers.set('Authorization', `Bearer ${token}`)
-      }
-    }
-
-    let response: Response
-    try {
-      response = await fetch(`${API_BASE}${path}`, {
-        ...options,
-        headers,
-      })
-    } catch {
-      throw new ApiClientError('后端服务暂不可用，数据暂时无法加载', 0)
-    }
-
-    if (response.status === 401 && auth) {
-      clearToken()
-      if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/setup')) {
-        window.location.href = '/login'
-      }
-      throw new ApiClientError('未授权，请重新登录', 401)
-    }
-
-    if (!response.ok) {
-      let message = `请求失败 (${response.status})`
-      if (response.status === 502 || response.status === 503 || response.status === 504) {
-        message = '后端服务暂不可用，数据暂时无法加载'
-      } else {
-        try {
-          const data = await response.json()
-          if (typeof data.detail === 'string') {
-            message = data.detail
-          } else if (Array.isArray(data.detail)) {
-            message = data.detail.map((d: { msg?: string }) => d.msg ?? '').join('; ')
-          }
-        } catch {
-          // ignore parse errors
-        }
-      }
-      throw new ApiClientError(message, response.status)
-    }
-
+    const response = await requestResponse(path, options, auth)
     if (response.status === 204) {
       return undefined as T
     }
@@ -769,23 +780,36 @@ export const triggerLiveCheck = () =>
 export const triggerXCheck = () =>
   request<MonitorActionResult>('/monitors/x/check', { method: 'POST' })
 
-export const getRecentLogs = (params: { limit?: number; min_level?: string } = {}) =>
+export const getRecentLogs = (
+  params: { limit?: number; min_level?: string } = {},
+  signal?: AbortSignal,
+) =>
   request<RecentLogsResponse>(
     `/logs/recent${buildQuery(params as Record<string, string | number | undefined>)}`,
+    { signal },
   )
 
-const LOGS_WS_AUTH_PROTOCOL = 'access_token'
-
-export function buildLogsWebSocketUrl(minLevel = 'INFO'): string {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+export async function streamLogs(
+  minLevel: string,
+  options: {
+    signal: AbortSignal
+    onOpen: () => void
+    onLog: (entry: RuntimeLogEntry) => void
+  },
+): Promise<void> {
   const params = new URLSearchParams({ min_level: minLevel })
-  return `${protocol}//${window.location.host}/api/v1/ws/logs?${params}`
-}
-
-export function createLogsWebSocket(minLevel = 'INFO'): WebSocket {
-  const token = getToken()
-  if (!token) {
-    throw new Error('Not authenticated')
+  const response = await requestResponse(`/logs/stream?${params}`, {
+    headers: { Accept: 'text/event-stream' },
+    signal: options.signal,
+  })
+  if (options.signal.aborted) {
+    await response.body?.cancel()
+    return
   }
-  return new WebSocket(buildLogsWebSocketUrl(minLevel), [LOGS_WS_AUTH_PROTOCOL, token])
+  if (!response.body || response.headers.get('Content-Type')?.split(';')[0].trim() !== 'text/event-stream') {
+    await response.body?.cancel()
+    throw new ApiClientError('日志服务返回了无效的事件流', response.status)
+  }
+  options.onOpen()
+  await readLogStream(response.body, options.onLog)
 }

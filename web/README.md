@@ -69,7 +69,7 @@ npm run build
 | `/settings/douyin-account` | 抖音账号 |
 | `/settings/x-account` | X 账号与代理 |
 | `/settings/bot` | 机器人（超级用户、状态查询白名单） |
-| `/logs` | 实时运行日志（WebSocket） |
+| `/logs` | 实时运行日志（SSE，Bearer Token 鉴权，断线重连） |
 | `/about` | 版本与构建信息 |
 
 旧路径 `/mappings`、`/settings/monitor`、`/settings/templates`、`/audit`、`/events` 会自动重定向到新位置。

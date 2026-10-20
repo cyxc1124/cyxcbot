@@ -11,14 +11,14 @@ sidebar_position: 4
 | 通道 | 用途 | 保留 | 级别控制 |
 |------|------|------|----------|
 | 终端 stdout | 本地 / `docker compose logs` 实时查看 | 不保留 | `LOG_LEVEL` |
-| Web `/logs` | 浏览器实时浏览 | 内存约 **2000** 条 | 服务端缓冲 `DEBUG`+；页面默认筛选 **INFO**+ |
+| Web `/logs` | 浏览器实时浏览 | `INFO`+、`DEBUG` 各最多 **2000** 条 | 服务端缓冲 `DEBUG`+；页面默认筛选 **INFO**+ |
 | 磁盘文件 | 排障、跨重启追溯 | 默认 **7 天**（可配置） | `LOG_FILE_LEVEL`（默认同 `LOG_LEVEL`） |
 
 ```
 插件 / 第三方库
     → nonebot.log.logger (loguru)
         ├─ 终端（受 LOG_LEVEL 过滤）
-        ├─ Web 广播 sink → /logs WebSocket（固定 DEBUG+，环形缓冲）
+        ├─ Web 广播 sink → /logs SSE（固定 DEBUG+，环形缓冲）
         └─ 文件 sink → data/logs/（可禁用）
 ```
 
@@ -98,11 +98,15 @@ docker compose logs -f cyxcbot
 
 ## Web 管理面板 `/logs`
 
-- 实时 WebSocket 推送，支持按 `DEBUG` / `INFO` / `WARNING` / `ERROR` 筛选（**默认 `INFO`**）。
-- 打开页面时先拉取约 **500** 条历史，浏览器最多展示约 **1500** 条。
+- 实时 SSE 推送，支持按 `DEBUG` / `INFO` / `WARNING` / `ERROR` 筛选（**默认 `INFO`**）。
+- 打开页面时先拉取最多 **2000** 条历史，浏览器最多展示 **2000** 条。
+- 前端通过 `fetch` 携带管理员 Bearer Token；断线后间隔 **3 秒**重连，回放当前级别的最近缓存并按会话和日志 ID 去重。鉴权失败停止重试，登录过期时跳转登录页。
+- 暂停只停止显示更新，仍接收并保留最多 **2000** 条待显示日志；清空仅影响当前显示。
 - 服务端缓冲收录 `DEBUG` 及以上（终端在 `LOG_LEVEL=INFO` 时不显示 `DEBUG`）；要在页面上看 `DEBUG`，需将级别下拉框改为 `DEBUG`。
 - 入站事件 dump 与 Matcher 调度行只出现在终端 / 磁盘，不进入本页。
 - 需管理员登录；重启后 Web 缓冲清空。查历史请用磁盘文件或 `docker compose logs`。
+
+SSE 接口为 `GET /api/v1/logs/stream`，与 OneBot 的 HTTP / WebSocket 接入独立。FastAPI 在空闲时每 **15 秒**发送心跳，并设置 `Cache-Control: no-cache`、`X-Accel-Buffering: no`。反向代理需允许流式响应，避免对该接口缓冲，读取超时应大于心跳间隔。断线时间过长或日志量超过缓存容量时，较早日志无法补发。
 
 详见 [页面说明 — 日志](../web-admin/pages#日志-logs)。
 
@@ -140,17 +144,17 @@ Uvicorn 启动时使用 `log_config=None`、`access_log=False`，并调用 `brid
 
 | 模块 | 职责 |
 |------|------|
-| `shared/logging/broadcast.py` | Web 环形缓冲与 WebSocket 广播 |
+| `shared/logging/broadcast.py` | Web 环形缓冲与异步订阅广播 |
 | `shared/logging/file_sink.py` | 磁盘会话日志与清理 |
 | `bot.py` | stdlib → loguru 桥接、安装 sink |
-| `admin/api/v1/logs.py` | `/logs/recent` 与 `/ws/logs` API |
+| `admin/api/v1/logs.py` | `/logs/recent` 与 `/logs/stream` SSE API |
 
 ## 故障排查
 
 | 现象 | 建议 |
 |------|------|
 | 终端无 DEBUG | 正常；设 `LOG_LEVEL=DEBUG`、Web `/logs` 级别选 `DEBUG`，或设 `LOG_FILE_LEVEL=DEBUG` |
-| Web `/logs` 无新行 | 检查 WebSocket 连接状态；确认 `WEB_ADMIN_ENABLED` 未禁用 |
+| Web `/logs` 无新行 | 检查 SSE 连接状态与反向代理缓冲；确认 `WEB_ADMIN_ENABLED` 未禁用 |
 | 磁盘无文件 | 确认 `LOG_FILE_ENABLED=true`；检查 `data/logs/` 权限 |
 | `data/` 磁盘占满 | 缩短 `LOG_FILE_RETENTION`、提高 `LOG_FILE_LEVEL` / `LOG_LEVEL` 减少写入；确认 `data/` 卷已挂载 |
 | 需要 HTTP 访问审计 | 在 Nginx / 反向代理侧记录 access log；本程序默认不写 Uvicorn access |

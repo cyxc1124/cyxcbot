@@ -177,7 +177,7 @@ def test_debug_recent_merges_tiers_in_entry_id_order() -> None:
 
 
 async def test_queue_full_signals_disconnect_sentinel() -> None:
-    """Slow clients must get None so WS can close and reconnect."""
+    """Slow clients must get None so the stream can close and reconnect."""
     hub = LogBroadcastHub(max_history=10)
     queue = hub.subscribe(min_level="DEBUG")
     try:

@@ -1,6 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useCallback, useEffect, useRef, useState, startTransition } from 'react'
-import { createLogsWebSocket, getRecentLogs } from '../api/client'
+import { ApiClientError, getRecentLogs, streamLogs } from '../api/client'
 import type { RuntimeLogEntry } from '../api/types'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { formatApiError } from '../utils/apiError'
@@ -26,7 +26,7 @@ const LEVEL_CLASS: Record<string, string> = {
   CRITICAL: 'text-red-700 dark:text-red-300 font-semibold',
 }
 
-type ConnectionState = 'connecting' | 'connected' | 'disconnected'
+type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'failed'
 
 const LOG_LINE_ESTIMATE_PX = 22
 
@@ -58,7 +58,6 @@ export function LogsPage() {
   const flushTimerRef = useRef<number | undefined>(undefined)
   const flushGenerationRef = useRef(0)
   const pausedRef = useRef(paused)
-  const wsRef = useRef<WebSocket | null>(null)
 
   pausedRef.current = paused
 
@@ -152,68 +151,56 @@ export function LogsPage() {
   )
 
   useEffect(() => {
-    let cancelled = false
+    const controller = new AbortController()
+    const { signal } = controller
     let reconnectTimer: number | undefined
 
-    const connect = () => {
-      if (cancelled) return
+    const connect = async () => {
+      if (signal.aborted) return
       setConnection('connecting')
       setError('')
 
       try {
-        const ws = createLogsWebSocket(minLevel)
-        wsRef.current = ws
-
-        ws.onopen = () => {
-          if (cancelled) return
-          setConnection('connected')
-        }
-
-        ws.onmessage = (event) => {
-          if (cancelled) return
-          try {
-            const payload = JSON.parse(String(event.data)) as RuntimeLogEntry
-            appendLogs([payload])
-          } catch {
-            // ignore malformed frames
-          }
-        }
-
-        ws.onerror = () => {
-          if (cancelled) return
-          setConnection('disconnected')
-        }
-
-        ws.onclose = () => {
-          if (cancelled) return
-          setConnection('disconnected')
-          reconnectTimer = window.setTimeout(connect, 3000)
-        }
+        await streamLogs(minLevel, {
+          signal,
+          onOpen: () => { if (!signal.aborted) setConnection('connected') },
+          onLog: (entry) => { if (!signal.aborted) appendLogs([entry]) },
+        })
       } catch (err) {
-        setConnection('disconnected')
+        if (signal.aborted) return
         setError(formatApiError(err, '无法建立日志连接'))
+        if (err instanceof ApiClientError && (err.status === 401 || err.status === 403)) {
+          setConnection('failed')
+          return
+        }
       }
+      if (signal.aborted) return
+      setConnection('disconnected')
+      reconnectTimer = window.setTimeout(() => void connect(), 3000)
     }
 
-    void getRecentLogs({ limit: DISPLAY_MAX, min_level: minLevel })
-      .then((data) => {
-        if (cancelled) return
+    const start = async () => {
+      try {
+        const data = await getRecentLogs({ limit: DISPLAY_MAX, min_level: minLevel }, signal)
+        if (signal.aborted) return
         setLogs(trimLogs(data.items))
         setBuffered(data.total_buffered)
-      })
-      .catch((err) => {
-        if (cancelled) return
+      } catch (err) {
+        if (signal.aborted) return
         setError(formatApiError(err, '加载历史日志失败'))
-      })
-      .finally(() => {
-        if (!cancelled) connect()
-      })
+        if (err instanceof ApiClientError && (err.status === 401 || err.status === 403)) {
+          setConnection('failed')
+          return
+        }
+      }
+      await connect()
+    }
+    void start()
 
     return () => {
-      cancelled = true
+      controller.abort()
       if (reconnectTimer) window.clearTimeout(reconnectTimer)
-      wsRef.current?.close()
-      wsRef.current = null
+      pausedBufferRef.current = []
       invalidatePendingFlush()
     }
   }, [minLevel, invalidatePendingFlush, appendLogs])
@@ -250,7 +237,9 @@ export function LogsPage() {
   }
 
   const connectionLabel =
-    connection === 'connected' ? '实时连接中' : connection === 'connecting' ? '连接中…' : '已断开，重试中'
+    connection === 'connected' ? '实时连接中'
+      : connection === 'connecting' ? '连接中…'
+        : connection === 'failed' ? '连接失败' : '已断开，重试中'
 
   const connectionClass =
     connection === 'connected'
