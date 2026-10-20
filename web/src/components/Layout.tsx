@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useSidebar } from '../contexts/SidebarContext'
 import { getAbout } from '../api/client'
 import type { AboutInfo } from '../api/types'
+import { ThemeModeSwitch } from './ThemeModeSwitch'
 import {
   applyTheme,
   getSavedColorTheme,
@@ -11,7 +12,6 @@ import {
   getSavedThemeMode,
   type ColorTheme,
   type FontFamily,
-  type ThemeMode,
 } from '../lib/theme'
 
 type NavItem = { to: string; label: string }
@@ -99,7 +99,6 @@ export function Layout() {
   const { user, logout } = useAuth()
   const { navCollapsed, setNavCollapsed } = useSidebar()
   const location = useLocation()
-  const [mode, setMode] = useState<ThemeMode>(() => getSavedThemeMode())
   const [colorTheme, setColorTheme] = useState<ColorTheme>(() => getSavedColorTheme())
   const [fontFamily, setFontFamily] = useState<FontFamily>(() => getSavedFontFamily())
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -145,20 +144,14 @@ export function Layout() {
 
   const showFullNav = !navCollapsed || navHoverExpanded
 
-  const toggleMode = () => {
-    const next: ThemeMode = mode === 'dark' ? 'light' : 'dark'
-    setMode(next)
-    applyTheme(next, colorTheme, fontFamily)
-  }
-
   const handleColorThemeChange = (next: ColorTheme) => {
     setColorTheme(next)
-    applyTheme(mode, next, fontFamily)
+    applyTheme(getSavedThemeMode(), next, fontFamily)
   }
 
   const handleFontChange = (next: FontFamily) => {
     setFontFamily(next)
-    applyTheme(mode, colorTheme, next)
+    applyTheme(getSavedThemeMode(), colorTheme, next)
   }
 
   const toggleNavCollapsed = () => {
@@ -381,14 +374,7 @@ export function Layout() {
                 <option value="claude">Claude</option>
               </select>
             </label>
-            <button
-              type="button"
-              onClick={toggleMode}
-              className="btn-ghost text-sm"
-              title="切换浅色/深色"
-            >
-              {mode === 'dark' ? '浅色' : '深色'}
-            </button>
+            <ThemeModeSwitch />
           </div>
         </header>
 
