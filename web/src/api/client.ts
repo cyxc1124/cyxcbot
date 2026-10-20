@@ -1,5 +1,6 @@
 import type {
   AboutInfo,
+  BotConnectionsStatus,
   BilibiliLogoutResult,
   BilibiliQrcodeLoginResult,
   BilibiliQrcodeStart,
@@ -752,6 +753,9 @@ export const getSystemMonitorStatus = () =>
 
 export const getConnectionsStatus = () =>
   request<ConnectionsStatus>('/connections/status')
+
+export const getBotConnectionsStatus = () =>
+  request<BotConnectionsStatus>('/connections/bots')
 
 export const getAbout = () => request<AboutInfo>('/about')
 

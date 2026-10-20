@@ -566,10 +566,13 @@ export interface OfficialQqConnectionStatus {
   message: string
 }
 
-export interface ConnectionsStatus {
-  bilibili: BilibiliConnectionStatus
+export interface BotConnectionsStatus {
   qq: QqConnectionStatus
   official_qq: OfficialQqConnectionStatus
+}
+
+export interface ConnectionsStatus extends BotConnectionsStatus {
+  bilibili: BilibiliConnectionStatus
 }
 
 export interface AboutInfo {

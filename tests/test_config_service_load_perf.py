@@ -559,6 +559,55 @@ async def test_official_settings_permissions_and_friend_cache_round_trip(
 
 
 @pytest.mark.asyncio
+async def test_bot_connections_endpoint_skips_bilibili_and_requires_admin(
+    db_context, monkeypatch
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from admin.api.v1 import connections as connections_api
+    from admin.deps import get_current_user, require_setup_complete
+
+    qq = {"connected": True, "bot_count": 1, "bots": [], "message": "已连接"}
+    official = {"configured": False, "connected": False, "message": "未配置"}
+    onebot_status = AsyncMock(return_value=qq)
+    official_status = AsyncMock(return_value=official)
+    full_status = AsyncMock(side_effect=AssertionError("must not check Bilibili"))
+    monkeypatch.setattr(connections_api, "get_qq_connection_status", onebot_status)
+    monkeypatch.setattr(
+        connections_api, "get_official_qq_connection_status", official_status
+    )
+    monkeypatch.setattr(connections_api, "get_connections_status", full_status)
+    app = FastAPI()
+    app.include_router(connections_api.router)
+    app.dependency_overrides[require_setup_complete] = lambda: None
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        assert (await client.get("/connections/bots")).status_code == 401
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            is_admin=False
+        )
+        assert (await client.get("/connections/bots")).status_code == 403
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            is_admin=True
+        )
+        response = await client.get("/connections/bots")
+
+    assert response.status_code == 200
+    assert response.json()["qq"] == qq
+    assert response.json()["official_qq"]["configured"] is False
+    assert "bilibili" not in response.json()
+    onebot_status.assert_awaited_once()
+    official_status.assert_awaited_once()
+    full_status.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_official_sandbox_legacy_read_and_patch_compatibility(
     db_context, monkeypatch
 ):

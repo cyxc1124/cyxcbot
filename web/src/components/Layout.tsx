@@ -5,6 +5,7 @@ import { useSidebar } from '../contexts/SidebarContext'
 import { getAbout } from '../api/client'
 import type { AboutInfo } from '../api/types'
 import { ThemeModeSwitch } from './ThemeModeSwitch'
+import { BotConnectionStatus } from './BotConnectionStatus'
 import { AppBrand, AppFooter } from './AppBrand'
 
 type NavItem = { to: string; label: string }
@@ -308,8 +309,8 @@ export function Layout() {
           navCollapsed ? 'lg:pl-12' : 'lg:pl-64'
         }`}
       >
-        <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-2 border-b border-border bg-background/80 px-4 py-2 backdrop-blur-sm lg:px-8">
-          <div className="flex items-center gap-2">
+        <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-2 border-b border-border bg-background/80 px-3 py-2 backdrop-blur-sm sm:px-4 lg:px-8">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               className="btn-ghost hidden text-sm lg:inline-flex"
@@ -319,13 +320,16 @@ export function Layout() {
             </button>
             <button
               type="button"
-              className="btn-ghost text-sm lg:hidden"
+              className="btn-ghost px-2 text-sm lg:hidden"
               onClick={() => setSidebarOpen(true)}
             >
               菜单
             </button>
           </div>
-          <ThemeModeSwitch />
+          <div className="flex items-center gap-2 sm:gap-4">
+            <BotConnectionStatus />
+            <ThemeModeSwitch />
+          </div>
         </header>
 
         <main className="flex-1 p-4 lg:p-8">

@@ -43,7 +43,10 @@ class OfficialQqConnectionStatus(BaseModel):
     message: str
 
 
-class ConnectionsStatusResponse(BaseModel):
-    bilibili: BilibiliConnectionStatus
+class BotConnectionsStatusResponse(BaseModel):
     qq: QqConnectionStatus
     official_qq: OfficialQqConnectionStatus
+
+
+class ConnectionsStatusResponse(BotConnectionsStatusResponse):
+    bilibili: BilibiliConnectionStatus

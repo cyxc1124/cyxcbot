@@ -1,4 +1,4 @@
-type IconName = 'sun' | 'moon' | 'user' | 'lock-closed' | 'eye' | 'eye-slash' | 'arrow-right'
+type IconName = 'sun' | 'moon' | 'user' | 'lock-closed' | 'eye' | 'eye-slash' | 'arrow-right' | 'chevron-down'
 
 export function Icon({ name, className = 'size-4' }: { name: IconName; className?: string }) {
   return (
