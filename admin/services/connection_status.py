@@ -109,7 +109,9 @@ async def get_bilibili_connection_status() -> Dict[str, Any]:
         }
 
 
-async def get_qq_connection_status() -> Dict[str, Any]:
+async def get_qq_connection_status(
+    *, include_login_info: bool = True
+) -> Dict[str, Any]:
     bots = iter_onebot_bots()
     if not bots:
         return {
@@ -124,16 +126,19 @@ async def get_qq_connection_status() -> Dict[str, Any]:
         self_id = getattr(bot, "self_id", "")
         qq = str(self_id)
         nickname: str | None = None
-        try:
-            info = await bot.call_api("get_login_info")
-            qq = str(info.get("user_id", self_id))
-            nickname = info.get("nickname")
-        except Exception as exc:
-            logger.debug(f"get_login_info failed for {self_id}: {exc}")
+        if include_login_info:
+            try:
+                info = await bot.call_api("get_login_info")
+                qq = str(info.get("user_id", self_id))
+                nickname = info.get("nickname")
+            except Exception as exc:
+                logger.debug(f"get_login_info failed for {self_id}: {exc}")
 
         bot_infos.append({"qq": qq, "nickname": nickname})
 
-    if len(bot_infos) == 1:
+    if not include_login_info:
+        message = f"已连接 {len(bot_infos)} 个 OneBot 实例"
+    elif len(bot_infos) == 1:
         bot = bot_infos[0]
         label = bot["nickname"] or bot["qq"]
         message = f"QQ {bot['qq']}（{label}）"
@@ -152,7 +157,9 @@ async def get_official_qq_connection_status() -> Dict[str, Any]:
     snap = get_config_service().get_snapshot()
     app_id = (snap.official_qq_app_id or "").strip()
     configured = bool(app_id and snap.official_qq_app_secret_set)
-    connected = bool(iter_official_bots())
+    connected = configured and any(
+        str(bot.self_id) == app_id for bot in iter_official_bots()
+    )
     if not configured:
         message = "未配置官方 Bot，请在系统设置中填写 AppID 与 AppSecret"
     elif connected:

@@ -22,11 +22,15 @@ export function BotConnectionStatus() {
   useEffect(() => {
     let cancelled = false
     let pending = false
+    let request: AbortController | undefined
+    let requestTimeout: number | undefined
     const load = async () => {
       if (pending) return
       pending = true
+      request = new AbortController()
+      requestTimeout = window.setTimeout(() => request?.abort(), 10000)
       try {
-        const data = await getBotConnectionsStatus()
+        const data = await getBotConnectionsStatus(request.signal)
         if (!cancelled) {
           setStatus(data)
           setFailed(false)
@@ -37,6 +41,8 @@ export function BotConnectionStatus() {
           setFailed(true)
         }
       } finally {
+        window.clearTimeout(requestTimeout)
+        request = undefined
         pending = false
       }
     }
@@ -50,6 +56,8 @@ export function BotConnectionStatus() {
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
       cancelled = true
+      request?.abort()
+      window.clearTimeout(requestTimeout)
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisibility)
     }
@@ -100,7 +108,7 @@ export function BotConnectionStatus() {
         <span className="sm:hidden">连接</span>
         <Icon name="chevron-down" className="hidden size-3.5 text-muted-foreground transition-transform group-open:rotate-180 sm:block" />
       </summary>
-      <div id={panelId} role="region" aria-label="Bot 连接详情" className="absolute right-3 top-full mt-2 w-80 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-border bg-popover p-4 text-popover-foreground shadow-lg sm:right-0">
+      <div id={panelId} role="region" aria-label="Bot 连接详情" className="absolute right-3 top-full mt-2 max-h-[calc(100dvh-5.5rem)] w-80 max-w-[calc(100vw-1.5rem)] overflow-y-auto overscroll-contain rounded-2xl border border-border bg-popover p-4 text-popover-foreground shadow-lg sm:right-0">
         <h2 className="mb-4 text-sm font-semibold">Bot 连接</h2>
         {failed && <p role="alert" className="mb-4 text-xs text-amber-700 dark:text-amber-400">无法获取连接状态，稍后自动重试。</p>}
         <div className="space-y-4 text-sm">

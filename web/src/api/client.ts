@@ -127,7 +127,8 @@ async function request<T>(
   auth = true,
 ): Promise<T> {
   const method = (options.method ?? 'GET').toUpperCase()
-  const inflightKey = getInflightKey(method, path, auth)
+  // 独立取消的请求不能共享 Promise，避免取消旧请求时影响新挂载的页面。
+  const inflightKey = options.signal ? null : getInflightKey(method, path, auth)
 
   if (inflightKey) {
     const existing = inflightGetRequests.get(inflightKey)
@@ -754,8 +755,8 @@ export const getSystemMonitorStatus = () =>
 export const getConnectionsStatus = () =>
   request<ConnectionsStatus>('/connections/status')
 
-export const getBotConnectionsStatus = () =>
-  request<BotConnectionsStatus>('/connections/bots')
+export const getBotConnectionsStatus = (signal: AbortSignal) =>
+  request<BotConnectionsStatus>('/connections/bots', { signal })
 
 export const getAbout = () => request<AboutInfo>('/about')
 

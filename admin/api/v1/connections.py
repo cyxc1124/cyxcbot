@@ -30,6 +30,6 @@ async def connections_status(_: AdminUser):
 @router.get("/bots", response_model=BotConnectionsStatusResponse)
 async def bot_connections_status(_: AdminUser):
     return BotConnectionsStatusResponse(
-        qq=await get_qq_connection_status(),
+        qq=await get_qq_connection_status(include_login_info=False),
         official_qq=await get_official_qq_connection_status(),
     )

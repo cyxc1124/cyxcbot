@@ -52,7 +52,7 @@ beforeEach(() => {
   hooks.states = []
   hooks.details.current = null
   listeners = new Map()
-  vi.stubGlobal('window', { setInterval, clearInterval })
+  vi.stubGlobal('window', { setInterval, clearInterval, setTimeout, clearTimeout })
   vi.stubGlobal('document', {
     visibilityState: 'visible',
     addEventListener: (name: string, listener: EventListener) => listeners.set(name, listener),
@@ -104,6 +104,22 @@ describe('Bot connection indicator', () => {
     expect(render()).not.toContain('role="alert"')
   })
 
+  it('times out a stalled refresh, drops stale online state, and retries', async () => {
+    mount()
+    await Promise.resolve()
+    vi.mocked(getBotConnectionsStatus).mockImplementation(signal => new Promise((_, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+    }))
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(getBotConnectionsStatus).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(render()).toContain('OneBot 状态未知')
+    vi.mocked(getBotConnectionsStatus).mockResolvedValue(status)
+    await vi.advanceTimersByTimeAsync(20000)
+    expect(getBotConnectionsStatus).toHaveBeenCalledTimes(3)
+    expect(render()).toContain('OneBot 已连接')
+  })
+
   it('skips polling while hidden and refreshes the disconnected state when visible', async () => {
     mount()
     await Promise.resolve()
@@ -122,10 +138,13 @@ describe('Bot connection indicator', () => {
     let resolve!: (value: BotConnectionsStatus) => void
     vi.mocked(getBotConnectionsStatus).mockReturnValue(new Promise(done => { resolve = done }))
     mount()
-    await vi.advanceTimersByTimeAsync(60000)
+    listeners.get('visibilitychange')!(new Event('visibilitychange'))
+    listeners.get('visibilitychange')!(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(9000)
     expect(getBotConnectionsStatus).toHaveBeenCalledTimes(1)
     cleanups.forEach(cleanup => cleanup())
     cleanups = []
+    expect(vi.mocked(getBotConnectionsStatus).mock.calls[0][0].aborted).toBe(true)
     resolve(status)
     await Promise.resolve()
     expect(hooks.states).toEqual([null, false])

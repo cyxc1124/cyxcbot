@@ -602,9 +602,98 @@ async def test_bot_connections_endpoint_skips_bilibili_and_requires_admin(
     assert response.json()["qq"] == qq
     assert response.json()["official_qq"]["configured"] is False
     assert "bilibili" not in response.json()
-    onebot_status.assert_awaited_once()
+    onebot_status.assert_awaited_once_with(include_login_info=False)
     official_status.assert_awaited_once()
     full_status.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_bot_connections_endpoint_does_not_probe_onebot_api(
+    db_context, monkeypatch
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from admin.api.v1 import connections as connections_api
+    from admin.services import connection_status
+
+    bot = SimpleNamespace(
+        self_id="10001", call_api=AsyncMock(side_effect=AssertionError("no API probe"))
+    )
+    monkeypatch.setattr(connection_status, "iter_onebot_bots", lambda: [bot])
+    monkeypatch.setattr(
+        connections_api,
+        "get_official_qq_connection_status",
+        AsyncMock(
+            return_value={"configured": False, "connected": False, "message": "未配置"}
+        ),
+    )
+
+    result = await connections_api.bot_connections_status(None)
+
+    assert result.qq.connected
+    assert result.qq.bot_count == 1
+    assert result.qq.message == "已连接 1 个 OneBot 实例"
+    bot.call_api.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_full_onebot_status_keeps_login_info(db_context, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from admin.services import connection_status
+
+    bot = SimpleNamespace(
+        self_id="10001",
+        call_api=AsyncMock(return_value={"user_id": 10001, "nickname": "示例机器人"}),
+    )
+    monkeypatch.setattr(connection_status, "iter_onebot_bots", lambda: [bot])
+
+    result = await connection_status.get_qq_connection_status()
+
+    assert result["bots"] == [{"qq": "10001", "nickname": "示例机器人"}]
+    bot.call_api.assert_awaited_once_with("get_login_info")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("configured", "bot_ids", "connected"),
+    [
+        (True, ["old-app"], False),
+        (False, ["current-app"], False),
+        (True, ["current-app"], True),
+        (True, [], False),
+        (True, ["old-app", "current-app"], True),
+    ],
+)
+async def test_official_connection_status_matches_configured_app(
+    db_context, monkeypatch, configured, bot_ids, connected
+):
+    from types import SimpleNamespace
+
+    from admin.services import connection_status
+
+    snapshot = SimpleNamespace(
+        official_qq_app_id="current-app",
+        official_qq_app_secret_set=configured,
+        official_qq_use_websocket=True,
+    )
+    monkeypatch.setattr(
+        connection_status,
+        "get_config_service",
+        lambda: SimpleNamespace(get_snapshot=lambda: snapshot),
+    )
+    monkeypatch.setattr(
+        connection_status,
+        "iter_official_bots",
+        lambda: [SimpleNamespace(self_id=bot_id) for bot_id in bot_ids],
+    )
+
+    result = await connection_status.get_official_qq_connection_status()
+
+    assert result["connected"] is connected
+    assert result["configured"] is configured
 
 
 @pytest.mark.asyncio
