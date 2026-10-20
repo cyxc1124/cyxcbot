@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from material_color_utilities import Hct
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from admin.schemas.settings import SettingsUpdateRequest
 from utils.bilibili_api.dynamic_api import DynamicFetcher
@@ -131,3 +131,33 @@ def test_settings_validate_color_source():
     )
     with pytest.raises(ValueError):
         SettingsUpdateRequest(dynamic_card_color_source="invalid")
+
+
+@pytest.mark.parametrize(
+    "dynamic_type,title,body,expected",
+    [
+        (8, "视频标题", "视频标题\n视频简介", "视频简介"),
+        (64, "专栏标题", "正文&nbsp;内容 &amp; 更多", "正文 内容 & 更多"),
+    ],
+)
+def test_card_text_has_no_duplicate_title_or_article_entities(
+    monkeypatch, dynamic_type, title, body, expected
+):
+    drawn = []
+    original = ImageDraw.ImageDraw.text
+
+    def record(draw, xy, text, *args, **kwargs):
+        drawn.append(text)
+        return original(draw, xy, text, *args, **kwargs)
+
+    monkeypatch.setattr(ImageDraw.ImageDraw, "text", record)
+    _draw_card(
+        DynamicItem(
+            1, 1, "作者", 1700000000, dynamic_type, title=title, body_text=body
+        ),
+        None,
+        [],
+    )
+    assert drawn.count(title) == 1
+    assert expected in drawn
+    assert "&nbsp;" not in "".join(drawn)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from html import unescape
 from io import BytesIO
 from pathlib import Path
 from typing import Literal
@@ -88,12 +89,15 @@ def _draw_card(
     font, small, heading = _font(30), _font(24), _font(36)
     lines = []
     # shortcut: one card shows at most 6000 characters and nine images; use the QR for the full post.
+    title = dynamic.title if dynamic.title not in dynamic.body_text.splitlines() else ""
     text = "\n".join(
         filter(
             None,
-            (dynamic.content, dynamic.forward_text, dynamic.title, dynamic.body_text),
+            (dynamic.content, dynamic.forward_text, title, dynamic.body_text),
         )
     )
+    if dynamic.is_article:
+        text = unescape(text).replace("\xa0", " ")
     if len(text) > 6000:
         text = text[:6000] + "\n……正文过长，扫码查看完整动态"
     if len(dynamic.images) > 9:
