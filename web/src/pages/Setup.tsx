@@ -2,6 +2,9 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ApiClientError } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
+import { AuthShell } from '../components/AuthShell'
+import { PasswordInput } from '../components/PasswordInput'
+import { Icon } from '../components/Icon'
 import {
   acceptPasswordInput,
   getPasswordValidationError,
@@ -43,78 +46,72 @@ export function SetupPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-linear-to-br from-muted to-secondary p-4 dark:from-background dark:to-card">
-      <div className="card w-full max-w-md">
-        <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold text-foreground">
-            欢迎使用 机器草
-          </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            首次使用，请创建管理员账户
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="label" htmlFor="username">
-              用户名
-            </label>
+    <AuthShell subtitle="首次使用，创建管理员账户">
+      <form onSubmit={handleSubmit} className="space-y-6" aria-busy={loading}>
+        <div>
+          <label className="label" htmlFor="username">
+            用户名
+          </label>
+          <div className="relative">
+            <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-muted-foreground"><Icon name="user" /></span>
             <input
               id="username"
-              className="input"
+              name="username"
+              className="input h-14 pl-10 text-base"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
               minLength={3}
               maxLength={64}
               autoComplete="username"
-              placeholder="admin"
+              placeholder="请输入管理员用户名"
             />
           </div>
-          <div>
-            <label className="label" htmlFor="password">
-              密码
-            </label>
-            <input
-              id="password"
-              type="password"
-              className="input"
-              value={password}
-              onChange={(e) =>
-                setPassword(acceptPasswordInput(password, e.target.value))
-              }
-              required
-              minLength={MIN_PASSWORD_LENGTH}
-              autoComplete="new-password"
-            />
-          </div>
-          <div>
-            <label className="label" htmlFor="confirm">
-              确认密码
-            </label>
-            <input
-              id="confirm"
-              type="password"
-              className="input"
-              value={confirm}
-              onChange={(e) =>
-                setConfirm(acceptPasswordInput(confirm, e.target.value))
-              }
-              required
-              minLength={MIN_PASSWORD_LENGTH}
-              autoComplete="new-password"
-            />
-          </div>
+        </div>
+        <div>
+          <label className="label" htmlFor="password">
+            密码
+          </label>
+          <PasswordInput
+            id="password"
+            name="password"
+            value={password}
+            onChange={(e) =>
+              setPassword(acceptPasswordInput(password, e.target.value))
+            }
+            required
+            minLength={MIN_PASSWORD_LENGTH}
+            autoComplete="new-password"
+            placeholder="请输入密码"
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="confirm">
+            确认密码
+          </label>
+          <PasswordInput
+            id="confirm"
+            name="confirm-password"
+            value={confirm}
+            onChange={(e) =>
+              setConfirm(acceptPasswordInput(confirm, e.target.value))
+            }
+            required
+            minLength={MIN_PASSWORD_LENGTH}
+            autoComplete="new-password"
+            placeholder="请再次输入密码"
+          />
+        </div>
 
-          {error && (
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-          )}
+        {error && (
+          <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
+        )}
 
-          <button type="submit" className="btn-primary w-full" disabled={loading}>
-            {loading ? '创建中…' : '创建管理员账户'}
-          </button>
-        </form>
-      </div>
-    </div>
+        <button type="submit" className="btn-primary h-14 w-full text-base" disabled={loading}>
+          {loading ? '创建中…' : '创建管理员账户'}
+          {!loading && <Icon name="arrow-right" />}
+        </button>
+      </form>
+    </AuthShell>
   )
 }

@@ -1141,7 +1141,7 @@ class ConfigService:
                     "configured": snap.official_qq_app_secret_set,
                     "preview": None,
                 },
-                "is_sandbox": snap.official_qq_is_sandbox,
+                "is_sandbox": False,
                 "use_websocket": snap.official_qq_use_websocket,
             },
         }

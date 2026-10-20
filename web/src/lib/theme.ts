@@ -1,35 +1,64 @@
-export type ThemeMode = 'light' | 'dark'
-export type ColorTheme = 'default' | 'claude'
-export type FontFamily = 'maple' | 'system'
+export type ThemeMode = 'light' | 'dark' | 'system'
 
 const MODE_KEY = 'cyxcbot_theme'
-const COLOR_KEY = 'cyxcbot_color_theme'
-const FONT_KEY = 'cyxcbot_font'
+const THEME_EVENT = 'cyxcbot:theme-change'
+let sessionMode: ThemeMode = 'light'
+let sessionOnly = false
 
 export function getSavedThemeMode(): ThemeMode {
-  return localStorage.getItem(MODE_KEY) === 'dark' ? 'dark' : 'light'
+  if (sessionOnly) return sessionMode
+  try {
+    const mode = localStorage.getItem(MODE_KEY)
+    return mode === 'dark' || mode === 'system' ? mode : 'light'
+  } catch {
+    return sessionMode
+  }
 }
 
-export function getSavedColorTheme(): ColorTheme {
-  return localStorage.getItem(COLOR_KEY) === 'claude' ? 'claude' : 'default'
+export function setThemeMode(mode: ThemeMode): void {
+  document.documentElement.classList.toggle('dark', mode === 'dark' || (
+    mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches
+  ))
+  sessionMode = mode
+  try {
+    localStorage.setItem(MODE_KEY, mode)
+    sessionOnly = false
+  } catch {
+    sessionOnly = true
+    // Storage may be unavailable; keep the current tab usable.
+  }
+  window.dispatchEvent(new Event(THEME_EVENT))
 }
 
-export function getSavedFontFamily(): FontFamily {
-  return localStorage.getItem(FONT_KEY) === 'system' ? 'system' : 'maple'
+export function subscribeThemeMode(listener: () => void): () => void {
+  window.addEventListener(THEME_EVENT, listener)
+  return () => window.removeEventListener(THEME_EVENT, listener)
 }
 
-export function applyTheme(mode: ThemeMode, color: ColorTheme, font: FontFamily): void {
-  const root = document.documentElement
-  root.classList.toggle('dark', mode === 'dark')
-  root.classList.toggle('color-claude', color === 'claude')
-  root.classList.toggle('color-default', color === 'default')
-  root.classList.toggle('font-maple', font === 'maple')
-  root.classList.toggle('font-system', font === 'system')
-  localStorage.setItem(MODE_KEY, mode)
-  localStorage.setItem(COLOR_KEY, color)
-  localStorage.setItem(FONT_KEY, font)
-}
-
-export function initTheme(): void {
-  applyTheme(getSavedThemeMode(), getSavedColorTheme(), getSavedFontFamily())
+export function initTheme(): () => void {
+  document.documentElement.classList.remove('color-claude', 'color-default', 'font-maple', 'font-system')
+  try {
+    localStorage.removeItem('cyxcbot_color_theme')
+    localStorage.removeItem('cyxcbot_font')
+  } catch {
+    // Removed preferences must not block startup when storage is unavailable.
+  }
+  const refresh = () => setThemeMode(getSavedThemeMode())
+  const media = window.matchMedia('(prefers-color-scheme: dark)')
+  const onSystemChange = () => {
+    if (getSavedThemeMode() === 'system') refresh()
+  }
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === null || event.key === MODE_KEY) {
+      sessionOnly = false
+      refresh()
+    }
+  }
+  refresh()
+  media.addEventListener('change', onSystemChange)
+  window.addEventListener('storage', onStorage)
+  return () => {
+    media.removeEventListener('change', onSystemChange)
+    window.removeEventListener('storage', onStorage)
+  }
 }

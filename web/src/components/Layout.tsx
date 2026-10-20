@@ -4,15 +4,9 @@ import { useAuth } from '../contexts/AuthContext'
 import { useSidebar } from '../contexts/SidebarContext'
 import { getAbout } from '../api/client'
 import type { AboutInfo } from '../api/types'
-import {
-  applyTheme,
-  getSavedColorTheme,
-  getSavedFontFamily,
-  getSavedThemeMode,
-  type ColorTheme,
-  type FontFamily,
-  type ThemeMode,
-} from '../lib/theme'
+import { ThemeModeSwitch } from './ThemeModeSwitch'
+import { BotConnectionStatus } from './BotConnectionStatus'
+import { AppBrand, AppFooter } from './AppBrand'
 
 type NavItem = { to: string; label: string }
 type NavSection = { section: string; items: NavItem[] }
@@ -99,9 +93,6 @@ export function Layout() {
   const { user, logout } = useAuth()
   const { navCollapsed, setNavCollapsed } = useSidebar()
   const location = useLocation()
-  const [mode, setMode] = useState<ThemeMode>(() => getSavedThemeMode())
-  const [colorTheme, setColorTheme] = useState<ColorTheme>(() => getSavedColorTheme())
-  const [fontFamily, setFontFamily] = useState<FontFamily>(() => getSavedFontFamily())
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [navHoverExpanded, setNavHoverExpanded] = useState(false)
   const [prevPathname, setPrevPathname] = useState(location.pathname)
@@ -144,22 +135,6 @@ export function Layout() {
   }
 
   const showFullNav = !navCollapsed || navHoverExpanded
-
-  const toggleMode = () => {
-    const next: ThemeMode = mode === 'dark' ? 'light' : 'dark'
-    setMode(next)
-    applyTheme(next, colorTheme, fontFamily)
-  }
-
-  const handleColorThemeChange = (next: ColorTheme) => {
-    setColorTheme(next)
-    applyTheme(mode, next, fontFamily)
-  }
-
-  const handleFontChange = (next: FontFamily) => {
-    setFontFamily(next)
-    applyTheme(mode, colorTheme, next)
-  }
 
   const toggleNavCollapsed = () => {
     if (navCollapsed) {
@@ -231,17 +206,15 @@ export function Layout() {
         }}
       >
         <div
-          className={`flex h-16 shrink-0 items-center border-b border-sidebar-border ${
-            showFullNav ? 'gap-3 px-6' : 'justify-center px-0'
+          className={`flex min-h-24 shrink-0 items-center border-b border-sidebar-border ${
+            showFullNav ? 'gap-3 px-4 py-4' : 'justify-center px-0'
           }`}
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
-            C
-          </span>
+          {!showFullNav && <img src="/brand-avatar.png" alt="机器草头像" className="size-9 rounded-xl border border-border" width={36} height={36} />}
           {showFullNav && (
             <div className="min-w-0">
-              <h1 className="flex items-center gap-1.5 truncate text-sm font-bold text-sidebar-foreground">
-                <span>机器草</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <AppBrand compact version={versionLine ?? undefined} />
                 {about?.update_available && about?.update_url && (
                   <a
                     href={about.update_url}
@@ -252,10 +225,7 @@ export function Layout() {
                     有新版本
                   </a>
                 )}
-              </h1>
-              <p className="truncate text-xs text-muted-foreground">
-                {versionLine}
-              </p>
+              </div>
             </div>
           )}
         </div>
@@ -339,8 +309,8 @@ export function Layout() {
           navCollapsed ? 'lg:pl-12' : 'lg:pl-64'
         }`}
       >
-        <header className="sticky top-0 z-30 flex min-h-16 flex-wrap items-center gap-2 border-b border-border bg-background/80 px-4 py-2 backdrop-blur-sm lg:flex-nowrap lg:px-8">
-          <div className="flex items-center gap-2">
+        <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-2 border-b border-border bg-background/80 px-3 py-2 backdrop-blur-sm sm:px-4 lg:px-8">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               className="btn-ghost hidden text-sm lg:inline-flex"
@@ -350,51 +320,22 @@ export function Layout() {
             </button>
             <button
               type="button"
-              className="btn-ghost text-sm lg:hidden"
+              className="btn-ghost px-2 text-sm lg:hidden"
               onClick={() => setSidebarOpen(true)}
             >
               菜单
             </button>
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span className="hidden sm:inline">字体</span>
-              <select
-                className="input w-auto min-w-28 py-1.5 text-sm"
-                value={fontFamily}
-                onChange={(e) => handleFontChange(e.target.value as FontFamily)}
-                aria-label="字体"
-              >
-                <option value="maple">Maple Mono</option>
-                <option value="system">系统字体</option>
-              </select>
-            </label>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span className="hidden sm:inline">配色</span>
-              <select
-                className="input w-auto min-w-28 py-1.5 text-sm"
-                value={colorTheme}
-                onChange={(e) => handleColorThemeChange(e.target.value as ColorTheme)}
-                aria-label="配色方案"
-              >
-                <option value="default">默认</option>
-                <option value="claude">Claude</option>
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={toggleMode}
-              className="btn-ghost text-sm"
-              title="切换浅色/深色"
-            >
-              {mode === 'dark' ? '浅色' : '深色'}
-            </button>
+          <div className="flex items-center gap-2 sm:gap-4">
+            <BotConnectionStatus />
+            <ThemeModeSwitch />
           </div>
         </header>
 
         <main className="flex-1 p-4 lg:p-8">
           <Outlet />
         </main>
+        <AppFooter />
       </div>
     </div>
   )

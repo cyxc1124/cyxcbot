@@ -48,6 +48,7 @@ export interface XProxySettings {
 export interface OfficialQQSettings {
   app_id: string
   secret: CookieStatus
+  /** @deprecated 官方 QQ 已统一 API，固定为 false */
   is_sandbox: boolean
   use_websocket: boolean
 }
@@ -119,6 +120,7 @@ export type SettingsUpdate = Partial<
   x_proxy_password?: string
   official_qq_app_id?: string
   official_qq_app_secret?: string
+  /** @deprecated 兼容旧客户端，仅接受 false */
   official_qq_is_sandbox?: boolean
   official_qq_use_websocket?: boolean
 }
@@ -558,15 +560,19 @@ export interface OfficialQqConnectionStatus {
   configured: boolean
   connected: boolean
   app_id: string
+  /** @deprecated 官方 QQ 已统一 API，固定为 false */
   is_sandbox: boolean
   use_websocket: boolean
   message: string
 }
 
-export interface ConnectionsStatus {
-  bilibili: BilibiliConnectionStatus
+export interface BotConnectionsStatus {
   qq: QqConnectionStatus
   official_qq: OfficialQqConnectionStatus
+}
+
+export interface ConnectionsStatus extends BotConnectionsStatus {
+  bilibili: BilibiliConnectionStatus
 }
 
 export interface AboutInfo {

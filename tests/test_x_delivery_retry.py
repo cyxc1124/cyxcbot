@@ -170,3 +170,14 @@ def test_encode_decode_pending_tweet_ref():
     assert delivery_retry.encode_pending_tweet_ref("123", "") == "123"
     # 指纹内 # 会被剥掉，避免破坏分隔
     assert delivery_retry.encode_pending_tweet_ref("1", "a#b") == "1#ab"
+
+
+def test_completed_target_checkpoint_roundtrip():
+    retry = _load_delivery_retry()
+    targets = [("finished", retry.COMPLETED_TARGET), ("pending", 2)]
+    assert retry.encode_pending_targets(targets) == "finished@done,pending@2"
+    assert retry.decode_pending_targets("finished@done,pending@2") == targets
+    assert retry.decode_pending_targets("old@-9,broken@oops") == [
+        ("old", 0),
+        ("broken", 0),
+    ]

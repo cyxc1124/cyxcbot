@@ -673,8 +673,11 @@ async def test_official_x_persists_parts_and_cursor_across_restart(
             targets = (
                 row.pending_group_ids if scope == "group" else row.pending_user_ids
             )
-            assert targets == f"{scope}-openid@1"
-            assert row.pending_tweet_id.startswith("200#v2:")
+            assert set(targets.split(",")) == {
+                f"{scope}-openid@1",
+                "1001@done" if scope == "group" else "2002@done",
+            }
+            assert row.pending_tweet_id.startswith("200#roster:v2:")
             assert row.last_tweet_id == "100"
     restarted = monitor()
     await restarted._load_persisted_states()
@@ -978,3 +981,379 @@ async def test_official_live_retry_restores_snapshot_targets_and_parts(
         assert (
             await session.get(LiveMonitorState, "111")
         ).pending_notifications == "{}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "user"])
+@pytest.mark.parametrize("official", [False, True])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "replace",
+        "add",
+        "remove_failed",
+        "cancel",
+        "only_done",
+        "full_failure",
+        "move",
+        "template",
+        "crash",
+        "cancel_crash",
+    ],
+)
+async def test_x_retry_reconciles_recipients_after_restart(
+    db_context, monkeypatch, scope, official, change
+):
+    import asyncio
+    from collections import Counter
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from nonebot.adapters.onebot.v11 import Message, MessageSegment
+
+    from plugins.x_monitor import sender, state_store
+    from plugins.x_monitor.config import Config
+    from plugins.x_monitor.x_monitor import XMonitor
+    from shared.adapter import outbound
+    from shared.db.models import XMonitorState
+    from utils.x_api.models import TweetItem
+
+    _, factory, _, _ = db_context
+    monkeypatch.setattr(state_store, "get_session", lambda: factory())
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    old, kept, new = (
+        ("old-openid", "kept-openid", "new-openid")
+        if official
+        else ("1001", "2002", "3003")
+    )
+    accepted = Counter()
+    failed = False
+
+    async def send(**kwargs):
+        nonlocal failed
+        target = str(
+            kwargs.get("group_openid")
+            or kwargs.get("openid")
+            or kwargs.get("group_id")
+            or kwargs.get("user_id")
+        )
+        if target == old and not failed:
+            failed = True
+            if change == "crash":
+                raise asyncio.CancelledError
+            raise RuntimeError("temporary failure")
+        accepted[target] += 1
+
+    onebot = SimpleNamespace(
+        send_group_msg=AsyncMock(side_effect=send),
+        send_private_msg=AsyncMock(side_effect=send),
+    )
+    native = SimpleNamespace(send_to_group=send, send_to_c2c=send)
+    monkeypatch.setattr(outbound, "iter_onebot_bots", lambda: [onebot])
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [native])
+    monkeypatch.setattr(sender, "messaging_bots", lambda: [onebot, native])
+
+    def monitor(groups, users, text="caption"):
+        instance = XMonitor(
+            Config(
+                x_monitor_mapping={"author": groups},
+                x_monitor_user_mapping={"author": users},
+            )
+        )
+        instance.sender = sender.XSender()
+        instance.sender.build_tweet_message = lambda _: Message(text)
+        instance.last_tweet_ids["author"] = "100"
+        instance.initialized_usernames["author"] = True
+        return instance
+
+    initial = [old] if change == "full_failure" else [old, kept]
+    if change == "crash":
+        initial = [kept, old]
+    first = monitor(
+        initial if scope == "group" else [], initial if scope == "user" else []
+    )
+    tweet = TweetItem(
+        id="200",
+        text="caption",
+        created_at="",
+        username="author",
+        name="Author",
+        url="",
+    )
+    if change == "crash":
+        with pytest.raises(asyncio.CancelledError):
+            await first._send_tweet_notification("author", tweet)
+    else:
+        assert not await first._send_tweet_notification("author", tweet)
+    assert first.last_tweet_ids["author"] == "100"
+    async with factory() as session:
+        row = await session.get(XMonitorState, "author")
+        assert row.last_tweet_id == "100"
+    before = accepted.copy()
+    destinations = {
+        "replace": [new],
+        "full_failure": [new],
+        "add": [old, kept, new],
+        "remove_failed": [kept, new],
+        "cancel": [],
+        "only_done": [kept],
+        "move": [],
+        "template": [old, kept, new],
+        "crash": [old, kept, new],
+        "cancel_crash": [],
+    }[change]
+    groups, users = (destinations, []) if scope == "group" else ([], destinations)
+    if change == "move":
+        groups, users = ([], [new]) if scope == "group" else ([new], [])
+    restarted = monitor(
+        groups,
+        users,
+        Message([MessageSegment.image(b"changed")])
+        if change == "template"
+        else "caption",
+    )
+    await restarted._load_persisted_states()
+    if change == "template":
+        assert restarted.sender.plan_fingerprint(
+            restarted.sender.build_tweet_message(tweet)
+        ) != first.sender.plan_fingerprint(first.sender.build_tweet_message(tweet))
+    if change == "cancel_crash":
+        persist = restarted._persist_state
+
+        async def interrupted(*args, **kwargs):
+            await persist(*args, **kwargs)
+            raise asyncio.CancelledError
+
+        restarted._persist_state = interrupted
+        with pytest.raises(asyncio.CancelledError):
+            await restarted._send_tweet_notification("author", tweet)
+        restarted = monitor(groups, users)
+        await restarted._load_persisted_states()
+        await restarted._deliver_new_tweets("author", [tweet], 0)
+    else:
+        assert await restarted._send_tweet_notification("author", tweet)
+    assert accepted[kept] == before[kept]
+    assert accepted[new] - before[new] == (
+        0 if change in ("cancel", "only_done", "cancel_crash") else 1
+    )
+    assert accepted[old] - before[old] == (
+        1 if change in ("add", "template", "crash") else 0
+    )
+    assert restarted.last_tweet_ids["author"] == "200"
+    async with factory() as session:
+        row = await session.get(XMonitorState, "author")
+        assert row.last_tweet_id == "200"
+        assert row.pending_tweet_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "user"])
+async def test_x_legacy_replaced_recipient_is_not_counted_without_send(
+    db_context, monkeypatch, scope
+):
+    from unittest.mock import AsyncMock
+
+    from nonebot.adapters.onebot.v11 import Message
+
+    from plugins.x_monitor import sender, state_store
+    from plugins.x_monitor.config import Config
+    from plugins.x_monitor.x_monitor import XMonitor
+    from shared.db.models import XMonitorState
+    from shared.notify.delivery import DeliveryResult, TargetDelivery
+    from utils.x_api.models import TweetItem
+
+    _, factory, _, _ = db_context
+    monkeypatch.setattr(state_store, "get_session", lambda: factory())
+    async with factory() as session, session.begin():
+        session.add(
+            XMonitorState(
+                username="author",
+                initialized=True,
+                last_tweet_id="100",
+                pending_tweet_id="200",
+                pending_group_ids="1001" if scope == "group" else "",
+                pending_user_ids="1001" if scope == "user" else "",
+            )
+        )
+    instance = XMonitor(
+        Config(
+            x_monitor_mapping={"author": ["2002"] if scope == "group" else []},
+            x_monitor_user_mapping={"author": ["2002"] if scope == "user" else []},
+        )
+    )
+    instance.sender = sender.XSender()
+    instance.sender.build_tweet_message = lambda _: Message("caption")
+    instance.sender.send_message = AsyncMock(
+        return_value=DeliveryResult([TargetDelivery(scope, "2002", True)])
+    )
+    await instance._load_persisted_states()
+    tweet = TweetItem(
+        id="200",
+        text="caption",
+        created_at="",
+        username="author",
+        name="Author",
+        url="",
+    )
+    await instance._deliver_new_tweets("author", [tweet], 0)
+    assert instance.sender.send_message.await_count == 1
+    assert (
+        instance.sender.send_message.await_args.args[1:3] == (["2002"], [])
+        if scope == "group"
+        else instance.sender.send_message.await_args.args[1:3] == ([], ["2002"])
+    )
+    assert instance.last_tweet_ids["author"] == "200"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "user"])
+@pytest.mark.parametrize(
+    "replace_during", ["persist", "failure", "success", "readd_pending", "readd_done"]
+)
+async def test_x_inflight_replacement_retains_cursor_until_new_target_sent(
+    db_context, monkeypatch, scope, replace_during
+):
+    from unittest.mock import AsyncMock
+
+    from nonebot.adapters.onebot.v11 import Message
+
+    from plugins.x_monitor import sender, state_store
+    from plugins.x_monitor.config import Config
+    from plugins.x_monitor.x_monitor import XMonitor
+    from shared.notify.delivery import DeliveryResult, TargetDelivery
+    from utils.x_api.models import TweetItem
+
+    _, factory, _, _ = db_context
+    monkeypatch.setattr(state_store, "get_session", lambda: factory())
+    cfg = Config(
+        x_monitor_mapping={"author": ["1001"] if scope == "group" else []},
+        x_monitor_user_mapping={"author": ["1001"] if scope == "user" else []},
+    )
+    monitor = XMonitor(cfg)
+    monitor.last_tweet_ids["author"] = "100"
+    monitor.initialized_usernames["author"] = True
+    monitor.sender = sender.XSender()
+    monitor.sender.build_tweet_message = lambda _: Message("caption")
+    mapping = cfg.x_monitor_mapping if scope == "group" else cfg.x_monitor_user_mapping
+    original_persist = monitor._persist_state
+    changed = False
+
+    async def persist(*args, **kwargs):
+        nonlocal changed
+        await original_persist(*args, **kwargs)
+        if replace_during == "persist" and not changed:
+            mapping["author"] = ["2002"]
+            changed = True
+
+    async def send(message, groups, users, **kwargs):
+        destination = (groups or users)[0]
+        if destination == "1001":
+            mapping["author"] = (
+                ["1001", "2002"] if replace_during.startswith("readd") else ["2002"]
+            )
+            return DeliveryResult(
+                [
+                    TargetDelivery(
+                        scope,
+                        "1001",
+                        replace_during in ("success", "readd_pending", "readd_done"),
+                        "temporary failure",
+                    )
+                ]
+            )
+        assert destination == "2002"
+        return DeliveryResult([TargetDelivery(scope, "2002", True)])
+
+    if replace_during.startswith("readd"):
+        targets = [("2002", -1 if replace_during == "readd_done" else 0), ("1001", 0)]
+        monitor._pending_tweet_delivery["author"] = (
+            "200",
+            "roster:" + monitor.sender.plan_fingerprint(Message("caption")),
+            targets if scope == "group" else [],
+            targets if scope == "user" else [],
+        )
+    monitor._persist_state = persist
+    monitor.sender.send_message = AsyncMock(side_effect=send)
+    tweet = TweetItem(
+        id="200",
+        text="caption",
+        created_at="",
+        username="author",
+        name="Author",
+        url="",
+    )
+    assert not await monitor._send_tweet_notification("author", tweet)
+    assert monitor.last_tweet_ids["author"] == "100"
+    assert await monitor._send_tweet_notification("author", tweet)
+    assert monitor.sender.send_message.await_args.args[1:3] == (
+        (["2002"], []) if scope == "group" else ([], ["2002"])
+    )
+    assert monitor.last_tweet_ids["author"] == "200"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "user"])
+@pytest.mark.parametrize("has_pending", [False, True])
+async def test_x_target_skipped_then_readded_during_send_is_retried(
+    db_context, monkeypatch, scope, has_pending
+):
+    from unittest.mock import AsyncMock
+
+    from nonebot.adapters.onebot.v11 import Message
+
+    from plugins.x_monitor import sender, state_store
+    from plugins.x_monitor.config import Config
+    from plugins.x_monitor.x_monitor import XMonitor
+    from utils.x_api.models import TweetItem
+
+    _, factory, _, _ = db_context
+    monkeypatch.setattr(state_store, "get_session", lambda: factory())
+    cfg = Config(
+        x_monitor_mapping={
+            "author": ["3003", "1001", "2002"] if scope == "group" else []
+        },
+        x_monitor_user_mapping={
+            "author": ["3003", "1001", "2002"] if scope == "user" else []
+        },
+    )
+    monitor = XMonitor(cfg)
+    monitor.last_tweet_ids["author"] = "100"
+    monitor.sender = sender.XSender()
+    monitor.sender.build_tweet_message = lambda _: Message("caption")
+    mapping = cfg.x_monitor_mapping if scope == "group" else cfg.x_monitor_user_mapping
+    sent = []
+
+    async def send(target, message, **kwargs):
+        assert kwargs["can_send"]()
+        sent.append(target)
+        if target == "3003":
+            mapping["author"] = ["3003", "2002"]
+        elif target == "2002":
+            mapping["author"] = ["3003", "1001", "2002"]
+
+    monkeypatch.setattr(sender, "messaging_bots", lambda: [object()])
+    monkeypatch.setattr(sender, "send_group" if scope == "group" else "send_user", send)
+    monitor.sender.send_message = AsyncMock(wraps=monitor.sender.send_message)
+    if has_pending:
+        targets = [(target, 0) for target in mapping["author"]]
+        monitor._pending_tweet_delivery["author"] = (
+            "200",
+            "roster:" + monitor.sender.plan_fingerprint(Message("caption")),
+            targets if scope == "group" else [],
+            targets if scope == "user" else [],
+        )
+    tweet = TweetItem(
+        id="200",
+        text="caption",
+        created_at="",
+        username="author",
+        name="Author",
+        url="",
+    )
+
+    assert not await monitor._send_tweet_notification("author", tweet)
+    assert sent == ["3003", "2002"]
+    assert monitor.last_tweet_ids["author"] == "100"
+    assert await monitor._send_tweet_notification("author", tweet)
+    assert sent == ["3003", "2002", "1001"]
+    assert monitor.last_tweet_ids["author"] == "200"

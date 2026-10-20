@@ -5,6 +5,10 @@ from __future__ import annotations
 from shared.adapter.qq_errors import is_terminal_qq_error_text
 from shared.notify.delivery import DeliveryResult
 
+# A completed target remains in the pending roster so replacements cannot resend it.
+COMPLETED_TARGET = -1
+ROSTER_PREFIX = "roster:"
+
 
 def failed_target_ids(delivery: DeliveryResult) -> tuple[list[str], list[str]]:
     """Backward-compatible: failed target ids without resume offsets."""
@@ -132,7 +136,13 @@ def encode_pending_targets(targets: list[tuple[str, int]]) -> str:
             idx = max(0, int(start))
         except TypeError, ValueError:
             idx = 0
-        parts.append(f"{tid}@{idx}" if idx else tid)
+        parts.append(
+            f"{tid}@done"
+            if start == COMPLETED_TARGET
+            else f"{tid}@{idx}"
+            if idx
+            else tid
+        )
     return ",".join(parts)
 
 
@@ -145,7 +155,12 @@ def decode_pending_targets(raw: str | None) -> list[tuple[str, int]]:
             if not tid:
                 continue
             try:
-                result.append((tid, max(0, int(idx_raw))))
+                result.append(
+                    (
+                        tid,
+                        COMPLETED_TARGET if idx_raw == "done" else max(0, int(idx_raw)),
+                    )
+                )
             except ValueError:
                 result.append((tid, 0))
         else:

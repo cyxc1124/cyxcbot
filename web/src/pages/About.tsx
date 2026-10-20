@@ -122,9 +122,7 @@ export function AboutPage() {
 
       <div className="card">
         <div className="mb-6 flex items-center gap-4">
-          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary text-xl font-bold text-white">
-            C
-          </span>
+          <img src="/brand-avatar.png" alt="机器草头像" className="size-14 shrink-0 rounded-2xl border border-border" width={56} height={56} />
           <div>
             <h3 className="flex items-center gap-2 text-lg font-semibold text-foreground">
               <span>{about?.app_name ?? '机器草'}</span>

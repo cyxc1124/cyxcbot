@@ -26,6 +26,7 @@ from utils.x_api import TweetItem
 from utils.x_api.models import TweetMediaItem
 
 from .delivery_retry import (
+    COMPLETED_TARGET,
     batch_plan_fingerprint,
     normalize_batch_start,
 )
@@ -37,7 +38,7 @@ MAX_MEDIA_PER_MESSAGE = 10
 
 
 class XSender:
-    """X 推文消息发送器。"""
+    """X 推文发送器；进度回调以 COMPLETED_TARGET 标记整个目标已完成。"""
 
     def __init__(self, templates: Optional[XMessageTemplates] = None):
         self.templates = templates or XMessageTemplates()
@@ -182,7 +183,11 @@ class XSender:
                 await send_group(group_id, prepared[index], can_send=can_send)
                 sent = index + 1
                 if on_progress is not None:
-                    await on_progress("group", group_id, sent)
+                    await on_progress(
+                        "group",
+                        group_id,
+                        COMPLETED_TARGET if sent == len(prepared) else sent,
+                    )
             logger.info("X 推文消息已发送到群组 {}", group_id)
             return TargetDelivery("group", group_id, True)
         except (LoggedQQApiError, DeliveryCancelledError) as exc:
@@ -292,7 +297,11 @@ class XSender:
                 await send_user(user_id, batches[index], can_send=can_send)
                 sent = index + 1
                 if on_progress is not None:
-                    await on_progress("user", user_id, sent)
+                    await on_progress(
+                        "user",
+                        user_id,
+                        COMPLETED_TARGET if sent == len(batches) else sent,
+                    )
             logger.info("X 推文消息已发送到好友 {}", user_id)
             return TargetDelivery("user", user_id, True)
         except (LoggedQQApiError, DeliveryCancelledError) as exc:
@@ -334,7 +343,11 @@ class XSender:
             nonlocal sent
             sent = next_part
             if on_progress is not None:
-                await on_progress(target_type, target_id, next_part)
+                await on_progress(
+                    target_type,
+                    target_id,
+                    COMPLETED_TARGET if next_part == part_count else next_part,
+                )
 
         try:
             if start < part_count:
