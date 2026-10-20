@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { Icon, type IconName } from '../../components/Icon'
+import { NavLink, Outlet, useMatch } from 'react-router-dom'
 import { LoadErrorBanner } from '../../components/LoadErrorBanner'
 import { PageLoading } from '../../components/LoadingSpinner'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
@@ -70,9 +71,17 @@ const settingsNavSections: SettingsNavSection[] = [
   },
 ]
 
+function settingsIcon(path: string): IconName {
+  if (path.includes('monitor')) return 'play'
+  if (path.includes('account')) return 'user'
+  if (path.includes('official')) return 'settings'
+  return 'command'
+}
+
 function SettingsLayoutContent() {
   const {
     loading,
+    saving,
     error,
     retryLoad,
     settings,
@@ -81,6 +90,10 @@ function SettingsLayoutContent() {
     setShowLogoutConfirm,
     handleLogout,
   } = useSettingsForm()
+
+  const bilibiliMonitor = useMatch('/settings/bilibili-monitor')
+  const xMonitor = useMatch('/settings/x-monitor')
+  const isMonitor = Boolean(bilibiliMonitor || xMonitor)
 
   if (loading && !settings && !error) return <PageLoading />
 
@@ -94,10 +107,10 @@ function SettingsLayoutContent() {
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-        <aside className="shrink-0 lg:w-52">
-          <nav className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-card/40 p-1 lg:flex-col lg:gap-3 lg:overflow-visible lg:border-0 lg:bg-transparent lg:p-0">
+        <aside className="shrink-0 lg:sticky lg:top-24 lg:flex lg:min-h-[calc(100dvh-12rem)] lg:w-58 lg:flex-col lg:justify-between lg:gap-6">
+          <nav aria-label="设置分类" className="flex gap-2 overflow-x-auto rounded-3xl border border-border bg-card p-2 shadow-xs lg:flex-col lg:gap-4 lg:p-3">
             {settingsNavSections.map((section) => (
-              <div key={section.title} className="flex gap-1 lg:flex-col lg:gap-1">
+              <div key={section.title} className="flex shrink-0 gap-1 lg:flex-col lg:gap-1">
                 <p className="hidden px-3 py-1 text-sm font-semibold text-foreground lg:block">
                   {section.title}
                 </p>
@@ -105,26 +118,27 @@ function SettingsLayoutContent() {
                   <NavLink
                     key={item.to}
                     to={item.to}
+                    title={item.description}
                     className={({ isActive }) =>
-                      `shrink-0 rounded-md px-3 py-2.5 text-[13px] transition-colors lg:w-full ${
+                      `flex shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors lg:w-full ${
                         isActive
-                          ? 'bg-sidebar-accent font-medium text-sidebar-primary shadow-xs'
+                          ? 'bg-sidebar-accent font-medium text-sidebar-primary'
                           : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                       }`
                     }
                   >
+                    <Icon name={settingsIcon(item.to)} className="hidden size-5 shrink-0 lg:block" />
                     <span className="block">
                       <span className="lg:hidden text-muted-foreground">{section.title} · </span>
                       {item.label}
                     </span>
-                    <span className="mt-0.5 hidden text-xs font-normal text-muted-foreground lg:block">
-                      {item.description}
-                    </span>
+
                   </NavLink>
                 ))}
               </div>
             ))}
           </nav>
+          {isMonitor && <button type="submit" form="monitor-settings" disabled={!settings || saving} className="btn-primary hidden w-full lg:inline-flex">{saving ? '保存中…' : '保存设置'}</button>}
         </aside>
 
         <div className="min-w-0 flex-1">

@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@heroicons/react": "2.2.0",
     "@tanstack/react-virtual": "^3.14.20",
     "qrcode.react": "^4.2.0",
     "react": "^19.3.1",

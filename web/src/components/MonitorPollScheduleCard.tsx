@@ -5,6 +5,7 @@ interface MonitorPollScheduleCardProps {
   title: string
   schedule: MonitorPollSchedule
   emptyHint?: string
+  compact?: boolean
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
@@ -19,6 +20,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 export function MonitorPollScheduleCard({
   title,
   schedule,
+  compact = false,
   emptyHint = '暂无订阅目标，不会产生 API 请求。',
 }: MonitorPollScheduleCardProps) {
   if (schedule.target_count <= 0) {
@@ -36,6 +38,27 @@ export function MonitorPollScheduleCard({
       : schedule.strategy === 'websocket_primary'
         ? `WebSocket 实时检测；API 备用每 ${schedule.poll_interval_seconds ?? schedule.per_target_cycle_seconds} 秒轮询一轮`
         : `每 ${schedule.poll_interval_seconds ?? schedule.configured_interval_seconds} 秒批量检查一轮`
+
+  if (compact) {
+    return (
+      <div>
+        <details className="rounded-xl bg-muted/50 px-4 py-3 text-xs text-muted-foreground">
+          <summary className="cursor-pointer leading-relaxed focus-visible:outline-2 focus-visible:outline-ring">
+            {schedule.target_count} 个监控目标 · {modeDetail} · 平均 {formatRequestsPerSecond(schedule.requests_per_second_avg)}
+          </summary>
+          <div className="mt-4 space-y-3">
+            <p className="font-medium text-foreground">{title} · {strategyLabel(schedule.strategy)}</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Metric label="峰值请求频率" value={formatRequestsPerSecond(schedule.requests_per_second_peak)} />
+              <Metric label="每人检查周期" value={`约 ${Math.round(schedule.per_target_cycle_seconds)} 秒`} />
+            </div>
+            <p>设置周期：{schedule.configured_interval_seconds} 秒（{schedule.meets_configured_interval ? '可达' : '已放宽'}）。峰值为最密集时的 API 请求速度。</p>
+          </div>
+        </details>
+        {schedule.warning && <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">{schedule.warning}</p>}
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-3 rounded-lg border border-border bg-muted/20 px-4 py-3">
