@@ -240,10 +240,13 @@ export function Layout() {
                     </details>
                   ) : <div key={index} className="space-y-0.5">{links}</div>
                 })
-                if (group.section === '概览') return (
-                  <NavLink key={group.section} to="/" end onClick={() => setSidebarOpen(false)}
+                const standaloneItem = !group.branch && group.groups.length === 1 && !group.groups[0].label && group.groups[0].items.length === 1
+                  ? group.groups[0].items[0]
+                  : null
+                if (standaloneItem) return (
+                  <NavLink key={group.section} to={standaloneItem.to} end={standaloneItem.to === '/'} onClick={() => setSidebarOpen(false)}
                     className={({ isActive }) => isActive ? 'nav-link nav-link-active text-sm' : 'nav-link text-sm'}>
-                    <Icon name="home" className="size-4 shrink-0" /><span>仪表盘</span>
+                    <Icon name={standaloneItem.icon} className="size-4 shrink-0" /><span>{standaloneItem.label}</span>
                   </NavLink>
                 )
                 return (
@@ -339,10 +342,10 @@ export function Layout() {
 
         <main className="mx-auto w-full max-w-[1560px] min-w-0 flex-1 px-4 py-5 lg:px-7 lg:pb-8 lg:pt-2">
           {current && <nav aria-label="当前位置" className="mb-3 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
-            <span>{current.section}</span>
-            {current.branch && <><span aria-hidden="true">/</span><span>{current.branch}</span></>}
-            {current.group && <><span aria-hidden="true">/</span><span>{current.group}</span></>}
-            <span aria-hidden="true">/</span><span aria-current="page">{current.item.label}</span>
+            {current.section !== current.item.label && <><span>{current.section}</span><span aria-hidden="true">/</span></>}
+            {current.branch && <><span>{current.branch}</span><span aria-hidden="true">/</span></>}
+            {current.group && <><span>{current.group}</span><span aria-hidden="true">/</span></>}
+            <span aria-current="page">{current.item.label}</span>
           </nav>}
           <Outlet />
         </main>

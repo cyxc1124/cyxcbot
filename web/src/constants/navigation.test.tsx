@@ -33,6 +33,13 @@ describe('navigation destinations', () => {
     expect(findNavigation('/rust/remote/servers')).toMatchObject({ section: '游戏', branch: 'Rust 管理' })
     expect(navigationSections.find((section) => section.section === '游戏')?.groups.flatMap((group) => group.items)).toHaveLength(7)
   })
+
+  it('places runtime logs directly before system as a standalone destination', () => {
+    const systemIndex = navigationSections.findIndex((section) => section.section === '系统')
+    expect(navigationSections[systemIndex - 1]?.section).toBe('运行日志')
+    expect(findNavigation('/logs')).toMatchObject({ section: '运行日志', item: { label: '运行日志' } })
+    expect(navigationSections[systemIndex].groups.flatMap((group) => group.items).some((item) => item.to === '/logs')).toBe(false)
+  })
 })
 
 describe('template use cases', () => {

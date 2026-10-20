@@ -75,6 +75,7 @@ export const navigationSections: NavigationSection[] = [
       ] },
     ],
   },
+  { section: '运行日志', icon: 'document', groups: [{ items: [{ to: '/logs', label: '运行日志', icon: 'document' }] }] },
   {
     section: '系统',
     icon: 'settings',
@@ -83,7 +84,6 @@ export const navigationSections: NavigationSection[] = [
       { to: '/system/permissions', label: '权限', title: '权限管理', icon: 'settings', description: '配置超级用户与状态查询的额外授权' },
       { to: '/system/commands', label: '命令', icon: 'command', description: '通用命令触发词、开关与习惯性前缀' },
       { to: '/system/advanced', label: '高级配置', icon: 'settings', description: '链接解析共享媒体目录' },
-      { to: '/logs', label: '运行日志', icon: 'document' },
       { to: '/about', label: '关于', icon: 'info' },
     ] }],
   },
