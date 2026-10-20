@@ -9,17 +9,20 @@ vi.mock('./SettingsContext', () => ({
   useSettingsForm: () => ({ settings: {}, saving: false, loading: false, showLogoutConfirm: false }),
 }))
 
-describe('monitor settings navigation', () => {
+describe('settings follow their sidebar destination', () => {
   it.each([
-    '/settings/bilibili-monitor', '/settings/bilibili-monitor/',
-    '/settings/x-monitor', '/settings/x-monitor/',
-  ])('keeps a desktop submit button at %s', (path) => {
+    ['/bilibili/settings', 'B 站订阅参数'], ['/bilibili/settings/', 'B 站订阅参数'],
+    ['/x/settings', 'X订阅参数'], ['/bilibili/account', 'B 站账号'],
+    ['/system/permissions', '权限管理'], ['/system/advanced', '高级配置'],
+  ])('labels %s without a duplicate settings sidebar', (path, title) => {
     const html = renderToStaticMarkup(<MemoryRouter initialEntries={[path]}><SettingsLayout /></MemoryRouter>)
-    expect(html).toContain('type="submit" form="monitor-settings"')
+    expect(html).toContain(`>${title}</h2>`)
+    expect(html).not.toContain('设置分类')
+    expect(html).not.toContain('/settings/')
   })
 
   it('leaves account-specific save actions to the account page', () => {
-    const html = renderToStaticMarkup(<MemoryRouter initialEntries={['/settings/account/']}><SettingsLayout /></MemoryRouter>)
+    const html = renderToStaticMarkup(<MemoryRouter initialEntries={['/bilibili/account/']}><SettingsLayout /></MemoryRouter>)
     expect(html).not.toContain('form="monitor-settings"')
   })
 })

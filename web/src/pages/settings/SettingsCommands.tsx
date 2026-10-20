@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { patchSettings } from '../../api/client'
 import type { Settings } from '../../api/types'
 import { CommandAliasCard } from '../../components/CommandAliasCard'
@@ -131,8 +132,9 @@ export function SettingsCommandsPage() {
     <form onSubmit={handleSubmit} className="space-y-6">
       <p className="text-sm text-muted-foreground">
         自定义每条命令的触发词，保存后立即生效，无需重启。关闭后该命令不再响应；已填写的触发词会保留，方便随时重新启用。Rust
-        群管相关命令请在「Rust 远控 → 群管命令」中配置。
+        群管相关命令请在 <Link to="/rust/remote/commands" className="text-primary hover:underline">Rust 管理 → 远控与权限 → 群管命令</Link> 中配置。
       </p>
+      <p className="text-sm text-muted-foreground">启用命令后仍按原有规则检查权限。状态查询的额外用户授权见 <Link to="/system/permissions" className="text-primary hover:underline">系统权限</Link>，会话级授权见 <Link to="/groups?tab=status" className="text-primary hover:underline">群组</Link> / <Link to="/friends?tab=status" className="text-primary hover:underline">好友</Link>。</p>
 
       {settings && settings.command_prefixes.length > 0 && (
         <p className="text-xs text-muted-foreground">

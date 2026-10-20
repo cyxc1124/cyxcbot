@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Settings } from '../../api/types'
 import { patchSettings } from '../../api/client'
 import { SettingsBotPage } from './SettingsBot'
+import { SettingsAdvancedPage } from './SettingsAdvanced'
 import { useSettingsForm } from './SettingsContext'
 
 vi.mock('react', async (importOriginal) => ({
@@ -11,6 +12,9 @@ vi.mock('react', async (importOriginal) => ({
   useState: vi.fn(),
 }))
 vi.mock('../../api/client', () => ({ patchSettings: vi.fn() }))
+vi.mock('react-router-dom', () => ({
+  Link: ({ to, children }: { to: string; children: ReactNode }) => <a href={to}>{children}</a>,
+}))
 
 vi.mock('./SettingsContext', () => ({ useSettingsForm: vi.fn() }))
 vi.mock('../../contexts/ToastContext', () => ({
@@ -47,20 +51,20 @@ function formContext(settings: Settings | null): ReturnType<typeof useSettingsFo
 function expectSavedFields(html: string, settings: Settings) {
   expect(html).toContain(`>${settings.nonebot_superusers.join('\n')}</textarea>`)
   expect(html).toContain(`>${settings.status_check_allowed_qq.join('\n')}</textarea>`)
-  expect(html).toContain(`value="${settings.link_parser_shared_media_dir}"`)
+  expect(html).not.toContain('id="link_parser_shared_media_dir"')
 }
 
 let state: unknown[]
 let stateIndex: number
 let pendingRender: boolean
 
-function renderPage(settings: Settings | null) {
+function renderPage(settings: Settings | null, component = SettingsBotPage) {
   vi.mocked(useSettingsForm).mockReturnValue(formContext(settings))
   let page: ReturnType<typeof SettingsBotPage>
   do {
     stateIndex = 0
     pendingRender = false
-    page = SettingsBotPage()
+    page = component()
   } while (pendingRender)
   return page
 }
@@ -82,7 +86,7 @@ describe('SettingsBotPage drafts', () => {
     }) as typeof useState)
   })
 
-  it('shows and saves existing permissions and media directory on the first mount', async () => {
+  it('shows and saves existing permissions without writing the media directory', async () => {
     vi.mocked(patchSettings).mockResolvedValue(savedSettings)
     const page = renderPage(savedSettings)
 
@@ -92,7 +96,6 @@ describe('SettingsBotPage drafts', () => {
     expect(patchSettings).toHaveBeenCalledWith({
       nonebot_superusers: savedSettings.nonebot_superusers,
       status_check_allowed_qq: savedSettings.status_check_allowed_qq,
-      link_parser_shared_media_dir: savedSettings.link_parser_shared_media_dir,
     })
   })
 
@@ -106,5 +109,23 @@ describe('SettingsBotPage drafts', () => {
     renderPage(initial)
 
     expectSavedFields(renderToStaticMarkup(renderPage(updated)), updated)
+  })
+
+  it('saves only the media directory from advanced settings', () => {
+    const page = renderPage({ ...savedSettings, link_parser_shared_media_dir: '  /srv/qq/tmp  ' }, SettingsAdvancedPage)
+    const html = renderToStaticMarkup(page)
+    expect(html).toContain('id="link_parser_shared_media_dir"')
+    expect(html).not.toContain('id="nonebot_superusers"')
+    page.props.onSubmit({ preventDefault: vi.fn() } as unknown as FormEvent)
+    expect(vi.mocked(useSettingsForm).mock.results.at(-1)?.value.savePartial).toHaveBeenCalledWith({ link_parser_shared_media_dir: '/srv/qq/tmp' })
+    expect(patchSettings).not.toHaveBeenCalled()
+  })
+
+  it('refreshes the media draft and allows clearing it to restore the default', () => {
+    renderPage(savedSettings, SettingsAdvancedPage)
+    const page = renderPage({ ...savedSettings, link_parser_shared_media_dir: '' }, SettingsAdvancedPage)
+    expect(renderToStaticMarkup(page)).toContain('value=""')
+    page.props.onSubmit({ preventDefault: vi.fn() } as unknown as FormEvent)
+    expect(vi.mocked(useSettingsForm).mock.results.at(-1)?.value.savePartial).toHaveBeenCalledWith({ link_parser_shared_media_dir: '' })
   })
 })

@@ -2,7 +2,7 @@ import { Children, isValidElement, type FormEvent, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { Settings } from '../../api/types'
-import { SettingsBilibiliMonitorPage } from './SettingsMonitor'
+import { SettingsBilibiliMonitorPage, SettingsXMonitorPage } from './SettingsMonitor'
 import { useSettingsForm } from './SettingsContext'
 
 vi.mock('react', async (original) => ({
@@ -31,6 +31,13 @@ function setup(mode: 'card' | 'screenshot' = 'card', stagger = true, imagesEnabl
 }
 
 describe('monitor card choices', () => {
+  it.each([SettingsBilibiliMonitorPage, SettingsXMonitorPage])('keeps its own save button visible on desktop and mobile', (component) => {
+    setup()
+    const page = component()
+    const save = elements(page).find((props) => props.type === 'submit')!
+    expect(save.disabled).toBe(false)
+    expect(save.className).not.toContain('hidden')
+  })
   it('keeps conditional palette choices and saves their values with existing settings', () => {
     const { settings, context, page } = setup()
     const html = renderToStaticMarkup(page)
