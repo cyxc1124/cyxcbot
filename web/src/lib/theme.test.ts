@@ -24,6 +24,8 @@ beforeEach(() => {
       },
     },
   })
+  setThemeMode('light')
+  store.clear()
 })
 
 afterEach(() => {
@@ -107,6 +109,29 @@ describe('theme preferences', () => {
     setThemeMode('light')
     expect(getSavedThemeMode()).toBe('light')
     expect(classes).toEqual(new Set())
+  })
+
+  it('keeps the selected mode and system changes when storage is readable but writes fail', () => {
+    store.set('cyxcbot_theme', 'light')
+    cleanup = initTheme()
+    vi.mocked(localStorage.setItem).mockImplementation(() => { throw new Error('quota exceeded') })
+    setThemeMode('system')
+    expect(getSavedThemeMode()).toBe('system')
+    media.matches = true
+    media.dispatchEvent(new Event('change'))
+    expect(classes.has('dark')).toBe(true)
+    expect(store.get('cyxcbot_theme')).toBe('light')
+  })
+
+  it('accepts another tab mode after a failed local write', () => {
+    store.set('cyxcbot_theme', 'light')
+    cleanup = initTheme()
+    vi.mocked(localStorage.setItem).mockImplementation(() => { throw new Error('quota exceeded') })
+    setThemeMode('dark')
+    store.set('cyxcbot_theme', 'system')
+    window.dispatchEvent(Object.assign(new Event('storage'), { key: 'cyxcbot_theme' }))
+    expect(getSavedThemeMode()).toBe('system')
+    expect(classes.has('dark')).toBe(false)
   })
 
   it('removes system and storage listeners when disposed', () => {
