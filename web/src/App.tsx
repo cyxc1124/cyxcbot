@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { ToastContainer } from './components/ToastContainer'
 import { AuthProvider } from './contexts/AuthContext'
@@ -31,6 +31,11 @@ import { LinkParserPage } from './pages/LinkParser'
 import { SetupPage } from './pages/Setup'
 import { AuthGuard, PublicGuard, SetupGuard } from './routes/Guards'
 
+function LegacyRedirect({ to }: { to: string }) {
+  const { search, hash } = useLocation()
+  return <Navigate to={{ pathname: to, search, hash }} replace />
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -46,6 +51,28 @@ export default function App() {
             </Route>
 
             <Route element={<AuthGuard />}>
+              <Route path="dynamic" element={<LegacyRedirect to="/bilibili/dynamic" />} />
+              <Route path="mappings" element={<LegacyRedirect to="/bilibili/dynamic" />} />
+              <Route path="live" element={<LegacyRedirect to="/bilibili/live" />} />
+              <Route path="x" element={<LegacyRedirect to="/x/subscriptions" />} />
+              <Route path="private" element={<LegacyRedirect to="/friends" />} />
+              <Route path="rust-rcon" element={<LegacyRedirect to="/rust/remote/servers" />} />
+              <Route path="templates" element={<LegacyRedirect to="/bilibili/templates" />} />
+              <Route path="templates/:platform" element={<LegacyRedirect to="/bilibili/templates" />} />
+              <Route path="templates/x" element={<LegacyRedirect to="/x/templates" />} />
+              <Route path="templates/douyin" element={<LegacyRedirect to="/douyin/templates" />} />
+              <Route path="settings" element={<LegacyRedirect to="/bilibili/settings" />} />
+              <Route path="settings/bilibili-monitor" element={<LegacyRedirect to="/bilibili/settings" />} />
+              <Route path="settings/monitor" element={<LegacyRedirect to="/bilibili/settings" />} />
+              <Route path="settings/data" element={<LegacyRedirect to="/bilibili/settings" />} />
+              <Route path="settings/x-monitor" element={<LegacyRedirect to="/x/settings" />} />
+              <Route path="settings/account" element={<LegacyRedirect to="/bilibili/account" />} />
+              <Route path="settings/douyin-account" element={<LegacyRedirect to="/douyin/account" />} />
+              <Route path="settings/x-account" element={<LegacyRedirect to="/x/account" />} />
+              <Route path="settings/official-qq" element={<LegacyRedirect to="/system/connections" />} />
+              <Route path="settings/bot" element={<LegacyRedirect to="/system/permissions" />} />
+              <Route path="settings/commands" element={<LegacyRedirect to="/system/commands" />} />
+              <Route path="settings/templates" element={<LegacyRedirect to="/bilibili/templates" />} />
               <Route element={<SidebarProvider><Layout /></SidebarProvider>}>
                 <Route index element={<DashboardPage />} />
                 <Route path="bilibili/dynamic" element={<DynamicMonitorPage />} />

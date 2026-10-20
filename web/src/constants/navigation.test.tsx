@@ -24,6 +24,38 @@ describe('navigation destinations', () => {
     expect(findNavigation(`${item.to}/`)?.item).toBe(item)
   })
 
+  it.each([
+    ['/dynamic', '/bilibili/dynamic'],
+    ['/mappings', '/bilibili/dynamic'],
+    ['/live', '/bilibili/live'],
+    ['/x', '/x/subscriptions'],
+    ['/private', '/friends'],
+    ['/rust-rcon', '/rust/remote/servers'],
+    ['/templates', '/bilibili/templates'],
+    ['/templates/bilibili', '/bilibili/templates'],
+    ['/templates/x', '/x/templates'],
+    ['/templates/douyin', '/douyin/templates'],
+    ['/templates/unknown', '/bilibili/templates'],
+    ['/settings', '/bilibili/settings'],
+    ['/settings/bilibili-monitor', '/bilibili/settings'],
+    ['/settings/monitor', '/bilibili/settings'],
+    ['/settings/data', '/bilibili/settings'],
+    ['/settings/x-monitor', '/x/settings'],
+    ['/settings/account', '/bilibili/account'],
+    ['/settings/douyin-account', '/douyin/account'],
+    ['/settings/x-account', '/x/account'],
+    ['/settings/official-qq', '/system/connections'],
+    ['/settings/bot', '/system/permissions'],
+    ['/settings/commands', '/system/commands'],
+    ['/settings/templates', '/bilibili/templates'],
+  ])('redirects the authenticated legacy bookmark %s to %s', (legacy, destination) => {
+    const matches = matchRoutes(routes, `${legacy}/?source=bookmark#saved`)
+    const element = matches?.at(-1)?.route.element
+    expect(isValidElement<{ to: string }>(element) && element.props.to).toBe(destination)
+    expect(matches?.some(({ route }) => isValidElement(route.element) && route.element.type === AuthGuard)).toBe(true)
+    expect(matchRoutes(routes, destination)?.at(-1)?.route.path).not.toBe('*')
+  })
+
   it('has unique destinations and no platform accounts or parameters under system', () => {
     expect(new Set(items.map((item) => item.to)).size).toBe(items.length)
     const system = navigationSections.find((section) => section.section === '系统')!
