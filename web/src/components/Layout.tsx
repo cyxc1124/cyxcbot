@@ -347,7 +347,7 @@ export function Layout() {
           </div>
         </header>
 
-        <main className={`mx-auto w-full max-w-[1560px] min-w-0 flex-1 px-4 py-6 ${navCollapsed ? '' : 'lg:-mt-10'} lg:px-12 lg:pb-10 lg:pt-2`}>
+        <main className="mx-auto w-full max-w-[1560px] min-w-0 flex-1 px-4 py-6 lg:px-12 lg:pb-10 lg:pt-2">
           <Outlet />
         </main>
         <AppFooter />

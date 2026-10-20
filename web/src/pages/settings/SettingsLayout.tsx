@@ -1,5 +1,5 @@
 import { Icon, type IconName } from '../../components/Icon'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet, useMatch } from 'react-router-dom'
 import { LoadErrorBanner } from '../../components/LoadErrorBanner'
 import { PageLoading } from '../../components/LoadingSpinner'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
@@ -91,8 +91,9 @@ function SettingsLayoutContent() {
     handleLogout,
   } = useSettingsForm()
 
-  const { pathname } = useLocation()
-  const isMonitor = pathname === '/settings/bilibili-monitor' || pathname === '/settings/x-monitor'
+  const bilibiliMonitor = useMatch('/settings/bilibili-monitor')
+  const xMonitor = useMatch('/settings/x-monitor')
+  const isMonitor = Boolean(bilibiliMonitor || xMonitor)
 
   if (loading && !settings && !error) return <PageLoading />
 
