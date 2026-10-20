@@ -429,6 +429,8 @@ async def test_startup_starts_official_websocket_once_and_reload_reconnects(
     monkeypatch.setattr(runtime, "_applied_key", None)
     monkeypatch.setattr("shared.adapter.bots.iter_official_bots", lambda: [])
     snapshot = SimpleNamespace(
+        log_level="INFO",
+        log_file_level="INFO",
         official_qq_app_id="test-app",
         official_qq_app_secret="first-secret",
         official_qq_is_sandbox=legacy_sandbox,
@@ -445,9 +447,7 @@ async def test_startup_starts_official_websocket_once_and_reload_reconnects(
     async with lifespan:
         await asyncio.sleep(0)
         send.assert_awaited_once()
-        config.register_reload_callback.assert_called_once_with(
-            runtime.on_config_reload
-        )
+        config.register_reload_callback.assert_any_call(runtime.on_config_reload)
         snapshot.official_qq_app_secret = "second-secret"
         await runtime.on_config_reload(snapshot)
         await asyncio.sleep(0)

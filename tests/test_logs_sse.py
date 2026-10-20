@@ -51,7 +51,9 @@ def app(api, monkeypatch):
     session = MagicMock()
     session.__aenter__.return_value = session
     session.scalar = AsyncMock(
-        return_value=SimpleNamespace(username="admin", is_admin=True)
+        return_value=SimpleNamespace(
+            username="admin", is_admin=True, password_hash="stored-bcrypt-hash"
+        )
     )
     session.refresh = AsyncMock()
     monkeypatch.setattr(deps, "get_session", lambda: session)
@@ -60,7 +62,11 @@ def app(api, monkeypatch):
     application = FastAPI()
     application.include_router(api[0].router, prefix="/api/v1")
     application.dependency_overrides[deps.require_setup_complete] = lambda: None
-    return application, session, create_access_token("admin")
+    return (
+        application,
+        session,
+        create_access_token("admin", password_hash="stored-bcrypt-hash"),
+    )
 
 
 @asynccontextmanager
@@ -124,7 +130,10 @@ async def test_stream_requires_bearer_auth(app, credential):
     if credential == "invalid":
         headers["Authorization"] = "Bearer invalid"
     elif credential == "expired":
-        headers["Authorization"] = f"Bearer {create_access_token('admin', {'exp': 0})}"
+        expired = create_access_token(
+            "admin", {"exp": 0}, password_hash="stored-bcrypt-hash"
+        )
+        headers["Authorization"] = f"Bearer {expired}"
     elif credential == "query":
         params["token"] = token
     async with AsyncClient(

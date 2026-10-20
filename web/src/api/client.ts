@@ -1,6 +1,7 @@
 import type {
   AboutInfo,
   BotConnectionsStatus,
+  ChangePasswordRequest,
   BilibiliLogoutResult,
   BilibiliQrcodeLoginResult,
   BilibiliQrcodeStart,
@@ -229,6 +230,9 @@ export const postLogin = (data: LoginRequest) =>
   request<LoginResponse>('/auth/login', { method: 'POST', body: JSON.stringify(data) }, false)
 
 export const getMe = () => request<User>('/auth/me')
+
+export const putPassword = (data: ChangePasswordRequest) =>
+  request<LoginResponse>('/auth/password', { method: 'PUT', body: JSON.stringify(data) })
 
 // Settings
 export const getSettings = () => request<Settings>('/settings')

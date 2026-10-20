@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from hashlib import sha256
 from typing import Annotated, Optional
 
 from fastapi import Depends, HTTPException, Request, status
@@ -37,6 +38,14 @@ async def get_current_user(
             if not user:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
+                )
+            if (
+                payload.get("pwd")
+                != sha256(user.password_hash.encode("utf-8")).hexdigest()
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Password changed, please log in again",
                 )
             # Detach scalars before session closes
             await session.refresh(user)

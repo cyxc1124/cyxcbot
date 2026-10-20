@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiClientError, getBotConnectionsStatus, getRecentLogs, getSetupStatus, streamLogs } from './client'
+import { ApiClientError, getBotConnectionsStatus, getRecentLogs, getSetupStatus, putPassword, streamLogs } from './client'
 
 let replies: ((value: unknown) => void)[]
 const fetchMock = vi.fn()
@@ -17,6 +17,20 @@ beforeEach(() => {
 })
 
 afterEach(() => vi.unstubAllGlobals())
+
+describe('password changes', () => {
+  it('sends the authenticated password update without putting credentials in the URL', async () => {
+    vi.stubGlobal('localStorage', { getItem: () => 'current-token' })
+    fetchMock.mockResolvedValue(new Response('{"access_token":"new-token"}'))
+    const data = { current_password: 'old-password', new_password: 'new-password' }
+    await expect(putPassword(data)).resolves.toEqual({ access_token: 'new-token' })
+    const [url, options] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/v1/auth/password')
+    expect(options.method).toBe('PUT')
+    expect(options.headers.get('Authorization')).toBe('Bearer current-token')
+    expect(JSON.parse(options.body)).toEqual(data)
+  })
+})
 
 describe('API request cancellation', () => {
   it('does not share an aborted request with a newly mounted status indicator', async () => {
