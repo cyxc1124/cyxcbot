@@ -77,7 +77,7 @@
 }
 
 @utility btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50;
+  @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50;
 }
 
 @utility btn-primary {
@@ -97,19 +97,19 @@
 }
 
 @utility input {
-  @apply w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground shadow-xs placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-ring;
+  @apply min-h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground shadow-xs placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-ring;
 }
 
 @utility label {
-  @apply mb-1 block text-sm font-medium text-foreground;
+  @apply mb-1.5 block text-sm font-medium text-foreground;
 }
 
 @utility card {
-  @apply rounded-xl border border-border bg-card p-6 text-card-foreground shadow-xs;
+  @apply rounded-[1.125rem] border border-border bg-card p-6 text-card-foreground shadow-xs;
 }
 
 @utility nav-link {
-  @apply block rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground;
+  @apply block rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground;
 }
 
 @utility nav-link-active {
@@ -325,5 +325,16 @@
   kbd,
   samp {
     font-family: var(--font-mono);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
