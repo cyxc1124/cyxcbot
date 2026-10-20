@@ -189,13 +189,17 @@ def _draw_card(
 async def render_dynamic_card(
     dynamic: DynamicItem, *, color_source: Literal["image", "avatar"] = "image"
 ) -> bytes:
-    async with aiohttp.ClientSession(
-        timeout=aiohttp.ClientTimeout(total=15),
-        headers={"Referer": "https://www.bilibili.com/"},
-    ) as session:
-        assets = await asyncio.gather(
-            *(_asset(session, url) for url in [dynamic.avatar, *dynamic.images[:9]])
-        )
+    async with (
+        asyncio.timeout(15),
+        aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=15),
+            headers={"Referer": "https://www.bilibili.com/"},
+        ) as session,
+    ):
+        # Decode one source at a time; source bitmaps can be much larger than thumbnails.
+        assets = [
+            await _asset(session, url) for url in [dynamic.avatar, *dynamic.images[:9]]
+        ]
     return await asyncio.to_thread(
         _draw_card, dynamic, assets[0], assets[1:], color_source
     )

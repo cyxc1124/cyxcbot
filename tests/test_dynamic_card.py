@@ -1,3 +1,4 @@
+import asyncio
 from io import BytesIO
 from unittest.mock import MagicMock
 
@@ -187,3 +188,43 @@ def test_newline_heavy_card_has_bounded_height_and_truncation_notice(monkeypatch
     with Image.open(BytesIO(data)) as result:
         assert result.height <= 6000
     assert any("扫码查看完整动态" in text for text in drawn)
+
+
+async def test_card_assets_decode_one_at_a_time_and_keep_media_order(monkeypatch):
+    import utils.dynamic_card as card
+
+    active = peak = 0
+    urls = ["avatar", *(f"picture-{i}" for i in range(9))]
+    dynamic = DynamicItem(1, 1, "作者", 1700000000, 2, avatar=urls[0], images=urls[1:])
+
+    async def asset(session, url):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0)
+        active -= 1
+        return url
+
+    monkeypatch.setattr(card, "_asset", asset)
+    draw = MagicMock(return_value=b"card")
+    monkeypatch.setattr(card, "_draw_card", draw)
+    assert await card.render_dynamic_card(dynamic) == b"card"
+    assert peak == 1
+    draw.assert_called_once_with(dynamic, urls[0], urls[1:], "image")
+
+
+async def test_card_asset_timeout_bounds_the_whole_batch(monkeypatch):
+    import utils.dynamic_card as card
+
+    timeout = asyncio.timeout
+    monkeypatch.setattr(card.asyncio, "timeout", lambda seconds: timeout(0))
+
+    async def asset(session, url):
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr(card, "_asset", asset)
+    draw = MagicMock()
+    monkeypatch.setattr(card, "_draw_card", draw)
+    with pytest.raises(TimeoutError):
+        await card.render_dynamic_card(DynamicItem(1, 1, "作者", 1700000000, 2))
+    draw.assert_not_called()
