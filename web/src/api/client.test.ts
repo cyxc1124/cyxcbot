@@ -19,6 +19,27 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('password changes', () => {
+  it.each(['new-token', null])('handles a late 401 after credentials change to %s', async (replacement) => {
+    let token: string | null = 'old-token'
+    const removeItem = vi.fn(() => { token = null })
+    vi.stubGlobal('localStorage', { getItem: () => token, removeItem })
+    const location = { pathname: '/about', href: '/about' }
+    vi.stubGlobal('window', { location })
+    fetchMock.mockResolvedValue(new Response('{"detail":"Password changed"}', { status: 401 }))
+
+    const pending = getBotConnectionsStatus(new AbortController().signal)
+    expect(fetchMock.mock.calls[0][1].headers.get('Authorization')).toBe('Bearer old-token')
+    token = replacement
+
+    await expect(pending).rejects.toMatchObject({
+      status: 401,
+      message: replacement ? '登录状态已更新，请重试' : '未授权，请重新登录',
+    })
+    expect(token).toBe(replacement)
+    expect(removeItem).toHaveBeenCalledTimes(replacement ? 0 : 1)
+    expect(location.href).toBe(replacement ? '/about' : '/login')
+  })
+
   it('sends the authenticated password update without putting credentials in the URL', async () => {
     vi.stubGlobal('localStorage', { getItem: () => 'current-token' })
     fetchMock.mockResolvedValue(new Response('{"access_token":"new-token"}'))

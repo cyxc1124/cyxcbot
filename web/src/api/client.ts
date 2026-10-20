@@ -135,11 +135,9 @@ async function requestResponse(
     headers.set('Content-Type', 'application/json')
   }
 
-  if (auth) {
-    const token = getToken()
-    if (token) {
-      headers.set('Authorization', `Bearer ${token}`)
-    }
+  const token = auth ? getToken() : null
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`)
   }
 
   let response: Response
@@ -153,6 +151,10 @@ async function requestResponse(
   }
 
   if (response.status === 401 && auth) {
+    const currentToken = getToken()
+    if (currentToken && token !== currentToken) {
+      throw new ApiClientError('登录状态已更新，请重试', 401)
+    }
     clearToken()
     if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/setup')) {
       window.location.href = '/login'
