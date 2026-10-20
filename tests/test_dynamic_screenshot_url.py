@@ -429,3 +429,28 @@ async def test_card_failure_uses_existing_media_fallback(
     )
     assert await monitor._fetch_dynamic_screenshot(_make_dynamic()) is None
     screenshot_mock.get_dynamic_screenshot.assert_not_awaited()
+
+
+@pytest.mark.parametrize("query", ["get_latest_dynamic", "get_pinned_dynamic"])
+async def test_query_resolves_author_before_card_rendering(
+    dynamic_monitor_module, query
+):
+    monitor_mod, _ = dynamic_monitor_module
+    monitor = monitor_mod.DynamicMonitor(
+        SimpleNamespace(bilibili_cookie="", enable_screenshot=True)
+    )
+    dynamic = _make_dynamic()
+    dynamic.name = "UP主_1"
+    monitor.fetcher = SimpleNamespace(
+        fetch_user_dynamics=AsyncMock(return_value=([dynamic], dynamic.id)),
+        resolve_user_name=AsyncMock(return_value="真实作者"),
+    )
+
+    async def render(item):
+        assert item.name == "真实作者"
+        return b"card"
+
+    monitor._fetch_dynamic_screenshot = AsyncMock(side_effect=render)
+    monitor.sender = MagicMock()
+    await getattr(monitor, query)("1")
+    assert dynamic.name == "真实作者"

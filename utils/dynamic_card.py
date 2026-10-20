@@ -18,6 +18,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from utils.bilibili_api.dynamic_models import DynamicItem
 
 MAX_ASSET_BYTES = 10 * 1024 * 1024
+MAX_TEXT_LINES = 100
 
 
 def monet_palette(image: Image.Image | None) -> tuple[str, str, str]:
@@ -37,10 +38,12 @@ def _font(size: int):
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/System/Library/Fonts/PingFang.ttc",
         "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "C:/Windows/Fonts/msyh.ttc",
+        "C:/Windows/Fonts/simhei.ttf",
     ):
         if Path(path).is_file():
             return ImageFont.truetype(path, size)
-    raise RuntimeError("动态卡片需要 Noto CJK 或 PingFang 中文字体")
+    raise RuntimeError("动态卡片需要 Noto CJK、PingFang 或微软雅黑/黑体中文字体")
 
 
 async def _asset(session: aiohttp.ClientSession, url: str) -> Image.Image | None:
@@ -88,7 +91,7 @@ def _draw_card(
     dark, surface, light = monet_palette(seed)
     font, small, heading = _font(30), _font(24), _font(36)
     lines = []
-    # shortcut: one card shows at most 6000 characters and nine images; use the QR for the full post.
+    # shortcut: one card shows at most 6000 characters, 100 lines and nine images; use the QR for the full post.
     title = dynamic.title if dynamic.title not in dynamic.body_text.splitlines() else ""
     text = "\n".join(
         filter(
@@ -110,6 +113,8 @@ def _draw_card(
                 line = ""
             line += char
         lines.append(line)
+    if len(lines) > MAX_TEXT_LINES:
+        lines = lines[: MAX_TEXT_LINES - 1] + ["……正文过长，扫码查看完整动态"]
     if any(picture is None for picture in pictures):
         raise ValueError("动态配图不完整，回退到原图投递")
     pictures = [p for p in pictures if p is not None]

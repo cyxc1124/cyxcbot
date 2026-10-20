@@ -161,3 +161,29 @@ def test_card_text_has_no_duplicate_title_or_article_entities(
     assert drawn.count(title) == 1
     assert expected in drawn
     assert "&nbsp;" not in "".join(drawn)
+
+
+@pytest.mark.parametrize(
+    "font_path", ["C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/simhei.ttf"]
+)
+def test_card_loads_available_windows_font(monkeypatch, font_path):
+    import utils.dynamic_card as card
+
+    monkeypatch.setattr(card.Path, "is_file", lambda path: str(path) == font_path)
+    load_font = MagicMock()
+    monkeypatch.setattr(card.ImageFont, "truetype", load_font)
+    card._font(30)
+    load_font.assert_called_once_with(font_path, 30)
+
+
+def test_newline_heavy_card_has_bounded_height_and_truncation_notice(monkeypatch):
+    drawn = []
+    monkeypatch.setattr(
+        ImageDraw.ImageDraw, "text", lambda self, xy, text, **kw: drawn.append(text)
+    )
+    data = _draw_card(
+        DynamicItem(1, 1, "作者", 1700000000, 4, body_text="\n" * 5999), None, []
+    )
+    with Image.open(BytesIO(data)) as result:
+        assert result.height <= 6000
+    assert any("扫码查看完整动态" in text for text in drawn)
