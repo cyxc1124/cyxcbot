@@ -3,10 +3,15 @@ import type { RuntimeLogEntry } from '../api/types'
 import {
   DISPLAY_MAX,
   LOG_FLUSH_MS,
+  LOG_VIEW_PRESETS,
   NEAR_BOTTOM_PX,
   appendToLogBuffer,
+  filterLogs,
   isNearBottom,
+  logViewPreset,
   mergeLogs,
+  minLogLevel,
+  serializeLogs,
   trimLogs,
 } from './logsDisplay'
 
@@ -22,6 +27,43 @@ function entry(n: number, sessionId = 'sess-a'): RuntimeLogEntry {
 }
 
 describe('logsDisplay', () => {
+  it('filters levels and searches messages, modules, timestamps and levels without regex', () => {
+    const items = [
+      { ...entry(1), level: 'DEBUG', logger: 'monitor', message: 'poll (OK)' },
+      { ...entry(2), level: 'ERROR', message: 'connection failed' },
+    ]
+    expect(filterLogs(items, LOG_VIEW_PRESETS.运维)).toEqual([items[1]])
+    expect(filterLogs(items, LOG_VIEW_PRESETS.开发, ' MONITOR ')).toEqual([items[0]])
+    expect(filterLogs(items, LOG_VIEW_PRESETS.开发, '(ok)')).toEqual([items[0]])
+    expect(filterLogs(items, LOG_VIEW_PRESETS.开发, 'error')).toEqual([items[1]])
+    expect(filterLogs(items, LOG_VIEW_PRESETS.开发, '2026-01-01')).toEqual(items)
+    expect(filterLogs(items, { ...LOG_VIEW_PRESETS.开发, levels: [] })).toEqual([])
+  })
+
+  it('limits filtered results to the newest rows without discarding matching older history first', () => {
+    const items = [entry(1), { ...entry(2), level: 'DEBUG' }, entry(3)]
+    expect(filterLogs(items, { ...LOG_VIEW_PRESETS.运维, limit: 1 })).toEqual([items[2]])
+    expect(filterLogs(items, { ...LOG_VIEW_PRESETS.运维, limit: 1 }, 'message-1')).toEqual([items[0]])
+    expect(items).toHaveLength(3)
+  })
+
+  it('recognizes presets and derives the server threshold without losing the default INFO history', () => {
+    expect(LOG_VIEW_PRESETS.运维.limit).toBe(DISPLAY_MAX)
+    expect(logViewPreset(LOG_VIEW_PRESETS.开发)).toBe('开发')
+    expect(logViewPreset(LOG_VIEW_PRESETS.运维)).toBe('运维')
+    expect(logViewPreset(LOG_VIEW_PRESETS.精简)).toBe('精简')
+    expect(logViewPreset({ ...LOG_VIEW_PRESETS.运维, wrap: false })).toBe('自定义')
+    expect(minLogLevel(LOG_VIEW_PRESETS.运维.levels)).toBe('INFO')
+    expect(minLogLevel(['ERROR', 'DEBUG'])).toBe('DEBUG')
+    expect(minLogLevel([])).toBe('INFO')
+  })
+
+  it('exports full timestamps, levels, modules and multiline messages as plain text', () => {
+    const items = [{ ...entry(1), message: '<script>\nsecond line' }]
+    expect(serializeLogs(items)).toBe(`${items[0]!.ts} | INFO     | test | <script>\nsecond line`)
+    expect(serializeLogs([])).toBe('')
+  })
+
   it('keeps flush interval within suggested batching window', () => {
     expect(LOG_FLUSH_MS).toBeGreaterThanOrEqual(100)
     expect(LOG_FLUSH_MS).toBeLessThanOrEqual(250)

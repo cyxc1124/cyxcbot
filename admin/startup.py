@@ -17,10 +17,13 @@ async def init_shared_services():
     from shared.adapter import sessions as _official_sessions  # noqa: F401
     from shared.adapter.official_runtime import apply_official_runtime, on_config_reload
     from shared.config.service import get_config_service
+    from shared.logging.levels import on_config_reload as reload_log_levels
 
     try:
         svc = get_config_service()
+        svc.register_reload_callback(reload_log_levels)
         snapshot = await svc.load()
+        await reload_log_levels(snapshot)
         svc.register_reload_callback(on_config_reload)
         # 首连由 QQ 适配器的 on_ready 启动，避免同一 AppID 建立两个连接。
         await apply_official_runtime(snapshot, start_websocket=False)

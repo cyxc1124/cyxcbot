@@ -33,12 +33,15 @@ from shared.config.x_link_parser_policy import (
     XLinkParserGroupPolicyRecord,
     XLinkParserUserPolicyRecord,
 )
+from shared.logging.levels import LogLevel
 
 
 @dataclass
 class AppConfigSnapshot:
     """Full application configuration snapshot loaded from DB."""
 
+    log_level: LogLevel = "INFO"
+    log_file_level: LogLevel = "INFO"
     dynamic_monitor_mapping: Dict[str, List[str]] = field(default_factory=dict)
     dynamic_monitor_user_mapping: Dict[str, List[str]] = field(default_factory=dict)
     dynamic_subscription_mapping: Dict[str, List[str]] = field(default_factory=dict)

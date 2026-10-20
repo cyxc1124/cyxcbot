@@ -5,6 +5,8 @@ import { buildForm } from './commandsForm'
 
 function baseSettings(commandAliases: Settings['command_aliases']): Settings {
   return {
+    log_level: 'INFO',
+    log_file_level: 'INFO',
     dynamic_monitor_interval: 60,
     dynamic_monitor_use_stagger: false,
     dynamic_enable_screenshot: false,

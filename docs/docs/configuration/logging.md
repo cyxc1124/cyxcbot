@@ -10,14 +10,14 @@ sidebar_position: 4
 
 | 通道 | 用途 | 保留 | 级别控制 |
 |------|------|------|----------|
-| 终端 stdout | 本地 / `docker compose logs` 实时查看 | 不保留 | `LOG_LEVEL` |
+| 终端 stdout | 本地 / `docker compose logs` 实时查看 | 不保留 | Web 保存值；未保存时用 `LOG_LEVEL` |
 | Web `/logs` | 浏览器实时浏览 | `INFO`+、`DEBUG` 各最多 **2000** 条 | 服务端缓冲 `DEBUG`+；页面默认筛选 **INFO**+ |
-| 磁盘文件 | 排障、跨重启追溯 | 默认 **7 天**（可配置） | `LOG_FILE_LEVEL`（默认同 `LOG_LEVEL`） |
+| 磁盘文件 | 排障、跨重启追溯 | 默认 **7 天**（可配置） | Web 保存值；未保存时用 `LOG_FILE_LEVEL`（默认同 `LOG_LEVEL`） |
 
 ```
 插件 / 第三方库
     → nonebot.log.logger (loguru)
-        ├─ 终端（受 LOG_LEVEL 过滤）
+        ├─ 终端（独立的运行时级别）
         ├─ Web 广播 sink → /logs SSE（固定 DEBUG+，环形缓冲）
         └─ 文件 sink → data/logs/（可禁用）
 ```
@@ -30,12 +30,14 @@ NoneBot 每条入站事件会打一条 SUCCESS dump，并为每个命中的 Matc
 
 完整列表见 [环境变量](./env-vars#日志)。常用项：
 
+`LOG_LEVEL` 和 `LOG_FILE_LEVEL` 是各通道尚未在 Web 保存时的默认值。进入 Web Admin → 运行日志 → **显示选项 → 输出级别**，可分别点击终端与文件级别，点击即保存并立即生效，重启后保留；保存值优先于环境变量。两者支持 `TRACE`、`DEBUG`、`INFO`、`SUCCESS`、`WARNING`、`ERROR`、`CRITICAL`。修改终端级别不会同时修改文件级别。
+
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `LOG_LEVEL` | `INFO` | 仅过滤**终端**输出 |
+| `LOG_LEVEL` | `INFO` | **终端**的初始最低输出级别 |
 | `LOG_FILE_ENABLED` | `true` | `false` 禁用磁盘日志 |
 | `LOG_FILE_PATH` | `data/logs/cyxcbot.log` | 路径**模板**（见下文文件名规则） |
-| `LOG_FILE_LEVEL` | 同 `LOG_LEVEL` | 写入文件的最低级别 |
+| `LOG_FILE_LEVEL` | 同 `LOG_LEVEL` | 写入文件的初始最低级别 |
 | `LOG_FILE_ROTATION` | `10 MB` | 单次运行内 active 文件切分条件（支持 loguru 大小/时间，如 `50 MB`、`1 day`） |
 | `LOG_FILE_RETENTION` | `7 days` | 过期日志保留时长（格式：`7 days`、`30 days` 等） |
 
@@ -98,11 +100,15 @@ docker compose logs -f cyxcbot
 
 ## Web 管理面板 `/logs`
 
-- 实时 SSE 推送，支持按 `DEBUG` / `INFO` / `WARNING` / `ERROR` 筛选（**默认 `INFO`**）。
+- 实时 SSE 推送，以独立胶囊多选 `DEBUG` / `INFO` / `SUCCESS` / `WARNING` / `ERROR` / `CRITICAL`（**默认 INFO 及以上**）。可按消息、模块、级别或时间搜索；均只影响当前 Web 视图。
+- 工具栏按钮在鼠标悬停或键盘聚焦时显示功能说明。点击 **显示选项**，可使用「开发」（全部可用级别、2000 行、换行）、「运维」（默认；INFO 及以上、2000 行、换行）、「精简」（WARNING 及以上、500 行、不换行）预设，也可单独调整显示行数与自动换行。
+- 显示选项内的 **输出级别**以单选胶囊分别控制终端与文件日志，点击即保存，保存其中一组时另一组仍可操作；通过管理员鉴权的 `PATCH /api/v1/settings` 保存 `log_level`、`log_file_level` 到数据库并热重载；上方 **Web 显示级别**不会修改上述保存值。
+- 文件级别调整复用当前日志文件，不重新切分或清理日志。`LOG_FILE_ENABLED=false` 时不会因修改级别而启用文件日志；路径、切分与保留参数仍由启动配置控制。
 - 打开页面时先拉取最多 **2000** 条历史，浏览器最多展示 **2000** 条。
+- **导出当前视图**下载当前筛选和行数限制内的全部日志，包含尚未滚动到的行，以 UTF-8 `.log` 文件保存完整时间、级别、模块及多行消息。导出不包含服务器磁盘日志或 Web 缓冲未收录的 TRACE。
 - 前端通过 `fetch` 携带管理员 Bearer Token；断线后间隔 **3 秒**重连，回放当前级别的最近缓存并按会话和日志 ID 去重。鉴权失败停止重试，登录过期时跳转登录页。
 - 暂停只停止显示更新，仍接收并保留最多 **2000** 条待显示日志；清空仅影响当前显示。
-- 服务端缓冲收录 `DEBUG` 及以上（终端在 `LOG_LEVEL=INFO` 时不显示 `DEBUG`）；要在页面上看 `DEBUG`，需将级别下拉框改为 `DEBUG`。
+- 服务端缓冲收录 `DEBUG` 及以上（终端级别为 `INFO` 时不显示 `DEBUG`）；要在页面上看 `DEBUG`，勾选该级别或使用「开发」预设。默认视图仍按 INFO 门槛查询，避免 DEBUG 洪峰挤占 INFO 历史。
 - 入站事件 dump 与 Matcher 调度行只出现在终端 / 磁盘，不进入本页。
 - 需管理员登录；重启后 Web 缓冲清空。查历史请用磁盘文件或 `docker compose logs`。
 
@@ -134,7 +140,7 @@ except Exception:
 | `error` | 单条失败、需关注的异常 |
 | `critical` | 极少用；进程级致命问题 |
 
-第三方库使用 stdlib `logging` 时，在入口通过 `LoguruHandler` 桥接到 NoneBot/loguru 管道（见 [NoneBot 日志文档](https://nonebot.dev/docs/appendices/log)），不要另起一套 handler。`bot.py` 的 `configure_logging()` 仅调节第三方库噪声，不改变 `nonebot.log.logger` 的过滤级别。
+第三方库使用 stdlib `logging` 时，在入口通过 `LoguruHandler` 桥接到 NoneBot/loguru 管道（见 [NoneBot 日志文档](https://nonebot.dev/docs/appendices/log)），不要另起一套 handler。`bot.py` 的 `configure_logging()` 仅调节第三方库噪声；已有的第三方日志源级别限制不会被输出级别设置解除。
 
 Uvicorn 启动时使用 `log_config=None`、`access_log=False`，并调用 `bridge_uvicorn_loggers()`，只桥接 `uvicorn`、`uvicorn.error`、`uvicorn.asgi`；`uvicorn.access` 不进入 Web `/logs`。勿在 `broadcast.py` 重复挂载 Uvicorn handler。
 
@@ -146,6 +152,7 @@ Uvicorn 启动时使用 `log_config=None`、`access_log=False`，并调用 `brid
 |------|------|
 | `shared/logging/broadcast.py` | Web 环形缓冲与异步订阅广播 |
 | `shared/logging/file_sink.py` | 磁盘会话日志与清理 |
+| `shared/logging/levels.py` | 终端与文件的独立运行时级别、配置热重载 |
 | `bot.py` | stdlib → loguru 桥接、安装 sink |
 | `admin/api/v1/logs.py` | `/logs/recent` 与 `/logs/stream` SSE API |
 
@@ -153,8 +160,8 @@ Uvicorn 启动时使用 `log_config=None`、`access_log=False`，并调用 `brid
 
 | 现象 | 建议 |
 |------|------|
-| 终端无 DEBUG | 正常；设 `LOG_LEVEL=DEBUG`、Web `/logs` 级别选 `DEBUG`，或设 `LOG_FILE_LEVEL=DEBUG` |
+| 终端无 DEBUG | 在 Web `/logs` → 显示选项 → 输出级别中将终端改为 `DEBUG` 并保存；页面查看 DEBUG 需另选 Web 显示级别 |
 | Web `/logs` 无新行 | 检查 SSE 连接状态与反向代理缓冲；确认 `WEB_ADMIN_ENABLED` 未禁用 |
 | 磁盘无文件 | 确认 `LOG_FILE_ENABLED=true`；检查 `data/logs/` 权限 |
-| `data/` 磁盘占满 | 缩短 `LOG_FILE_RETENTION`、提高 `LOG_FILE_LEVEL` / `LOG_LEVEL` 减少写入；确认 `data/` 卷已挂载 |
+| `data/` 磁盘占满 | 在 Web 提高文件日志级别减少写入，或缩短 `LOG_FILE_RETENTION` 后重启；确认 `data/` 卷已挂载 |
 | 需要 HTTP 访问审计 | 在 Nginx / 反向代理侧记录 access log；本程序默认不写 Uvicorn access |
