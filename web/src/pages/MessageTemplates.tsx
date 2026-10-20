@@ -4,6 +4,7 @@ import { useMountAsync } from '../hooks/useMountAsync'
 import { createRetryHandler } from '../utils/retryLoad'
 import { getSettings, patchSettings } from '../api/client'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { Icon } from '../components/Icon'
 import { LoadErrorBanner } from '../components/LoadErrorBanner'
 import { PageLoading } from '../components/LoadingSpinner'
 import {
@@ -53,17 +54,19 @@ function VariablePanel({
   onInsert: (token: string) => void
 }) {
   return (
-    <aside className="flex w-full shrink-0 flex-col lg:min-h-0 lg:w-52 lg:self-stretch">
+    <aside aria-label="可用变量" className="flex w-full shrink-0 flex-col xl:min-h-0 xl:w-52 xl:self-stretch">
       <div className="shrink-0">
         <h4 className="text-sm font-medium text-foreground">可用变量</h4>
         <p className="mt-1 text-xs text-muted-foreground">点击插入到光标位置</p>
       </div>
-      <ul className="mt-3 min-h-0 max-h-48 flex-1 space-y-2 overflow-y-auto pr-1 lg:max-h-none">
+      <ul className="mt-3 min-h-0 max-h-48 flex-1 space-y-2 overflow-y-auto pr-1 xl:max-h-none">
         {field.variables.map((variable) => (
           <li key={variable.key}>
             <button
               type="button"
               disabled={disabled}
+              title={`${variable.label}：${variable.description}`}
+              aria-label={`插入 {${variable.key}}：${variable.label}`}
               onClick={() => onInsert(`{${variable.key}}`)}
               className="w-full rounded-lg border border-border px-3 py-2 text-left transition-colors hover:border-primary hover:bg-accent disabled:opacity-50"
             >
@@ -148,75 +151,49 @@ function TemplateDetailPanel({
   }
 
   return (
-    <div className="flex flex-col lg:h-full lg:min-h-0">
-      <div className="shrink-0 flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4 border-border">
-        <div className="min-w-0 flex-1">
-          <button
-            type="button"
-            className="mb-2 text-sm text-primary hover:underline lg:hidden"
-            onClick={onBack}
-          >
-            ← 返回列表
-          </button>
-          <h3 className="text-lg font-semibold text-foreground">{field.label}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">{field.description}</p>
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="btn-secondary text-sm"
+    <div className="flex flex-col gap-5 xl:h-full xl:min-h-0 xl:flex-row xl:gap-6">
+      <div className="min-w-0 space-y-5 xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:pr-1">
+        <button type="button" className="text-sm text-primary hover:underline lg:hidden" onClick={onBack}>
+          ← 返回列表
+        </button>
+        <div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label className="label mb-0" htmlFor={`template-${field.key}`}>模板内容</label>
+            <span className="text-xs text-muted-foreground">{field.label}</span>
+          </div>
+          <textarea
+            id={`template-${field.key}`}
+            ref={textareaRef}
+            className="input mt-2 min-h-36 resize-y font-mono text-sm"
+            rows={6}
+            maxLength={500}
+            value={value}
             disabled={disabled || saving}
-            onClick={onReset}
-          >
-            恢复默认
-          </button>
-          <button
-            type="button"
-            className="btn-primary text-sm"
-            disabled={disabled || saving || !dirty}
-            onClick={onSave}
-          >
-            {saving ? '保存中…' : '保存'}
-          </button>
+            onChange={(e) => onChange(e.target.value)}
+          />
+          <p className="mt-1 text-right text-xs text-muted-foreground">{value.length}/500</p>
         </div>
-      </div>
-
-      <div className="flex flex-col gap-4 pt-6 lg:min-h-0 lg:flex-1 lg:flex-row lg:gap-6">
-        <div className="min-w-0 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
-          <div className="space-y-4">
-            <div>
-              <label className="label" htmlFor={`template-${field.key}`}>
-                模板内容
-              </label>
-              <textarea
-                id={`template-${field.key}`}
-                ref={textareaRef}
-                className="input mt-1 min-h-32 resize-y font-mono text-sm"
-                rows={6}
-                maxLength={500}
-                value={value}
-                disabled={disabled || saving}
-                onChange={(e) => onChange(e.target.value)}
-              />
-              <p className="mt-1 text-xs text-muted-foreground">{value.length}/500</p>
-            </div>
-
-            <div>
-              <h4 className="mb-2 text-sm font-medium text-foreground">效果预览</h4>
-              <div className="rounded-lg border border-border bg-muted px-4 py-3">
-                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
-                  {preview}
-                </pre>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                预览严格按模板顺序渲染；{'{media}'}、{'{card}'}、{'{cover}'} 在推送时替换为实际图片。
-              </p>
-            </div>
+        <div>
+          <h4 className="mb-2 text-sm font-medium text-foreground">预览效果</h4>
+          <div className="rounded-xl bg-primary/5 px-4 py-3">
+            <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-foreground">{preview}</pre>
           </div>
         </div>
-
-        <VariablePanel field={field} disabled={disabled || saving} onInsert={handleInsert} />
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" className="btn-primary text-sm" disabled={disabled || saving || !dirty} onClick={onSave}>
+            {saving ? '保存中…' : '保存模板'}
+          </button>
+          <button type="button" className="btn-secondary text-sm" disabled={disabled || saving} onClick={onReset}>
+            恢复默认
+          </button>
+        </div>
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">模板说明</summary>
+          <p className="mt-2">{field.description}</p>
+          <p className="mt-1">预览严格按模板顺序渲染；{'{media}'}、{'{card}'}、{'{cover}'} 在推送时替换为实际图片。</p>
+        </details>
       </div>
+      <VariablePanel field={field} disabled={disabled || saving} onInsert={handleInsert} />
     </div>
   )
 }
@@ -365,7 +342,7 @@ export function MessageTemplatesPage({ platform }: { platform: TemplateCategory 
 
   if (loading && !error) {
     return (
-      <div className="flex min-h-[32rem] flex-col gap-6 lg:h-[calc(100dvh-10rem)]">
+      <div className="flex min-h-[32rem] flex-col gap-5 lg:h-[calc(100dvh-9rem)]">
         <div className="shrink-0">
           <h2 className="text-2xl font-bold text-foreground">{pageTitle}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{pageDescription}</p>
@@ -376,7 +353,7 @@ export function MessageTemplatesPage({ platform }: { platform: TemplateCategory 
   }
 
   return (
-    <div className="flex min-h-[32rem] flex-col gap-6 lg:h-[calc(100dvh-10rem)]">
+    <div className="flex min-h-[32rem] flex-col gap-5 lg:h-[calc(100dvh-9rem)]">
       <div className="shrink-0">
         <h2 className="text-2xl font-bold text-foreground">{pageTitle}</h2>
         <p className="mt-1 text-sm text-muted-foreground">{pageDescription}</p>
@@ -389,20 +366,18 @@ export function MessageTemplatesPage({ platform }: { platform: TemplateCategory 
       )}
 
       <div
-        className={`flex min-h-0 flex-1 overflow-hidden rounded-lg border border-border ${
-          showSplit ? 'divide-x divide-border' : ''
-        }`}
+        className="flex min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-card lg:divide-x lg:divide-border"
       >
         <aside
-          className={`flex min-h-0 min-w-0 shrink-0 flex-col bg-muted/40 ${
+          className={`flex min-h-0 min-w-0 shrink-0 flex-col bg-card ${
             listHiddenOnMobile ? 'hidden lg:flex' : ''
-          } w-full lg:w-72`}
+          } w-full lg:w-64 xl:w-72`}
         >
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="shrink-0 border-b border-border px-3 py-2.5 border-border">
+            <div className="shrink-0 border-b border-border px-3 py-2.5">
               <p className="text-xs font-medium text-muted-foreground">模板列表</p>
             </div>
-            <nav aria-label="模板列表" className="min-h-0 flex-1 space-y-4 overflow-y-auto p-2">
+            <nav aria-label="模板列表" className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
               {templateGroups.map((group) => {
                 const regular = group.fields.filter((field) => !field.key.startsWith('dynamic_template_extract'))
                 const extraction = group.fields.filter((field) => field.key.startsWith('dynamic_template_extract'))
@@ -415,14 +390,16 @@ export function MessageTemplatesPage({ platform }: { platform: TemplateCategory 
                         type="button"
                         aria-label={field.key === 'dynamic_template_extract' ? '动态图片提取（成功）' : field.label}
                         onClick={() => selectTemplate(field.key)}
-                        className={`mb-1 w-full rounded-lg px-3 py-2.5 text-left transition-colors ${
+                        aria-pressed={isSelected}
+                        className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${
                           isSelected
                             ? 'bg-sidebar-accent text-sidebar-primary'
                             : 'hover:bg-accent'
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-medium">{EXTRACTION_LABELS[field.key] ?? field.label}</p>
+                        <Icon name="document" className="size-3.5 shrink-0" />
+                        <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                          <p className="text-[13px] font-medium">{EXTRACTION_LABELS[field.key] ?? field.label}</p>
                           {dirty && (
                             <span
                               className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-500"
@@ -430,31 +407,32 @@ export function MessageTemplatesPage({ platform }: { platform: TemplateCategory 
                             />
                           )}
                         </div>
-                        <p className="mt-0.5 line-clamp-2 font-mono text-xs text-muted-foreground">
-                          {getCurrentValue(field.key)}
-                        </p>
                       </button>
                     </li>
                   )
                 }
-                return <section key={group.label}>
-                  <h3 className="px-3 py-2 text-xs font-semibold text-muted-foreground">{group.label}</h3>
-                  <ul>{regular.map(renderField)}
+                return <details key={group.label} open className="group/templates">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-2 text-sm font-semibold hover:bg-accent">
+                    <Icon name="chevron-down" className="size-3 -rotate-90 group-open/templates:rotate-0" />{group.label}
+                  </summary>
+                  <ul className="ml-3 space-y-0.5 border-l border-border pl-1">{regular.map(renderField)}
                     {extraction.length > 0 && <li>
-                      <details open>
-                        <summary className="cursor-pointer rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent">动态图片提取</summary>
+                      <details open className="group/extraction">
+                        <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] font-medium hover:bg-accent">
+                          <Icon name="chevron-down" className="size-3 -rotate-90 group-open/extraction:rotate-0" />动态图片提取
+                        </summary>
                         <ul className="ml-4 border-l border-border pl-1">{extraction.map(renderField)}</ul>
                       </details>
                     </li>}
                   </ul>
-                </section>
+                </details>
               })}
             </nav>
           </div>
         </aside>
 
         {showSplit && selectedField && (
-          <section aria-label="模板编辑" className="min-w-0 flex-1 bg-card p-4 lg:min-h-0 lg:overflow-hidden lg:p-6">
+          <section aria-label="模板编辑" className="min-w-0 flex-1 bg-card p-4 lg:min-h-0 lg:overflow-y-auto lg:p-5">
             <TemplateDetailPanel
               field={selectedField}
               value={getCurrentValue(selectedKey)}

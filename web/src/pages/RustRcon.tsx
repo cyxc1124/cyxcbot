@@ -32,18 +32,27 @@ export function RustRconPage({ area }: { area: 'remote' | 'players' }) {
       <div>
         <h2 className="text-2xl font-bold text-foreground">{current?.item.label}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {area === 'remote' ? <>
+          {area === 'remote'
+            ? '配置 Rust 服务器连接与触发词。RCON 总开关继续控制远控与群管指令。'
+            : '管理 SteamID 绑定、签到积分与积分商城。'}
+        </p>
+      </div>
+
+      {pages[tab]}
+
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer">Rust 使用与权限说明</summary>
+        <div className="mt-3 space-y-2">
+          <p>{area === 'remote' ? <>
             配置 Rust 服务器连接、远控指令与会话权限。RCON 开关关闭时，远控与群管相关指令均会被静默忽略；在已开启权限的群/好友中发送{' '}
             <code className="font-mono text-xs">@机器人 触发词 命令</code>（私聊无需 @）。
           </> : '管理 SteamID 绑定、签到积分与积分商城。群管指令仍需对应会话开启 Rust RCON。'}
           群管命令触发词在「远控与权限 → 群管命令」中配置。
-        </p>
-        {area === 'remote' && <p className="mt-2 text-xs text-muted-foreground">
-          协议为 Rust WebRCON（WebSocket，默认端口 28016）。
-        </p>}
-      </div>
-
-      {pages[tab]}
+          </p>
+          {area === 'remote' && <p>协议为 Rust WebRCON（WebSocket，默认端口 28016）。</p>}
+          {area === 'remote' && <p>示例：<code className="font-mono">@机器人 rcon1 status</code>、<code className="font-mono">@机器人 rcon2 say 大家好</code></p>}
+        </div>
+      </details>
     </div>
   )
 }

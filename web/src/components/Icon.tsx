@@ -2,7 +2,7 @@ import {
   HomeIcon, PlayCircleIcon, VideoCameraIcon, ChatBubbleLeftRightIcon,
   UsersIcon, Cog6ToothIcon, DocumentTextIcon, InformationCircleIcon,
   PhotoIcon, PaintBrushIcon, ComputerDesktopIcon, CloudIcon,
-  GlobeAltIcon, ServerIcon, CommandLineIcon, Squares2X2Icon,
+  GlobeAltIcon, ServerIcon, CommandLineIcon, Squares2X2Icon, CubeIcon, XMarkIcon,
 } from '@heroicons/react/24/outline'
 
 const consoleIcons = {
@@ -11,6 +11,7 @@ const consoleIcons = {
   document: DocumentTextIcon, info: InformationCircleIcon, photo: PhotoIcon,
   paint: PaintBrushIcon, desktop: ComputerDesktopIcon, cloud: CloudIcon,
   globe: GlobeAltIcon, server: ServerIcon, command: CommandLineIcon, grid: Squares2X2Icon,
+  cube: CubeIcon, x: XMarkIcon,
 }
 
 export type IconName = keyof typeof consoleIcons | 'sun' | 'moon' | 'user' | 'lock-closed' | 'eye' | 'eye-slash' | 'arrow-right' | 'chevron-down'

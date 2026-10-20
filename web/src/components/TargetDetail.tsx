@@ -1,3 +1,4 @@
+import { useId, type ReactNode } from 'react'
 import type { Friend, Group, XTarget } from '../api/types'
 import { formatDateTime } from '../utils/format'
 import { ToggleSwitch } from './ToggleSwitch'
@@ -16,6 +17,7 @@ interface TargetDetailProps {
   friends: Friend[]
   rowBusy: boolean
   refreshing?: boolean
+  subscriptionStatus?: ReactNode
   onClearSelection: () => void
   onToggleEnabled: (target: SubscriptionTarget, enabled: boolean) => void
   onToggleAtAll: (target: SubscriptionTarget, atAll: boolean) => void
@@ -32,6 +34,7 @@ export function TargetDetail({
   friends,
   rowBusy,
   refreshing = false,
+  subscriptionStatus,
   onClearSelection,
   onToggleEnabled,
   onToggleAtAll,
@@ -39,6 +42,7 @@ export function TargetDetail({
   onDelete,
   onRefreshProfile,
 }: TargetDetailProps) {
+  const toggleId = useId()
   const targetId = getTargetId(target, type)
   const displayName = getTargetDisplayName(target, type, targetLabel)
   const xUserId = type === 'x' ? (target as XTarget).x_user_id : null
@@ -47,10 +51,10 @@ export function TargetDetail({
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4 border-border">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 grow basis-64">
           <button
             type="button"
-            className="mb-2 text-sm text-primary hover:underline"
+            className="mb-2 text-sm text-primary hover:underline lg:hidden"
             onClick={onClearSelection}
           >
             ← 返回列表
@@ -64,18 +68,21 @@ export function TargetDetail({
               </span>
             )}
           </div>
+          <div className="mt-2">{subscriptionStatus}</div>
           <p className="mt-2 text-xs text-muted-foreground">
             创建于 {formatDateTime(target.created_at)}
           </p>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-4">
+        <div className="flex max-w-full flex-wrap items-center gap-3">
           <div className="inline-flex items-center gap-2">
             <span
+              id={`${toggleId}-enabled`}
               className={`text-xs ${target.enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}
             >
               {target.enabled ? '已启用' : '已禁用'}
             </span>
             <ToggleSwitch
+              ariaLabelledBy={`${toggleId}-enabled`}
               checked={target.enabled}
               disabled={busy}
               onChange={(checked) => void onToggleEnabled(target, checked)}
@@ -83,45 +90,48 @@ export function TargetDetail({
           </div>
           <div className="inline-flex items-center gap-2">
             <span
+              id={`${toggleId}-at-all`}
               className={`text-xs ${target.at_all ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}
             >
               {target.at_all ? '@全体' : '不@全体'}
             </span>
             <ToggleSwitch
+              ariaLabelledBy={`${toggleId}-at-all`}
               checked={target.at_all}
               disabled={busy}
               onChange={(checked) => void onToggleAtAll(target, checked)}
             />
           </div>
-          {type === 'x' && onRefreshProfile ? (
+          <div className="flex max-w-full flex-wrap items-center gap-2">
+            {type === 'x' && onRefreshProfile ? (
+              <button
+                type="button"
+                className="btn-secondary text-sm"
+                disabled={busy}
+                onClick={() => void onRefreshProfile(target)}
+              >
+                {refreshing ? '更新中…' : '更新用户信息'}
+              </button>
+            ) : null}
             <button
               type="button"
               className="btn-secondary text-sm"
               disabled={busy}
-              onClick={() => void onRefreshProfile(target)}
+              onClick={() => onEdit(target)}
             >
-              {refreshing ? '更新中…' : '更新用户信息'}
+              编辑
             </button>
-          ) : null}
-          <button
-            type="button"
-            className="btn-secondary text-sm"
-            disabled={busy}
-            onClick={() => onEdit(target)}
-          >
-            编辑
-          </button>
-          <button
-            type="button"
-            className="btn-secondary text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-            disabled={busy}
-            onClick={() => void onDelete(target.id)}
-          >
-            删除
-          </button>
+            <button
+              type="button"
+              className="btn-secondary text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+              disabled={busy}
+              onClick={() => void onDelete(target.id)}
+            >
+              删除
+            </button>
+          </div>
         </div>
       </div>
-
       <div className="flex-1 space-y-6 pt-6">
         <div>
           <h4 className="mb-3 text-sm font-medium text-foreground">
@@ -148,7 +158,7 @@ export function TargetDetail({
                         {hasName ? name : `群 ${groupId}`}
                       </p>
                       {hasName && (
-                        <p className="mt-0.5 font-mono text-xs text-muted-foreground">{groupId}</p>
+                        <p className="mt-0.5 break-all font-mono text-xs text-muted-foreground">{groupId}</p>
                       )}
                     </div>
                     {group?.member_count != null && (
@@ -188,7 +198,7 @@ export function TargetDetail({
                         {hasName ? name : `QQ ${userId}`}
                       </p>
                       {hasName && (
-                        <p className="mt-0.5 font-mono text-xs text-muted-foreground">{userId}</p>
+                        <p className="mt-0.5 break-all font-mono text-xs text-muted-foreground">{userId}</p>
                       )}
                     </div>
                   </li>
@@ -198,6 +208,9 @@ export function TargetDetail({
           )}
         </div>
       </div>
+      <button type="button" onClick={onClearSelection} className="mt-6 hidden self-start text-xs text-primary hover:underline lg:inline-flex">
+        返回列表
+      </button>
     </div>
   )
 }

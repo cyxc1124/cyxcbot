@@ -11,7 +11,7 @@ import { AppBrand, AppFooter } from './AppBrand'
 import { findNavigation, navigationSections as navSections } from '../constants/navigation'
 
 const RAIL_WIDTH_CLASS = 'w-12'
-const SIDEBAR_WIDTH_CLASS = 'w-60'
+const SIDEBAR_WIDTH_CLASS = 'w-72 max-w-[calc(100vw-2rem)] xl:w-80'
 const NAV_SECTION_COLLAPSED_KEY = 'cyxcbot.navSectionCollapsed.v2'
 
 function loadCollapsedSections(): Set<string> {
@@ -210,10 +210,36 @@ export function Layout() {
 
         {showFullNav ? (
           <>
-            <nav aria-label="功能导航" className="flex-1 space-y-2 overflow-y-auto px-4 py-5">
+            <nav aria-label="功能导航" className="flex-1 space-y-1 overflow-y-auto px-4 py-4">
               {navSections.map((group, sectionIndex) => {
                 const expanded = !collapsedSections.has(group.section)
                 const panelId = `nav-section-${sectionIndex}`
+                const items = group.groups.map((subgroup, index) => {
+                  const links = subgroup.items.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.to === '/'}
+                      onClick={() => {
+                        setSidebarOpen(false)
+                        setNavHoverExpanded(false)
+                      }}
+                      className={({ isActive }) => `${isActive ? 'nav-link nav-link-active' : 'nav-link'} py-2 text-[13px]`}
+                    >
+                      {!subgroup.label && <Icon name={item.icon} className="size-4 shrink-0" />}
+                      <span>{item.label}</span>
+                    </NavLink>
+                  ))
+                  return subgroup.label ? (
+                    <details key={subgroup.label} open className="group/subnav">
+                      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-2 text-xs font-semibold hover:bg-sidebar-accent">
+                        <Icon name="chevron-down" className="size-3 -rotate-90 group-open/subnav:rotate-0" />
+                        {subgroup.label}
+                      </summary>
+                      <div className="ml-3 space-y-0.5 border-l border-sidebar-border pl-2">{links}</div>
+                    </details>
+                  ) : <div key={index} className="space-y-0.5">{links}</div>
+                })
                 if (group.section === '概览') return (
                   <NavLink key={group.section} to="/" end onClick={() => setSidebarOpen(false)}
                     className={({ isActive }) => isActive ? 'nav-link nav-link-active text-sm' : 'nav-link text-sm'}>
@@ -227,9 +253,9 @@ export function Layout() {
                       onClick={() => toggleSection(group.section)}
                       aria-expanded={expanded}
                       aria-controls={panelId}
-                      className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-sidebar-accent ${current?.section === group.section ? 'text-sidebar-primary' : 'text-sidebar-foreground'}`}
                     >
-                      <span className="flex items-center gap-3"><Icon name={group.groups[0].items[0].icon} className="size-4 shrink-0" />{group.section}</span>
+                      <span className="flex items-center gap-3"><Icon name={group.icon} className="size-4 shrink-0" />{group.section}</span>
                       <span
                         className={`text-xs font-normal text-muted-foreground transition-transform ${
                           expanded ? 'rotate-180' : ''
@@ -240,29 +266,17 @@ export function Layout() {
                       </span>
                     </button>
                     {expanded && (
-                      <div id={panelId} className="space-y-0.5 pl-1">
-                        {group.groups.map((subgroup, index) => (
-                          <div key={subgroup.label ?? index} className="space-y-0.5">
-                            {subgroup.label && <p className="px-3 pb-1 pt-3 text-xs font-medium text-muted-foreground">{subgroup.label}</p>}
-                            {subgroup.items.map((item) => (
-                              <NavLink
-                                key={item.to}
-                                to={item.to}
-                                end={item.to === '/'}
-                                onClick={() => {
-                                  setSidebarOpen(false)
-                                  setNavHoverExpanded(false)
-                                }}
-                                className={({ isActive }) => isActive
-                                  ? 'nav-link nav-link-active text-[13px]'
-                                  : 'nav-link text-[13px]'}
-                              >
-                                <Icon name={item.icon} className="size-4 shrink-0" />
-                                <span>{item.label}</span>
-                              </NavLink>
-                            ))}
-                          </div>
-                        ))}
+                      <div id={panelId} className="space-y-0.5 pl-7">
+                        {group.branch ? (
+                          <details key={location.pathname} open className="group/branch">
+                            <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-2 text-[13px] font-medium hover:bg-sidebar-accent">
+                              <Icon name="server" className="size-4 shrink-0" />
+                              {group.branch}
+                              <Icon name="chevron-down" className="ml-auto size-3 -rotate-90 group-open/branch:rotate-0" />
+                            </summary>
+                            <div className="pl-3">{items}</div>
+                          </details>
+                        ) : items}
                       </div>
                     )}
                   </div>
@@ -294,10 +308,10 @@ export function Layout() {
 
       <div
         className={`flex min-h-screen flex-col transition-[padding] duration-200 ${
-          navCollapsed ? 'lg:pl-12' : 'lg:pl-60'
+          navCollapsed ? 'lg:pl-12' : 'lg:pl-72 xl:pl-80'
         }`}
       >
-        <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-2 border-b border-transparent bg-background/95 px-3 py-2 backdrop-blur-sm sm:px-4 lg:pointer-events-none lg:bg-transparent lg:px-12 lg:backdrop-blur-none">
+        <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-2 border-b border-transparent bg-background/95 px-3 py-2 backdrop-blur-sm sm:px-4 lg:pointer-events-none lg:bg-transparent lg:px-7 lg:backdrop-blur-none">
           <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
@@ -323,9 +337,10 @@ export function Layout() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1560px] min-w-0 flex-1 px-4 py-6 lg:px-12 lg:pb-10 lg:pt-2">
-          {current && <nav aria-label="当前位置" className="mb-4 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+        <main className="mx-auto w-full max-w-[1560px] min-w-0 flex-1 px-4 py-5 lg:px-7 lg:pb-8 lg:pt-2">
+          {current && <nav aria-label="当前位置" className="mb-3 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
             <span>{current.section}</span>
+            {current.branch && <><span aria-hidden="true">/</span><span>{current.branch}</span></>}
             {current.group && <><span aria-hidden="true">/</span><span>{current.group}</span></>}
             <span aria-hidden="true">/</span><span aria-current="page">{current.item.label}</span>
           </nav>}

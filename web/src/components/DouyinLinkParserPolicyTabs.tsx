@@ -126,9 +126,6 @@ export function DouyinLinkParserGroupPolicyTab() {
                 <tr key={item.group_id} className="border-b border-border last:border-0">
                   <td className="py-3.5 pr-4 font-medium text-foreground">
                     {item.group_name ?? '—'}
-                    {saving && (
-                      <span className="ml-2 text-[10px] text-muted-foreground">保存中…</span>
-                    )}
                   </td>
                   <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">
                     {item.group_id}
@@ -145,7 +142,8 @@ export function DouyinLinkParserGroupPolicyTab() {
                       </span>
                       <ToggleSwitch
                         checked={item.enabled}
-                        disabled={saving || !(item.editable ?? listAvailable)}
+                        disabled={!(item.editable ?? listAvailable)}
+                        busy={saving}
                         onChange={(checked) => void handleToggle(item.group_id, checked)}
                       />
                     </div>
@@ -246,9 +244,6 @@ export function DouyinLinkParserUserPolicyTab() {
                 <tr key={item.user_id} className="border-b border-border last:border-0">
                   <td className="py-3.5 pr-4 font-medium text-foreground">
                     {item.nickname ?? item.name ?? '—'}
-                    {saving && (
-                      <span className="ml-2 text-[10px] text-muted-foreground">保存中…</span>
-                    )}
                   </td>
                   <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">
                     {item.user_id}
@@ -265,7 +260,8 @@ export function DouyinLinkParserUserPolicyTab() {
                       </span>
                       <ToggleSwitch
                         checked={item.enabled}
-                        disabled={saving || !(item.editable ?? listAvailable)}
+                        disabled={!(item.editable ?? listAvailable)}
+                        busy={saving}
                         onChange={(checked) => void handleToggle(item.user_id, checked)}
                       />
                     </div>

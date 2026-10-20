@@ -5,17 +5,21 @@ export interface NavigationItem {
   label: string
   icon: IconName
   description?: string
+  title?: string
 }
 
 export interface NavigationSection {
   section: string
+  icon: IconName
+  branch?: string
   groups: { label?: string; items: NavigationItem[] }[]
 }
 
 export const navigationSections: NavigationSection[] = [
-  { section: '概览', groups: [{ items: [{ to: '/', label: '仪表盘', icon: 'home' }] }] },
+  { section: '概览', icon: 'home', groups: [{ items: [{ to: '/', label: '仪表盘', icon: 'home' }] }] },
   {
     section: 'B 站',
+    icon: 'document',
     groups: [{ items: [
       { to: '/bilibili/dynamic', label: '动态订阅', icon: 'play' },
       { to: '/bilibili/live', label: '直播订阅', icon: 'video' },
@@ -27,6 +31,7 @@ export const navigationSections: NavigationSection[] = [
   },
   {
     section: 'X',
+    icon: 'x',
     groups: [{ items: [
       { to: '/x/subscriptions', label: '推文订阅', icon: 'play' },
       { to: '/x/parser', label: '链接解析', icon: 'globe' },
@@ -37,6 +42,7 @@ export const navigationSections: NavigationSection[] = [
   },
   {
     section: '抖音',
+    icon: 'video',
     groups: [{ items: [
       { to: '/douyin/parser', label: '链接解析', icon: 'globe' },
       { to: '/douyin/templates', label: '消息模板', icon: 'messages' },
@@ -45,13 +51,16 @@ export const navigationSections: NavigationSection[] = [
   },
   {
     section: '会话',
+    icon: 'messages',
     groups: [{ items: [
       { to: '/groups', label: '群组', icon: 'users' },
       { to: '/friends', label: '好友', icon: 'users' },
     ] }],
   },
   {
-    section: 'Rust 管理',
+    section: '游戏',
+    icon: 'cube',
+    branch: 'Rust 管理',
     groups: [
       { label: '远控与权限', items: [
         { to: '/rust/remote/servers', label: '服务器绑定', icon: 'command' },
@@ -68,9 +77,10 @@ export const navigationSections: NavigationSection[] = [
   },
   {
     section: '系统',
+    icon: 'settings',
     groups: [{ items: [
       { to: '/system/connections', label: '机器人接入', icon: 'settings', description: '官方 QQ Bot 凭证、接入方式与 OneBot 连接说明' },
-      { to: '/system/permissions', label: '权限', icon: 'users', description: '超级用户与状态查询额外授权' },
+      { to: '/system/permissions', label: '权限', title: '权限管理', icon: 'settings', description: '配置超级用户与状态查询的额外授权' },
       { to: '/system/commands', label: '命令', icon: 'command', description: '通用命令触发词、开关与习惯性前缀' },
       { to: '/system/advanced', label: '高级配置', icon: 'settings', description: '链接解析共享媒体目录' },
       { to: '/logs', label: '运行日志', icon: 'document' },
@@ -84,7 +94,7 @@ export function findNavigation(pathname: string) {
   for (const section of navigationSections) {
     for (const group of section.groups) {
       const item = group.items.find((entry) => entry.to === path)
-      if (item) return { section: section.section, group: group.label, item }
+      if (item) return { section: section.section, branch: section.branch, group: group.label, item }
     }
   }
 }

@@ -13,7 +13,7 @@ describe('settings follow their sidebar destination', () => {
   it.each([
     ['/bilibili/settings', 'B 站订阅参数'], ['/bilibili/settings/', 'B 站订阅参数'],
     ['/x/settings', 'X订阅参数'], ['/bilibili/account', 'B 站账号'],
-    ['/system/permissions', '权限'], ['/system/advanced', '高级配置'],
+    ['/system/permissions', '权限管理'], ['/system/advanced', '高级配置'],
   ])('labels %s without a duplicate settings sidebar', (path, title) => {
     const html = renderToStaticMarkup(<MemoryRouter initialEntries={[path]}><SettingsLayout /></MemoryRouter>)
     expect(html).toContain(`>${title}</h2>`)

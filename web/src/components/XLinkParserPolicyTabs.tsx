@@ -131,9 +131,6 @@ export function XLinkParserGroupPolicyTab() {
                     {item.source === 'official' && (
                       <span className="ml-2 text-xs text-muted-foreground">官方 QQ Bot</span>
                     )}
-                    {saving && (
-                      <span className="ml-2 text-[10px] text-muted-foreground">保存中…</span>
-                    )}
                   </td>
                   <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">
                     {item.group_id}
@@ -147,7 +144,8 @@ export function XLinkParserGroupPolicyTab() {
                       </span>
                       <ToggleSwitch
                         checked={item.enabled}
-                        disabled={saving || !(item.editable ?? listAvailable)}
+                        disabled={!(item.editable ?? listAvailable)}
+                        busy={saving}
                         onChange={(checked) => void handleToggle(item.group_id, checked)}
                       />
                     </div>
@@ -253,9 +251,6 @@ export function XLinkParserUserPolicyTab() {
                     {item.source === 'official' && (
                       <span className="ml-2 text-xs text-muted-foreground">官方 QQ Bot</span>
                     )}
-                    {saving && (
-                      <span className="ml-2 text-[10px] text-muted-foreground">保存中…</span>
-                    )}
                   </td>
                   <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">
                     {item.user_id}
@@ -269,7 +264,8 @@ export function XLinkParserUserPolicyTab() {
                       </span>
                       <ToggleSwitch
                         checked={item.enabled}
-                        disabled={saving || !(item.editable ?? listAvailable)}
+                        disabled={!(item.editable ?? listAvailable)}
+                        busy={saving}
                         onChange={(checked) => void handleToggle(item.user_id, checked)}
                       />
                     </div>

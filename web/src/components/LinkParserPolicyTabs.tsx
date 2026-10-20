@@ -66,7 +66,8 @@ function BulkToggleButtons({
       <span className="text-xs text-muted-foreground">{label}</span>
       <button
         type="button"
-        className="btn-secondary text-sm"
+        className={`btn-secondary text-sm${editable && !allEnabled ? ' disabled:opacity-100' : ''}`}
+        aria-busy={busy || undefined}
         disabled={busy || !editable || allEnabled}
         onClick={onEnable}
       >
@@ -74,7 +75,8 @@ function BulkToggleButtons({
       </button>
       <button
         type="button"
-        className="btn-secondary text-sm"
+        className={`btn-secondary text-sm${editable && !noneEnabled ? ' disabled:opacity-100' : ''}`}
+        aria-busy={busy || undefined}
         disabled={busy || !editable || noneEnabled}
         onClick={onDisable}
       >

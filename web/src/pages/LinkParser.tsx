@@ -31,7 +31,7 @@ export function LinkParserPage({ platform }: { platform: TemplateCategory }) {
       <SubPageTabs tabs={{ groups: '群组', friends: '好友' }} value={scope} onChange={(value) => {
         setSearchParams((current) => { current.set('scope', value); return current })
       }} />
-      <Policy />
+      <div className="card"><Policy /></div>
     </div>
   )
 }

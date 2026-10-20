@@ -30,6 +30,8 @@ describe('navigation destinations', () => {
     expect(system.groups.flatMap((group) => group.items).some((item) => /bilibili|douyin|\/x\//.test(item.to))).toBe(false)
     expect(findNavigation('/rust/remote/servers')?.group).toBe('远控与权限')
     expect(findNavigation('/rust/players/shop')?.group).toBe('玩家与积分')
+    expect(findNavigation('/rust/remote/servers')).toMatchObject({ section: '游戏', branch: 'Rust 管理' })
+    expect(navigationSections.find((section) => section.section === '游戏')?.groups.flatMap((group) => group.items)).toHaveLength(7)
   })
 })
 
