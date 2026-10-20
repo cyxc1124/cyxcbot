@@ -50,6 +50,8 @@ npm run build
 
 Web 登录凭据使用仅限当前主机、`HttpOnly`、`SameSite=Strict` 的 Cookie，作用于 `/api/v1`；前端不读取 JWT，也不将其保存到 localStorage 或 sessionStorage。升级时清理旧的浏览器令牌，需要重新登录一次；刷新页面会通过 Cookie 恢复会话，退出登录会由服务端清除 Cookie。HTTPS 请求及浏览器以 HTTPS 访问的反向代理使用 Secure Cookie；直接 HTTP 访问仍可用，公网部署应使用 HTTPS。API 必须与页面同源访问，Vite 的 `/api` 代理保留原始 Host；Cookie 请求还要求专用请求头并拒绝跨源请求，CORS 不允许携带浏览器凭据。独立 API 客户端仍可通过原有登录/初始化接口获取 JSON 令牌，再使用 `Authorization: Bearer …`，无需使用 Cookie。用于识别会话更新的浏览器标记不包含凭据。
 
+TLS 代理应保留浏览器原始 Host。若代理改写 Host，请设置启动环境变量 `WEB_PUBLIC_ORIGIN=https://bot.example.com`（仅协议、主机及可选端口，不含路径），供缺少 `Sec-Fetch-Site` 的浏览器按公网 Origin 校验。保留 Host、仅在代理终止 HTTPS 的场景可直接识别同一 Host 的 HTTPS 源；不会信任客户端随意提交的 `X-Forwarded-Host`。
+
 功能模式采用原生单选按钮语义的卡片选项，支持 Tab 聚焦和方向键切换：动态图片模式、卡片取色来源、官方 Bot 接入方式、X 代理协议共用同一组件。开启「启用动态图片」后才显示动态图片模式，选择莫奈卡片后再显示取色来源，默认使用作者头像；关闭动态图片会保留已选模式与取色来源，已有的明确取色选择不受默认值变更影响。启用/停用继续使用开关；目标、筛选等数据选择保留原有控件。设置表单统一在内容末尾保存，桌面与手机使用相同入口。
 
 ## 功能分组与页面路由

@@ -306,7 +306,7 @@ async def test_cookie_login_reload_password_rotation_and_logout(auth_client):
         {**BROWSER_HEADERS, "Sec-Fetch-Site": ""},
         {**BROWSER_HEADERS, "Origin": "http://test.evil"},
         {**BROWSER_HEADERS, "Origin": "http://test:81"},
-        {**BROWSER_HEADERS, "Origin": "https://test"},
+        {**BROWSER_HEADERS, "Origin": "https://test:8443"},
         {**BROWSER_HEADERS, "Origin": "null"},
         {"X-Cyxcbot-Session": "invalid"},
     ],
@@ -372,6 +372,84 @@ async def test_cookie_secure_flag_follows_direct_or_browser_https(
     client.base_url = base_url
     response = await browser_login(client, headers)
     assert ("Secure" in response.headers["set-cookie"]) is secure
+
+
+@pytest.mark.parametrize("public_origin", ["https://test", "https://bot.example"])
+async def test_tls_proxy_origin_without_fetch_metadata(
+    auth_client, monkeypatch, public_origin
+):
+    client, _ = auth_client
+    if public_origin != "https://test":
+        monkeypatch.setenv("WEB_PUBLIC_ORIGIN", public_origin)
+    response = await browser_login(client, {**BROWSER_HEADERS, "Origin": public_origin})
+    assert "Secure" in response.headers["set-cookie"]
+    assert (
+        await client.get(
+            "auth/me",
+            headers={
+                **BROWSER_HEADERS,
+                "Origin": public_origin,
+                "Cookie": f"cyxcbot_session={response.cookies['cyxcbot_session']}",
+            },
+        )
+    ).status_code == 200
+
+
+async def test_public_origin_does_not_trust_spoofed_forwarded_headers(
+    auth_client, monkeypatch
+):
+    client, _ = auth_client
+    await browser_login(client)
+    monkeypatch.setenv("WEB_PUBLIC_ORIGIN", "https://bot.example")
+    response = await client.get(
+        "auth/me",
+        headers={
+            **BROWSER_HEADERS,
+            "Origin": "https://hostile.example",
+            "X-Forwarded-Host": "bot.example",
+            "X-Forwarded-Proto": "https",
+        },
+    )
+    assert response.status_code == 403
+    assert "set-cookie" not in response.headers
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("", None),
+        (" HTTPS://BOT.EXAMPLE:443/ ", "https://bot.example"),
+        ("http://bot.example:80", "http://bot.example"),
+        ("http://bot.example:8081", "http://bot.example:8081"),
+        ("https://[::1]:443", "https://[::1]"),
+    ],
+)
+def test_web_public_origin_configuration(monkeypatch, value, expected):
+    from admin.config import get_web_public_origin
+
+    monkeypatch.setenv("WEB_PUBLIC_ORIGIN", value)
+    assert get_web_public_origin() == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "null",
+        "file://bot.example",
+        "https://user:secret@bot.example",
+        "https://bot.example/path",
+        "https://bot.example?query=1",
+        "https://bot.example#fragment",
+        "https://bot.example:invalid",
+        "https://bad host",
+    ],
+)
+def test_invalid_web_public_origin_is_rejected(monkeypatch, value):
+    from admin.config import get_web_public_origin
+
+    monkeypatch.setenv("WEB_PUBLIC_ORIGIN", value)
+    with pytest.raises(ValueError, match="WEB_PUBLIC_ORIGIN must be an HTTP"):
+        get_web_public_origin()
 
 
 @pytest.mark.parametrize("auth_client", ["uninitialized"], indirect=True)

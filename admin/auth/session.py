@@ -3,7 +3,7 @@
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from admin.config import get_access_token_expires
+from admin.config import get_access_token_expires, get_web_public_origin
 from admin.schemas.common import TokenResponse
 
 SESSION_COOKIE = "cyxcbot_session"
@@ -20,7 +20,12 @@ def require_browser_session(request: Request) -> None:
         allowed = site in ("same-origin", "none")
     else:
         # Credentialed CORS is disabled; the custom header also blocks HTML forms.
-        allowed = origin is None or origin == str(request.base_url).rstrip("/")
+        allowed_origins = {
+            str(request.base_url).rstrip("/"),
+            str(request.base_url.replace(scheme="https")).rstrip("/"),
+            get_web_public_origin(),
+        }
+        allowed = origin is None or origin in allowed_origins
     if not allowed:
         raise HTTPException(status_code=403, detail="Cross-origin session rejected")
 
