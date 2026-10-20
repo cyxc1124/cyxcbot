@@ -328,7 +328,7 @@ export function Layout() {
           navCollapsed ? 'lg:pl-12' : 'lg:pl-64'
         }`}
       >
-        <header className="sticky top-0 z-30 flex min-h-16 flex-wrap items-center gap-2 border-b border-border bg-background/80 px-4 py-2 backdrop-blur-sm lg:flex-nowrap lg:px-8">
+        <header className="sticky top-0 z-30 grid min-h-16 grid-cols-[auto_minmax(0,1fr)] items-start gap-2 border-b border-border bg-background/80 px-4 py-2 backdrop-blur-sm lg:flex lg:items-center lg:px-8">
           <div className="flex items-center gap-2">
             <button
               type="button"
