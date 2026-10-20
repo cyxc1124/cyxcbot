@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { getDynamicMonitorStatus, triggerDynamicCheck } from '../api/client'
 import type { MonitorPollSchedule } from '../api/types'
 import { MonitorPollScheduleCard } from '../components/MonitorPollScheduleCard'
@@ -35,13 +36,14 @@ export function DynamicMonitorPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start gap-4">
         <div className="shrink-0 basis-full md:basis-auto md:max-w-56">
-          <h2 className="text-2xl font-bold text-foreground">动态订阅管理</h2>
-          <p className="mt-1 text-sm text-muted-foreground">管理 UP 主动态推送到 QQ 群的订阅</p>
+          <h2 className="text-2xl font-bold text-foreground">B 站动态订阅</h2>
+          <p className="mt-1 text-sm text-muted-foreground">管理 UP 主动态推送到 QQ 群与好友的订阅</p>
+          <Link to="/bilibili/settings" className="mt-2 inline-flex text-sm text-primary hover:underline">查看订阅参数</Link>
         </div>
 
         {pollSchedule ? (
           <div className="w-fit max-w-full shrink-0 self-start basis-full md:basis-auto">
-            <MonitorPollScheduleCard title="当前 API 请求频率（动态）" schedule={pollSchedule} />
+            <MonitorPollScheduleCard compact title="当前 API 请求频率（动态）" schedule={pollSchedule} />
           </div>
         ) : null}
 

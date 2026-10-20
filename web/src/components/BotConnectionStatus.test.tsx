@@ -73,7 +73,7 @@ describe('Bot connection indicator', () => {
     const html = render()
     expect(html).toContain('aria-label="Bot 连接：OneBot 检查中，官方 Bot 检查中"')
     expect(html).toContain('aria-controls="bot-connections"')
-    expect(html).toContain('href="/settings/official-qq"')
+    expect(html).toContain('href="/system/connections"')
   })
 
   it.each([

@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
 import { useMountAsync } from '../hooks/useMountAsync'
 import { createRetryHandler } from '../utils/retryLoad'
@@ -30,9 +31,16 @@ type GroupsTab =
   | 'status'
   | 'special-title'
 
+const tabLabels: Record<GroupsTab, string> = {
+  message: '群消息', status: '状态查询', 'special-title': '群头衔',
+  'link-groups': 'B 站链接', 'douyin-link-groups': '抖音链接', 'x-link-groups': 'X 链接',
+}
+
 export function GroupsPage() {
   const { showToast } = useToast()
-  const [tab, setTab] = useState<GroupsTab>('message')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab') ?? 'message'
+  const tab = Object.hasOwn(tabLabels, requestedTab) ? requestedTab as GroupsTab : 'message'
   const [groups, setGroups] = useState<Group[]>([])
   const [restrict, setRestrict] = useState(true)
   const [enabledIds, setEnabledIds] = useState<string[]>([])
@@ -62,15 +70,6 @@ export function GroupsPage() {
   const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
 
   useMountAsync(load)
-
-  const tabLabels: Record<GroupsTab, string> = {
-    message: '群消息',
-    status: '状态查询',
-    'special-title': '群头衔',
-    'link-groups': 'B 站链接',
-    'douyin-link-groups': '抖音链接',
-    'x-link-groups': 'X 链接',
-  }
 
   const allGroupIds = useMemo(() => groups.map((g) => g.group_id), [groups])
 
@@ -178,7 +177,7 @@ export function GroupsPage() {
         )}
       </div>
 
-      <SubPageTabs tabs={tabLabels} value={tab} onChange={setTab} />
+      <SubPageTabs tabs={tabLabels} value={tab} onChange={(value) => setSearchParams((current) => { current.set('tab', value); return current })} />
 
       {tab === 'message' && (
       <>

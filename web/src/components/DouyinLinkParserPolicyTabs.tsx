@@ -27,7 +27,7 @@ function Hint({ scope }: { scope: 'group' | 'user' }) {
     <div className="space-y-1">
       <p className="text-sm text-muted-foreground">
         在下方为每个{scope === 'group' ? '群' : '好友'}单独开启抖音链接解析；关闭时不解析。
-        未配置 Cookie 时仍会尝试游客态解析；建议在「设置 → 抖音账号」配置以提高成功率。
+        未配置 Cookie 时仍会尝试游客态解析；建议在「抖音 → 账号」配置以提高成功率。
       </p>
       {scope === 'group' && (
         <p className="text-sm text-muted-foreground">

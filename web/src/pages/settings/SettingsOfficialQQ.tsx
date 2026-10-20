@@ -172,6 +172,11 @@ export function SettingsOfficialQQPage() {
         </div>
       </div>
 
+      <section className="card space-y-2">
+        <h3 className="font-semibold text-foreground">OneBot 连接说明</h3>
+        <p className="text-sm text-muted-foreground">OneBot 由协议端反向连接机器草监听端口（HOST / PORT，默认 8080）。连接参数仍在部署和协议端配置中管理，可在顶栏查看当前连接状态。</p>
+      </section>
+
       <ConfirmDialog
         open={showClearConfirm}
         title="清除官方 Bot 凭证"

@@ -159,7 +159,7 @@ export function SettingsBilibiliMonitorPage() {
           disabled={formDisabled || saving} onChange={(checked) => setSettings((s) => s ? { ...s, live_monitor_include_info: checked } : s)} />
         {liveSchedule && <MonitorPollScheduleCard compact title="API 请求频率预估（直播）" schedule={liveSchedule} />}
       </section>
-      <button type="submit" className="settings-save lg:hidden" disabled={saving || formDisabled}>{saving ? '保存中…' : '保存设置'}</button>
+      <button type="submit" className="settings-save" disabled={saving || formDisabled}>{saving ? '保存中…' : '保存设置'}</button>
     </form>
   )
 }
@@ -239,7 +239,7 @@ export function SettingsXMonitorPage() {
         </div>
       </div>
 
-      <button type="submit" className="settings-save lg:hidden" disabled={saving || formDisabled}>
+      <button type="submit" className="settings-save" disabled={saving || formDisabled}>
         {saving ? '保存中…' : '保存设置'}
       </button>
     </form>

@@ -27,7 +27,7 @@ function Hint({ scope }: { scope: 'group' | 'user' }) {
     <div className="space-y-1">
       <p className="text-sm text-muted-foreground">
         在下方为每个{scope === 'group' ? '群' : '好友'}单独开启 X 链接解析；关闭时不解析。
-        需先在「设置 → X 账号」配置 Bearer Token。
+        需先在「X → 账号与代理」配置 Bearer Token。
       </p>
       {scope === 'group' && (
         <p className="text-sm text-muted-foreground">
