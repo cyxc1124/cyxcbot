@@ -50,6 +50,7 @@ class AppConfigSnapshot:
     dynamic_monitor_use_stagger: bool = True
     dynamic_enable_screenshot: bool = True
     dynamic_image_mode: str = "screenshot"
+    dynamic_card_color_source: str = "image"
     dynamic_message_templates: DynamicMessageTemplates = field(
         default_factory=DynamicMessageTemplates
     )

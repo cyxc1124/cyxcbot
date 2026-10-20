@@ -27,6 +27,7 @@ class Config(BaseModel):
     )
 
     image_mode: Literal["screenshot", "card"] = "screenshot"
+    card_color_source: Literal["image", "avatar"] = "image"
 
     enable_screenshot: bool = Field(
         default=True, description="是否在推送消息中包含动态图片（网页截图或卡片）"
@@ -53,6 +54,7 @@ class Config(BaseModel):
             use_stagger_poll=snap.dynamic_monitor_use_stagger,
             enable_screenshot=snap.dynamic_enable_screenshot,
             image_mode=snap.dynamic_image_mode,
+            card_color_source=snap.dynamic_card_color_source,
             message_templates=snap.dynamic_message_templates,
             bilibili_cookie=snap.bilibili_cookie,
         )

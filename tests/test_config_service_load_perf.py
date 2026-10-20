@@ -1748,10 +1748,18 @@ async def test_dynamic_image_mode_settings_round_trip(db_context, monkeypatch):
     service = ConfigService()
     monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
     monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
-    assert (await service.load()).dynamic_image_mode == "screenshot"
+    snapshot = await service.load()
+    assert snapshot.dynamic_image_mode == "screenshot"
+    assert snapshot.dynamic_card_color_source == "image"
     result = await settings_api.update_settings(
-        SettingsUpdateRequest(dynamic_image_mode="card"), None
+        SettingsUpdateRequest(
+            dynamic_image_mode="card", dynamic_card_color_source="avatar"
+        ),
+        None,
     )
     assert result.dynamic_image_mode == "card"
-    assert (await service.load()).dynamic_image_mode == "card"
+    assert result.dynamic_card_color_source == "avatar"
+    snapshot = await service.load()
+    assert snapshot.dynamic_image_mode == "card"
+    assert snapshot.dynamic_card_color_source == "avatar"
     assert service.get_snapshot().dynamic_enable_screenshot is True

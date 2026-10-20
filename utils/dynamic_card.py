@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from io import BytesIO
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 import aiohttp
@@ -74,8 +75,16 @@ async def _asset(session: aiohttp.ClientSession, url: str) -> Image.Image | None
         return None
 
 
-def _draw_card(dynamic: DynamicItem, avatar, pictures) -> bytes:
-    dark, surface, light = monet_palette(next((p for p in pictures if p), avatar))
+def _draw_card(
+    dynamic: DynamicItem,
+    avatar,
+    pictures,
+    color_source: Literal["image", "avatar"] = "image",
+) -> bytes:
+    seed = (
+        avatar if color_source == "avatar" else next((p for p in pictures if p), avatar)
+    )
+    dark, surface, light = monet_palette(seed)
     font, small, heading = _font(30), _font(24), _font(36)
     lines = []
     # shortcut: one card shows at most 6000 characters and nine images; use the QR for the full post.
@@ -168,7 +177,9 @@ def _draw_card(dynamic: DynamicItem, avatar, pictures) -> bytes:
     return out.getvalue()
 
 
-async def render_dynamic_card(dynamic: DynamicItem) -> bytes:
+async def render_dynamic_card(
+    dynamic: DynamicItem, *, color_source: Literal["image", "avatar"] = "image"
+) -> bytes:
     async with aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(total=15),
         headers={"Referer": "https://www.bilibili.com/"},
@@ -176,4 +187,6 @@ async def render_dynamic_card(dynamic: DynamicItem) -> bytes:
         assets = await asyncio.gather(
             *(_asset(session, url) for url in [dynamic.avatar, *dynamic.images[:9]])
         )
-    return await asyncio.to_thread(_draw_card, dynamic, assets[0], assets[1:])
+    return await asyncio.to_thread(
+        _draw_card, dynamic, assets[0], assets[1:], color_source
+    )

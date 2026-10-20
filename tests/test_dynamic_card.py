@@ -91,3 +91,43 @@ async def test_cdn_assets_always_use_https(prefix):
     session.get.assert_called_once_with(
         "https://i0.hdslb.com/bfs/new_dyn/test.png", allow_redirects=False
     )
+
+
+@pytest.mark.parametrize(
+    "source,has_avatar,has_picture,expected",
+    [
+        ("image", True, True, "picture"),
+        ("avatar", True, True, "avatar"),
+        ("image", True, False, "avatar"),
+        ("avatar", False, True, "default"),
+        ("image", False, False, "default"),
+    ],
+)
+def test_card_uses_selected_color_source(
+    monkeypatch, source, has_avatar, has_picture, expected
+):
+    import utils.dynamic_card as card
+
+    avatar = Image.new("RGB", (20, 20), "blue") if has_avatar else None
+    picture = Image.new("RGB", (20, 20), "red") if has_picture else None
+    palette = MagicMock(return_value=("#667788", "#ddeeff", "#ffffff"))
+    monkeypatch.setattr(card, "monet_palette", palette)
+    card._draw_card(
+        DynamicItem(1, 1, "作者", 1700000000, 2),
+        avatar,
+        [picture] if picture else [],
+        source,
+    )
+    seed = {"picture": picture, "avatar": avatar, "default": None}[expected]
+    palette.assert_called_once_with(seed)
+
+
+def test_settings_validate_color_source():
+    assert (
+        SettingsUpdateRequest(
+            dynamic_card_color_source="avatar"
+        ).dynamic_card_color_source
+        == "avatar"
+    )
+    with pytest.raises(ValueError):
+        SettingsUpdateRequest(dynamic_card_color_source="invalid")

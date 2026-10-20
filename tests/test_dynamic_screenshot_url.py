@@ -393,18 +393,23 @@ async def test_navigate_dynamic_page_opus_404_fallback_transient_not_notfound() 
     assert not isinstance(exc_info.value, Notfound)
 
 
-async def test_card_mode_bypasses_web_screenshot(dynamic_monitor_module, monkeypatch):
+@pytest.mark.parametrize("color_source", ["image", "avatar"])
+async def test_card_mode_bypasses_web_screenshot(
+    dynamic_monitor_module, monkeypatch, color_source
+):
     monitor_mod, screenshot_mock = dynamic_monitor_module
     import utils.dynamic_card as card
 
     render = AsyncMock(return_value=b"card")
     monkeypatch.setattr(card, "render_dynamic_card", render)
     monitor = monitor_mod.DynamicMonitor(
-        SimpleNamespace(enable_screenshot=True, image_mode="card")
+        SimpleNamespace(
+            enable_screenshot=True, image_mode="card", card_color_source=color_source
+        )
     )
     dynamic = _make_dynamic()
     assert await monitor._fetch_dynamic_screenshot(dynamic) == b"card"
-    render.assert_awaited_once_with(dynamic)
+    render.assert_awaited_once_with(dynamic, color_source=color_source)
     screenshot_mock.get_dynamic_screenshot.assert_not_awaited()
 
 
@@ -418,7 +423,9 @@ async def test_card_failure_uses_existing_media_fallback(
         card, "render_dynamic_card", AsyncMock(side_effect=RuntimeError("render"))
     )
     monitor = monitor_mod.DynamicMonitor(
-        SimpleNamespace(enable_screenshot=True, image_mode="card")
+        SimpleNamespace(
+            enable_screenshot=True, image_mode="card", card_color_source="image"
+        )
     )
     assert await monitor._fetch_dynamic_screenshot(_make_dynamic()) is None
     screenshot_mock.get_dynamic_screenshot.assert_not_awaited()

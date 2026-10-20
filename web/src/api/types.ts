@@ -57,6 +57,7 @@ export interface Settings {
   dynamic_monitor_interval: number
   dynamic_monitor_use_stagger: boolean
   dynamic_image_mode?: 'screenshot' | 'card'
+  dynamic_card_color_source?: 'image' | 'avatar'
   dynamic_enable_screenshot: boolean
   dynamic_template_push: string
   dynamic_template_pinned: string

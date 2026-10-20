@@ -699,7 +699,9 @@ class DynamicMonitor:
                     if getattr(self.config, "image_mode", "screenshot") == "card":
                         from utils.dynamic_card import render_dynamic_card
 
-                        return await render_dynamic_card(dynamic)
+                        return await render_dynamic_card(
+                            dynamic, color_source=self.config.card_color_source
+                        )
                     (
                         screenshot_image,
                         screenshot_error,
