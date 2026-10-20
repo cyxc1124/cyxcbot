@@ -55,6 +55,8 @@ class DynamicSender:
         def media_parts() -> Iterable[SegmentPart]:
             if include_dynamic_media:
                 parts: List[SegmentPart] = []
+                if dynamic.forward_text:
+                    parts.append(f"{dynamic.forward_text}\n")
                 if dynamic.body_text:
                     parts.append(f"{dynamic.body_text}\n")
                 for image_url in dynamic.images:

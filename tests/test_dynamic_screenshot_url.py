@@ -427,8 +427,20 @@ async def test_card_failure_uses_existing_media_fallback(
             enable_screenshot=True, image_mode="card", card_color_source="image"
         )
     )
-    assert await monitor._fetch_dynamic_screenshot(_make_dynamic()) is None
+    dynamic = _make_dynamic(dynamic_type=1)
+    dynamic.forward_text = "转发者的评论"
+    dynamic.body_text = "原动态正文"
+    dynamic.images = ["https://i0.hdslb.com/original.png"]
+    assert await monitor._fetch_dynamic_screenshot(dynamic) is None
     screenshot_mock.get_dynamic_screenshot.assert_not_awaited()
+    message = monitor_mod.DynamicSender().build_dynamic_message(
+        dynamic, include_dynamic_media=True
+    )
+    text = message.extract_plain_text()
+    assert "转发者的评论\n原动态正文" in text
+    assert [
+        part.data["file"] for part in message if part.type == "image"
+    ] == dynamic.images
 
 
 @pytest.mark.parametrize("query", ["get_latest_dynamic", "get_pinned_dynamic"])
