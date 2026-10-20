@@ -53,6 +53,9 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
 
+      - name: Install card rendering fonts
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 

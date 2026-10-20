@@ -178,11 +178,14 @@ class DynamicMonitor:
             if uid not in self.pinned_dynamic_ids:
                 self.pinned_dynamic_ids[uid] = None
 
-        if self.config.enable_screenshot:
+        if (
+            self.config.enable_screenshot
+            and getattr(self.config, "image_mode", "screenshot") == "screenshot"
+        ):
             await init_screenshot_service()
             logger.info("动态截图服务已启动")
         else:
-            logger.info("动态截图已关闭（可在 Web Admin 设置中开启）")
+            logger.info("动态网页截图未启用，图片模式={}", self.config.image_mode)
 
         if not self.config.bilibili_cookie:
             logger.warning("动态监控: 未登录 B 站，动态可能无法获取")
@@ -227,7 +230,10 @@ class DynamicMonitor:
         """热重载配置并调整调度任务"""
         old_interval = self.config.monitor_interval
         old_use_stagger = self.config.use_stagger_poll
-        old_screenshot = self.config.enable_screenshot
+        old_screenshot = (
+            self.config.enable_screenshot
+            and getattr(self.config, "image_mode", "screenshot") == "screenshot"
+        )
         old_cookie = self.config.bilibili_cookie
         old_uids = set(self.config.dynamic_monitor_mapping.keys())
         self.config = Config.from_service()
@@ -290,14 +296,15 @@ class DynamicMonitor:
                 self._cycle_logger.reset()
             self._schedule_poll_job()
 
-        if old_screenshot != self.config.enable_screenshot:
-            if self.config.enable_screenshot:
+        use_browser = (
+            self.config.enable_screenshot and self.config.image_mode == "screenshot"
+        )
+        if old_screenshot != use_browser:
+            if use_browser:
                 await init_screenshot_service()
             else:
                 await close_screenshot_service()
-        elif (
-            self.config.enable_screenshot and old_cookie != self.config.bilibili_cookie
-        ):
+        elif use_browser and old_cookie != self.config.bilibili_cookie:
             await close_screenshot_service()
             await init_screenshot_service()
 
@@ -333,7 +340,10 @@ class DynamicMonitor:
         try:
             if self.session and not self.session.closed:
                 await self.session.close()
-            if self.config.enable_screenshot:
+            if (
+                self.config.enable_screenshot
+                and getattr(self.config, "image_mode", "screenshot") == "screenshot"
+            ):
                 await close_screenshot_service()
         except Exception:
             logger.opt(exception=True).warning("清理资源时出错")
@@ -686,6 +696,12 @@ class DynamicMonitor:
                     )
                     return None
                 try:
+                    if getattr(self.config, "image_mode", "screenshot") == "card":
+                        from utils.dynamic_card import render_dynamic_card
+
+                        return await render_dynamic_card(
+                            dynamic, color_source=self.config.card_color_source
+                        )
                     (
                         screenshot_image,
                         screenshot_error,
@@ -701,7 +717,7 @@ class DynamicMonitor:
                         dynamic.url = page_url
                     return screenshot_image
                 except Exception:
-                    logger.opt(exception=True).warning("截图服务异常")
+                    logger.opt(exception=True).warning("动态图片生成异常")
                     return None
 
     async def _resolve_author_name(self, dynamic) -> str:
@@ -908,13 +924,12 @@ class DynamicMonitor:
             latest_dynamic.get_type_description(),
         )
 
-        screenshot_image = await self._fetch_dynamic_screenshot(latest_dynamic)
-
         # 构建主动查询的消息（包含截图）
         logger.debug("开始构建UP主 {} 的主动查询消息", uid)
 
         # 获取用户名
         latest_dynamic.name = await self._resolve_author_name(latest_dynamic)
+        screenshot_image = await self._fetch_dynamic_screenshot(latest_dynamic)
 
         # 使用统一的消息构建方法
         message = self.sender.build_dynamic_message(
@@ -956,10 +971,9 @@ class DynamicMonitor:
             logger.warning("未找到UP主 {} 的置顶动态 {}", uid, pinned_id)
             raise Exception(f"未找到UP主 {uid} 的置顶动态")
 
-        screenshot_image = await self._fetch_dynamic_screenshot(pinned_dynamic)
-
         # 获取用户名
         pinned_dynamic.name = await self._resolve_author_name(pinned_dynamic)
+        screenshot_image = await self._fetch_dynamic_screenshot(pinned_dynamic)
 
         # 构建主动查询的消息（包含截图）
         logger.debug("开始构建UP主 {} 的置顶动态主动查询消息", uid)

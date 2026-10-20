@@ -27,7 +27,13 @@ class DynamicItem:
         author_type: str = "",
         is_pinned: bool = False,
         live_room_id: int | None = None,
+        avatar: str = "",
+        forward_text: str = "",
+        stats: dict[str, int] | None = None,
     ):
+        self.forward_text = forward_text
+        self.avatar = avatar
+        self.stats = stats or {}
         self.id = dynamic_id
         self.uid = uid
         self.name = name

@@ -1022,3 +1022,32 @@ async def test_same_timestamp_dynamics_retry_in_id_order_without_duplicates(
     await monitor._check_user_dynamic("111")
     await monitor._drain_pending_deliveries()
     assert monitor.sender.send_message.await_count == 3
+
+
+async def test_image_mode_reload_switches_browser_lifecycle(dynamic_monitor_modules):
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    monitor.config.enable_screenshot = True
+    monitor.config.image_mode = "screenshot"
+    new_config = monitor.config.model_copy(update={"image_mode": "card"})
+    module = sys.modules[DynamicMonitor.__module__]
+    with (
+        patch.object(module.Config, "from_service", return_value=new_config),
+        patch.object(module, "init_screenshot_service", AsyncMock()) as init,
+        patch.object(module, "close_screenshot_service", AsyncMock()) as close,
+    ):
+        await monitor.reload_config()
+        close.assert_awaited_once()
+        init.assert_not_awaited()
+    with (
+        patch.object(
+            module.Config,
+            "from_service",
+            return_value=new_config.model_copy(update={"image_mode": "screenshot"}),
+        ),
+        patch.object(module, "init_screenshot_service", AsyncMock()) as init,
+        patch.object(module, "close_screenshot_service", AsyncMock()) as close,
+    ):
+        await monitor.reload_config()
+        init.assert_awaited_once()
+        close.assert_not_awaited()
