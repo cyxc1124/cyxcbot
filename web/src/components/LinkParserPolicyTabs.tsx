@@ -66,7 +66,8 @@ function BulkToggleButtons({
       <span className="text-xs text-muted-foreground">{label}</span>
       <button
         type="button"
-        className="btn-secondary text-sm"
+        className={`btn-secondary text-sm${editable && !allEnabled ? ' disabled:opacity-100' : ''}`}
+        aria-busy={busy || undefined}
         disabled={busy || !editable || allEnabled}
         onClick={onEnable}
       >
@@ -74,7 +75,8 @@ function BulkToggleButtons({
       </button>
       <button
         type="button"
-        className="btn-secondary text-sm"
+        className={`btn-secondary text-sm${editable && !noneEnabled ? ' disabled:opacity-100' : ''}`}
+        aria-busy={busy || undefined}
         disabled={busy || !editable || noneEnabled}
         onClick={onDisable}
       >
@@ -132,12 +134,12 @@ export function LinkParserGroupPolicyTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="min-w-0">
           <GlobalPolicyHint scope="group" />
         </div>
         {groups.length > 0 && (
-          <div className="flex shrink-0 flex-col items-end gap-2">
+          <div className="flex min-w-0 flex-col items-start gap-2 xl:items-end">
             <BulkToggleButtons
               label="链接解析"
               busy={busy}
@@ -249,12 +251,12 @@ export function LinkParserUserPolicyTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="min-w-0">
           <GlobalPolicyHint scope="user" />
         </div>
         {users.length > 0 && (
-          <div className="flex shrink-0 flex-col items-end gap-2">
+          <div className="flex min-w-0 flex-col items-start gap-2 xl:items-end">
             <BulkToggleButtons
               label="链接解析"
               busy={busy}

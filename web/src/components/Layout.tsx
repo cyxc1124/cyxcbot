@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useSidebar } from '../contexts/SidebarContext'
@@ -6,81 +6,23 @@ import { getAbout } from '../api/client'
 import type { AboutInfo } from '../api/types'
 import { ThemeModeSwitch } from './ThemeModeSwitch'
 import { BotConnectionStatus } from './BotConnectionStatus'
-import { Icon, type IconName } from './Icon'
+import { Icon } from './Icon'
 import { AppBrand, AppFooter } from './AppBrand'
-
-type NavItem = { to: string; label: string }
-type NavSection = { section: string; items: NavItem[] }
-
-const navSections: NavSection[] = [
-  { section: '概览', items: [{ to: '/', label: '仪表盘' }] },
-  {
-    section: 'B 站',
-    items: [
-      { to: '/dynamic', label: '动态订阅' },
-      { to: '/live', label: '直播订阅' },
-      { to: '/templates/bilibili', label: '消息模板' },
-    ],
-  },
-  {
-    section: 'X',
-    items: [
-      { to: '/x', label: '推文订阅' },
-      { to: '/templates/x', label: '消息模板' },
-    ],
-  },
-  { section: '抖音', items: [{ to: '/templates/douyin', label: '消息模板' }] },
-  {
-    section: '会话',
-    items: [
-      { to: '/groups', label: '群组' },
-      { to: '/private', label: '好友' },
-    ],
-  },
-  { section: '游戏', items: [{ to: '/rust-rcon', label: 'Rust 群管' }] },
-  {
-    section: '系统',
-    items: [
-      { to: '/settings', label: '系统设置' },
-      { to: '/logs', label: '运行日志' },
-      { to: '/about', label: '关于' },
-    ],
-  },
-]
-
-function navIcon(path: string): IconName {
-  if (path === '/') return 'home'
-  if (path === '/live') return 'video'
-  if (path === '/dynamic' || path === '/x') return 'play'
-  if (path.startsWith('/templates')) return 'messages'
-  if (path === '/groups' || path === '/private') return 'users'
-  if (path === '/settings') return 'settings'
-  if (path === '/logs') return 'document'
-  if (path === '/rust-rcon') return 'command'
-  return 'info'
-}
+import { findNavigation, navigationSections as navSections } from '../constants/navigation'
 
 const RAIL_WIDTH_CLASS = 'w-12'
-const SIDEBAR_WIDTH_CLASS = 'w-60'
-const NAV_SECTION_COLLAPSED_KEY = 'cyxcbot.navSectionCollapsed'
-
-function pathInSection(pathname: string, items: NavItem[]): boolean {
-  return items.some((item) =>
-    item.to === '/'
-      ? pathname === '/'
-      : pathname === item.to || pathname.startsWith(`${item.to}/`),
-  )
-}
+const SIDEBAR_WIDTH_CLASS = 'w-72 max-w-[calc(100vw-2rem)] xl:w-80'
+const NAV_SECTION_COLLAPSED_KEY = 'cyxcbot.navSectionCollapsed.v2'
 
 function loadCollapsedSections(): Set<string> {
   try {
     const raw = localStorage.getItem(NAV_SECTION_COLLAPSED_KEY)
-    if (!raw) return new Set()
+    if (!raw) return new Set(navSections.map((section) => section.section))
     const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return new Set()
+    if (!Array.isArray(parsed)) return new Set(navSections.map((section) => section.section))
     return new Set(parsed.filter((v): v is string => typeof v === 'string'))
   } catch {
-    return new Set()
+    return new Set(navSections.map((section) => section.section))
   }
 }
 
@@ -94,10 +36,10 @@ function persistCollapsedSections(collapsed: Set<string>) {
 
 /** 展开含当前路由的分组；直达/刷新时也要跑，不能只靠 pathname 变化。 */
 function expandActiveSection(collapsed: Set<string>, pathname: string): Set<string> {
-  const active = navSections.find((group) => pathInSection(pathname, group.items))
-  if (!active || !collapsed.has(active.section)) return collapsed
-  const next = new Set(collapsed)
-  next.delete(active.section)
+  const active = findNavigation(pathname)
+  if (!active) return collapsed
+  const next = new Set(navSections.filter((section) => section.section !== active.section).map((section) => section.section))
+  if (next.size === collapsed.size && [...next].every((section) => collapsed.has(section))) return collapsed
   persistCollapsedSections(next)
   return next
 }
@@ -106,13 +48,28 @@ export function Layout() {
   const { user, logout } = useAuth()
   const { navCollapsed, setNavCollapsed } = useSidebar()
   const location = useLocation()
+  const current = findNavigation(location.pathname)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
   const [navHoverExpanded, setNavHoverExpanded] = useState(false)
   const [prevPathname, setPrevPathname] = useState(location.pathname)
   const [about, setAbout] = useState<AboutInfo | null>(null)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() =>
     expandActiveSection(loadCollapsedSections(), location.pathname),
   )
+
+  useEffect(() => { window.scrollTo(0, 0) }, [location.pathname])
+
+  useEffect(() => {
+    if (!sidebarOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setSidebarOpen(false)
+      menuButtonRef.current?.focus()
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [sidebarOpen])
 
   useEffect(() => {
     let cancelled = false
@@ -140,10 +97,15 @@ export function Layout() {
   const toggleSection = (section: string) => {
     setCollapsedSections((prev) => {
       const next = new Set(prev)
-      if (next.has(section)) next.delete(section)
-      else next.add(section)
-      persistCollapsedSections(next)
-      return next
+      if (!next.has(section)) {
+        next.add(section)
+        persistCollapsedSections(next)
+        return next
+      }
+      const collapsed = new Set(navSections.map((group) => group.section))
+      collapsed.delete(section)
+      persistCollapsedSections(collapsed)
+      return collapsed
     })
   }
 
@@ -208,6 +170,8 @@ export function Layout() {
       )}
 
       <aside
+        id="app-navigation"
+        aria-label="主导航"
         className={`fixed inset-y-0 left-0 z-50 flex h-screen flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width,transform,box-shadow] duration-200 ${asideWidthClass} ${asideTranslateClass} ${
           navCollapsed && navHoverExpanded ? 'shadow-xl' : ''
         }`}
@@ -246,10 +210,42 @@ export function Layout() {
 
         {showFullNav ? (
           <>
-            <nav className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
-              {navSections.map((group) => {
+            <nav aria-label="功能导航" className="flex-1 space-y-1 overflow-y-auto px-4 py-4">
+              {navSections.map((group, sectionIndex) => {
                 const expanded = !collapsedSections.has(group.section)
-                const panelId = `nav-section-${group.section}`
+                const panelId = `nav-section-${sectionIndex}`
+                const items = group.groups.map((subgroup, index) => {
+                  const links = subgroup.items.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.to === '/'}
+                      onClick={() => {
+                        setSidebarOpen(false)
+                        setNavHoverExpanded(false)
+                      }}
+                      className={({ isActive }) => `${isActive ? 'nav-link nav-link-active' : 'nav-link'} py-2 text-[13px]`}
+                    >
+                      {!subgroup.label && <Icon name={item.icon} className="size-4 shrink-0" />}
+                      <span>{item.label}</span>
+                    </NavLink>
+                  ))
+                  return subgroup.label ? (
+                    <details key={subgroup.label} open className="group/subnav">
+                      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-2 text-xs font-semibold hover:bg-sidebar-accent">
+                        <Icon name="chevron-down" className="size-3 -rotate-90 group-open/subnav:rotate-0" />
+                        {subgroup.label}
+                      </summary>
+                      <div className="ml-3 space-y-0.5 border-l border-sidebar-border pl-2">{links}</div>
+                    </details>
+                  ) : <div key={index} className="space-y-0.5">{links}</div>
+                })
+                if (group.section === '概览') return (
+                  <NavLink key={group.section} to="/" end onClick={() => setSidebarOpen(false)}
+                    className={({ isActive }) => isActive ? 'nav-link nav-link-active text-sm' : 'nav-link text-sm'}>
+                    <Icon name="home" className="size-4 shrink-0" /><span>仪表盘</span>
+                  </NavLink>
+                )
                 return (
                   <div key={group.section} className="space-y-1">
                     <button
@@ -257,9 +253,9 @@ export function Layout() {
                       onClick={() => toggleSection(group.section)}
                       aria-expanded={expanded}
                       aria-controls={panelId}
-                      className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-sidebar-accent ${current?.section === group.section ? 'text-sidebar-primary' : 'text-sidebar-foreground'}`}
                     >
-                      <span>{group.section}</span>
+                      <span className="flex items-center gap-3"><Icon name={group.icon} className="size-4 shrink-0" />{group.section}</span>
                       <span
                         className={`text-xs font-normal text-muted-foreground transition-transform ${
                           expanded ? 'rotate-180' : ''
@@ -270,26 +266,17 @@ export function Layout() {
                       </span>
                     </button>
                     {expanded && (
-                      <div id={panelId} className="space-y-0.5 pl-1">
-                        {group.items.map((item) => (
-                          <NavLink
-                            key={item.to}
-                            to={item.to}
-                            end={item.to === '/'}
-                            onClick={() => {
-                              setSidebarOpen(false)
-                              setNavHoverExpanded(false)
-                            }}
-                            className={({ isActive }) =>
-                              isActive
-                                ? 'nav-link nav-link-active text-[13px]'
-                                : 'nav-link text-[13px]'
-                            }
-                          >
-                            <Icon name={navIcon(item.to)} className="size-5 shrink-0" />
-                            <span>{item.label}</span>
-                          </NavLink>
-                        ))}
+                      <div id={panelId} className="space-y-0.5 pl-7">
+                        {group.branch ? (
+                          <details key={location.pathname} open className="group/branch">
+                            <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-2 text-[13px] font-medium hover:bg-sidebar-accent">
+                              <Icon name="server" className="size-4 shrink-0" />
+                              {group.branch}
+                              <Icon name="chevron-down" className="ml-auto size-3 -rotate-90 group-open/branch:rotate-0" />
+                            </summary>
+                            <div className="pl-3">{items}</div>
+                          </details>
+                        ) : items}
                       </div>
                     )}
                   </div>
@@ -321,10 +308,10 @@ export function Layout() {
 
       <div
         className={`flex min-h-screen flex-col transition-[padding] duration-200 ${
-          navCollapsed ? 'lg:pl-12' : 'lg:pl-60'
+          navCollapsed ? 'lg:pl-12' : 'lg:pl-72 xl:pl-80'
         }`}
       >
-        <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-2 border-b border-transparent bg-background/95 px-3 py-2 backdrop-blur-sm sm:px-4 lg:pointer-events-none lg:bg-transparent lg:px-12 lg:backdrop-blur-none">
+        <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-2 border-b border-transparent bg-background/95 px-3 py-2 backdrop-blur-sm sm:px-4 lg:pointer-events-none lg:bg-transparent lg:px-7 lg:backdrop-blur-none">
           <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
@@ -336,6 +323,9 @@ export function Layout() {
             <button
               type="button"
               className="btn-ghost px-2 text-sm lg:hidden"
+              ref={menuButtonRef}
+              aria-expanded={sidebarOpen}
+              aria-controls="app-navigation"
               onClick={() => setSidebarOpen(true)}
             >
               菜单
@@ -347,7 +337,13 @@ export function Layout() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1560px] min-w-0 flex-1 px-4 py-6 lg:px-12 lg:pb-10 lg:pt-2">
+        <main className="mx-auto w-full max-w-[1560px] min-w-0 flex-1 px-4 py-5 lg:px-7 lg:pb-8 lg:pt-2">
+          {current && <nav aria-label="当前位置" className="mb-3 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+            <span>{current.section}</span>
+            {current.branch && <><span aria-hidden="true">/</span><span>{current.branch}</span></>}
+            {current.group && <><span aria-hidden="true">/</span><span>{current.group}</span></>}
+            <span aria-hidden="true">/</span><span aria-current="page">{current.item.label}</span>
+          </nav>}
           <Outlet />
         </main>
         <AppFooter />

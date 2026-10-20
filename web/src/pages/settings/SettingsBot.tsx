@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { patchSettings } from '../../api/client'
 import { useToast } from '../../contexts/ToastContext'
 import { formatApiError } from '../../utils/apiError'
@@ -39,7 +40,6 @@ export function SettingsBotPage() {
   const [statusCheckText, setStatusCheckText] = useState(() =>
     formatQqInput(settings?.status_check_allowed_qq ?? []),
   )
-  const [sharedMediaDir, setSharedMediaDir] = useState(settings?.link_parser_shared_media_dir ?? '')
   const [syncedSettings, setSyncedSettings] = useState(settings)
 
   if (settings !== syncedSettings) {
@@ -47,7 +47,6 @@ export function SettingsBotPage() {
     if (settings) {
       setSuperuserText(formatQqInput(settings.nonebot_superusers))
       setStatusCheckText(formatQqInput(settings.status_check_allowed_qq))
-      setSharedMediaDir(settings.link_parser_shared_media_dir)
     }
   }
 
@@ -71,13 +70,11 @@ export function SettingsBotPage() {
       const updated = await patchSettings({
         nonebot_superusers: superusers,
         status_check_allowed_qq: statusCheck,
-        link_parser_shared_media_dir: sharedMediaDir.trim(),
       })
       setSettings(updated)
       setSuperuserText(formatQqInput(updated.nonebot_superusers))
       setStatusCheckText(formatQqInput(updated.status_check_allowed_qq))
-      setSharedMediaDir(updated.link_parser_shared_media_dir)
-      showToast('success', '机器人设置已保存')
+      showToast('success', '权限设置已保存')
       await load()
     } catch (err) {
       showToast('error', formatApiError(err, '保存失败'))
@@ -90,11 +87,10 @@ export function SettingsBotPage() {
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="card space-y-4">
         <div>
-          <h3 className="font-semibold text-foreground">NoneBot 超级用户</h3>
+          <h3 className="font-semibold text-foreground">超级用户</h3>
           <p className="mt-1 text-sm text-muted-foreground">
             对应 NoneBot 的 <code className="font-mono text-xs">SUPERUSER</code>{' '}
-            权限。超级用户可查询机器人状态，并在其他插件中享有更高权限。保存后会同步到运行中的机器人，无需重启。官方
-            Bot 请填写用户 openid（非数字 QQ 号）。
+            权限。超级用户可查询机器人状态，并在其他插件中享有更高权限。
           </p>
         </div>
 
@@ -104,23 +100,26 @@ export function SettingsBotPage() {
           </label>
           <textarea
             id="nonebot_superusers"
-            className="input min-h-32 font-mono text-sm"
+            className="input min-h-24 font-mono text-sm"
             placeholder={'每行一个 QQ 号或官方 openid'}
             value={superuserText}
             disabled={formDisabled || saving}
             onChange={(e) => setSuperuserText(e.target.value)}
           />
+          <p className="mt-2 text-xs text-muted-foreground">
+            每行一个 QQ 号，或官方 openid（非数字 QQ 号）。保存后同步到运行中的机器人，无需重启。
+          </p>
         </div>
       </div>
 
       <div className="card space-y-4">
         <div>
-          <h3 className="font-semibold text-foreground">状态查询权限</h3>
+          <h3 className="font-semibold text-foreground">状态查询额外授权</h3>
           <p className="mt-1 text-sm text-muted-foreground">
             允许非超级用户使用{' '}
             <code className="rounded bg-secondary px-1 py-0.5 text-xs bg-secondary">/status</code>{' '}
             、<code className="rounded bg-secondary px-1 py-0.5 text-xs bg-secondary">/状态</code>{' '}
-            查询运行状态（任意群或好友均可触发）。超级用户已默认拥有此权限。按群/好友的细粒度开关请在「群组」或「好友」页的「状态查询」Tab 中配置。
+            查询运行状态（任意群或好友均可触发）。超级用户已默认拥有此权限。按群或好友授权请在对应会话页面中配置。
           </p>
         </div>
 
@@ -130,7 +129,7 @@ export function SettingsBotPage() {
           </label>
           <textarea
             id="status_check_allowed_qq"
-            className="input min-h-32 font-mono text-sm"
+            className="input min-h-24 font-mono text-sm"
             placeholder={'每行一个 QQ 号或官方 openid'}
             value={statusCheckText}
             disabled={formDisabled || saving}
@@ -142,50 +141,19 @@ export function SettingsBotPage() {
         </div>
       </div>
 
-      <div className="card space-y-4">
-        <div>
-          <h3 className="font-semibold text-foreground">链接解析共享媒体目录</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            B 站 / 抖音链接解析发视频（及抖音图集本地文件）时写入此目录，并以{' '}
-            <code className="font-mono text-xs">file://</code>{' '}
-            交给协议端读取（不再走 base64）。分离部署时请把机器草与协议端 /
-            QQ 数据目录挂到同一路径。留空则使用平台默认。
-          </p>
-        </div>
-
-        <div>
-          <label className="label" htmlFor="link_parser_shared_media_dir">
-            目录路径
-          </label>
-          <input
-            id="link_parser_shared_media_dir"
-            className="input font-mono text-sm"
-            placeholder={
-              settings?.link_parser_shared_media_dir_default || 'data/tmp'
-            }
-            value={sharedMediaDir}
-            disabled={formDisabled || saving}
-            onChange={(e) => setSharedMediaDir(e.target.value)}
-          />
-          <p className="mt-2 text-xs text-muted-foreground">
-            当前生效：
-            <code className="ml-1 font-mono">
-              {settings?.link_parser_shared_media_dir_resolved ||
-                settings?.link_parser_shared_media_dir_default ||
-                '—'}
-            </code>
-            。默认{' '}
-            <code className="font-mono">data/tmp</code>
-            。与协议端（如 LLBot）共用 QQ 数据持久化目录时，请设为{' '}
-            <code className="font-mono">/root/.config/QQ/tmp</code>
-            （卷挂 QQ 数据根即可）。
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <button type="submit" className="btn-primary" disabled={saving || formDisabled}>
+          {saving ? '保存中…' : '保存权限'}
+        </button>
+        <p className="text-xs text-muted-foreground">
+          前往 <Link to="/groups?tab=status" className="text-primary hover:underline">群组权限</Link> /{' '}
+          <Link to="/friends?tab=status" className="text-primary hover:underline">好友权限</Link> 配置按会话授权
+        </p>
       </div>
-
-      <button type="submit" className="btn-primary" disabled={saving || formDisabled}>
-        {saving ? '保存中…' : '保存设置'}
-      </button>
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer">权限与命令说明</summary>
+        <p className="mt-2">全局命令开关与触发词在 <Link to="/system/commands" className="text-primary hover:underline">命令</Link> 中管理；群组和好友的能力权限仍按会话单独配置。</p>
+      </details>
     </form>
   )
 }

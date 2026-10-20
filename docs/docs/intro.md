@@ -60,12 +60,13 @@ slug: /intro
 | 页面 | 说明 |
 |------|------|
 | `/` | 仪表盘（含 OneBot / 官方 Bot / B 站与 X 监控概览） |
-| `/dynamic`、`/live` | B 站动态 / 直播订阅 |
-| `/x` | X 推文订阅 |
-| `/groups`、`/private` | 会话策略（消息守卫、状态查询、B 站/抖音/X 链接等） |
-| `/templates/bilibili` 等 | 各平台下的消息模板 |
-| `/rust-rcon` | Rust 群管（服务器绑定、远控权限、签到/商城） |
-| `/settings` | 按平台的监控参数与账号、官方 Bot 凭证、以及命令 / 超级用户等 |
+| `/bilibili/dynamic`、`/bilibili/live` | B 站动态 / 直播订阅 |
+| `/x/subscriptions` | X 推文订阅 |
+| `/groups`、`/friends` | 会话策略（消息守卫、状态查询、B 站/抖音/X 链接等） |
+| `/bilibili/templates` 等 | 各平台下的消息模板 |
+| `/rust/remote/servers`、`/rust/players/accounts` | Rust 远控与权限、玩家与积分两个分组 |
+| `/bilibili/settings`、`/x/settings` | 各平台订阅参数；账号和解析同在平台分组 |
+| `/system/connections`、`permissions`、`commands`、`advanced` | 机器人接入、权限、命令与高级配置 |
 | `/logs` | 实时运行日志（持久化见 [日志配置](./configuration/logging)） |
 | `/about` | 版本与构建信息 |
 

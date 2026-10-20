@@ -154,7 +154,7 @@ export function RustPlayersTab() {
             绑定账号（不可自助换绑，首次绑定可获奖励积分）；查询积分：
             <code className="font-mono text-xs">@机器人 我的积分</code> 或{' '}
             <code className="font-mono text-xs">@机器人 积分</code>。
-            触发词在「群管命令」Tab 中配置。
+            触发词在「Rust 管理 → 远控与权限 → 群管命令」中配置。
           </p>
         </div>
 

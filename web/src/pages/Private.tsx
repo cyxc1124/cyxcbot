@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
 import { useMountAsync } from '../hooks/useMountAsync'
 import { createRetryHandler } from '../utils/retryLoad'
@@ -28,9 +29,16 @@ type PrivateTab =
   | 'x-link-users'
   | 'status'
 
+const tabLabels: Record<PrivateTab, string> = {
+  message: '好友消息', status: '状态查询', 'link-users': 'B 站链接',
+  'douyin-link-users': '抖音链接', 'x-link-users': 'X 链接',
+}
+
 export function PrivatePage() {
   const { showToast } = useToast()
-  const [tab, setTab] = useState<PrivateTab>('message')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab') ?? 'message'
+  const tab = Object.hasOwn(tabLabels, requestedTab) ? requestedTab as PrivateTab : 'message'
   const [users, setUsers] = useState<Friend[]>([])
   const [restrict, setRestrict] = useState(true)
   const [enabledIds, setEnabledIds] = useState<string[]>([])
@@ -60,14 +68,6 @@ export function PrivatePage() {
   const retryLoad = useMemo(() => createRetryHandler(load, setLoading), [load, setLoading])
 
   useMountAsync(load)
-
-  const tabLabels: Record<PrivateTab, string> = {
-    message: '好友消息',
-    status: '状态查询',
-    'link-users': 'B 站链接',
-    'douyin-link-users': '抖音链接',
-    'x-link-users': 'X 链接',
-  }
 
   const allUserIds = useMemo(() => users.map((u) => u.user_id), [users])
 
@@ -175,7 +175,7 @@ export function PrivatePage() {
         )}
       </div>
 
-      <SubPageTabs tabs={tabLabels} value={tab} onChange={setTab} />
+      <SubPageTabs tabs={tabLabels} value={tab} onChange={(value) => setSearchParams((current) => { current.set('tab', value); return current })} />
 
       {tab === 'message' && (
         <>

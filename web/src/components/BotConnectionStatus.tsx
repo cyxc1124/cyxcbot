@@ -132,7 +132,7 @@ export function BotConnectionStatus() {
         </div>
         <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-3 text-xs">
           <span className="text-muted-foreground">每 30 秒更新</span>
-          <Link to="/settings/official-qq" onClick={() => { if (detailsRef.current) detailsRef.current.open = false }} className="inline-flex min-h-9 items-center gap-1 font-medium text-primary hover:underline">
+          <Link to="/system/connections" onClick={() => { if (detailsRef.current) detailsRef.current.open = false }} className="inline-flex min-h-9 items-center gap-1 font-medium text-primary hover:underline">
             官方 Bot 设置 <Icon name="arrow-right" className="size-3.5" />
           </Link>
         </div>
