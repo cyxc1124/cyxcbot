@@ -391,3 +391,78 @@ async def test_navigate_dynamic_page_opus_404_fallback_transient_not_notfound() 
     with pytest.raises(ScreenshotLoadError) as exc_info:
         await shot._navigate_dynamic_page(page, 1234567890)
     assert not isinstance(exc_info.value, Notfound)
+
+
+@pytest.mark.parametrize("color_source", ["image", "avatar"])
+async def test_card_mode_bypasses_web_screenshot(
+    dynamic_monitor_module, monkeypatch, color_source
+):
+    monitor_mod, screenshot_mock = dynamic_monitor_module
+    import utils.dynamic_card as card
+
+    render = AsyncMock(return_value=b"card")
+    monkeypatch.setattr(card, "render_dynamic_card", render)
+    monitor = monitor_mod.DynamicMonitor(
+        SimpleNamespace(
+            enable_screenshot=True, image_mode="card", card_color_source=color_source
+        )
+    )
+    dynamic = _make_dynamic()
+    assert await monitor._fetch_dynamic_screenshot(dynamic) == b"card"
+    render.assert_awaited_once_with(dynamic, color_source=color_source)
+    screenshot_mock.get_dynamic_screenshot.assert_not_awaited()
+
+
+async def test_card_failure_uses_existing_media_fallback(
+    dynamic_monitor_module, monkeypatch
+):
+    monitor_mod, screenshot_mock = dynamic_monitor_module
+    import utils.dynamic_card as card
+
+    monkeypatch.setattr(
+        card, "render_dynamic_card", AsyncMock(side_effect=RuntimeError("render"))
+    )
+    monitor = monitor_mod.DynamicMonitor(
+        SimpleNamespace(
+            enable_screenshot=True, image_mode="card", card_color_source="image"
+        )
+    )
+    dynamic = _make_dynamic(dynamic_type=1)
+    dynamic.forward_text = "转发者的评论"
+    dynamic.body_text = "原动态正文"
+    dynamic.images = ["https://i0.hdslb.com/original.png"]
+    assert await monitor._fetch_dynamic_screenshot(dynamic) is None
+    screenshot_mock.get_dynamic_screenshot.assert_not_awaited()
+    message = monitor_mod.DynamicSender().build_dynamic_message(
+        dynamic, include_dynamic_media=True
+    )
+    text = message.extract_plain_text()
+    assert "转发者的评论\n原动态正文" in text
+    assert [
+        part.data["file"] for part in message if part.type == "image"
+    ] == dynamic.images
+
+
+@pytest.mark.parametrize("query", ["get_latest_dynamic", "get_pinned_dynamic"])
+async def test_query_resolves_author_before_card_rendering(
+    dynamic_monitor_module, query
+):
+    monitor_mod, _ = dynamic_monitor_module
+    monitor = monitor_mod.DynamicMonitor(
+        SimpleNamespace(bilibili_cookie="", enable_screenshot=True)
+    )
+    dynamic = _make_dynamic()
+    dynamic.name = "UP主_1"
+    monitor.fetcher = SimpleNamespace(
+        fetch_user_dynamics=AsyncMock(return_value=([dynamic], dynamic.id)),
+        resolve_user_name=AsyncMock(return_value="真实作者"),
+    )
+
+    async def render(item):
+        assert item.name == "真实作者"
+        return b"card"
+
+    monitor._fetch_dynamic_screenshot = AsyncMock(side_effect=render)
+    monitor.sender = MagicMock()
+    await getattr(monitor, query)("1")
+    assert dynamic.name == "真实作者"

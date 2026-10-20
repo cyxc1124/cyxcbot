@@ -160,6 +160,127 @@ async def db_context():
         await engine.dispose()
 
 
+@pytest.mark.asyncio
+async def test_logging_settings_persist_and_restore(db_context, monkeypatch):
+    from nonebot.log import logger
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+    from shared.logging import levels
+
+    _, factory, ConfigService, *_ = db_context
+    monkeypatch.setenv("LOG_LEVEL", "WARNING")
+    monkeypatch.setenv("LOG_FILE_LEVEL", "ERROR")
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(levels, "_file_level_no", levels._file_level_no)
+    previous_extra = dict(logger._core.extra)
+    service = ConfigService()
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    service.register_reload_callback(levels.on_config_reload)
+    try:
+        snapshot = await service.load()
+        assert (snapshot.log_level, snapshot.log_file_level) == ("WARNING", "ERROR")
+
+        response = await settings_api.update_settings(
+            SettingsUpdateRequest(log_level="DEBUG", log_file_level="CRITICAL"), None
+        )
+        assert (response.log_level, response.log_file_level) == ("DEBUG", "CRITICAL")
+        assert logger._core.extra["nonebot_log_level"] == "DEBUG"
+        assert levels._file_level_no == logger.level("CRITICAL").no
+        assert await service.get_setting("log_level") == "DEBUG"
+        assert await service.get_setting("log_file_level") == "CRITICAL"
+
+        await settings_api.update_settings(
+            SettingsUpdateRequest(log_level="ERROR"), None
+        )
+        assert service.get_snapshot().log_file_level == "CRITICAL"
+
+        monkeypatch.setenv("LOG_LEVEL", "INFO")
+        monkeypatch.setenv("LOG_FILE_LEVEL", "INFO")
+        restored = await ConfigService().load()
+        assert (restored.log_level, restored.log_file_level) == ("ERROR", "CRITICAL")
+        await levels.on_config_reload(restored)
+        assert logger._core.extra["nonebot_log_level"] == "ERROR"
+        assert levels._file_level_no == logger.level("CRITICAL").no
+    finally:
+        logger.configure(extra=previous_extra)
+
+
+@pytest.mark.asyncio
+async def test_logging_settings_api_validation_and_permissions(db_context, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from admin.api.v1 import settings as settings_api
+    from admin.deps import get_current_user, require_setup_complete
+
+    _, factory, ConfigService, *_ = db_context
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    service = ConfigService()
+    await service.load()
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    reload = AsyncMock()
+    service.register_reload_callback(reload)
+    app = FastAPI()
+    app.include_router(settings_api.router)
+    app.dependency_overrides[require_setup_complete] = lambda: None
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        assert (
+            await client.patch("/settings", json={"log_level": "DEBUG"})
+        ).status_code == 401
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            is_admin=False
+        )
+        assert (
+            await client.patch("/settings", json={"log_level": "DEBUG"})
+        ).status_code == 403
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+            is_admin=True
+        )
+        for body in (
+            {"log_level": "INVALID"},
+            {"log_file_level": "debug"},
+            {"log_level": 10},
+        ):
+            assert (await client.patch("/settings", json=body)).status_code == 422
+        reload.assert_not_awaited()
+        assert await service.get_setting("log_level") is None
+        assert await service.get_setting("log_file_level") is None
+        result = await client.patch(
+            "/settings", json={"log_level": "TRACE", "log_file_level": "WARNING"}
+        )
+        assert result.status_code == 200
+        assert result.json()["log_level"] == "TRACE"
+        assert result.json()["log_file_level"] == "WARNING"
+        reload.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_log_reload_registered_when_initial_db_load_fails(
+    db_context, monkeypatch
+):
+    from unittest.mock import AsyncMock
+
+    from admin import startup
+    from shared.logging.levels import on_config_reload
+
+    _, _, ConfigService, *_ = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_config_service", lambda: service)
+    monkeypatch.setattr(
+        service, "load", AsyncMock(side_effect=RuntimeError("DB unavailable"))
+    )
+
+    await startup.init_shared_services()
+
+    assert on_config_reload in service._reload_callbacks
+
+
 async def _seed_targets(
     factory: async_sessionmaker[AsyncSession],
     *,
@@ -1738,3 +1859,33 @@ async def test_parent_binding_enable_checks_existing_custom_grammar(
         )
         assert saved.alias == "rcon2"
         assert saved.enabled
+
+
+@pytest.mark.parametrize("color_source", ["image", "avatar"])
+async def test_dynamic_image_mode_settings_round_trip(
+    db_context, monkeypatch, color_source
+):
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+
+    _, factory, ConfigService, *_ = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    assert service.get_snapshot().dynamic_card_color_source == "avatar"
+    snapshot = await service.load()
+    assert snapshot.dynamic_image_mode == "screenshot"
+    assert snapshot.dynamic_card_color_source == "avatar"
+    assert (await settings_api.get_settings(None)).dynamic_card_color_source == "avatar"
+    result = await settings_api.update_settings(
+        SettingsUpdateRequest(
+            dynamic_image_mode="card", dynamic_card_color_source=color_source
+        ),
+        None,
+    )
+    assert result.dynamic_image_mode == "card"
+    assert result.dynamic_card_color_source == color_source
+    snapshot = await service.load()
+    assert snapshot.dynamic_image_mode == "card"
+    assert snapshot.dynamic_card_color_source == color_source
+    assert service.get_snapshot().dynamic_enable_screenshot is True

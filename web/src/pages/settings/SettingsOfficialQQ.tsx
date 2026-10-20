@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { patchSettings } from '../../api/client'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
-import { ToggleSwitch } from '../../components/ToggleSwitch'
+import { ChoiceCardGroup } from '../../components/ChoiceCardGroup'
+import { Icon } from '../../components/Icon'
 import { useToast } from '../../contexts/ToastContext'
 import { formatApiError } from '../../utils/apiError'
 import { useSettingsForm } from './SettingsContext'
@@ -142,20 +143,12 @@ export function SettingsOfficialQQPage() {
           />
         </div>
 
-        <div className="flex items-center gap-4 rounded-lg border border-border bg-muted/30 px-3 py-3">
-          <div className="min-w-0 flex-1">
-            <div id="official-qq-websocket-label" className="text-sm font-medium text-foreground">旧版 WebSocket 连接</div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              默认关闭，使用 Webhook。官方已停止维护 WebSocket，仅为仍可使用旧链路的应用保留
-            </p>
-          </div>
-          <ToggleSwitch
-            ariaLabelledBy="official-qq-websocket-label"
-            checked={useWebsocket}
-            disabled={formDisabled || saving}
-            onChange={(checked) => setWebsocketDraft(checked)}
-          />
-        </div>
+        <ChoiceCardGroup label="事件接入方式" value={useWebsocket ? 'websocket' : 'webhook'}
+          disabled={formDisabled || saving} onChange={(value) => setWebsocketDraft(value === 'websocket')}
+          options={[
+            { value: 'webhook', label: 'Webhook（推荐）', description: '通过公网 HTTPS 接收事件回调。', icon: <Icon name="cloud" className="size-5" /> },
+            { value: 'websocket', label: '旧版 WebSocket', description: '官方已停止维护，仅保留仍可使用旧链路的应用。', icon: <Icon name="desktop" className="size-5" /> },
+          ]} />
 
         <div className="flex flex-wrap gap-3">
           <button
@@ -178,6 +171,11 @@ export function SettingsOfficialQQPage() {
           )}
         </div>
       </div>
+
+      <section className="card space-y-2">
+        <h3 className="font-semibold text-foreground">OneBot 连接说明</h3>
+        <p className="text-sm text-muted-foreground">OneBot 由协议端反向连接机器草监听端口（HOST / PORT，默认 8080）。连接参数仍在部署和协议端配置中管理，可在顶栏查看当前连接状态。</p>
+      </section>
 
       <ConfirmDialog
         open={showClearConfirm}

@@ -75,15 +75,20 @@ from shared.db.models import (
     XMonitorState,
     XTarget,
 )
+from shared.logging.levels import default_log_levels, normalize_log_level
 from shared.security.crypto import decrypt_value
 
 ReloadCallback = Callable[[AppConfigSnapshot], Awaitable[None]]
 UnregisterReloadCallback: TypeAlias = Callable[[], None]
 
 SETTING_KEYS = {
+    "log_level": ("", str),
+    "log_file_level": ("", str),
     "dynamic_monitor_interval": ("30", int),
     "dynamic_monitor_use_stagger": ("true", bool),
     "dynamic_enable_screenshot": ("true", bool),
+    "dynamic_image_mode": ("screenshot", str),
+    "dynamic_card_color_source": ("avatar", str),
     "live_monitor_interval": ("60", int),
     "live_monitor_include_info": ("true", bool),
     "live_monitor_use_websocket": ("true", bool),
@@ -280,7 +285,14 @@ class ConfigService:
         settings["x_proxy_password"] = x_proxy_password
         x_proxy = ProxyConfig.from_settings(settings)
 
+        default_log_level, default_file_level = default_log_levels()
         self._snapshot = AppConfigSnapshot(
+            log_level=normalize_log_level(
+                settings.get("log_level", ""), default_log_level
+            ),
+            log_file_level=normalize_log_level(
+                settings.get("log_file_level", ""), default_file_level
+            ),
             dynamic_monitor_mapping=dynamic_mapping,
             dynamic_monitor_user_mapping=dynamic_user_mapping,
             dynamic_subscription_mapping=dynamic_subscription_mapping,
@@ -291,6 +303,10 @@ class ConfigService:
                 "dynamic_monitor_use_stagger", True
             ),
             dynamic_enable_screenshot=settings.get("dynamic_enable_screenshot", True),
+            dynamic_image_mode=settings.get("dynamic_image_mode", "screenshot"),
+            dynamic_card_color_source=settings.get(
+                "dynamic_card_color_source", "avatar"
+            ),
             dynamic_message_templates=dynamic_templates_from_settings(settings),
             live_monitor_mapping=live_mapping,
             live_monitor_user_mapping=live_user_mapping,
@@ -1080,9 +1096,13 @@ class ConfigService:
         xt = snap.x_message_templates
         xp = snap.x_proxy
         return {
+            "log_level": snap.log_level,
+            "log_file_level": snap.log_file_level,
             "dynamic_monitor_interval": snap.dynamic_monitor_interval,
             "dynamic_monitor_use_stagger": snap.dynamic_monitor_use_stagger,
             "dynamic_enable_screenshot": snap.dynamic_enable_screenshot,
+            "dynamic_image_mode": snap.dynamic_image_mode,
+            "dynamic_card_color_source": snap.dynamic_card_color_source,
             "dynamic_template_push": dt.push,
             "dynamic_template_pinned": dt.pinned,
             "dynamic_template_query_latest": dt.query_latest,

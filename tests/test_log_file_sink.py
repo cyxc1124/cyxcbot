@@ -182,6 +182,40 @@ def test_install_passes_rotation_and_retention_to_loguru(
         assert kwargs["retention"] == "7 days"
 
 
+@pytest.mark.asyncio
+async def test_level_change_keeps_current_file(tmp_path, monkeypatch):
+    from nonebot.log import logger
+
+    from shared.config.types import AppConfigSnapshot
+    from shared.logging import levels
+
+    monkeypatch.setenv("LOG_FILE_ENABLED", "true")
+    monkeypatch.setenv("LOG_FILE_PATH", str(tmp_path / "cyxcbot.log"))
+    monkeypatch.setenv("LOG_FILE_LEVEL", "ERROR")
+    monkeypatch.setattr(file_sink, "_installed", False)
+    monkeypatch.setattr(levels, "_file_level_no", levels._file_level_no)
+    previous_extra = dict(logger._core.extra)
+    previous_handlers = set(logger._core.handlers)
+    try:
+        path = install_file_log_sink()
+        assert path is not None
+        logger.debug("before-level-change")
+        await levels.on_config_reload(
+            AppConfigSnapshot(log_level="CRITICAL", log_file_level="DEBUG")
+        )
+        logger.debug("after-level-change")
+        await logger.complete()
+        content = path.read_text(encoding="utf-8")
+        assert "before-level-change" not in content
+        assert "after-level-change" in content
+        assert list(tmp_path.glob("*.log")) == [path]
+        assert set(logger._core.handlers) - previous_handlers
+    finally:
+        for handler in set(logger._core.handlers) - previous_handlers:
+            logger.remove(handler)
+        logger.configure(extra=previous_extra)
+
+
 def test_install_file_log_sink_disabled(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

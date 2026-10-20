@@ -1,7 +1,10 @@
+import { Link } from 'react-router-dom'
+import type { MonitorPollSchedule } from '../api/types'
 import { useTargetMappings } from '../hooks/useTargetMappings'
 import { LoadErrorBanner } from './LoadErrorBanner'
 import { TargetDetail } from './TargetDetail'
 import { TargetForm } from './TargetForm'
+import { MonitorPollScheduleCard } from './MonitorPollScheduleCard'
 import {
   getTargetDisplayName,
   getTargetId,
@@ -10,10 +13,15 @@ import {
 
 interface TargetMappingSectionProps {
   type: TargetType
+  title: string
+  description: string
+  pollSchedule: MonitorPollSchedule | null
+  checking: boolean
+  onCheck: () => void
   onTargetsChanged?: () => void | Promise<void>
 }
 
-export function TargetMappingSection({ type, onTargetsChanged }: TargetMappingSectionProps) {
+export function TargetMappingSection({ type, title, description, pollSchedule, checking, onCheck, onTargetsChanged }: TargetMappingSectionProps) {
   const {
     groups,
     friends,
@@ -47,14 +55,35 @@ export function TargetMappingSection({ type, onTargetsChanged }: TargetMappingSe
   } = useTargetMappings({ type, onTargetsChanged })
 
   const showSplit = selectedId !== null || showForm
-  const listHiddenOnMobile = showSplit && !showForm && selectedTarget
+  const listHiddenOnMobile = showSplit
+  const subscriptionStatus = (
+    <div className="flex flex-wrap items-start gap-x-3 gap-y-2 text-xs">
+      <details className="min-w-0 text-muted-foreground">
+        <summary className="cursor-pointer">
+          {pollSchedule
+            ? `${pollSchedule.target_count} 个目标 · ${pollSchedule.strategy === 'websocket_primary' ? 'WebSocket 实时检测' : `每 ${Math.round(pollSchedule.per_target_cycle_seconds)} 秒检查`}`
+            : '监控状态与检查'}
+        </summary>
+        <div className="mt-3 space-y-3">
+          {pollSchedule && <MonitorPollScheduleCard title="当前 API 请求频率" schedule={pollSchedule} />}
+          <button type="button" className="btn-secondary text-xs" disabled={checking} onClick={onCheck}>
+            {checking ? '检查中…' : '立即检查'}
+          </button>
+        </div>
+      </details>
+      <Link to={type === 'x' ? '/x/settings' : '/bilibili/settings'} className="shrink-0 rounded-md bg-sidebar-accent px-2 py-0.5 font-medium text-primary hover:underline">
+        查看订阅参数
+      </Link>
+    </div>
+  )
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          选择{targetLabel}查看推送目标，可同时订阅多个 QQ 群与好友
-        </p>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold text-foreground">{title}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        </div>
         <button type="button" className="btn-primary" onClick={openCreate}>
           添加订阅
         </button>
@@ -63,23 +92,23 @@ export function TargetMappingSection({ type, onTargetsChanged }: TargetMappingSe
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
       {loading && targets.length === 0 && !error ? (
-        <p className="py-12 text-center text-sm text-muted-foreground">加载中…</p>
+        <p className="card py-12 text-center text-sm text-muted-foreground">加载中…</p>
       ) : !loading && error && targets.length === 0 ? (
-        <p className="py-12 text-center text-sm text-muted-foreground">数据暂时无法加载</p>
+        <p className="card py-12 text-center text-sm text-muted-foreground">数据暂时无法加载</p>
       ) : !loading && targets.length === 0 && !showForm ? (
-        <p className="py-12 text-center text-sm text-muted-foreground">暂无订阅，点击上方按钮添加</p>
+        <p className="card py-12 text-center text-sm text-muted-foreground">暂无订阅，点击上方按钮添加</p>
       ) : (
         <div
-          className={`flex min-h-112 overflow-hidden rounded-lg border border-border ${
-            showSplit ? 'divide-x divide-border' : ''
+          className={`flex min-h-112 overflow-hidden rounded-2xl border border-border bg-card lg:min-h-[calc(100dvh-14rem)] ${
+            showSplit ? 'lg:divide-x lg:divide-border' : ''
           }`}
         >
           <aside
-            className={`shrink-0 bg-muted/40 ${
+            className={`shrink-0 bg-card ${
               listHiddenOnMobile ? 'hidden lg:block' : ''
-            } ${showSplit ? 'w-full lg:w-72' : 'w-full'}`}
+            } ${showSplit ? 'w-full lg:w-64 xl:w-72' : 'w-full'}`}
           >
-            <div className="flex h-full max-h-128 flex-col lg:max-h-144">
+            <div className="flex h-full max-h-128 flex-col lg:max-h-[calc(100dvh-14rem)]">
               <div className="border-b border-border px-3 py-2.5 border-border">
                 <p className="text-xs font-medium text-muted-foreground">
                   {targetLabel}列表
@@ -127,7 +156,7 @@ export function TargetMappingSection({ type, onTargetsChanged }: TargetMappingSe
 
           {(showSplit || showForm) && (
             <main
-              className={`min-w-0 flex-1 bg-card p-4 ${
+              className={`min-w-0 flex-1 bg-card p-4 sm:p-5 ${
                 showForm || selectedTarget ? 'block' : 'hidden lg:block'
               }`}
             >
@@ -155,6 +184,7 @@ export function TargetMappingSection({ type, onTargetsChanged }: TargetMappingSe
                   friends={friends}
                   rowBusy={togglingId === selectedTarget.id}
                   refreshing={refreshingId === selectedTarget.id}
+                  subscriptionStatus={subscriptionStatus}
                   onClearSelection={clearSelection}
                   onToggleEnabled={toggleEnabled}
                   onToggleAtAll={toggleAtAll}
@@ -171,6 +201,7 @@ export function TargetMappingSection({ type, onTargetsChanged }: TargetMappingSe
           )}
         </div>
       )}
+      {(!selectedTarget || showForm) && subscriptionStatus}
     </div>
   )
 }

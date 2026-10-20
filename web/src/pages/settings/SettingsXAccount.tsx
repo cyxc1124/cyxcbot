@@ -1,3 +1,5 @@
+import { ChoiceCardGroup } from '../../components/ChoiceCardGroup'
+import { Icon } from '../../components/Icon'
 import { useState } from 'react'
 import {
   clearXBearer,
@@ -241,23 +243,10 @@ export function SettingsXAccountPage() {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="label" htmlFor="x-proxy-scheme">
-              协议
-            </label>
-            <select
-              id="x-proxy-scheme"
-              className="input"
-              value={proxy.scheme}
-              disabled={formDisabled || savingProxy}
-              onChange={(e) => updateProxy({ scheme: e.target.value })}
-            >
-              {PROXY_SCHEMES.map((scheme) => (
-                <option key={scheme} value={scheme}>
-                  {scheme}
-                </option>
-              ))}
-            </select>
+          <div className="sm:col-span-2">
+            <ChoiceCardGroup label="代理协议" value={proxy.scheme} disabled={formDisabled || savingProxy}
+              onChange={(value) => updateProxy({ scheme: value })}
+              options={PROXY_SCHEMES.map((scheme) => ({ value: scheme, label: scheme.toUpperCase(), icon: <Icon name="globe" className="size-5" /> }))} />
           </div>
           <div>
             <label className="label" htmlFor="x-proxy-port">

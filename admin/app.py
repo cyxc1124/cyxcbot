@@ -11,11 +11,13 @@ from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
 
 from admin.api.router import api_router
+from admin.config import get_web_public_origin
 from admin.spa_path import index_file_response, static_file_response
 from shared.monitor.prometheus_metrics import render_prometheus_metrics
 
 
 def create_app() -> FastAPI:
+    get_web_public_origin()
     app = FastAPI(
         title="机器草 Web Admin",
         description="Admin panel for 机器草 Bilibili monitoring bot",
@@ -25,7 +27,7 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_credentials=True,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )

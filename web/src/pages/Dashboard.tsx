@@ -49,8 +49,8 @@ function bilibiliSettingsLink(action = '登录') {
   return (
     <>
       前往
-      <Link to="/settings/account" className="font-medium text-primary hover:opacity-80 hover:underline">
-      系统设置
+      <Link to="/bilibili/account" className="font-medium text-primary hover:opacity-80 hover:underline">
+      B 站账号
       </Link>
       {action}
     </>
@@ -96,7 +96,7 @@ function officialQqSubtitle(q: OfficialQqConnectionStatus | undefined) {
     return (
       <>
         前往
-        <Link to="/settings/official-qq" className="font-medium text-primary hover:opacity-80 hover:underline">
+        <Link to="/system/connections" className="font-medium text-primary hover:opacity-80 hover:underline">
           官方 Bot
         </Link>
         配置
@@ -205,7 +205,7 @@ export function DashboardPage() {
                 : undefined,
               <>
                 管理订阅见
-                <Link to="/dynamic" className="font-medium text-primary hover:opacity-80 hover:underline">
+                <Link to="/bilibili/dynamic" className="font-medium text-primary hover:opacity-80 hover:underline">
                   动态监控
                 </Link>
               </>,
@@ -231,7 +231,7 @@ export function DashboardPage() {
                 : undefined,
               <>
                 管理订阅见
-                <Link to="/live" className="font-medium text-primary hover:opacity-80 hover:underline">
+                <Link to="/bilibili/live" className="font-medium text-primary hover:opacity-80 hover:underline">
                   直播监控
                 </Link>
               </>,
@@ -257,7 +257,7 @@ export function DashboardPage() {
                 : undefined,
               <>
                 管理订阅见
-                <Link to="/x" className="font-medium text-primary hover:opacity-80 hover:underline">
+                <Link to="/x/subscriptions" className="font-medium text-primary hover:opacity-80 hover:underline">
                   推文订阅
                 </Link>
               </>,

@@ -53,14 +53,14 @@ SQLALCHEMY_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/cyxcbo
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`；**仅控制终端 stdout** |
+| `LOG_LEVEL` | `INFO` | 终端 stdout 的初始最低级别；Web 保存值优先 |
 | `LOG_FILE_ENABLED` | `true` | 设为 `false` 可禁用磁盘日志 |
 | `LOG_FILE_PATH` | `data/logs/cyxcbot.log` | 磁盘日志路径模板 |
-| `LOG_FILE_LEVEL` | 同 `LOG_LEVEL` | 写入文件的最低级别 |
+| `LOG_FILE_LEVEL` | 同 `LOG_LEVEL` | 写入文件的初始最低级别；Web 保存值优先 |
 | `LOG_FILE_ROTATION` | `10 MB` | 单次运行内 active 文件切分大小 |
 | `LOG_FILE_RETENTION` | `7 days` | 过期日志保留时长 |
 
-终端、Web `/logs` 与磁盘文件三条通道的级别、保留策略与文件名规则见 **[日志](./logging)**。
+终端和文件级别可在 Web `/logs` 分别保存，立即生效并持久化，无需重启；页面显示筛选保持独立。三条通道的级别、保留策略与文件名规则见 **[日志](./logging)**。
 
 ## JWT 可选配置
 
@@ -80,8 +80,8 @@ SQLALCHEMY_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/cyxcbo
 - `LIVE_MONITOR_*`
 - `DYNAMIC_MONITOR_*`
 - `STATUS_CHECK_*`
-- `BILIBILI_COOKIE`（改到 Web Admin → 设置 → B 站账号）
-- `SUPERUSERS`（改到 Web Admin → 设置 → 机器人）
+- `BILIBILI_COOKIE`（改到 Web Admin → B 站 → 账号）
+- `SUPERUSERS`（改到 Web Admin → 系统 → 权限）
 - `NOTIFY_GROUPS`（改到各监控页面的目标群/好友映射）
 
 详见 [1.x 迁移指南](./migration-2.0)。

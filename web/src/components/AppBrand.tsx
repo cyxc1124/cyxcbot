@@ -19,7 +19,7 @@ export function AppBrand({
           <span className={`${compact ? 'text-base' : 'text-3xl'} font-bold tracking-tight text-foreground`}>机器草</span>
           <span className={`${compact ? 'text-[10px]' : 'text-xs'} max-w-full break-all rounded-lg border border-border bg-background px-2 py-1 font-mono font-normal leading-tight text-muted-foreground`}>{version}</span>
         </div>
-        {subtitle && <p className={`mt-2 ${compact ? 'text-sm' : 'text-base'} text-muted-foreground`}>{subtitle}</p>}
+        {subtitle && <p className={`${compact ? 'mt-0.5 text-xs' : 'mt-2 text-base'} text-muted-foreground`}>{subtitle}</p>}
       </div>
     </div>
   )

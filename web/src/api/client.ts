@@ -1,6 +1,7 @@
 import type {
   AboutInfo,
   BotConnectionsStatus,
+  ChangePasswordRequest,
   BilibiliLogoutResult,
   BilibiliQrcodeLoginResult,
   BilibiliQrcodeStart,
@@ -39,10 +40,10 @@ import type {
   LiveTargetCreate,
   LiveTargetUpdate,
   LoginRequest,
-  LoginResponse,
   MonitorActionResult,
   MonitorStatus,
   RecentLogsResponse,
+  RuntimeLogEntry,
   XBearerStatus,
   XBearerTestResult,
   XMonitorStatus,
@@ -76,8 +77,12 @@ import type {
   User,
 } from './types'
 
+import { readLogStream } from './logStream'
+
 const TOKEN_KEY = 'cyxcbot_access_token'
+const AUTH_VERSION_KEY = 'cyxcbot_auth_version'
 const API_BASE = '/api/v1'
+let authVersion = 0
 
 export class ApiClientError extends Error {
   status: number
@@ -89,16 +94,31 @@ export class ApiClientError extends Error {
   }
 }
 
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
+export function clearLegacyToken(): void {
+  try {
+    localStorage.removeItem(TOKEN_KEY)
+    sessionStorage.removeItem(TOKEN_KEY)
+  } catch {
+    // Storage can be disabled; cookie authentication does not depend on it.
+  }
 }
 
-export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token)
+function getAuthVersion(): string {
+  try {
+    return `${authVersion}:${localStorage.getItem(AUTH_VERSION_KEY) ?? ''}`
+  } catch {
+    return String(authVersion)
+  }
 }
 
-export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY)
+function markAuthChanged(): void {
+  authVersion += 1
+  try {
+    // A non-secret change marker lets other tabs ignore stale unauthorized replies.
+    localStorage.setItem(AUTH_VERSION_KEY, `${Date.now()}:${Math.random()}`)
+  } catch {
+    // The in-memory version still protects requests in this tab.
+  }
 }
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -117,8 +137,62 @@ const inflightGetRequests = new Map<string, Promise<unknown>>()
 
 function getInflightKey(method: string, path: string, auth: boolean): string | null {
   if (method !== 'GET') return null
-  const token = auth ? getToken() ?? '' : ''
-  return `${path}:${token}`
+  return `${path}:${auth ? getAuthVersion() : ''}`
+}
+
+async function requestResponse(
+  path: string,
+  options: RequestInit = {},
+  auth = true,
+): Promise<Response> {
+  const headers = new Headers(options.headers)
+  headers.set('X-Cyxcbot-Session', 'cookie')
+  if (!headers.has('Content-Type') && options.body) {
+    headers.set('Content-Type', 'application/json')
+  }
+
+  const version = getAuthVersion()
+
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers,
+      credentials: 'same-origin',
+    })
+  } catch {
+    throw new ApiClientError('后端服务暂不可用，数据暂时无法加载', 0)
+  }
+
+  if (response.status === 401 && auth) {
+    if (version !== getAuthVersion()) {
+      throw new ApiClientError('登录状态已更新，请重试', 401)
+    }
+    if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/setup')) {
+      window.location.href = '/login'
+    }
+    throw new ApiClientError('未授权，请重新登录', 401)
+  }
+
+  if (!response.ok) {
+    let message = `请求失败 (${response.status})`
+    if (response.status === 502 || response.status === 503 || response.status === 504) {
+      message = '后端服务暂不可用，数据暂时无法加载'
+    } else {
+      try {
+        const data = await response.json()
+        if (typeof data.detail === 'string') {
+          message = data.detail
+        } else if (Array.isArray(data.detail)) {
+          message = data.detail.map((d: { msg?: string }) => d.msg ?? '').join('; ')
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+    throw new ApiClientError(message, response.status)
+  }
+  return response
 }
 
 async function request<T>(
@@ -138,55 +212,7 @@ async function request<T>(
   }
 
   const execute = async (): Promise<T> => {
-    const headers = new Headers(options.headers)
-    if (!headers.has('Content-Type') && options.body) {
-      headers.set('Content-Type', 'application/json')
-    }
-
-    if (auth) {
-      const token = getToken()
-      if (token) {
-        headers.set('Authorization', `Bearer ${token}`)
-      }
-    }
-
-    let response: Response
-    try {
-      response = await fetch(`${API_BASE}${path}`, {
-        ...options,
-        headers,
-      })
-    } catch {
-      throw new ApiClientError('后端服务暂不可用，数据暂时无法加载', 0)
-    }
-
-    if (response.status === 401 && auth) {
-      clearToken()
-      if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/setup')) {
-        window.location.href = '/login'
-      }
-      throw new ApiClientError('未授权，请重新登录', 401)
-    }
-
-    if (!response.ok) {
-      let message = `请求失败 (${response.status})`
-      if (response.status === 502 || response.status === 503 || response.status === 504) {
-        message = '后端服务暂不可用，数据暂时无法加载'
-      } else {
-        try {
-          const data = await response.json()
-          if (typeof data.detail === 'string') {
-            message = data.detail
-          } else if (Array.isArray(data.detail)) {
-            message = data.detail.map((d: { msg?: string }) => d.msg ?? '').join('; ')
-          }
-        } catch {
-          // ignore parse errors
-        }
-      }
-      throw new ApiClientError(message, response.status)
-    }
-
+    const response = await requestResponse(path, options, auth)
     if (response.status === 204) {
       return undefined as T
     }
@@ -208,16 +234,33 @@ async function request<T>(
 }
 
 // Auth & Setup
+let pendingSessionChange = Promise.resolve()
+
+function changeSession(path: string, options: RequestInit, auth = true): Promise<void> {
+  // Keep logout after pending cookie issuance, so a late response cannot undo it.
+  const change = pendingSessionChange.then(async () => {
+    await request(path, options, auth)
+    markAuthChanged()
+  })
+  pendingSessionChange = change.catch(() => {})
+  return change
+}
+
 export const getSetupStatus = () =>
   request<SetupStatus>('/setup/status', {}, false)
 
 export const postSetup = (data: SetupRequest) =>
-  request<LoginResponse>('/setup', { method: 'POST', body: JSON.stringify(data) }, false)
+  changeSession('/setup', { method: 'POST', body: JSON.stringify(data) }, false)
 
 export const postLogin = (data: LoginRequest) =>
-  request<LoginResponse>('/auth/login', { method: 'POST', body: JSON.stringify(data) }, false)
+  changeSession('/auth/login', { method: 'POST', body: JSON.stringify(data) }, false)
+
+export const postLogout = () => changeSession('/auth/logout', { method: 'POST' }, false)
 
 export const getMe = () => request<User>('/auth/me')
+
+export const putPassword = (data: ChangePasswordRequest) =>
+  changeSession('/auth/password', { method: 'PUT', body: JSON.stringify(data) })
 
 // Settings
 export const getSettings = () => request<Settings>('/settings')
@@ -236,47 +279,11 @@ export async function pollBilibiliQrcodeLogin(
   qrcode: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<BilibiliQrcodeLoginResult> {
-  const headers = new Headers({ 'Content-Type': 'application/json' })
-  const token = getToken()
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`)
-  }
-
-  const response = await fetch(`${API_BASE}/bilibili/login/qrcode/poll`, {
+  return request<BilibiliQrcodeLoginResult>('/bilibili/login/qrcode/poll', {
     method: 'POST',
-    headers,
     body: JSON.stringify({ qrcode }),
     signal,
-  }).catch(() => {
-    throw new ApiClientError('后端服务暂不可用，数据暂时无法加载', 0)
   })
-
-  if (response.status === 401) {
-    clearToken()
-    if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/setup')) {
-      window.location.href = '/login'
-    }
-    throw new ApiClientError('未授权，请重新登录', 401)
-  }
-
-  if (!response.ok) {
-    let message = `请求失败 (${response.status})`
-    if (response.status === 502 || response.status === 503 || response.status === 504) {
-      message = '后端服务暂不可用，数据暂时无法加载'
-    } else {
-      try {
-        const data = await response.json()
-        if (typeof data.detail === 'string') {
-          message = data.detail
-        }
-      } catch {
-        // ignore parse errors
-      }
-    }
-    throw new ApiClientError(message, response.status)
-  }
-
-  return response.json() as Promise<BilibiliQrcodeLoginResult>
 }
 
 export const logoutBilibili = () =>
@@ -666,50 +673,11 @@ export async function pollDouyinQrcodeLogin(
   sessionId: string,
   signal?: AbortSignal,
 ): Promise<DouyinQrcodeLoginResult> {
-  const headers = new Headers({ 'Content-Type': 'application/json' })
-  const token = getToken()
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`)
-  }
-
-  const response = await fetch(`${API_BASE}/douyin/login/qrcode/poll`, {
+  return request<DouyinQrcodeLoginResult>('/douyin/login/qrcode/poll', {
     method: 'POST',
-    headers,
     body: JSON.stringify({ session_id: sessionId }),
     signal,
-  }).catch(() => {
-    throw new ApiClientError('后端服务暂不可用，数据暂时无法加载', 0)
   })
-
-  if (response.status === 401) {
-    clearToken()
-    if (
-      !window.location.pathname.startsWith('/login') &&
-      !window.location.pathname.startsWith('/setup')
-    ) {
-      window.location.href = '/login'
-    }
-    throw new ApiClientError('未授权，请重新登录', 401)
-  }
-
-  if (!response.ok) {
-    let message = `请求失败 (${response.status})`
-    if (response.status === 502 || response.status === 503 || response.status === 504) {
-      message = '后端服务暂不可用，数据暂时无法加载'
-    } else {
-      try {
-        const data = await response.json()
-        if (typeof data.detail === 'string') {
-          message = data.detail
-        }
-      } catch {
-        // ignore parse errors
-      }
-    }
-    throw new ApiClientError(message, response.status)
-  }
-
-  return response.json() as Promise<DouyinQrcodeLoginResult>
 }
 
 export const cancelDouyinQrcodeLogin = (sessionId: string) =>
@@ -769,23 +737,36 @@ export const triggerLiveCheck = () =>
 export const triggerXCheck = () =>
   request<MonitorActionResult>('/monitors/x/check', { method: 'POST' })
 
-export const getRecentLogs = (params: { limit?: number; min_level?: string } = {}) =>
+export const getRecentLogs = (
+  params: { limit?: number; min_level?: string } = {},
+  signal?: AbortSignal,
+) =>
   request<RecentLogsResponse>(
     `/logs/recent${buildQuery(params as Record<string, string | number | undefined>)}`,
+    { signal },
   )
 
-const LOGS_WS_AUTH_PROTOCOL = 'access_token'
-
-export function buildLogsWebSocketUrl(minLevel = 'INFO'): string {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+export async function streamLogs(
+  minLevel: string,
+  options: {
+    signal: AbortSignal
+    onOpen: () => void
+    onLog: (entry: RuntimeLogEntry) => void
+  },
+): Promise<void> {
   const params = new URLSearchParams({ min_level: minLevel })
-  return `${protocol}//${window.location.host}/api/v1/ws/logs?${params}`
-}
-
-export function createLogsWebSocket(minLevel = 'INFO'): WebSocket {
-  const token = getToken()
-  if (!token) {
-    throw new Error('Not authenticated')
+  const response = await requestResponse(`/logs/stream?${params}`, {
+    headers: { Accept: 'text/event-stream' },
+    signal: options.signal,
+  })
+  if (options.signal.aborted) {
+    await response.body?.cancel()
+    return
   }
-  return new WebSocket(buildLogsWebSocketUrl(minLevel), [LOGS_WS_AUTH_PROTOCOL, token])
+  if (!response.body || response.headers.get('Content-Type')?.split(';')[0].trim() !== 'text/event-stream') {
+    await response.body?.cancel()
+    throw new ApiClientError('日志服务返回了无效的事件流', response.status)
+  }
+  options.onOpen()
+  await readLogStream(response.body, options.onLog)
 }

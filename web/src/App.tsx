@@ -16,6 +16,7 @@ import { MessageTemplatesPage } from './pages/MessageTemplates'
 import { SettingsLayout } from './pages/settings/SettingsLayout'
 import { SettingsAccountPage } from './pages/settings/SettingsAccount'
 import { SettingsBotPage } from './pages/settings/SettingsBot'
+import { SettingsAdvancedPage } from './pages/settings/SettingsAdvanced'
 import { SettingsCommandsPage } from './pages/settings/SettingsCommands'
 import { SettingsDouyinAccountPage } from './pages/settings/SettingsDouyinAccount'
 import {
@@ -26,6 +27,7 @@ import { SettingsOfficialQQPage } from './pages/settings/SettingsOfficialQQ'
 import { SettingsXAccountPage } from './pages/settings/SettingsXAccount'
 import { XMonitorPage } from './pages/XMonitor'
 import { RustRconPage } from './pages/RustRcon'
+import { LinkParserPage } from './pages/LinkParser'
 import { SetupPage } from './pages/Setup'
 import { AuthGuard, PublicGuard, SetupGuard } from './routes/Guards'
 
@@ -46,33 +48,32 @@ export default function App() {
             <Route element={<AuthGuard />}>
               <Route element={<SidebarProvider><Layout /></SidebarProvider>}>
                 <Route index element={<DashboardPage />} />
-                <Route path="dynamic" element={<DynamicMonitorPage />} />
-                <Route path="live" element={<LiveMonitorPage />} />
-                <Route path="x" element={<XMonitorPage />} />
-                <Route path="rust-rcon" element={<RustRconPage />} />
-                <Route path="templates" element={<Navigate to="/templates/bilibili" replace />} />
-                <Route path="templates/:platform" element={<MessageTemplatesPage />} />
+                <Route path="bilibili/dynamic" element={<DynamicMonitorPage />} />
+                <Route path="bilibili/live" element={<LiveMonitorPage />} />
+                <Route path="x/subscriptions" element={<XMonitorPage />} />
+                <Route path="bilibili/parser" element={<LinkParserPage platform="bilibili" />} />
+                <Route path="x/parser" element={<LinkParserPage platform="x" />} />
+                <Route path="douyin/parser" element={<LinkParserPage platform="douyin" />} />
+                <Route path="bilibili/templates" element={<MessageTemplatesPage platform="bilibili" />} />
+                <Route path="x/templates" element={<MessageTemplatesPage platform="x" />} />
+                <Route path="douyin/templates" element={<MessageTemplatesPage platform="douyin" />} />
+                <Route path="rust/remote/:tab" element={<RustRconPage area="remote" />} />
+                <Route path="rust/players/:tab" element={<RustRconPage area="players" />} />
                 <Route path="groups" element={<GroupsPage />} />
-                <Route path="private" element={<PrivatePage />} />
-                <Route path="settings" element={<SettingsLayout />}>
-                  <Route index element={<Navigate to="bilibili-monitor" replace />} />
-                  <Route path="bilibili-monitor" element={<SettingsBilibiliMonitorPage />} />
-                  <Route path="x-monitor" element={<SettingsXMonitorPage />} />
-                  <Route path="monitor" element={<Navigate to="/settings/bilibili-monitor" replace />} />
-                  <Route path="account" element={<SettingsAccountPage />} />
-                  <Route path="douyin-account" element={<SettingsDouyinAccountPage />} />
-                  <Route path="x-account" element={<SettingsXAccountPage />} />
-                  <Route path="official-qq" element={<SettingsOfficialQQPage />} />
-                  <Route path="bot" element={<SettingsBotPage />} />
-                  <Route path="commands" element={<SettingsCommandsPage />} />
+                <Route path="friends" element={<PrivatePage />} />
+                <Route element={<SettingsLayout />}>
+                  <Route path="bilibili/settings" element={<SettingsBilibiliMonitorPage />} />
+                  <Route path="x/settings" element={<SettingsXMonitorPage />} />
+                  <Route path="bilibili/account" element={<SettingsAccountPage />} />
+                  <Route path="douyin/account" element={<SettingsDouyinAccountPage />} />
+                  <Route path="x/account" element={<SettingsXAccountPage />} />
+                  <Route path="system/connections" element={<SettingsOfficialQQPage />} />
+                  <Route path="system/permissions" element={<SettingsBotPage />} />
+                  <Route path="system/commands" element={<SettingsCommandsPage />} />
+                  <Route path="system/advanced" element={<SettingsAdvancedPage />} />
                 </Route>
                 <Route path="logs" element={<LogsPage />} />
                 <Route path="about" element={<AboutPage />} />
-                <Route path="mappings" element={<Navigate to="/dynamic" replace />} />
-                <Route path="settings/templates" element={<Navigate to="/templates/bilibili" replace />} />
-                <Route path="audit" element={<Navigate to="/" replace />} />
-                <Route path="events" element={<Navigate to="/" replace />} />
-                <Route path="settings/data" element={<Navigate to="/settings/bilibili-monitor" replace />} />
               </Route>
             </Route>
 

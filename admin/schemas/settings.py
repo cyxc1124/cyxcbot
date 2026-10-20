@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -14,6 +14,7 @@ from shared.config.message_templates import (
     X_LINK_TEMPLATE_KEYS,
     X_TEMPLATE_KEYS,
 )
+from shared.logging.levels import LogLevel
 
 
 class CookieStatusResponse(BaseModel):
@@ -45,8 +46,12 @@ class CommandAliasEntryModel(BaseModel):
 
 
 class SettingsResponse(BaseModel):
+    log_level: LogLevel = "INFO"
+    log_file_level: LogLevel = "INFO"
     dynamic_monitor_interval: int
     dynamic_monitor_use_stagger: bool = True
+    dynamic_image_mode: Literal["screenshot", "card"] = "screenshot"
+    dynamic_card_color_source: Literal["image", "avatar"] = "avatar"
     dynamic_enable_screenshot: bool
     dynamic_template_push: str = Field(
         default=DYNAMIC_TEMPLATE_KEYS["dynamic_template_push"]
@@ -114,8 +119,12 @@ class CookieTestResultResponse(BaseModel):
 
 
 class SettingsUpdateRequest(BaseModel):
+    log_level: Optional[LogLevel] = None
+    log_file_level: Optional[LogLevel] = None
     dynamic_monitor_interval: Optional[int] = Field(default=None, ge=10, le=3600)
     dynamic_monitor_use_stagger: Optional[bool] = None
+    dynamic_image_mode: Optional[Literal["screenshot", "card"]] = None
+    dynamic_card_color_source: Optional[Literal["image", "avatar"]] = None
     dynamic_enable_screenshot: Optional[bool] = None
     dynamic_template_push: Optional[str] = Field(default=None, max_length=500)
     dynamic_template_pinned: Optional[str] = Field(default=None, max_length=500)

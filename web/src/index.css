@@ -54,7 +54,7 @@
   --default-ring-color: var(--ring);
   --ring-color-ring: var(--ring);
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
     Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif,
     'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
@@ -100,7 +100,7 @@
 }
 
 @utility input {
-  @apply min-h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground shadow-xs placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-ring;
+  @apply min-h-10 w-full rounded-xl border border-input bg-card px-3 py-2 text-sm text-foreground shadow-xs placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-ring;
 }
 
 @utility label {
@@ -108,11 +108,12 @@
 }
 
 @utility card {
-  @apply rounded-[1.125rem] border border-border bg-card p-6 text-card-foreground shadow-xs;
+  @apply rounded-3xl border border-border bg-card p-5 text-card-foreground sm:p-6;
+  box-shadow: var(--panel-shadow);
 }
 
 @utility nav-link {
-  @apply block rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground;
+  @apply flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground;
 }
 
 @utility nav-link-active {
@@ -144,60 +145,111 @@
 }
 
 @utility log-panel {
-  @apply min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-log p-4 font-mono;
+  @apply min-h-0 flex-1 overflow-auto rounded-2xl border border-border bg-card font-mono;
 }
 
-@utility log-line {
-  content-visibility: auto;
-  contain-intrinsic-size: 0 20px;
+@utility log-tool-button {
+  @apply relative inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-40;
+
+  & > svg { @apply size-4; }
+  &[aria-pressed="true"] { @apply bg-primary/10 text-primary; }
+  &::after {
+    content: attr(aria-label);
+    @apply pointer-events-none invisible absolute top-full left-1/2 z-40 mt-1.5 -translate-x-1/2 rounded-md bg-foreground px-2 py-1 text-xs font-normal whitespace-nowrap text-background shadow-sm;
+  }
+  &:hover::after, &:focus-visible::after { @apply visible; }
 }
 
-@utility log-line-ts {
-  @apply text-muted-foreground;
+@utility log-level-group {
+  @apply inline-flex max-w-full flex-wrap items-center gap-0.5 rounded-xl border border-border/60 bg-secondary/50 p-0.5;
 }
 
-@utility log-line-logger {
-  @apply text-muted-foreground;
+@utility log-level-chip {
+  @apply relative cursor-pointer;
+
+  &:has(input:disabled) { @apply cursor-not-allowed opacity-50; }
 }
 
-@utility log-line-msg {
-  @apply text-foreground;
+@utility log-level-choice {
+  @apply flex items-center justify-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-card/60;
+
+  input:checked + & { @apply bg-card shadow-sm; color: inherit; }
+  input:focus-visible + & { @apply outline-2 outline-offset-1 outline-ring; }
+}
+
+@utility log-table-row {
+  @apply grid min-h-8 items-start gap-x-3 border-b border-border/40 px-3 py-1.5 text-xs leading-5;
+  grid-template-columns: 6.75rem 5rem minmax(7rem, 10rem) minmax(0, 1fr);
+}
+
+@utility log-table-head {
+  @apply sticky top-0 z-10 grid h-8 items-center gap-x-3 border-b border-border bg-card px-3 text-[11px] text-muted-foreground;
+  grid-template-columns: 6.75rem 5rem minmax(7rem, 10rem) minmax(0, 1fr);
+}
+
+.log-panel[data-wrap="true"] .log-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.log-panel[data-wrap="false"] :is(.log-table-row, .log-table-head) {
+  min-width: 48rem;
+}
+
+.log-panel[data-wrap="false"] .log-message {
+  white-space: pre;
+}
+
+@media (max-width: 639px) {
+  .log-panel[data-wrap="true"] :is(.log-table-row, .log-table-head) {
+    grid-template-columns: 4.5rem 4.5rem minmax(0, 1fr);
+  }
+
+  .log-panel[data-wrap="true"] .log-message {
+    grid-column: 1 / -1;
+  }
+
+  .log-panel[data-wrap="true"] .log-table-head .log-message {
+    display: none;
+  }
 }
 
 @layer utilities {
-  /* Default theme (Kite default) */
+  /* Shared console tokens: the same surfaces and states across all routes. */
   :root {
-    --radius: 0.5rem;
+    --radius: 0.875rem;
+    --panel-shadow: 0 6px 28px rgb(27 42 65 / 4%);
 
-    --background: oklch(1 0 0);
+    --background: #f5f6f8;
     --foreground: oklch(0.141 0.005 285.823);
     --card: oklch(1 0 0);
     --card-foreground: oklch(0.141 0.005 285.823);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.141 0.005 285.823);
-    --primary: oklch(0.55 0.22 235);
-    --primary-foreground: oklch(0.98 0.01 235);
+    --primary: #007acc;
+    --primary-foreground: #ffffff;
     --secondary: oklch(0.967 0.001 286.375);
     --secondary-foreground: oklch(0.21 0.006 285.885);
     --muted: oklch(0.967 0.001 286.375);
-    --muted-foreground: oklch(0.552 0.016 285.938);
+    --muted-foreground: #667085;
     --accent: oklch(0.967 0.001 286.375);
     --accent-foreground: oklch(0.21 0.006 285.885);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.92 0.004 286.32);
-    --input: oklch(0.92 0.004 286.32);
-    --ring: oklch(0.55 0.22 235);
-    --sidebar: oklch(0.985 0 0);
+    --border: #e9ecf1;
+    --input: #dce1e8;
+    --ring: #007acc;
+    --sidebar: #ffffff;
     --sidebar-foreground: oklch(0.141 0.005 285.823);
-    --sidebar-primary: oklch(0.55 0.22 235);
+    --sidebar-primary: #007acc;
     --sidebar-primary-foreground: oklch(0.98 0.01 235);
-    --sidebar-accent: oklch(0.967 0.001 286.375);
+    --sidebar-accent: #eaf5ff;
     --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
-    --sidebar-border: oklch(0.92 0.004 286.32);
+    --sidebar-border: #e9ecf1;
     --log-background: oklch(0.975 0.002 286);
   }
 
   .dark {
+    --panel-shadow: 0 6px 28px rgb(0 0 0 / 12%);
     --background: oklch(0.141 0.005 285.823);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.21 0.006 285.885);
@@ -255,4 +307,28 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+@utility choice-card {
+  @apply relative flex min-w-0 items-start gap-3 rounded-xl border border-input bg-card p-4 transition-colors hover:border-primary/60;
+}
+
+@utility choice-card-selected {
+  @apply border-primary bg-primary/5;
+}
+
+@utility choice-icon {
+  @apply flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted/60;
+}
+
+@utility setting-row {
+  @apply grid min-w-0 items-start gap-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-5;
+}
+
+@utility setting-input {
+  @apply input sm:max-w-sm;
+}
+
+@utility settings-save {
+  @apply btn-primary w-full sm:ml-auto sm:flex sm:w-auto sm:min-w-36;
 }

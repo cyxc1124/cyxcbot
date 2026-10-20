@@ -70,12 +70,18 @@ jobs:
       - name: Build Windows package
         shell: pwsh
         env:
+          # Keep pip's C++ build paths below MSVC's legacy path-length limit.
+          TMPDIR: ${{ runner.temp }}
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
           GIT_COMMIT: ${{ steps.version.outputs.git-commit }}
           GIT_TAG: ${{ steps.version.outputs.git-tag }}
           GIT_BRANCH: ${{ steps.version.outputs.git-branch }}
           BUILD_TIME: ${{ steps.version.outputs.build-time }}
           BUILD_NUMBER: ${{ steps.version.outputs.build-number }}
-        run: ./scripts/build-windows.ps1 -Version "${{ steps.version.outputs.version }}"
+        run: |
+          ./tests/test_windows_build.ps1
+          ./scripts/build-windows.ps1 -Version "${{ steps.version.outputs.version }}"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7

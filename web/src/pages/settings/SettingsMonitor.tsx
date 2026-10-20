@@ -1,4 +1,6 @@
-import { useCallback, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useId, useMemo, useState, type FormEvent } from 'react'
+import { ChoiceCardGroup } from '../../components/ChoiceCardGroup'
+import { Icon } from '../../components/Icon'
 import { MonitorPollScheduleCard } from '../../components/MonitorPollScheduleCard'
 import { ToggleSwitch } from '../../components/ToggleSwitch'
 import { useMountAsync } from '../../hooks/useMountAsync'
@@ -24,19 +26,11 @@ function SettingToggleRow({
   disabled: boolean
   onChange: (checked: boolean) => void
 }) {
+  const id = useId()
   return (
-    <div className="flex items-center gap-4 py-2">
-      <span className="min-w-0 flex-1 text-sm text-foreground">{label}</span>
-      <div className="flex w-23 shrink-0 items-center justify-end gap-2">
-        <span
-          className={`w-10 shrink-0 text-right text-xs ${
-            checked ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
-          }`}
-        >
-          {checked ? '已启用' : '已关闭'}
-        </span>
-        <ToggleSwitch checked={checked} disabled={disabled} onChange={onChange} />
-      </div>
+    <div className="flex items-center justify-between gap-4 sm:grid sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-5">
+      <span id={id} className="text-sm font-medium text-foreground">{label}</span>
+      <ToggleSwitch checked={checked} disabled={disabled} onChange={onChange} ariaLabelledBy={id} />
     </div>
   )
 }
@@ -53,6 +47,8 @@ export function SettingsBilibiliMonitorPage() {
       dynamic_monitor_interval: settings.dynamic_monitor_interval,
       dynamic_monitor_use_stagger: settings.dynamic_monitor_use_stagger,
       dynamic_enable_screenshot: settings.dynamic_enable_screenshot,
+      dynamic_image_mode: settings.dynamic_image_mode ?? 'screenshot',
+      dynamic_card_color_source: settings.dynamic_card_color_source ?? 'avatar',
       live_monitor_interval: settings.live_monitor_interval,
       live_monitor_include_info: settings.live_monitor_include_info,
       live_monitor_use_websocket: settings.live_monitor_use_websocket,
@@ -99,111 +95,71 @@ export function SettingsBilibiliMonitorPage() {
   ])
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="card space-y-4">
-        <h3 className="font-semibold text-foreground">动态监控</h3>
-        <div className="max-w-xs">
-          <label className="label" htmlFor="dynamic_interval">
-            检查间隔（秒）
-          </label>
-          <input
-            id="dynamic_interval"
-            type="number"
-            min={30}
-            max={3600}
-            className="input"
-            value={settings?.dynamic_monitor_interval ?? ''}
-            disabled={formDisabled}
-            onChange={(e) =>
-              setSettings((s) =>
-                s ? { ...s, dynamic_monitor_interval: Number(e.target.value) } : s,
-              )
-            }
-          />
-          <p className="mt-1 text-xs text-muted-foreground">
-            {settings?.dynamic_monitor_use_stagger ?? true
-              ? '期望每个 UP 主约每 N 秒检查一次；目标较多时会自动分散请求，且单次间隔不低于 3 秒。'
-              : '每 N 秒依次检查全部 UP 主；订阅较多时可能短时集中请求 API。'}
-          </p>
+    <form id="monitor-settings" onSubmit={handleSubmit} className="space-y-5">
+      <section className="card space-y-6" aria-labelledby="dynamic-heading">
+        <div>
+          <h3 id="dynamic-heading" className="text-lg font-semibold text-foreground">动态监控</h3>
+          <p className="mt-1 text-sm text-muted-foreground">监控 B 站用户动态，自动获取并推送新内容。</p>
         </div>
-        {dynamicSchedule ? (
-          <MonitorPollScheduleCard
-            title="API 请求频率预估（动态）"
-            schedule={dynamicSchedule}
-          />
+        <div className="setting-row">
+          <label className="label pt-2" htmlFor="dynamic_interval">检查间隔（秒）</label>
+          <div>
+            <input id="dynamic_interval" type="number" min={10} max={3600} className="setting-input"
+              value={settings?.dynamic_monitor_interval ?? ''} disabled={formDisabled || saving}
+              onChange={(e) => setSettings((s) => s ? { ...s, dynamic_monitor_interval: Number(e.target.value) } : s)} />
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              {settings?.dynamic_monitor_use_stagger ?? true
+                ? '期望每个 UP 主约每 N 秒检查一次，分散检查的单次间隔不低于 3 秒。'
+                : '每 N 秒依次检查全部 UP 主；订阅较多时可能短时集中请求 API。'}
+            </p>
+          </div>
+        </div>
+        <SettingToggleRow label="启用分散检查（推荐）" checked={settings?.dynamic_monitor_use_stagger ?? true}
+          disabled={formDisabled || saving} onChange={(checked) => setSettings((s) => s ? { ...s, dynamic_monitor_use_stagger: checked } : s)} />
+        <SettingToggleRow label="启用动态图片" checked={settings?.dynamic_enable_screenshot ?? false}
+          disabled={formDisabled || saving} onChange={(checked) => setSettings((s) => s ? { ...s, dynamic_enable_screenshot: checked } : s)} />
+        {settings?.dynamic_enable_screenshot ? (
+          <ChoiceCardGroup label="动态图片模式" value={settings?.dynamic_image_mode ?? 'screenshot'} disabled={formDisabled || saving}
+            onChange={(value) => setSettings((s) => s ? { ...s, dynamic_image_mode: value } : s)}
+            options={[
+              { value: 'screenshot', label: '网页截图', description: '保留动态网页原貌，通过浏览器截图。', icon: <Icon name="desktop" className="size-5" /> },
+              { value: 'card', label: '莫奈卡片', description: '直接绘制动态内容，无需访问网页。', icon: <Icon name="paint" className="size-5" /> },
+            ]} />
         ) : null}
-        <div className="divide-y divide-border border-t border-border pt-1">
-          <SettingToggleRow
-            label="启用分散检查（推荐）"
-            checked={settings?.dynamic_monitor_use_stagger ?? true}
-            disabled={formDisabled || saving}
-            onChange={(checked) =>
-              setSettings((s) =>
-                s ? { ...s, dynamic_monitor_use_stagger: checked } : s,
-              )
-            }
-          />
-          <SettingToggleRow
-            label="启用动态截图（Playwright）"
-            checked={settings?.dynamic_enable_screenshot ?? false}
-            disabled={formDisabled || saving}
-            onChange={(checked) =>
-              setSettings((s) => (s ? { ...s, dynamic_enable_screenshot: checked } : s))
-            }
-          />
-        </div>
-      </div>
-
-      <div className="card space-y-4">
-        <h3 className="font-semibold text-foreground">直播监控</h3>
-        <div className="max-w-xs">
-          <label className="label" htmlFor="live_interval">
-            检查间隔（秒）
-          </label>
-          <input
-            id="live_interval"
-            type="number"
-            min={30}
-            max={3600}
-            className="input"
-            value={settings?.live_monitor_interval ?? ''}
-            disabled={formDisabled}
-            onChange={(e) =>
-              setSettings((s) =>
-                s ? { ...s, live_monitor_interval: Number(e.target.value) } : s,
-              )
-            }
-          />
-          <p className="mt-1 text-xs text-muted-foreground">
-            启用 WebSocket 时此间隔主要影响 API 备用轮询；未启用时即为批量轮询周期。
-          </p>
-        </div>
-        {liveSchedule ? (
-          <MonitorPollScheduleCard title="API 请求频率预估（直播）" schedule={liveSchedule} />
+        {settings?.dynamic_enable_screenshot && (settings.dynamic_image_mode ?? 'screenshot') === 'card' ? (
+          <div>
+            <ChoiceCardGroup label="卡片取色来源" value={settings?.dynamic_card_color_source ?? 'avatar'} disabled={formDisabled || saving}
+              onChange={(value) => setSettings((s) => s ? { ...s, dynamic_card_color_source: value } : s)}
+              options={[
+                { value: 'avatar', label: '作者头像', description: '始终使用作者头像生成配色。', icon: <Icon name="user" className="size-5" /> },
+                { value: 'image', label: '动态配图', description: '优先第一张配图，无配图时使用头像。', icon: <Icon name="photo" className="size-5" /> },
+              ]} />
+            <p className="mt-2 text-xs text-muted-foreground">所选取色素材不可用时使用默认紫色；图片生成失败时发送文字与原图。</p>
+          </div>
         ) : null}
-        <div className="divide-y divide-border border-t border-border pt-1">
-          <SettingToggleRow
-            label="通知包含详细房间信息"
-            checked={settings?.live_monitor_include_info ?? false}
-            disabled={formDisabled || saving}
-            onChange={(checked) =>
-              setSettings((s) => (s ? { ...s, live_monitor_include_info: checked } : s))
-            }
-          />
-          <SettingToggleRow
-            label="启用 WebSocket 实时监控"
-            checked={settings?.live_monitor_use_websocket ?? false}
-            disabled={formDisabled || saving}
-            onChange={(checked) =>
-              setSettings((s) => (s ? { ...s, live_monitor_use_websocket: checked } : s))
-            }
-          />
+        {dynamicSchedule && <MonitorPollScheduleCard compact title="API 请求频率预估（动态）" schedule={dynamicSchedule} />}
+      </section>
+      <section className="card space-y-6" aria-labelledby="live-heading">
+        <div>
+          <h3 id="live-heading" className="text-lg font-semibold text-foreground">直播监控</h3>
+          <p className="mt-1 text-sm text-muted-foreground">监控 B 站直播开播状态，并推送实时通知。</p>
         </div>
-      </div>
-
-      <button type="submit" className="btn-primary" disabled={saving || formDisabled}>
-        {saving ? '保存中…' : '保存设置'}
-      </button>
+        <div className="setting-row">
+          <label className="label pt-2" htmlFor="live_interval">检查间隔（秒）</label>
+          <div>
+            <input id="live_interval" type="number" min={30} max={3600} className="setting-input"
+              value={settings?.live_monitor_interval ?? ''} disabled={formDisabled || saving}
+              onChange={(e) => setSettings((s) => s ? { ...s, live_monitor_interval: Number(e.target.value) } : s)} />
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">启用 WebSocket 时此间隔影响 API 备用轮询；未启用时为批量轮询周期。</p>
+          </div>
+        </div>
+        <SettingToggleRow label="WebSocket 实时监控" checked={settings?.live_monitor_use_websocket ?? false}
+          disabled={formDisabled || saving} onChange={(checked) => setSettings((s) => s ? { ...s, live_monitor_use_websocket: checked } : s)} />
+        <SettingToggleRow label="通知包含房间信息" checked={settings?.live_monitor_include_info ?? false}
+          disabled={formDisabled || saving} onChange={(checked) => setSettings((s) => s ? { ...s, live_monitor_include_info: checked } : s)} />
+        {liveSchedule && <MonitorPollScheduleCard compact title="API 请求频率预估（直播）" schedule={liveSchedule} />}
+      </section>
+      <button type="submit" className="settings-save" disabled={saving || formDisabled}>{saving ? '保存中…' : '保存设置'}</button>
     </form>
   )
 }
@@ -239,7 +195,7 @@ export function SettingsXMonitorPage() {
   }, [xTargetCount, settings?.x_monitor_interval, settings?.x_monitor_use_stagger])
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form id="monitor-settings" onSubmit={handleSubmit} className="space-y-6">
       <div className="card space-y-4">
         <h3 className="font-semibold text-foreground">X 监控</h3>
         <div className="max-w-xs">
@@ -283,7 +239,7 @@ export function SettingsXMonitorPage() {
         </div>
       </div>
 
-      <button type="submit" className="btn-primary" disabled={saving || formDisabled}>
+      <button type="submit" className="settings-save" disabled={saving || formDisabled}>
         {saving ? '保存中…' : '保存设置'}
       </button>
     </form>

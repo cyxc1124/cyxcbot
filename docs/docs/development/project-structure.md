@@ -38,7 +38,7 @@ cyxcbot/
 
 ### `admin/`
 
-FastAPI 应用，提供 Web Admin REST API 与 WebSocket 日志推送。启动逻辑在 `admin/startup.py`。
+FastAPI 应用，提供 Web Admin REST API 与 SSE 日志推送。启动逻辑在 `admin/startup.py`。
 
 ### `shared/`
 

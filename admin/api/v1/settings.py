@@ -48,6 +48,11 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
     svc = get_config_service()
     updates: dict[str, str] = {}
 
+    for key in ("log_level", "log_file_level"):
+        value = getattr(body, key)
+        if value is not None:
+            updates[key] = value
+
     if body.dynamic_monitor_interval is not None:
         updates["dynamic_monitor_interval"] = str(body.dynamic_monitor_interval)
     if body.dynamic_monitor_use_stagger is not None:
@@ -58,6 +63,10 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         updates["dynamic_enable_screenshot"] = str(
             body.dynamic_enable_screenshot
         ).lower()
+    if body.dynamic_image_mode is not None:
+        updates["dynamic_image_mode"] = body.dynamic_image_mode
+    if body.dynamic_card_color_source is not None:
+        updates["dynamic_card_color_source"] = body.dynamic_card_color_source
     for key in MESSAGE_TEMPLATE_KEYS:
         value = getattr(body, key, None)
         if value is not None:

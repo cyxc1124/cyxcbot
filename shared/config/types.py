@@ -33,12 +33,15 @@ from shared.config.x_link_parser_policy import (
     XLinkParserGroupPolicyRecord,
     XLinkParserUserPolicyRecord,
 )
+from shared.logging.levels import LogLevel
 
 
 @dataclass
 class AppConfigSnapshot:
     """Full application configuration snapshot loaded from DB."""
 
+    log_level: LogLevel = "INFO"
+    log_file_level: LogLevel = "INFO"
     dynamic_monitor_mapping: Dict[str, List[str]] = field(default_factory=dict)
     dynamic_monitor_user_mapping: Dict[str, List[str]] = field(default_factory=dict)
     dynamic_subscription_mapping: Dict[str, List[str]] = field(default_factory=dict)
@@ -49,6 +52,8 @@ class AppConfigSnapshot:
     dynamic_monitor_interval: int = 30
     dynamic_monitor_use_stagger: bool = True
     dynamic_enable_screenshot: bool = True
+    dynamic_image_mode: str = "screenshot"
+    dynamic_card_color_source: str = "avatar"
     dynamic_message_templates: DynamicMessageTemplates = field(
         default_factory=DynamicMessageTemplates
     )

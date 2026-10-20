@@ -7,12 +7,12 @@
 - 监听 `on_message(priority=4, block=False)`（与 B 站链接解析同级，互不 `block`）
 - 策略默认关闭；仅当群 / 好友在 Web Admin「抖音链接」中开启后生效
 - 须先开启该会话的「群消息」/「好友消息」总开关。官方 QQ 缓存会话即使没有 OneBot 连接也可配置；OneBot 列表不可用或不完整时，数字 QQ 策略只读，未知 OpenID 不可配置。
-- Cookie 独立于 B 站（设置 → 抖音账号）；**非硬性必填**，对齐 douyin-downloader：缺省仅 warning，仍尝试游客态；建议配置 `ttwid` / `odin_tt` / `passport_csrf_token` / `UIFID`（`msToken` 可缺省自动生成）。详情接口经 Argus 网关，缺 `UIFID` 会 403。
+- Cookie 独立于 B 站（抖音 → 账号）；**非硬性必填**，对齐 douyin-downloader：缺省仅 warning，仍尝试游客态；建议配置 `ttwid` / `odin_tt` / `passport_csrf_token` / `UIFID`（`msToken` 可缺省自动生成）。详情接口经 Argus 网关，缺 `UIFID` 会 403。
 - 支持 `aweme_type` 视频（0/4）与图集（2/68）；Live Photo 取 `images[].video.play_addr` 以视频发送
 - 文案模板键：`link_template_douyin`（占位符：`{video}` `{title}` `{author}` `{url}` `{aweme_id}`；`{video}` 会展开为全部图片/视频段）
 - 含视频段时拆开发送（先媒体后文案）：QQ 同条混排 video 时常吞掉文字
 - 图集图片过多时按批发送（每条最多 10 张），避免 QQ NT `sendMsg result=34`
-- 媒体写入「设置 → 机器人」的共享媒体目录并以 `file://` 发送（与 B 站一致；上限 1024MB）
+- 媒体写入「系统 → 高级配置」的共享媒体目录并以 `file://` 发送（与 B 站一致；上限 1024MB）
 
 ## 官方 QQ Bot
 
@@ -28,8 +28,8 @@
 |------|------|
 | 群管理 → 抖音链接 | 按群开关 |
 | 好友管理 → 抖音链接 | 按好友开关 |
-| 设置 → 抖音账号 | 扫码登录（Playwright，对齐 douyin_parse）或粘贴 Cookie |
-| 设置 → 机器人 → 链接解析共享媒体目录 | 与协议端同路径可见；空则平台默认 |
+| 抖音 → 账号 | 扫码登录（Playwright，对齐 douyin_parse）或粘贴 Cookie |
+| 系统 → 高级配置 → 链接解析共享媒体目录 | 与协议端同路径可见；空则平台默认 |
 
 ## 实现
 

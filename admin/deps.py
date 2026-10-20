@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from hashlib import sha256
 from typing import Annotated, Optional
 
 from fastapi import Depends, HTTPException, Request, status
@@ -10,6 +11,7 @@ from nonebot_plugin_orm import get_session
 from sqlalchemy import func, select
 
 from admin.auth.jwt import decode_access_token
+from admin.auth.session import SESSION_COOKIE, require_browser_session
 from shared.db.models import User
 
 security = HTTPBearer(auto_error=False)
@@ -19,12 +21,18 @@ async def get_current_user(
     request: Request,
     credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(security)],
 ) -> User:
-    if credentials is None or not credentials.credentials:
+    if "Authorization" in request.headers:
+        token = credentials.credentials if credentials else None
+    else:
+        token = request.cookies.get(SESSION_COOKIE)
+        if token:
+            require_browser_session(request)
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
         )
 
-    payload = decode_access_token(credentials.credentials)
+    payload = decode_access_token(token)
     if not payload or "sub" not in payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
@@ -37,6 +45,14 @@ async def get_current_user(
             if not user:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
+                )
+            if (
+                payload.get("pwd")
+                != sha256(user.password_hash.encode("utf-8")).hexdigest()
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Password changed, please log in again",
                 )
             # Detach scalars before session closes
             await session.refresh(user)
