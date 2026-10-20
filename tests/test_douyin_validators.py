@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import Mock
+
 import pytest
 
 from utils.douyin_api.cookies import validate_cookie_header, validate_cookies
@@ -121,3 +123,40 @@ def test_is_watermarked_and_candidates_prefer_direct_cdn():
     candidates = build_video_url_candidates(_FakeClient(), aweme)  # type: ignore[arg-type]
     assert candidates
     assert candidates[0][0].startswith("https://v3-dy.douyinvod.com/")
+
+
+@pytest.mark.parametrize("watermark", [0, 1])
+@pytest.mark.parametrize(
+    ("authority", "should_sign"),
+    [
+        ("douyin.com", True),
+        ("www.douyin.com", True),
+        ("WWW.DOUYIN.COM:443", True),
+        ("user@www.douyin.com:443", True),
+        ("iesdouyin.com", True),
+        ("v.iesdouyin.com", True),
+        ("notdouyin.com", False),
+        ("notiesdouyin.com", False),
+        ("douyin.com.evil.invalid", False),
+        ("douyin.com@evil.invalid", False),
+        ("evil.invalid@notdouyin.com", False),
+        ("v3-dy.douyinvod.com", False),
+    ],
+)
+def test_video_candidates_sign_only_douyin_hosts(
+    monkeypatch: pytest.MonkeyPatch, authority: str, should_sign: bool, watermark: int
+):
+    client = _FakeClient()
+    sign_url = Mock(wraps=client.sign_url)
+    monkeypatch.setattr(client, "sign_url", sign_url)
+    url = f"https://{authority}/aweme/v1/play/?video_id=v123&watermark={watermark}"
+    aweme = {"video": {"play_addr": {"url_list": [url]}}}
+
+    candidates = build_video_url_candidates(client, aweme)  # type: ignore[arg-type]
+
+    expected_url = f"{url}&X-Bogus=fake" if should_sign else url
+    assert [candidate[0] for candidate in candidates] == [expected_url]
+    if should_sign:
+        sign_url.assert_called_once_with(url)
+    else:
+        sign_url.assert_not_called()

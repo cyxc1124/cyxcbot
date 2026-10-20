@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 from .client import DouyinAPIClient
 from .cookie_utils import cookie_header
+from .validators import _is_douyin_web_host
 
 _PLAY_ADDR_KEYS = (
     "play_addr_h264",
@@ -171,7 +172,7 @@ def _partition_video_candidates(
 
     for candidate in url_candidates:
         is_watermarked = is_watermarked_media_url(candidate)
-        if urlparse(candidate).netloc.endswith("douyin.com"):
+        if _is_douyin_web_host(urlparse(candidate).hostname or ""):
             if is_watermarked:
                 if watermarked is None:
                     watermarked = _sign_play_candidate(api_client, candidate)
