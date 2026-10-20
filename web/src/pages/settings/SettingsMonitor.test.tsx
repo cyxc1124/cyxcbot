@@ -19,10 +19,10 @@ function elements(node: ReactNode): Record<string, unknown>[] {
     ? [child.props, ...elements(child.props.children as ReactNode)] : [])
 }
 
-function setup(mode: 'card' | 'screenshot' = 'card', stagger = true) {
+function setup(mode: 'card' | 'screenshot' = 'card', stagger = true, imagesEnabled = true) {
   const settings = {
     dynamic_image_mode: mode, dynamic_card_color_source: 'image',
-    dynamic_monitor_interval: 30, dynamic_monitor_use_stagger: stagger, dynamic_enable_screenshot: true,
+    dynamic_monitor_interval: 30, dynamic_monitor_use_stagger: stagger, dynamic_enable_screenshot: imagesEnabled,
     live_monitor_interval: 60, live_monitor_use_websocket: true, live_monitor_include_info: true,
   } as Settings
   const context = { settings, setSettings: vi.fn(), formDisabled: false, saving: false, savePartial: vi.fn() }
@@ -49,6 +49,26 @@ describe('monitor card choices', () => {
     const html = renderToStaticMarkup(page)
     expect(html).not.toContain('卡片取色来源')
     expect(html.match(/type="radio"/g)).toHaveLength(2)
+  })
+
+  it.each(['card', 'screenshot'] as const)('hides image choices when images are disabled in %s mode', (mode) => {
+    const { settings, context, page } = setup(mode, true, false)
+    const html = renderToStaticMarkup(page)
+    expect(html).not.toContain('动态图片模式')
+    expect(html).not.toContain('卡片取色来源')
+    expect(html).not.toContain('type="radio"')
+    page.props.onSubmit({ preventDefault: vi.fn() } as unknown as FormEvent)
+    expect(context.savePartial).toHaveBeenCalledWith(settings)
+  })
+
+  it('defaults an unset palette source to the author avatar when displaying and saving', () => {
+    const { settings, context } = setup()
+    delete settings.dynamic_card_color_source
+    const page = SettingsBilibiliMonitorPage()
+    const choice = elements(page).find((props) => props.label === '卡片取色来源')!
+    expect(choice.value).toBe('avatar')
+    page.props.onSubmit({ preventDefault: vi.fn() } as unknown as FormEvent)
+    expect(context.savePartial).toHaveBeenCalledWith({ ...settings, dynamic_card_color_source: 'avatar' })
   })
 
   it('describes the actual polling strategy when staggered checks are disabled', () => {

@@ -1740,7 +1740,10 @@ async def test_parent_binding_enable_checks_existing_custom_grammar(
         assert saved.enabled
 
 
-async def test_dynamic_image_mode_settings_round_trip(db_context, monkeypatch):
+@pytest.mark.parametrize("color_source", ["image", "avatar"])
+async def test_dynamic_image_mode_settings_round_trip(
+    db_context, monkeypatch, color_source
+):
     from admin.api.v1 import settings as settings_api
     from admin.schemas.settings import SettingsUpdateRequest
 
@@ -1748,18 +1751,20 @@ async def test_dynamic_image_mode_settings_round_trip(db_context, monkeypatch):
     service = ConfigService()
     monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
     monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    assert service.get_snapshot().dynamic_card_color_source == "avatar"
     snapshot = await service.load()
     assert snapshot.dynamic_image_mode == "screenshot"
-    assert snapshot.dynamic_card_color_source == "image"
+    assert snapshot.dynamic_card_color_source == "avatar"
+    assert (await settings_api.get_settings(None)).dynamic_card_color_source == "avatar"
     result = await settings_api.update_settings(
         SettingsUpdateRequest(
-            dynamic_image_mode="card", dynamic_card_color_source="avatar"
+            dynamic_image_mode="card", dynamic_card_color_source=color_source
         ),
         None,
     )
     assert result.dynamic_image_mode == "card"
-    assert result.dynamic_card_color_source == "avatar"
+    assert result.dynamic_card_color_source == color_source
     snapshot = await service.load()
     assert snapshot.dynamic_image_mode == "card"
-    assert snapshot.dynamic_card_color_source == "avatar"
+    assert snapshot.dynamic_card_color_source == color_source
     assert service.get_snapshot().dynamic_enable_screenshot is True

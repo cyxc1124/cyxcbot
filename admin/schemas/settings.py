@@ -48,7 +48,7 @@ class SettingsResponse(BaseModel):
     dynamic_monitor_interval: int
     dynamic_monitor_use_stagger: bool = True
     dynamic_image_mode: Literal["screenshot", "card"] = "screenshot"
-    dynamic_card_color_source: Literal["image", "avatar"] = "image"
+    dynamic_card_color_source: Literal["image", "avatar"] = "avatar"
     dynamic_enable_screenshot: bool
     dynamic_template_push: str = Field(
         default=DYNAMIC_TEMPLATE_KEYS["dynamic_template_push"]

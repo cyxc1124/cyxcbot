@@ -48,7 +48,7 @@ export function SettingsBilibiliMonitorPage() {
       dynamic_monitor_use_stagger: settings.dynamic_monitor_use_stagger,
       dynamic_enable_screenshot: settings.dynamic_enable_screenshot,
       dynamic_image_mode: settings.dynamic_image_mode ?? 'screenshot',
-      dynamic_card_color_source: settings.dynamic_card_color_source ?? 'image',
+      dynamic_card_color_source: settings.dynamic_card_color_source ?? 'avatar',
       live_monitor_interval: settings.live_monitor_interval,
       live_monitor_include_info: settings.live_monitor_include_info,
       live_monitor_use_websocket: settings.live_monitor_use_websocket,
@@ -118,23 +118,25 @@ export function SettingsBilibiliMonitorPage() {
           disabled={formDisabled || saving} onChange={(checked) => setSettings((s) => s ? { ...s, dynamic_monitor_use_stagger: checked } : s)} />
         <SettingToggleRow label="启用动态图片" checked={settings?.dynamic_enable_screenshot ?? false}
           disabled={formDisabled || saving} onChange={(checked) => setSettings((s) => s ? { ...s, dynamic_enable_screenshot: checked } : s)} />
-        <ChoiceCardGroup label="动态图片模式" value={settings?.dynamic_image_mode ?? 'screenshot'} disabled={formDisabled || saving}
-          onChange={(value) => setSettings((s) => s ? { ...s, dynamic_image_mode: value } : s)}
-          options={[
-            { value: 'screenshot', label: '网页截图', description: '保留动态网页原貌，通过浏览器截图。', icon: <Icon name="desktop" className="size-5" /> },
-            { value: 'card', label: '莫奈卡片', description: '直接绘制动态内容，无需访问网页。', icon: <Icon name="paint" className="size-5" /> },
-          ]} />
-        {(settings?.dynamic_image_mode ?? 'screenshot') === 'card' && (
+        {settings?.dynamic_enable_screenshot ? (
+          <ChoiceCardGroup label="动态图片模式" value={settings?.dynamic_image_mode ?? 'screenshot'} disabled={formDisabled || saving}
+            onChange={(value) => setSettings((s) => s ? { ...s, dynamic_image_mode: value } : s)}
+            options={[
+              { value: 'screenshot', label: '网页截图', description: '保留动态网页原貌，通过浏览器截图。', icon: <Icon name="desktop" className="size-5" /> },
+              { value: 'card', label: '莫奈卡片', description: '直接绘制动态内容，无需访问网页。', icon: <Icon name="paint" className="size-5" /> },
+            ]} />
+        ) : null}
+        {settings?.dynamic_enable_screenshot && (settings.dynamic_image_mode ?? 'screenshot') === 'card' ? (
           <div>
-            <ChoiceCardGroup label="卡片取色来源" value={settings?.dynamic_card_color_source ?? 'image'} disabled={formDisabled || saving}
+            <ChoiceCardGroup label="卡片取色来源" value={settings?.dynamic_card_color_source ?? 'avatar'} disabled={formDisabled || saving}
               onChange={(value) => setSettings((s) => s ? { ...s, dynamic_card_color_source: value } : s)}
               options={[
-                { value: 'image', label: '动态配图', description: '优先第一张配图，无配图时使用头像。', icon: <Icon name="photo" className="size-5" /> },
                 { value: 'avatar', label: '作者头像', description: '始终使用作者头像生成配色。', icon: <Icon name="user" className="size-5" /> },
+                { value: 'image', label: '动态配图', description: '优先第一张配图，无配图时使用头像。', icon: <Icon name="photo" className="size-5" /> },
               ]} />
             <p className="mt-2 text-xs text-muted-foreground">所选取色素材不可用时使用默认紫色；图片生成失败时发送文字与原图。</p>
           </div>
-        )}
+        ) : null}
         {dynamicSchedule && <MonitorPollScheduleCard compact title="API 请求频率预估（动态）" schedule={dynamicSchedule} />}
       </section>
       <section className="card space-y-6" aria-labelledby="live-heading">

@@ -27,7 +27,7 @@ class Config(BaseModel):
     )
 
     image_mode: Literal["screenshot", "card"] = "screenshot"
-    card_color_source: Literal["image", "avatar"] = "image"
+    card_color_source: Literal["image", "avatar"] = "avatar"
 
     enable_screenshot: bool = Field(
         default=True, description="是否在推送消息中包含动态图片（网页截图或卡片）"
