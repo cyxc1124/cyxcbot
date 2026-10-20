@@ -58,6 +58,8 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         updates["dynamic_enable_screenshot"] = str(
             body.dynamic_enable_screenshot
         ).lower()
+    if body.dynamic_image_mode is not None:
+        updates["dynamic_image_mode"] = body.dynamic_image_mode
     for key in MESSAGE_TEMPLATE_KEYS:
         value = getattr(body, key, None)
         if value is not None:

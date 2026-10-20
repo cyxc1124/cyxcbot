@@ -1738,3 +1738,20 @@ async def test_parent_binding_enable_checks_existing_custom_grammar(
         )
         assert saved.alias == "rcon2"
         assert saved.enabled
+
+
+async def test_dynamic_image_mode_settings_round_trip(db_context, monkeypatch):
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+
+    _, factory, ConfigService, *_ = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    assert (await service.load()).dynamic_image_mode == "screenshot"
+    result = await settings_api.update_settings(
+        SettingsUpdateRequest(dynamic_image_mode="card"), None
+    )
+    assert result.dynamic_image_mode == "card"
+    assert (await service.load()).dynamic_image_mode == "card"
+    assert service.get_snapshot().dynamic_enable_screenshot is True

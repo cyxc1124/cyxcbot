@@ -53,6 +53,7 @@ export function SettingsBilibiliMonitorPage() {
       dynamic_monitor_interval: settings.dynamic_monitor_interval,
       dynamic_monitor_use_stagger: settings.dynamic_monitor_use_stagger,
       dynamic_enable_screenshot: settings.dynamic_enable_screenshot,
+      dynamic_image_mode: settings.dynamic_image_mode ?? 'screenshot',
       live_monitor_interval: settings.live_monitor_interval,
       live_monitor_include_info: settings.live_monitor_include_info,
       live_monitor_use_websocket: settings.live_monitor_use_websocket,
@@ -132,6 +133,18 @@ export function SettingsBilibiliMonitorPage() {
             schedule={dynamicSchedule}
           />
         ) : null}
+        <div className="max-w-xs">
+          <label className="label" htmlFor="dynamic_image_mode">动态图片模式</label>
+          <select id="dynamic_image_mode" className="input"
+            value={settings?.dynamic_image_mode ?? 'screenshot'} disabled={formDisabled || saving}
+            onChange={(e) => setSettings((s) => s ? {
+              ...s, dynamic_image_mode: e.target.value as 'screenshot' | 'card',
+            } : s)}>
+            <option value="screenshot">网页截图（Playwright）</option>
+            <option value="card">莫奈卡片（由深到浅）</option>
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">卡片使用 API 内容绘制；图片生成失败时发送文字与原图。</p>
+        </div>
         <div className="divide-y divide-border border-t border-border pt-1">
           <SettingToggleRow
             label="启用分散检查（推荐）"
@@ -144,7 +157,7 @@ export function SettingsBilibiliMonitorPage() {
             }
           />
           <SettingToggleRow
-            label="启用动态截图（Playwright）"
+            label="启用动态图片"
             checked={settings?.dynamic_enable_screenshot ?? false}
             disabled={formDisabled || saving}
             onChange={(checked) =>

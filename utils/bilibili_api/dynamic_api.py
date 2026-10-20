@@ -345,7 +345,9 @@ class DynamicFetcher:
             author_type = author_info.get("type", "AUTHOR_TYPE_NORMAL")
 
             # 提取时间戳
-            timestamp = item.get("pub_ts", int(time.time()))
+            timestamp = author_module.get("pub_ts") or item.get(
+                "pub_ts", int(time.time())
+            )
 
             # 提取动态类型 - 只需基本类型信息用于描述
             bili_dynamic_type = item.get("type", "DYNAMIC_TYPE_WORD")
@@ -437,6 +439,16 @@ class DynamicFetcher:
                 author_type=author_type,
                 is_pinned=is_pinned,
                 live_room_id=live_room_id,
+                avatar=author_info.get("face") or author_module.get("face", ""),
+                forward_text=(
+                    self._extract_text_from_module_dynamic(module_dynamic)[0]
+                    if bili_dynamic_type == "DYNAMIC_TYPE_FORWARD"
+                    else ""
+                ),
+                stats={
+                    key: (modules.get("module_stat", {}).get(key) or {}).get("count", 0)
+                    for key in ("like", "comment", "forward")
+                },
             )
 
             if live_room_id:

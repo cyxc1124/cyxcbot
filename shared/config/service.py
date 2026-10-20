@@ -84,6 +84,7 @@ SETTING_KEYS = {
     "dynamic_monitor_interval": ("30", int),
     "dynamic_monitor_use_stagger": ("true", bool),
     "dynamic_enable_screenshot": ("true", bool),
+    "dynamic_image_mode": ("screenshot", str),
     "live_monitor_interval": ("60", int),
     "live_monitor_include_info": ("true", bool),
     "live_monitor_use_websocket": ("true", bool),
@@ -291,6 +292,7 @@ class ConfigService:
                 "dynamic_monitor_use_stagger", True
             ),
             dynamic_enable_screenshot=settings.get("dynamic_enable_screenshot", True),
+            dynamic_image_mode=settings.get("dynamic_image_mode", "screenshot"),
             dynamic_message_templates=dynamic_templates_from_settings(settings),
             live_monitor_mapping=live_mapping,
             live_monitor_user_mapping=live_user_mapping,
@@ -1083,6 +1085,7 @@ class ConfigService:
             "dynamic_monitor_interval": snap.dynamic_monitor_interval,
             "dynamic_monitor_use_stagger": snap.dynamic_monitor_use_stagger,
             "dynamic_enable_screenshot": snap.dynamic_enable_screenshot,
+            "dynamic_image_mode": snap.dynamic_image_mode,
             "dynamic_template_push": dt.push,
             "dynamic_template_pinned": dt.pinned,
             "dynamic_template_query_latest": dt.query_latest,

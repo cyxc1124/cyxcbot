@@ -34,3 +34,7 @@ plugins/dynamic_monitor/
 ```
 
 B 站 API 封装见 `utils/bilibili_api/`；截图见 `utils/screenshot/`。
+
+## 图片模式
+
+设置 → B 站 → 监控参数可选择网页截图（默认）或莫奈卡片。卡片直接绘制 API 内容，以配图/头像提取 HCT 主题色，背景由深到浅；最多 6000 字、9 张图，完整内容见二维码。模式支持热重载并应用于推送和查询，失败时发送文字与原图。卡片渲染入口：`utils/dynamic_card.py`。
