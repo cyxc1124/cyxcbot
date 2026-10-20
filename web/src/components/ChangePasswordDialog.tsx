@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
-import { ApiClientError, putPassword, setToken } from '../api/client'
+import { ApiClientError, putPassword } from '../api/client'
 import { useToast } from '../contexts/ToastContext'
 import { acceptPasswordInput, getPasswordValidationError, MIN_PASSWORD_LENGTH } from '../utils/password'
 import { PasswordInput } from './PasswordInput'
@@ -36,8 +36,7 @@ export function ChangePasswordDialog({ username, onClose }: { username: string; 
     }
     setLoading(true)
     try {
-      const { access_token } = await putPassword({ current_password: currentPassword, new_password: newPassword })
-      setToken(access_token)
+      await putPassword({ current_password: currentPassword, new_password: newPassword })
       showToast('success', '密码修改成功，其他登录已失效')
       dialogRef.current?.close()
     } catch (err) {

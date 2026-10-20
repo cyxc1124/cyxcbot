@@ -3,19 +3,19 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
 import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
 import { useMountAsync } from '../hooks/useMountAsync'
 import {
-  clearToken,
+  clearLegacyToken,
   getMe,
   getSetupStatus,
-  getToken,
   postLogin,
+  postLogout,
   postSetup,
-  setToken,
 } from '../api/client'
 import type { LoginRequest, SetupRequest, User } from '../api/types'
 import { getInitErrorOnRefreshFailure } from './authRefresh'
@@ -32,7 +32,7 @@ interface AuthContextValue extends AuthState {
   refresh: () => Promise<void>
   login: (data: LoginRequest) => Promise<void>
   setup: (data: SetupRequest) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -42,14 +42,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [initError, setInitError] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useLoadingOnKeyChange('auth')
+  const authOperation = useRef(0)
 
   const refresh = useCallback(async () => {
+    const operation = ++authOperation.current
+    clearLegacyToken()
     setLoading(true)
     setInitError(null)
     let setupKnown = false
 
     try {
       const status = await getSetupStatus()
+      if (operation !== authOperation.current) return
       setInitialized(status.initialized)
       setupKnown = true
 
@@ -58,46 +62,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      const token = getToken()
-      if (!token) {
-        setUser(null)
-        return
-      }
-
       const me = await getMe()
-      setUser(me)
+      if (operation === authOperation.current) setUser(me)
     } catch (err) {
+      if (operation !== authOperation.current) return
       setUser(null)
       const errorMessage = getInitErrorOnRefreshFailure(setupKnown, err)
       if (errorMessage) {
         setInitError(errorMessage)
       }
     } finally {
-      setLoading(false)
+      if (operation === authOperation.current) setLoading(false)
     }
   }, [setLoading])
 
   useMountAsync(refresh)
 
   const login = useCallback(async (data: LoginRequest) => {
-    const { access_token } = await postLogin(data)
-    setToken(access_token)
+    const operation = ++authOperation.current
+    await postLogin(data)
     const me = await getMe()
+    if (operation !== authOperation.current) return
     setUser(me)
     setInitialized(true)
   }, [])
 
   const setup = useCallback(async (data: SetupRequest) => {
-    const { access_token } = await postSetup(data)
-    setToken(access_token)
+    const operation = ++authOperation.current
+    await postSetup(data)
     const me = await getMe()
+    if (operation !== authOperation.current) return
     setUser(me)
     setInitialized(true)
   }, [])
 
-  const logout = useCallback(() => {
-    clearToken()
-    setUser(null)
+  const logout = useCallback(async () => {
+    const operation = ++authOperation.current
+    await postLogout()
+    if (operation === authOperation.current) setUser(null)
   }, [])
 
   const value = useMemo<AuthContextValue>(

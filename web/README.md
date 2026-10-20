@@ -48,6 +48,8 @@ npm run build
 
 右上角账户菜单显示用户名和角色，提供「修改密码」与「退出登录」；手机端点击用户图标展开。修改密码须验证当前密码并重复输入新密码，新密码至少 8 个字符且不超过 72 个 UTF-8 字节。成功后当前浏览器更新登录凭据，其他旧凭据在下一次请求时失效。更新到包含此功能的版本后，原有登录需重新登录一次。
 
+Web 登录凭据使用仅限当前主机、`HttpOnly`、`SameSite=Strict` 的 Cookie，作用于 `/api/v1`；前端不读取 JWT，也不将其保存到 localStorage 或 sessionStorage。升级时清理旧的浏览器令牌，需要重新登录一次；刷新页面会通过 Cookie 恢复会话，退出登录会由服务端清除 Cookie。HTTPS 请求及浏览器以 HTTPS 访问的反向代理使用 Secure Cookie；直接 HTTP 访问仍可用，公网部署应使用 HTTPS。API 必须与页面同源访问，Vite 的 `/api` 代理保留原始 Host；Cookie 请求还要求专用请求头并拒绝跨源请求，CORS 不允许携带浏览器凭据。独立 API 客户端仍可通过原有登录/初始化接口获取 JSON 令牌，再使用 `Authorization: Bearer …`，无需使用 Cookie。用于识别会话更新的浏览器标记不包含凭据。
+
 功能模式采用原生单选按钮语义的卡片选项，支持 Tab 聚焦和方向键切换：动态图片模式、卡片取色来源、官方 Bot 接入方式、X 代理协议共用同一组件。开启「启用动态图片」后才显示动态图片模式，选择莫奈卡片后再显示取色来源，默认使用作者头像；关闭动态图片会保留已选模式与取色来源，已有的明确取色选择不受默认值变更影响。启用/停用继续使用开关；目标、筛选等数据选择保留原有控件。设置表单统一在内容末尾保存，桌面与手机使用相同入口。
 
 ## 功能分组与页面路由
@@ -81,7 +83,7 @@ npm run build
 | `/bilibili/parser`、`/x/parser`、`/douyin/parser` | 对应平台的群组 / 好友解析策略 |
 | `/rust/remote/servers`、`groups`、`friends`、`commands`、`custom` | Rust 远控与权限下的服务器、会话权限、命令 |
 | `/rust/players/accounts`、`/rust/players/shop` | Rust 玩家积分与绑定、积分商城 |
-| `/logs` | 实时运行日志（SSE，Bearer Token 鉴权，断线重连） |
+| `/logs` | 实时运行日志（SSE，Cookie 会话鉴权，断线重连） |
 | `/about` | 版本与构建信息 |
 
 旧版页面路径不再保留专用重定向。群组、好友页支持 `?tab=status` 等标签直达；平台解析页支持 `?scope=friends`，刷新和浏览器前进后退会保留所选视角。

@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { SidebarProvider } from '../contexts/SidebarContext'
 import { Layout } from './Layout'
 
+vi.mock('../contexts/ToastContext', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
+
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: () => ({ user: { username: 'test-admin', is_admin: true }, logout: vi.fn() }),
 }))
