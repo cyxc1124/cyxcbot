@@ -5,7 +5,7 @@ interface ToggleSwitchProps {
   ariaLabelledBy?: string
 }
 
-/** iOS-style switch: systemGreen when on, system gray track when off. */
+/** Shared switch uses the console primary color and exposes its checked state. */
 export function ToggleSwitch({ checked, onChange, disabled, ariaLabelledBy }: ToggleSwitchProps) {
   return (
     <button
@@ -18,8 +18,8 @@ export function ToggleSwitch({ checked, onChange, disabled, ariaLabelledBy }: To
         event.stopPropagation()
         if (!disabled) onChange(!checked)
       }}
-      className={`relative inline-flex h-[31px] w-[51px] shrink-0 items-center rounded-full transition-colors duration-200 ease-out focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#34C759]/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
-        checked ? 'bg-[#34C759]' : 'bg-[#E9E9EB] dark:bg-[#39393D]'
+      className={`relative inline-flex h-[31px] w-[51px] shrink-0 items-center rounded-full transition-colors duration-200 ease-out focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+        checked ? 'bg-primary' : 'bg-[#E9E9EB] dark:bg-[#39393D]'
       } ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
     >
       <span

@@ -6,6 +6,7 @@ import { getAbout } from '../api/client'
 import type { AboutInfo } from '../api/types'
 import { ThemeModeSwitch } from './ThemeModeSwitch'
 import { BotConnectionStatus } from './BotConnectionStatus'
+import { Icon, type IconName } from './Icon'
 import { AppBrand, AppFooter } from './AppBrand'
 
 type NavItem = { to: string; label: string }
@@ -47,8 +48,20 @@ const navSections: NavSection[] = [
   },
 ]
 
+function navIcon(path: string): IconName {
+  if (path === '/') return 'home'
+  if (path === '/live') return 'video'
+  if (path === '/dynamic' || path === '/x') return 'play'
+  if (path.startsWith('/templates')) return 'messages'
+  if (path === '/groups' || path === '/private') return 'users'
+  if (path === '/settings') return 'settings'
+  if (path === '/logs') return 'document'
+  if (path === '/rust-rcon') return 'command'
+  return 'info'
+}
+
 const RAIL_WIDTH_CLASS = 'w-12'
-const SIDEBAR_WIDTH_CLASS = 'w-64'
+const SIDEBAR_WIDTH_CLASS = 'w-60'
 const NAV_SECTION_COLLAPSED_KEY = 'cyxcbot.navSectionCollapsed'
 
 function pathInSection(pathname: string, items: NavItem[]): boolean {
@@ -152,10 +165,10 @@ export function Layout() {
     : SIDEBAR_WIDTH_CLASS
 
   const asideTranslateClass = navCollapsed
-    ? '-translate-x-full lg:translate-x-0'
+    ? 'invisible -translate-x-full lg:visible lg:translate-x-0'
     : sidebarOpen
       ? 'translate-x-0'
-      : '-translate-x-full lg:translate-x-0'
+      : 'invisible -translate-x-full lg:visible lg:translate-x-0'
 
   const GITHUB_REPO = 'https://github.com/cyxc1124/cyxcbot'
 
@@ -184,7 +197,7 @@ export function Layout() {
   })()
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="console-shell min-h-screen bg-background">
       {sidebarOpen && !navCollapsed && (
         <button
           type="button"
@@ -206,15 +219,16 @@ export function Layout() {
         }}
       >
         <div
-          className={`flex min-h-24 shrink-0 items-center border-b border-sidebar-border ${
+          className={`relative flex min-h-22 shrink-0 items-center border-b border-sidebar-border ${
             showFullNav ? 'gap-3 px-4 py-4' : 'justify-center px-0'
           }`}
         >
           {!showFullNav && <img src="/brand-avatar.png" alt="机器草头像" className="size-9 rounded-xl border border-border" width={36} height={36} />}
+          {showFullNav && <button type="button" aria-label={navCollapsed ? '展开导航' : '收起导航'} title={navCollapsed ? '展开导航' : '收起导航'} onClick={toggleNavCollapsed} className="btn-ghost absolute top-3 right-1 hidden min-h-7 px-1 lg:inline-flex"><Icon name="chevron-down" className="size-3 rotate-90" /></button>}
           {showFullNav && (
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
-                <AppBrand compact version={versionLine ?? undefined} />
+                <AppBrand compact version={versionLine ?? undefined} subtitle="机器人管理后台" />
                 {about?.update_available && about?.update_url && (
                   <a
                     href={about.update_url}
@@ -232,7 +246,7 @@ export function Layout() {
 
         {showFullNav ? (
           <>
-            <nav className="flex-1 space-y-2 overflow-y-auto p-4">
+            <nav className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
               {navSections.map((group) => {
                 const expanded = !collapsedSections.has(group.section)
                 const panelId = `nav-section-${group.section}`
@@ -243,16 +257,16 @@ export function Layout() {
                       onClick={() => toggleSection(group.section)}
                       aria-expanded={expanded}
                       aria-controls={panelId}
-                      className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-left text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
+                      className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
                     >
                       <span>{group.section}</span>
                       <span
                         className={`text-xs font-normal text-muted-foreground transition-transform ${
-                          expanded ? 'rotate-90' : ''
+                          expanded ? 'rotate-180' : ''
                         }`}
                         aria-hidden
                       >
-                        ›
+                        <Icon name="chevron-down" className="size-3" />
                       </span>
                     </button>
                     {expanded && (
@@ -272,7 +286,8 @@ export function Layout() {
                                 : 'nav-link text-[13px]'
                             }
                           >
-                            {item.label}
+                            <Icon name={navIcon(item.to)} className="size-5 shrink-0" />
+                            <span>{item.label}</span>
                           </NavLink>
                         ))}
                       </div>
@@ -306,14 +321,14 @@ export function Layout() {
 
       <div
         className={`flex min-h-screen flex-col transition-[padding] duration-200 ${
-          navCollapsed ? 'lg:pl-12' : 'lg:pl-64'
+          navCollapsed ? 'lg:pl-12' : 'lg:pl-60'
         }`}
       >
-        <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-2 border-b border-border bg-background/80 px-3 py-2 backdrop-blur-sm sm:px-4 lg:px-8">
+        <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-2 border-b border-transparent bg-background/95 px-3 py-2 backdrop-blur-sm sm:px-4 lg:pointer-events-none lg:bg-transparent lg:px-12 lg:backdrop-blur-none">
           <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
-              className="btn-ghost hidden text-sm lg:inline-flex"
+              className={navCollapsed ? "btn-ghost pointer-events-auto hidden text-sm lg:inline-flex" : "hidden"}
               onClick={toggleNavCollapsed}
             >
               {navCollapsed ? '展开导航' : '收起导航'}
@@ -326,13 +341,13 @@ export function Layout() {
               菜单
             </button>
           </div>
-          <div className="flex items-center gap-2 sm:gap-4">
+          <div className="pointer-events-auto flex items-center gap-2 sm:gap-4">
             <BotConnectionStatus />
             <ThemeModeSwitch />
           </div>
         </header>
 
-        <main className="flex-1 p-4 lg:p-8">
+        <main className="mx-auto w-full max-w-[1560px] min-w-0 flex-1 px-4 py-6 lg:-mt-10 lg:px-12 lg:pb-10 lg:pt-2">
           <Outlet />
         </main>
         <AppFooter />

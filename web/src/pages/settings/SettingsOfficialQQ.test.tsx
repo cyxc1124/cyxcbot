@@ -68,7 +68,9 @@ describe('official QQ 1.7.3 settings', () => {
     const html = renderToStaticMarkup(renderPage())
     expect(html).not.toContain('official-qq-sandbox-label')
     expect(html).toContain('官方 QQ 已统一 API')
-    expect(html).toContain('official-qq-websocket-label')
+    expect(html).toContain('事件接入方式')
+    expect(html).toContain('type="radio"')
+    expect(html).toContain('旧版 WebSocket')
 
     await save()
     expect(patchSettings).toHaveBeenCalledWith({
@@ -80,8 +82,8 @@ describe('official QQ 1.7.3 settings', () => {
   })
 
   it('continues to save WebSocket changes', async () => {
-    const toggle = elements(renderPage()).find((props) => props.ariaLabelledBy === 'official-qq-websocket-label')!
-    ;(toggle.onChange as (checked: boolean) => void)(true)
+    const choices = elements(renderPage()).find((props) => props.label === '事件接入方式')!
+    ;(choices.onChange as (value: string) => void)('websocket')
 
     await save()
     expect(patchSettings).toHaveBeenCalledWith({
