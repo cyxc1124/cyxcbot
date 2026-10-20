@@ -34,6 +34,7 @@ python:
     paths:
       - .cache/pip
   before_script:
+    - apt-get update && apt-get install -y --no-install-recommends fonts-noto-cjk
     - python -m pip install -r requirements.txt
   script:
     - ruff check .
