@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { applyTheme, getSavedThemeMode, initTheme, setThemeMode, subscribeThemeMode } from './theme'
+import { getSavedThemeMode, initTheme, setThemeMode, subscribeThemeMode } from './theme'
 
 let store: Map<string, string>
 let classes: Set<string>
@@ -13,11 +13,15 @@ beforeEach(() => {
   vi.stubGlobal('localStorage', {
     getItem: vi.fn((key: string) => store.get(key) ?? null),
     setItem: vi.fn((key: string, value: string) => store.set(key, value)),
+    removeItem: vi.fn((key: string) => store.delete(key)),
   })
   vi.stubGlobal('window', Object.assign(new EventTarget(), { matchMedia: vi.fn(() => media) }))
   vi.stubGlobal('document', {
     documentElement: {
-      classList: { toggle: (key: string, on: boolean) => on ? classes.add(key) : classes.delete(key) },
+      classList: {
+        toggle: (key: string, on: boolean) => on ? classes.add(key) : classes.delete(key),
+        remove: (...keys: string[]) => keys.forEach((key) => classes.delete(key)),
+      },
     },
   })
 })
@@ -56,36 +60,53 @@ describe('theme preferences', () => {
     expect(classes.has('dark')).toBe(true)
   })
 
-  it('retains the color scheme and font when changing mode and notifies controls', () => {
-    applyTheme('light', 'claude', 'system')
+  it('notifies controls and persists only the color mode', () => {
     const listener = vi.fn()
     const unsubscribe = subscribeThemeMode(listener)
     setThemeMode('dark')
-    expect(classes).toEqual(new Set(['dark', 'color-claude', 'font-system']))
-    expect(store.get('cyxcbot_color_theme')).toBe('claude')
-    expect(store.get('cyxcbot_font')).toBe('system')
+    expect(classes).toEqual(new Set(['dark']))
+    expect([...store]).toEqual([['cyxcbot_theme', 'dark']])
     expect(listener).toHaveBeenCalledOnce()
     unsubscribe()
     setThemeMode('light')
     expect(listener).toHaveBeenCalledOnce()
   })
 
-  it('refreshes from another tab without resetting its color and font', () => {
+  it('refreshes color mode from another tab', () => {
     cleanup = initTheme()
     store.set('cyxcbot_theme', 'dark')
-    store.set('cyxcbot_color_theme', 'claude')
-    store.set('cyxcbot_font', 'system')
     window.dispatchEvent(Object.assign(new Event('storage'), { key: 'cyxcbot_theme' }))
-    expect(classes).toEqual(new Set(['dark', 'color-claude', 'font-system']))
+    expect(classes).toEqual(new Set(['dark']))
+  })
+
+  it('removes obsolete preferences and classes without clearing the login or color mode', () => {
+    store.set('cyxcbot_color_theme', 'claude')
+    store.set('cyxcbot_font', 'maple')
+    store.set('cyxcbot_theme', 'dark')
+    store.set('cyxcbot_access_token', 'test-session')
+    for (const name of ['color-claude', 'color-default', 'font-maple', 'font-system', 'app-class']) classes.add(name)
+    cleanup = initTheme()
+    expect([...store]).toEqual([['cyxcbot_theme', 'dark'], ['cyxcbot_access_token', 'test-session']])
+    expect(classes).toEqual(new Set(['app-class', 'dark']))
+  })
+
+  it('ignores obsolete preference changes from an older tab', () => {
+    cleanup = initTheme()
+    vi.mocked(localStorage.getItem).mockClear()
+    window.dispatchEvent(Object.assign(new Event('storage'), { key: 'cyxcbot_color_theme' }))
+    window.dispatchEvent(Object.assign(new Event('storage'), { key: 'cyxcbot_font' }))
+    expect(localStorage.getItem).not.toHaveBeenCalled()
   })
 
   it('keeps mode switching usable when browser storage is blocked', () => {
     vi.mocked(localStorage.getItem).mockImplementation(() => { throw new Error('blocked') })
     vi.mocked(localStorage.setItem).mockImplementation(() => { throw new Error('blocked') })
-    applyTheme('dark', 'claude', 'system')
+    vi.mocked(localStorage.removeItem).mockImplementation(() => { throw new Error('blocked') })
+    setThemeMode('dark')
+    cleanup = initTheme()
     setThemeMode('light')
     expect(getSavedThemeMode()).toBe('light')
-    expect(classes).toEqual(new Set(['color-claude', 'font-system']))
+    expect(classes).toEqual(new Set())
   })
 
   it('removes system and storage listeners when disposed', () => {
