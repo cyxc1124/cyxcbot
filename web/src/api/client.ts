@@ -1,6 +1,7 @@
 import type {
   AboutInfo,
   BotConnectionsStatus,
+  ChangePasswordRequest,
   BilibiliLogoutResult,
   BilibiliQrcodeLoginResult,
   BilibiliQrcodeStart,
@@ -134,11 +135,9 @@ async function requestResponse(
     headers.set('Content-Type', 'application/json')
   }
 
-  if (auth) {
-    const token = getToken()
-    if (token) {
-      headers.set('Authorization', `Bearer ${token}`)
-    }
+  const token = auth ? getToken() : null
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`)
   }
 
   let response: Response
@@ -152,6 +151,10 @@ async function requestResponse(
   }
 
   if (response.status === 401 && auth) {
+    const currentToken = getToken()
+    if (currentToken && token !== currentToken) {
+      throw new ApiClientError('登录状态已更新，请重试', 401)
+    }
     clearToken()
     if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/setup')) {
       window.location.href = '/login'
@@ -229,6 +232,9 @@ export const postLogin = (data: LoginRequest) =>
   request<LoginResponse>('/auth/login', { method: 'POST', body: JSON.stringify(data) }, false)
 
 export const getMe = () => request<User>('/auth/me')
+
+export const putPassword = (data: ChangePasswordRequest) =>
+  request<LoginResponse>('/auth/password', { method: 'PUT', body: JSON.stringify(data) })
 
 // Settings
 export const getSettings = () => request<Settings>('/settings')

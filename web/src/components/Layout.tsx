@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { useAuth } from '../contexts/AuthContext'
 import { useSidebar } from '../contexts/SidebarContext'
 import { getAbout } from '../api/client'
 import type { AboutInfo } from '../api/types'
 import { ThemeModeSwitch } from './ThemeModeSwitch'
 import { BotConnectionStatus } from './BotConnectionStatus'
+import { UserMenu } from './UserMenu'
 import { Icon } from './Icon'
 import { AppBrand, AppFooter } from './AppBrand'
 import { findNavigation, navigationSections as navSections } from '../constants/navigation'
@@ -45,7 +45,6 @@ function expandActiveSection(collapsed: Set<string>, pathname: string): Set<stri
 }
 
 export function Layout() {
-  const { user, logout } = useAuth()
   const { navCollapsed, setNavCollapsed } = useSidebar()
   const location = useLocation()
   const current = findNavigation(location.pathname)
@@ -286,16 +285,6 @@ export function Layout() {
                 )
               })}
             </nav>
-
-            <div className="shrink-0 border-t border-sidebar-border p-4">
-              <div className="mb-3 text-sm">
-                <p className="font-medium text-sidebar-foreground">{user?.username}</p>
-                <p className="text-xs text-muted-foreground">{user?.is_admin ? '管理员' : '用户'}</p>
-              </div>
-              <button type="button" onClick={logout} className="btn-secondary w-full text-sm">
-                退出登录
-              </button>
-            </div>
           </>
         ) : (
           <div className="flex flex-1 items-center justify-center">
@@ -314,7 +303,7 @@ export function Layout() {
           navCollapsed ? 'lg:pl-12' : 'lg:pl-72 xl:pl-80'
         }`}
       >
-        <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-2 border-b border-transparent bg-background/95 px-3 py-2 backdrop-blur-sm sm:px-4 lg:pointer-events-none lg:bg-transparent lg:px-7 lg:backdrop-blur-none">
+        <header className="sticky top-0 z-30 flex min-h-16 flex-wrap items-center justify-between gap-2 border-b border-transparent bg-background/95 px-3 py-2 backdrop-blur-sm sm:flex-nowrap sm:px-4 lg:pointer-events-none lg:bg-transparent lg:px-7 lg:backdrop-blur-none">
           <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
@@ -334,9 +323,12 @@ export function Layout() {
               菜单
             </button>
           </div>
-          <div className="pointer-events-auto flex items-center gap-2 sm:gap-4">
-            <BotConnectionStatus />
-            <ThemeModeSwitch />
+          <div className="pointer-events-auto contents sm:flex sm:items-center sm:gap-4">
+            <div className="order-1 flex w-full items-center justify-end gap-2 sm:order-none sm:w-auto sm:gap-4">
+              <BotConnectionStatus />
+              <ThemeModeSwitch />
+            </div>
+            <UserMenu />
           </div>
         </header>
 

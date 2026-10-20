@@ -29,9 +29,10 @@ async def setup(body: SetupRequest):
         async with session.begin():
             await claim_initial_setup(session)
 
+            password_hash = hash_password(body.password)
             user = User(
                 username=body.username,
-                password_hash=hash_password(body.password),
+                password_hash=password_hash,
                 is_admin=True,
             )
             session.add(user)
@@ -40,5 +41,7 @@ async def setup(body: SetupRequest):
             username = user.username
             is_admin = user.is_admin
 
-    token = create_access_token(username, {"uid": user_id, "is_admin": is_admin})
+    token = create_access_token(
+        username, {"uid": user_id, "is_admin": is_admin}, password_hash=password_hash
+    )
     return TokenResponse(access_token=token)

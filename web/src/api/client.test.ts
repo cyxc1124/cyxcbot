@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiClientError, getBotConnectionsStatus, getRecentLogs, getSetupStatus, streamLogs } from './client'
+import { ApiClientError, getBotConnectionsStatus, getRecentLogs, getSetupStatus, putPassword, streamLogs } from './client'
 
 let replies: ((value: unknown) => void)[]
 const fetchMock = vi.fn()
@@ -17,6 +17,41 @@ beforeEach(() => {
 })
 
 afterEach(() => vi.unstubAllGlobals())
+
+describe('password changes', () => {
+  it.each(['new-token', null])('handles a late 401 after credentials change to %s', async (replacement) => {
+    let token: string | null = 'old-token'
+    const removeItem = vi.fn(() => { token = null })
+    vi.stubGlobal('localStorage', { getItem: () => token, removeItem })
+    const location = { pathname: '/about', href: '/about' }
+    vi.stubGlobal('window', { location })
+    fetchMock.mockResolvedValue(new Response('{"detail":"Password changed"}', { status: 401 }))
+
+    const pending = getBotConnectionsStatus(new AbortController().signal)
+    expect(fetchMock.mock.calls[0][1].headers.get('Authorization')).toBe('Bearer old-token')
+    token = replacement
+
+    await expect(pending).rejects.toMatchObject({
+      status: 401,
+      message: replacement ? '登录状态已更新，请重试' : '未授权，请重新登录',
+    })
+    expect(token).toBe(replacement)
+    expect(removeItem).toHaveBeenCalledTimes(replacement ? 0 : 1)
+    expect(location.href).toBe(replacement ? '/about' : '/login')
+  })
+
+  it('sends the authenticated password update without putting credentials in the URL', async () => {
+    vi.stubGlobal('localStorage', { getItem: () => 'current-token' })
+    fetchMock.mockResolvedValue(new Response('{"access_token":"new-token"}'))
+    const data = { current_password: 'old-password', new_password: 'new-password' }
+    await expect(putPassword(data)).resolves.toEqual({ access_token: 'new-token' })
+    const [url, options] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/v1/auth/password')
+    expect(options.method).toBe('PUT')
+    expect(options.headers.get('Authorization')).toBe('Bearer current-token')
+    expect(JSON.parse(options.body)).toEqual(data)
+  })
+})
 
 describe('API request cancellation', () => {
   it('does not share an aborted request with a newly mounted status indicator', async () => {
