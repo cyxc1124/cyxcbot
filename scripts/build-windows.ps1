@@ -22,7 +22,7 @@ if ($LASTEXITCODE -ne 0) { throw "Web frontend build failed" }
 
 # Extract frontend versions for build-info.env (exact versions from lockfile)
 try {
-    $lockJson = Get-Content -Raw package-lock.json | ConvertFrom-Json
+    $lockJson = Get-Content -Raw package-lock.json | ConvertFrom-Json -AsHashtable
     $env:REACT_VERSION = $lockJson.packages.'node_modules/react'.version
     $env:TAILWIND_VERSION = $lockJson.packages.'node_modules/tailwindcss'.version
     Write-Host "Frontend versions: React $env:REACT_VERSION, Tailwind $env:TAILWIND_VERSION"
@@ -35,12 +35,14 @@ Pop-Location
 
 # Python dependencies
 Write-Host "Installing Python dependencies..."
-pip install -r requirements.txt
-pip install "pyinstaller>=6.0" tzdata
+python -m pip install -r requirements.txt
+if ($LASTEXITCODE -ne 0) { throw "Python dependency installation failed" }
+python -m pip install "pyinstaller>=6.0" tzdata
+if ($LASTEXITCODE -ne 0) { throw "Packaging tool installation failed" }
 
 # Playwright browser (bundled into dist after PyInstaller)
 Write-Host "Installing Playwright Chromium..."
-playwright install chromium
+python -m playwright install chromium
 if ($LASTEXITCODE -ne 0) { throw "Playwright install failed" }
 
 # Build metadata (read by admin about page / startup logs)
@@ -55,7 +57,7 @@ if (-not $env:BUILD_TIME) {
 
 # PyInstaller
 Write-Host "Running PyInstaller..."
-pyinstaller --noconfirm cyxcbot.spec
+python -m PyInstaller --noconfirm cyxcbot.spec
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
 
 $distDir = Join-Path "dist" "cyxcbot"
