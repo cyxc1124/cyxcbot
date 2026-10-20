@@ -85,7 +85,7 @@ SETTING_KEYS = {
     "dynamic_monitor_use_stagger": ("true", bool),
     "dynamic_enable_screenshot": ("true", bool),
     "dynamic_image_mode": ("screenshot", str),
-    "dynamic_card_color_source": ("image", str),
+    "dynamic_card_color_source": ("avatar", str),
     "live_monitor_interval": ("60", int),
     "live_monitor_include_info": ("true", bool),
     "live_monitor_use_websocket": ("true", bool),
@@ -295,7 +295,7 @@ class ConfigService:
             dynamic_enable_screenshot=settings.get("dynamic_enable_screenshot", True),
             dynamic_image_mode=settings.get("dynamic_image_mode", "screenshot"),
             dynamic_card_color_source=settings.get(
-                "dynamic_card_color_source", "image"
+                "dynamic_card_color_source", "avatar"
             ),
             dynamic_message_templates=dynamic_templates_from_settings(settings),
             live_monitor_mapping=live_mapping,

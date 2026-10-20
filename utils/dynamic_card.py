@@ -83,7 +83,7 @@ def _draw_card(
     dynamic: DynamicItem,
     avatar,
     pictures,
-    color_source: Literal["image", "avatar"] = "image",
+    color_source: Literal["image", "avatar"] = "avatar",
 ) -> bytes:
     seed = (
         avatar if color_source == "avatar" else next((p for p in pictures if p), avatar)
@@ -187,7 +187,7 @@ def _draw_card(
 
 
 async def render_dynamic_card(
-    dynamic: DynamicItem, *, color_source: Literal["image", "avatar"] = "image"
+    dynamic: DynamicItem, *, color_source: Literal["image", "avatar"] = "avatar"
 ) -> bytes:
     async with (
         asyncio.timeout(15),

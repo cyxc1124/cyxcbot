@@ -134,6 +134,17 @@ def test_settings_validate_color_source():
         SettingsUpdateRequest(dynamic_card_color_source="invalid")
 
 
+def test_card_defaults_to_avatar_even_with_pictures(monkeypatch):
+    import utils.dynamic_card as card
+
+    avatar = Image.new("RGB", (20, 20), "blue")
+    picture = Image.new("RGB", (20, 20), "red")
+    palette = MagicMock(return_value=("#667788", "#ddeeff", "#ffffff"))
+    monkeypatch.setattr(card, "monet_palette", palette)
+    card._draw_card(DynamicItem(1, 1, "作者", 1700000000, 2), avatar, [picture])
+    palette.assert_called_once_with(avatar)
+
+
 @pytest.mark.parametrize(
     "dynamic_type,title,body,expected",
     [
@@ -210,7 +221,7 @@ async def test_card_assets_decode_one_at_a_time_and_keep_media_order(monkeypatch
     monkeypatch.setattr(card, "_draw_card", draw)
     assert await card.render_dynamic_card(dynamic) == b"card"
     assert peak == 1
-    draw.assert_called_once_with(dynamic, urls[0], urls[1:], "image")
+    draw.assert_called_once_with(dynamic, urls[0], urls[1:], "avatar")
 
 
 async def test_card_asset_timeout_bounds_the_whole_batch(monkeypatch):
