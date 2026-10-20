@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiClientError, getBotConnectionsStatus, getRecentLogs, getSetupStatus, putPassword, streamLogs } from './client'
+import { ApiClientError, getBotConnectionsStatus, getRecentLogs, getSetupStatus, clearLegacyToken, getMe, postLogin, postLogout, postSetup, pollBilibiliQrcodeLogin, pollDouyinQrcodeLogin, putPassword, streamLogs } from './client'
 
 let replies: ((value: unknown) => void)[]
 const fetchMock = vi.fn()
@@ -13,43 +13,140 @@ beforeEach(() => {
     else options.signal?.addEventListener('abort', abort, { once: true })
   }))
   vi.stubGlobal('fetch', fetchMock)
-  vi.stubGlobal('localStorage', { getItem: () => null })
+  const values = new Map<string, string>()
+  vi.stubGlobal('localStorage', {
+    getItem: vi.fn((key: string) => values.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => { values.set(key, value) }),
+    removeItem: vi.fn((key: string) => { values.delete(key) }),
+  })
+  vi.stubGlobal('sessionStorage', { removeItem: vi.fn() })
 })
 
 afterEach(() => vi.unstubAllGlobals())
 
-describe('password changes', () => {
-  it.each(['new-token', null])('handles a late 401 after credentials change to %s', async (replacement) => {
-    let token: string | null = 'old-token'
-    const removeItem = vi.fn(() => { token = null })
-    vi.stubGlobal('localStorage', { getItem: () => token, removeItem })
-    const location = { pathname: '/about', href: '/about' }
-    vi.stubGlobal('window', { location })
-    fetchMock.mockResolvedValue(new Response('{"detail":"Password changed"}', { status: 401 }))
+it('never reads a legacy JWT when sending a browser API request', async () => {
+  const getItem = vi.fn(() => 'legacy-jwt')
+  vi.stubGlobal('localStorage', { getItem })
+  fetchMock.mockResolvedValue(new Response('{}'))
+  await getBotConnectionsStatus(new AbortController().signal)
+  const [, options] = fetchMock.mock.calls[0]
+  expect(options.headers.has('Authorization')).toBe(false)
+  expect(options.headers.get('X-Cyxcbot-Session')).toBe('cookie')
+  expect(options.credentials).toBe('same-origin')
+  expect(getItem).not.toHaveBeenCalledWith('cyxcbot_access_token')
+})
 
-    const pending = getBotConnectionsStatus(new AbortController().signal)
-    expect(fetchMock.mock.calls[0][1].headers.get('Authorization')).toBe('Bearer old-token')
-    token = replacement
+describe('cookie sessions', () => {
+  const credentials = { username: 'admin', password: 'old-password' }
+  const password = { current_password: 'old-password', new_password: 'new-password' }
+  const changes = [
+    ['login', () => postLogin(credentials), 'POST', '/auth/login', credentials],
+    ['setup', () => postSetup(credentials), 'POST', '/setup', credentials],
+    ['password', () => putPassword(password), 'PUT', '/auth/password', password],
+    ['logout', () => postLogout(), 'POST', '/auth/logout', undefined],
+  ] as const
 
-    await expect(pending).rejects.toMatchObject({
-      status: 401,
-      message: replacement ? '登录状态已更新，请重试' : '未授权，请重新登录',
-    })
-    expect(token).toBe(replacement)
-    expect(removeItem).toHaveBeenCalledTimes(replacement ? 0 : 1)
-    expect(location.href).toBe(replacement ? '/about' : '/login')
+  it('purges the old token without reading or migrating it', () => {
+    clearLegacyToken()
+    expect(localStorage.removeItem).toHaveBeenCalledWith('cyxcbot_access_token')
+    expect(sessionStorage.removeItem).toHaveBeenCalledWith('cyxcbot_access_token')
+    expect(localStorage.getItem).not.toHaveBeenCalled()
+    expect(localStorage.setItem).not.toHaveBeenCalled()
   })
 
-  it('sends the authenticated password update without putting credentials in the URL', async () => {
-    vi.stubGlobal('localStorage', { getItem: () => 'current-token' })
-    fetchMock.mockResolvedValue(new Response('{"access_token":"new-token"}'))
-    const data = { current_password: 'old-password', new_password: 'new-password' }
-    await expect(putPassword(data)).resolves.toEqual({ access_token: 'new-token' })
+  it.each(changes)('uses a cookie-only %s response and keeps credentials out of the URL', async (_name, change, method, path, body) => {
+    fetchMock.mockResolvedValue(new Response('{"message":"ok"}'))
+    await expect(change()).resolves.toBeUndefined()
     const [url, options] = fetchMock.mock.calls[0]
-    expect(url).toBe('/api/v1/auth/password')
-    expect(options.method).toBe('PUT')
-    expect(options.headers.get('Authorization')).toBe('Bearer current-token')
-    expect(JSON.parse(options.body)).toEqual(data)
+    expect(url).toBe(`/api/v1${path}`)
+    expect(options.method).toBe(method)
+    expect(options.headers.has('Authorization')).toBe(false)
+    expect(options.headers.get('X-Cyxcbot-Session')).toBe('cookie')
+    expect(options.credentials).toBe('same-origin')
+    expect(options.body ? JSON.parse(options.body) : undefined).toEqual(body)
+    expect(localStorage.setItem).not.toHaveBeenCalledWith('cyxcbot_access_token', expect.anything())
+  })
+
+  it.each(changes)('ignores a late 401 after %s changes the session', async (_name, change) => {
+    let finish!: (response: Response) => void
+    const location = { pathname: '/about', href: '/about' }
+    vi.stubGlobal('window', { location })
+    fetchMock.mockImplementationOnce(() => new Promise<Response>(resolve => { finish = resolve }))
+      .mockResolvedValue(new Response('{"message":"ok"}'))
+    const pending = getBotConnectionsStatus(new AbortController().signal)
+    await change()
+    finish(new Response('{}', { status: 401 }))
+    await expect(pending).rejects.toMatchObject({ status: 401, message: '登录状态已更新，请重试' })
+    expect(location.href).toBe('/about')
+  })
+
+  it('ignores a late 401 after another tab rotates the session', async () => {
+    const location = { pathname: '/about', href: '/about' }
+    vi.stubGlobal('window', { location })
+    fetchMock.mockResolvedValue(new Response('{}', { status: 401 }))
+    const pending = getBotConnectionsStatus(new AbortController().signal)
+    localStorage.setItem('cyxcbot_auth_version', 'another-tab-change')
+    await expect(pending).rejects.toMatchObject({ message: '登录状态已更新，请重试' })
+    expect(location.href).toBe('/about')
+  })
+
+  it('does not depend on browser storage being available', async () => {
+    const unavailable = () => { throw new DOMException('Storage blocked', 'SecurityError') }
+    vi.stubGlobal('localStorage', { getItem: unavailable, setItem: unavailable, removeItem: unavailable })
+    fetchMock.mockResolvedValue(new Response('{"message":"ok"}'))
+    expect(clearLegacyToken).not.toThrow()
+    await expect(postLogin(credentials)).resolves.toBeUndefined()
+  })
+
+  it('sends logout after a pending password response sets the replacement cookie', async () => {
+    let finish!: (response: Response) => void
+    fetchMock.mockImplementationOnce(() => new Promise<Response>(resolve => { finish = resolve }))
+      .mockResolvedValueOnce(new Response('{"message":"ok"}'))
+    const rotation = putPassword(password)
+    const logout = postLogout()
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/auth/password')
+    finish(new Response('{"message":"ok"}'))
+    await rotation
+    await logout
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/auth/logout')
+  })
+
+  it('allows logout after a failed session update', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('{"detail":"wrong password"}', { status: 400 }))
+      .mockResolvedValueOnce(new Response('{"message":"ok"}'))
+    await expect(putPassword(password)).rejects.toMatchObject({ status: 400 })
+    await expect(postLogout()).resolves.toBeUndefined()
+  })
+
+  it('does not share an old in-flight GET across a session change', async () => {
+    const first = getMe()
+    const rotation = putPassword(password)
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    replies[1]({ message: 'ok' })
+    await rotation
+    const second = getMe()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    replies[0]({ username: 'old-session' })
+    replies[2]({ username: 'new-session' })
+    await expect(first).resolves.toEqual({ username: 'old-session' })
+    await expect(second).resolves.toEqual({ username: 'new-session' })
+  })
+
+  it.each([
+    ['bilibili', (signal: AbortSignal) => pollBilibiliQrcodeLogin({ key: 'qr' }, signal), { qrcode: { key: 'qr' } }],
+    ['douyin', (signal: AbortSignal) => pollDouyinQrcodeLogin('qr-session', signal), { session_id: 'qr-session' }],
+  ] as const)('uses the same cookie and cancellation boundary for %s QR polling', async (platform, poll, body) => {
+    fetchMock.mockResolvedValue(new Response('{}'))
+    const controller = new AbortController()
+    await poll(controller.signal)
+    const [url, options] = fetchMock.mock.calls[0]
+    expect(url).toBe(`/api/v1/${platform}/login/qrcode/poll`)
+    expect(options.headers.has('Authorization')).toBe(false)
+    expect(options.headers.get('X-Cyxcbot-Session')).toBe('cookie')
+    expect(options.credentials).toBe('same-origin')
+    expect(options.signal).toBe(controller.signal)
+    expect(JSON.parse(options.body)).toEqual(body)
   })
 })
 
@@ -87,8 +184,7 @@ describe('authenticated log SSE requests', () => {
     level: 'INFO', logger: 'test', message: 'hello',
   }
 
-  it('uses the shared Bearer header and passes cancellation without putting credentials in the URL', async () => {
-    vi.stubGlobal('localStorage', { getItem: () => 'test-token' })
+  it('uses the shared cookie authentication and passes cancellation without putting credentials in the URL', async () => {
     fetchMock.mockResolvedValue(new Response(`data: ${JSON.stringify(log)}\n\n`, {
       headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
     }))
@@ -98,7 +194,9 @@ describe('authenticated log SSE requests', () => {
     await streamLogs('WARNING', { signal: controller.signal, onOpen, onLog })
     const [url, options] = fetchMock.mock.calls[0]
     expect(url).toBe('/api/v1/logs/stream?min_level=WARNING')
-    expect(options.headers.get('Authorization')).toBe('Bearer test-token')
+    expect(options.headers.has('Authorization')).toBe(false)
+    expect(options.headers.get('X-Cyxcbot-Session')).toBe('cookie')
+    expect(options.credentials).toBe('same-origin')
     expect(options.headers.get('Accept')).toBe('text/event-stream')
     expect(options.signal).toBe(controller.signal)
     expect(onOpen).toHaveBeenCalledTimes(1)
@@ -106,8 +204,6 @@ describe('authenticated log SSE requests', () => {
   })
 
   it('preserves the existing login redirect on expired credentials', async () => {
-    const removeItem = vi.fn()
-    vi.stubGlobal('localStorage', { getItem: () => 'expired', removeItem })
     const location = { pathname: '/logs', href: '/logs' }
     vi.stubGlobal('window', { location })
     fetchMock.mockResolvedValue(new Response('{"detail":"Invalid token"}', { status: 401 }))
@@ -115,7 +211,6 @@ describe('authenticated log SSE requests', () => {
     await expect(streamLogs('INFO', { signal: new AbortController().signal, onOpen, onLog: vi.fn() }))
       .rejects.toMatchObject({ status: 401 })
     expect(location.href).toBe('/login')
-    expect(removeItem).toHaveBeenCalledWith('cyxcbot_access_token')
     expect(onOpen).not.toHaveBeenCalled()
   })
 

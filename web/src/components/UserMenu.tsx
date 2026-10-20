@@ -1,13 +1,27 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../contexts/ToastContext'
 import { ChangePasswordDialog } from './ChangePasswordDialog'
 import { Icon } from './Icon'
 
 export function UserMenu() {
   const { user, logout } = useAuth()
+  const { showToast } = useToast()
   const detailsRef = useRef<HTMLDetailsElement>(null)
   const [changingPassword, setChangingPassword] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
   const panelId = useId()
+
+  const handleLogout = async () => {
+    setLoggingOut(true)
+    try {
+      await logout()
+    } catch {
+      showToast('error', '退出登录失败，请重试')
+    } finally {
+      setLoggingOut(false)
+    }
+  }
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
@@ -50,7 +64,7 @@ export function UserMenu() {
             if (detailsRef.current) detailsRef.current.open = false
             setChangingPassword(true)
           }}>修改密码</button>
-          <button type="button" onClick={logout} className="btn-ghost min-h-11 w-full justify-start text-sm text-destructive">退出登录</button>
+          <button type="button" onClick={() => void handleLogout()} disabled={loggingOut} className="btn-ghost min-h-11 w-full justify-start text-sm text-destructive">{loggingOut ? '正在退出…' : '退出登录'}</button>
         </div>
       </details>
       {changingPassword && <ChangePasswordDialog username={user?.username ?? ''} onClose={() => {
