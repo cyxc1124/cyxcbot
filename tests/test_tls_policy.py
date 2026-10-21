@@ -226,7 +226,12 @@ def test_node_preload_replaces_all_default_roots_and_handles_spaces(tmp_path):
 
     directory = tmp_path / "policy 中文 with spaces"
     directory.mkdir()
-    for name in ("node_ca.cjs", "distrusted_roots.json"):
+    for name in (
+        "node_ca.cjs",
+        "node_ca_policy.cjs",
+        "distrusted_roots.json",
+        "distrusted_keys.json",
+    ):
         (directory / name).write_bytes(
             Path(policy.__file__).with_name(name).read_bytes()
         )

@@ -35,12 +35,13 @@
 | 改动 | 验证入口 |
 |------|----------|
 | Python | `./.venv/bin/ruff check <相关文件>`；`./.venv/bin/ruff format <修改文件>`；`./.venv/bin/pytest tests/<相关测试文件>` |
-| 前端行为 | `cd web && npm test -- <相关测试文件>`（Vitest）；完整前端测试为 `npm test` |
-| 前端构建/类型 | `cd web && npm run build` |
-| 文档站 | `cd docs && npm run build`；普通 Markdown 修改检查内容和链接即可 |
+| 前端行为 | `cd web && node ../scripts/secure_npm.cjs test -- <相关测试文件>`（Vitest）；完整前端测试省略文件参数 |
+| 前端构建/类型 | `cd web && node ../scripts/secure_npm.cjs run build` |
+| 文档站 | `cd docs && node ../scripts/secure_npm.cjs run build`；普通 Markdown 修改检查内容和链接即可 |
 
+- npm 安装与构建使用 `node ../scripts/secure_npm.cjs <npm 命令>`（在 `web/` 或 `docs/` 中），沿用过滤后的 CA 信任库；Node.js 至少使用 22.23.4 或支持 CA API 的较新 LTS。
 - Python 测试在 `tests/`；前端测试沿用 `web/` 的 Vitest。需要完整 Python 回归时运行 `./.venv/bin/pytest`。
-- 本地启动：`./.venv/bin/python bot.py`；前端 `cd web && npm run dev`；文档预览 `cd docs && npm start`。
+- 本地启动：`./.venv/bin/python bot.py`；前端 `cd web && node ../scripts/secure_npm.cjs run dev`；文档预览 `cd docs && node ../scripts/secure_npm.cjs start`。
 - 本地验证使用隔离数据库和测试目标；`bot.py` 会连接配置的数据库并执行迁移，不作为无副作用的检查命令。
 - `bot.py` 的 E402 是 `nonebot.init()` 后导入所需，Ruff 已忽略。
 

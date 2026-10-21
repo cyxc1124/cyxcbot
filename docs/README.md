@@ -6,8 +6,8 @@
 
 ```bash
 cd docs
-npm install
-npm start
+node ../scripts/secure_npm.cjs install
+node ../scripts/secure_npm.cjs start
 ```
 
 浏览器打开 http://localhost:3000 预览。
@@ -15,14 +15,14 @@ npm start
 ## 构建
 
 ```bash
-npm run build
-npm run serve   # 预览构建产物
+node ../scripts/secure_npm.cjs run build
+node ../scripts/secure_npm.cjs run serve   # 预览构建产物
 ```
 
 ## 部署到 GitHub Pages
 
 - **`main` 推送**：构建并部署到 https://cyxc1124.github.io/cyxcbot/
-- **`develop` 推送 / PR**：仅构建校验（`npm run build`），不发布
+- **`develop` 推送 / PR**：仅构建校验（`node ../scripts/secure_npm.cjs run build`），不发布
 
 触发路径：`docs/**` 或 `.github/workflows/deploy-docs.yml`。Workflow：[`.github/workflows/deploy-docs.yml`](../.github/workflows/deploy-docs.yml)
 

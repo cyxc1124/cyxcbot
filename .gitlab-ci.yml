@@ -52,11 +52,12 @@ web:
     paths:
       - .cache/npm
   before_script:
-    - npm ci --prefix web
+    - cd web
+    - node ../scripts/secure_npm.cjs ci
   script:
-    - npm run lint --prefix web
-    - npm run test --prefix web
-    - npm run build --prefix web
+    - node ../scripts/secure_npm.cjs run lint
+    - node ../scripts/secure_npm.cjs run test
+    - node ../scripts/secure_npm.cjs run build
 
 # 无 Docker daemon：Kaniko 推 GitLab Registry。
 # 构建代理：HTTP_PROXY / HTTPS_PROXY / NO_PROXY（不设则与 GitHub 一样直连）。

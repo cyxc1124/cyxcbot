@@ -26,13 +26,15 @@ ARG BUILD_TIME=""
 
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
-RUN npm ci
+COPY scripts/secure_npm.cjs /app/scripts/secure_npm.cjs
+COPY shared/security/*.cjs shared/security/*.json /app/shared/security/
+RUN node ../scripts/secure_npm.cjs ci
 COPY web/ ./
 ENV GIT_TAG=${GIT_TAG} \
     GIT_COMMIT=${GIT_COMMIT} \
     GIT_BRANCH=${GIT_BRANCH} \
     BUILD_TIME=${BUILD_TIME}
-RUN npm run build
+RUN node ../scripts/secure_npm.cjs run build
 
 # Python 运行时镜像
 FROM python:3.14-slim
@@ -126,6 +128,7 @@ COPY shared/__init__.py shared/__init__.py
 COPY shared/security/__init__.py shared/security/__init__.py
 COPY shared/security/ca.py shared/security/ca.py
 COPY shared/security/distrusted_roots.json shared/security/distrusted_roots.json
+COPY shared/security/distrusted_keys.json shared/security/distrusted_keys.json
 
 # 安装 Python 依赖
 RUN python scripts/secure_pip.py install --no-cache-dir -r requirements.txt
@@ -138,6 +141,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 COPY scripts/playwright_install.py scripts/playwright_install.py
 COPY shared/security/playwright.py shared/security/playwright.py
 COPY shared/security/node_ca.cjs shared/security/node_ca.cjs
+COPY shared/security/node_ca_policy.cjs shared/security/node_ca_policy.cjs
 RUN python scripts/playwright_install.py install chromium
 
 # 复制 Web Admin 前端构建产物（web/dist 不入库，须在镜像构建时生成）

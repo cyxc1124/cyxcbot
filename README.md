@@ -2,7 +2,7 @@
 
 基于 [NoneBot2](https://nonebot.dev/) 的 QQ 机器人，专注 B 站动态、直播监控与群消息推送。内置 Web Admin 管理面板，业务配置在浏览器中完成，环境变量只保留启动级项。
 
-📖 **完整文档**（功能说明、插件与配置）：https://cyxc1124.github.io/cyxcbot/（源码在 [docs/](docs/)，本地预览：`cd docs && npm start`）
+📖 **完整文档**（功能说明、插件与配置）：https://cyxc1124.github.io/cyxcbot/（源码在 [docs/](docs/)，本地预览：`cd docs && node ../scripts/secure_npm.cjs start`）
 
 ---
 
@@ -93,7 +93,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 ./.venv/bin/python bot.py
 
 # 6. 另开终端启动前端开发服务器（可选）
-cd web && npm install && npm run dev
+cd web && node ../scripts/secure_npm.cjs install && node ../scripts/secure_npm.cjs run dev
 ```
 
 Windows（PowerShell）创建 venv：`py -3.14 -m venv .venv`，激活：`.\.venv\Scripts\Activate.ps1`。

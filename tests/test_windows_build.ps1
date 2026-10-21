@@ -12,10 +12,17 @@ New-Item -ItemType Directory -Path (Join-Path $workspace "dist/cyxcbot") -Force 
     Set-Content (Join-Path $workspace "web/package-lock.json")
 
 try {
-    foreach ($failure in @("requirements", "tools", "tls", "playwright", "browser", "pyinstaller", "artifact")) {
+    foreach ($failure in @("web_install", "web_build", "requirements", "tools", "tls", "playwright", "browser", "pyinstaller", "artifact")) {
         $global:CyxcBuildTestCalls = [System.Collections.Generic.List[string]]::new()
         $global:CyxcBuildTestFailure = $failure
-        function npm { $global:LASTEXITCODE = 0 }
+        function node {
+            $global:LASTEXITCODE = 0
+            $command = $args -join " "
+            if (($global:CyxcBuildTestFailure -eq "web_install" -and $command -eq "../scripts/secure_npm.cjs ci") -or
+                ($global:CyxcBuildTestFailure -eq "web_build" -and $command -eq "../scripts/secure_npm.cjs run build")) {
+                $global:LASTEXITCODE = 1
+            }
+        }
         function python {
             $command = $args -join " "
             $global:CyxcBuildTestCalls.Add($command)
@@ -34,6 +41,8 @@ try {
         Push-Location $workspace
         try {
             $expectedError = switch ($failure) {
+                "web_install" { "Web frontend build failed" }
+                "web_build" { "Web frontend build failed" }
                 "requirements" { "Python dependency installation failed" }
                 "tools" { "Packaging tool installation failed" }
                 "tls" { "TLS trust regression checks failed" }
@@ -49,6 +58,8 @@ try {
                 if ($_.Exception.Message -ne $expectedError) { throw }
             }
             $expectedCalls = switch ($failure) {
+                "web_install" { 0 }
+                "web_build" { 0 }
                 "requirements" { 1 }
                 "tools" { 2 }
                 "tls" { 3 }
@@ -60,10 +71,11 @@ try {
             if ($global:CyxcBuildTestCalls.Count -ne $expectedCalls) {
                 throw "Playwright or PyInstaller ran after a failed prerequisite check"
             }
-            if ($env:REACT_VERSION -ne "19.3.1" -or $env:TAILWIND_VERSION -ne "4.3.3") {
+            if ($failure -ne "web_install" -and ($env:REACT_VERSION -ne "19.3.1" -or $env:TAILWIND_VERSION -ne "4.3.3")) {
                 throw "Failed to read versions from the lockfile containing an empty root key"
             }
         } finally {
+            if ((Get-Location).Path -ne $workspace) { throw "Frontend failure changed the working directory" }
             Pop-Location
         }
     }
@@ -71,7 +83,7 @@ try {
     $env:LOCALAPPDATA = $savedLocalAppData
     $env:GIT_COMMIT = $savedGitCommit
     Remove-Item -Recurse -Force $workspace
-    Remove-Item Function:npm, Function:python
+    Remove-Item Function:node, Function:python
     Remove-Variable CyxcBuildTestCalls, CyxcBuildTestFailure -Scope Global
 }
 $global:LASTEXITCODE = 0

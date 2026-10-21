@@ -27,6 +27,8 @@ def check_artifacts(dist=None) -> None:
         bundled_policy = internal / "shared" / "security"
         for name in (
             "node_ca.cjs",
+            "node_ca_policy.cjs",
+            "distrusted_keys.json",
             "distrusted_roots.json",
             "emudhra_intermediates.pem",
             "browser.py",
