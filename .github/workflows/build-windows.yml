@@ -8,14 +8,19 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+  pull_request:
+    branches: [develop, main]
 
 env:
   PYTHON_VERSION: '3.14'
+  PYTHONUNBUFFERED: '1'
+  PYTEST_ADDOPTS: '-x -vv -o faulthandler_timeout=60'
 
 jobs:
   build-windows:
     name: Build Windows Package
     runs-on: windows-latest
+    timeout-minutes: 15
     permissions:
       contents: write
 
@@ -30,7 +35,7 @@ jobs:
         shell: bash
         run: |
           GIT_COMMIT=$(git rev-parse HEAD)
-          GIT_BRANCH=${GITHUB_REF#refs/heads/}
+          GIT_BRANCH=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
           GIT_TAG=""
           BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           BUILD_NUMBER=${{ github.run_number }}
@@ -39,6 +44,8 @@ jobs:
             GIT_TAG=${GITHUB_REF#refs/tags/}
             GIT_BRANCH=""
             VERSION=${GIT_TAG}
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            VERSION="pr-${{ github.event.number }}-${GIT_COMMIT:0:8}"
           else
             VERSION="${GIT_BRANCH}-${GIT_COMMIT:0:8}"
           fi

@@ -9,17 +9,21 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 import pytest
 
 import utils.screenshot.screenshot as ss
+from shared.security import browser as browser_policy
 from utils.bilibili_api.config import BilibiliConfig
 
 
 def _runtime():
     context = SimpleNamespace(close=AsyncMock(), add_cookies=AsyncMock())
     browser = SimpleNamespace(
-        close=AsyncMock(), new_context=AsyncMock(return_value=context)
+        close=AsyncMock(),
     )
+    context.browser = browser
     playwright = SimpleNamespace(
         stop=AsyncMock(),
-        chromium=SimpleNamespace(launch=AsyncMock(return_value=browser)),
+        chromium=SimpleNamespace(
+            launch_persistent_context=AsyncMock(return_value=context)
+        ),
     )
     manager = SimpleNamespace(
         start=AsyncMock(return_value=playwright), __aexit__=playwright.stop
@@ -36,6 +40,9 @@ def runtime(monkeypatch):
     monkeypatch.setattr(ss, "async_playwright", runtime.factory)
     monkeypatch.setattr(ss, "PLAYWRIGHT_AVAILABLE", True)
     monkeypatch.setattr(BilibiliConfig, "get_bilibili_cookie", lambda: "audit=value")
+    monkeypatch.setattr(browser_policy, "_seed_profile", Mock(return_value=()))
+    runtime.verify = AsyncMock()
+    monkeypatch.setattr(browser_policy, "_verify_profile", runtime.verify)
     return runtime
 
 
@@ -86,7 +93,7 @@ async def test_reinitialize_releases_old_resources_before_replacing_them(runtime
     [
         ("start", (0, 0, 1)),
         ("launch", (0, 0, 1)),
-        ("new_context", (0, 1, 1)),
+        ("verify", (1, 1, 1)),
         ("add_cookies", (1, 1, 1)),
     ],
 )
@@ -96,8 +103,8 @@ async def test_partial_initialization_releases_acquired_resources(
 ):
     operation = {
         "start": runtime.manager.start,
-        "launch": runtime.playwright.chromium.launch,
-        "new_context": runtime.browser.new_context,
+        "launch": runtime.playwright.chromium.launch_persistent_context,
+        "verify": runtime.verify,
         "add_cookies": runtime.context.add_cookies,
     }[stage]
     shot = ss.DynamicScreenshot()
@@ -120,6 +127,8 @@ async def test_partial_initialization_releases_acquired_resources(
 
     assert shot.browser_context is None
     _assert_closed(runtime, *closed)
+    if stage in ("start", "launch", "verify"):
+        runtime.context.add_cookies.assert_not_awaited()
     await shot.close_browser()
     _assert_closed(runtime, *closed)
 

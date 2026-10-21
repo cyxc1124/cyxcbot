@@ -8,6 +8,7 @@ on:
   pull_request:
     branches:
       - main
+      - develop
   schedule:
     # 每周一 14:00（北京时间）扫描默认分支
     - cron: "0 6 * * 1"

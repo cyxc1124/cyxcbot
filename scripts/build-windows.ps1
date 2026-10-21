@@ -35,19 +35,21 @@ Pop-Location
 
 # Python dependencies
 Write-Host "Installing Python dependencies..."
-python -m pip install -r requirements.txt
+python scripts/secure_pip.py install -r requirements.txt
 if ($LASTEXITCODE -ne 0) { throw "Python dependency installation failed" }
-python -m pip install "pyinstaller>=6.0" tzdata
+python scripts/secure_pip.py install "pyinstaller>=6.0" tzdata
 if ($LASTEXITCODE -ne 0) { throw "Packaging tool installation failed" }
 
 Write-Host "Checking TLS trust policy..."
-python -m pytest -q tests/test_aiohttp_tls.py tests/test_dependency_security.py
+python -m pytest -q tests/test_aiohttp_tls.py tests/test_dependency_security.py tests/test_tls_policy.py tests/test_ca_chains.py tests/test_secure_pip.py
 if ($LASTEXITCODE -ne 0) { throw "TLS trust regression checks failed" }
 
 # Playwright browser (bundled into dist after PyInstaller)
 Write-Host "Installing Playwright Chromium..."
-python -m playwright install chromium
+python scripts/playwright_install.py install chromium
 if ($LASTEXITCODE -ne 0) { throw "Playwright install failed" }
+python -m pytest -q tests/test_browser_security.py tests/test_screenshot_lifecycle.py tests/test_douyin_qrcode_login.py
+if ($LASTEXITCODE -ne 0) { throw "Browser TLS regression checks failed" }
 
 # Build metadata (read by admin about page / startup logs)
 $env:BUILD_VERSION = $Version
@@ -66,21 +68,6 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
 
 $distDir = Join-Path "dist" "cyxcbot"
 
-$verifyBundle = @'
-from pathlib import Path
-import certifi
-import hashlib
-import sys
-
-bundle = Path(sys.argv[1]) / "_internal" / "certifi" / "cacert.pem"
-data = bundle.read_bytes()
-if data != Path(certifi.where()).read_bytes():
-    raise SystemExit("Packaged CA bundle differs from tested certifi")
-print("Packaged CA bundle verified:", hashlib.sha256(data).hexdigest())
-'@
-$verifyBundle | python - $distDir
-if ($LASTEXITCODE -ne 0) { throw "Packaged CA bundle verification failed" }
-
 # Bundle Playwright browsers next to the executable
 $playwrightSrc = Join-Path $env:LOCALAPPDATA "ms-playwright"
 $playwrightDst = Join-Path $distDir "ms-playwright"
@@ -89,8 +76,11 @@ if (Test-Path $playwrightSrc) {
     if (Test-Path $playwrightDst) { Remove-Item -Recurse -Force $playwrightDst }
     Copy-Item -Recurse -Force $playwrightSrc $playwrightDst
 } else {
-    Write-Warning "Playwright browsers not found at $playwrightSrc"
+    throw "Playwright browsers not found at $playwrightSrc"
 }
+
+python scripts/check_tls_artifacts.py $distDir
+if ($LASTEXITCODE -ne 0) { throw "Packaged CA bundle verification failed" }
 
 # Include example env for first-time setup
 Copy-Item -Force env.example (Join-Path $distDir "env.example")

@@ -13,10 +13,10 @@ sidebar_position: 6
 python3 -m venv .venv
 
 # 2. 安装依赖
-./.venv/bin/pip install -r requirements.txt
+./.venv/bin/python scripts/secure_pip.py install -r requirements.txt
 
 # 3. Playwright 浏览器（动态截图 / 抖音扫码需要，安装一次即可）
-./.venv/bin/playwright install chromium
+./.venv/bin/python scripts/playwright_install.py install chromium
 
 # 4. 配置环境
 cp env.example .env

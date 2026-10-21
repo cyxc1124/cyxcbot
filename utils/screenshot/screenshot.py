@@ -10,6 +10,9 @@ from urllib.parse import urlparse
 
 from nonebot.log import logger
 
+from shared.security.browser import create_browser_context
+from shared.security.playwright import configure_playwright_tls
+
 try:
     from playwright.async_api import (
         BrowserContext,
@@ -217,11 +220,13 @@ async def _init_browser(proxy=None, **kwargs) -> tuple[BrowserContext, AsyncExit
     ]
 
     async with AsyncExitStack() as resources:
+        configure_playwright_tls()
         playwright_manager = async_playwright()
         # start() 被取消时也须停止已经启动的 driver。
         resources.push_async_callback(playwright_manager.__aexit__)
         playwright = await playwright_manager.start()
-        browser = await playwright.chromium.launch(
+        context, browser_resources = await create_browser_context(
+            playwright,
             headless=True,
             args=browser_args,
             proxy={"server": proxy} if proxy else None,
@@ -229,17 +234,10 @@ async def _init_browser(proxy=None, **kwargs) -> tuple[BrowserContext, AsyncExit
             handle_sigint=False,
             handle_sigterm=False,
             handle_sighup=False,
-            **kwargs,
-        )
-        resources.push_async_callback(browser.close)
-
-        # 创建优化的浏览器上下文 - 高质量截图配置
-        context = await browser.new_context(
             # 高分辨率视口设置
             viewport={"width": 1920, "height": 1080},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
             # 高质量渲染设置
-            ignore_https_errors=True,  # 忽略HTTPS错误
             bypass_csp=True,  # 绕过内容安全策略
             # 禁用不必要的资源加载以提高性能
             permissions=[],  # 不授予任何权限
@@ -247,8 +245,9 @@ async def _init_browser(proxy=None, **kwargs) -> tuple[BrowserContext, AsyncExit
             device_scale_factor=2,  # 默认2倍缩放，提高清晰度
             is_mobile=False,  # PC模式
             has_touch=False,  # 非触摸设备
+            **kwargs,
         )
-        resources.push_async_callback(context.close)
+        resources.push_async_callback(browser_resources.aclose)
 
         # 注入B站Cookie
         from utils.bilibili_api.config import BilibiliConfig
