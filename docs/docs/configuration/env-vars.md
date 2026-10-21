@@ -62,6 +62,12 @@ SQLALCHEMY_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/cyxcbo
 
 终端和文件级别可在 Web `/logs` 分别保存，立即生效并持久化，无需重启；页面显示筛选保持独立。三条通道的级别、保留策略与文件名规则见 **[日志](./logging)**。
 
+## TLS 信任库
+
+`bot.py` 在创建客户端之前，将 aiohttp 的默认 TLS 信任库统一为随应用安装的 certifi Mozilla CA 包。Docker、Windows 包和源码启动均使用同一策略，保留证书链与主机名校验，避免重新信任宿主机中已被撤销信任的根证书。
+
+aiohttp 默认连接不再加载操作系统、`SSL_CERT_FILE` 或 `SSL_CERT_DIR` 中的附加根证书。开发调用方如需连接私有 CA 服务或代理，应显式传入仅包含所需信任的 `SSLContext`，不要关闭 TLS 校验。HTTPX 和独立的 websockets 驱动仍遵循各自的信任配置；本策略不修改系统信任库。
+
 ## JWT 可选配置
 
 | 变量 | 默认值 | 说明 |

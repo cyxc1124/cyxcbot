@@ -40,6 +40,10 @@ if ($LASTEXITCODE -ne 0) { throw "Python dependency installation failed" }
 python -m pip install "pyinstaller>=6.0" tzdata
 if ($LASTEXITCODE -ne 0) { throw "Packaging tool installation failed" }
 
+Write-Host "Checking TLS trust policy..."
+python -m pytest -q tests/test_aiohttp_tls.py tests/test_dependency_security.py
+if ($LASTEXITCODE -ne 0) { throw "TLS trust regression checks failed" }
+
 # Playwright browser (bundled into dist after PyInstaller)
 Write-Host "Installing Playwright Chromium..."
 python -m playwright install chromium
@@ -61,6 +65,21 @@ python -m PyInstaller --noconfirm cyxcbot.spec
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
 
 $distDir = Join-Path "dist" "cyxcbot"
+
+$verifyBundle = @'
+from pathlib import Path
+import certifi
+import hashlib
+import sys
+
+bundle = Path(sys.argv[1]) / "_internal" / "certifi" / "cacert.pem"
+data = bundle.read_bytes()
+if data != Path(certifi.where()).read_bytes():
+    raise SystemExit("Packaged CA bundle differs from tested certifi")
+print("Packaged CA bundle verified:", hashlib.sha256(data).hexdigest())
+'@
+$verifyBundle | python - $distDir
+if ($LASTEXITCODE -ne 0) { throw "Packaged CA bundle verification failed" }
 
 # Bundle Playwright browsers next to the executable
 $playwrightSrc = Join-Path $env:LOCALAPPDATA "ms-playwright"
