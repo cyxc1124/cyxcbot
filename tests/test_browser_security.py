@@ -1,5 +1,6 @@
 """Real bundled Chromium must enforce its private trust policy before cookies."""
 
+import asyncio
 from contextlib import closing
 
 import pytest
@@ -85,3 +86,37 @@ async def test_browser_fails_closed_if_certificate_database_is_not_honored(
                 pw, headless=True, args=["--no-sandbox"]
             )
         assert all(not profile.exists() for profile in profiles)
+
+
+async def test_browser_probe_cleans_up_idle_tls_preconnections(monkeypatch):
+    start_server = asyncio.start_server
+    connections = []
+
+    async def preconnect(*args, **kwargs):
+        server = await start_server(*args, **kwargs)
+        connections.append(
+            await asyncio.open_connection(
+                "127.0.0.1", server.sockets[0].getsockname()[1]
+            )
+        )
+        return server
+
+    monkeypatch.setattr(browser.asyncio, "start_server", preconnect)
+    configure_playwright_tls()
+    resources = None
+    try:
+        async with async_playwright() as pw:
+            async with asyncio.timeout(15):
+                _, resources = await browser.create_browser_context(
+                    pw, headless=True, args=["--no-sandbox"]
+                )
+            await resources.aclose()
+            resources = None
+            for reader, _ in connections:
+                assert await asyncio.wait_for(reader.read(1), 1) == b""
+    finally:
+        for _, writer in connections:
+            writer.close()
+            await writer.wait_closed()
+        if resources is not None:
+            await resources.aclose()
