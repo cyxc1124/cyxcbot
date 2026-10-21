@@ -13,11 +13,14 @@ on:
 
 env:
   PYTHON_VERSION: '3.14'
+  PYTHONUNBUFFERED: '1'
+  PYTEST_ADDOPTS: '-x -vv -o faulthandler_timeout=60'
 
 jobs:
   build-windows:
     name: Build Windows Package
     runs-on: windows-latest
+    timeout-minutes: 15
     permissions:
       contents: write
 
