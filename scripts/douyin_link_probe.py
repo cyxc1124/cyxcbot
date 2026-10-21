@@ -83,6 +83,10 @@ def _setup_runtime() -> None:
             load_dotenv(env_path)
         except ImportError:
             pass
+
+    from shared.security.tls import configure_aiohttp_tls
+
+    configure_aiohttp_tls()
     if not os.getenv("SQLALCHEMY_DATABASE_URL"):
         os.environ["SQLALCHEMY_DATABASE_URL"] = "sqlite+aiosqlite:///data/cyxcbot.db"
 
