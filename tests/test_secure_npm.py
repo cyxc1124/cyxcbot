@@ -65,10 +65,11 @@ def test_npm_children_filter_roots_and_preserve_private_ca_proxy_and_unicode_pat
         + ssl.DER_cert_to_PEM_cert(root[:-1] + bytes([root[-1] ^ 1])).encode()
     )
     (project / ".npmrc").write_text(
-        f"cafile={bundle}\nstrict-ssl=false\nnode-options=--max-old-space-size=256\n"
+        f"cafile={bundle}\nstrict-ssl=false\nnode-options=--max-old-space-size=256\n",
+        encoding="utf-8",
     )
     (project / "package.json").write_text(
-        json.dumps({"scripts": {"ca-audit": "node audit.cjs"}})
+        json.dumps({"scripts": {"ca-audit": "node audit.cjs"}}), encoding="utf-8"
     )
     (project / "audit.cjs").write_text(
         "const {Worker}=require('node:worker_threads');"
@@ -80,7 +81,8 @@ def test_npm_children_filter_roots_and_preserve_private_ca_proxy_and_unicode_pat
         "proxy:process.env.HTTPS_PROXY==='http://proxy.invalid:8080',"
         "heap:require('node:v8').getHeapStatistics().heap_size_limit,args:process.argv.slice(2)})+'\\n',()=>{"
         f"process.exit({exit_code});"
-        "})});worker.once('error',error=>{throw error});"
+        "})});worker.once('error',error=>{throw error});",
+        encoding="utf-8",
     )
     env = environment(monkeypatch, tmp_path)
     env["HTTPS_PROXY"] = "http://proxy.invalid:8080"
@@ -98,6 +100,7 @@ def test_npm_children_filter_roots_and_preserve_private_ca_proxy_and_unicode_pat
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=30,
     )
     assert result.returncode == exit_code, result.stdout + result.stderr
@@ -160,7 +163,8 @@ async def test_npm_actual_registry_tls_rejects_before_auth(
     ca = tmp_path / "cert.pem" if trust != "untrusted" else Path(certifi.where())
     (tmp_path / ".npmrc").write_text(
         f"registry=https://{registry}/\ncafile={ca}\nstrict-ssl=false\n"
-        f"//{registry}/:_authToken=ca-regression-token\n"
+        f"//{registry}/:_authToken=ca-regression-token\n",
+        encoding="utf-8",
     )
     env = environment(monkeypatch, tmp_path)
     process = None
