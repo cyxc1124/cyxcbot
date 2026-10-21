@@ -18,6 +18,8 @@ API 由 NoneBot / Admin 服务提供，本地请使用项目虚拟环境启动�
 
 ## 开发
 
+需 Node.js **22.23.4+（22.x）**、**24.22.1+（24.x）** 或 **26.12.1+**。
+
 ```bash
 cd web
 node ../scripts/secure_npm.cjs install

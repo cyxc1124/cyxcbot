@@ -8,6 +8,8 @@ sidebar_position: 6
 
 ## 环境准备
 
+前端开发与 Windows 本地打包需 Node.js **22.23.4+（22.x）**、**24.22.1+（24.x）** 或 **26.12.1+**；安装与构建使用本仓库的 CA 包装器。
+
 ```bash
 # 1. 创建虚拟环境
 python3 -m venv .venv
