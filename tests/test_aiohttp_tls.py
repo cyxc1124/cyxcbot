@@ -159,7 +159,9 @@ async def test_tls_connections_keep_verification(
         await runner.cleanup()
 
 
-def test_startup_installs_policy_before_nonebot_init(monkeypatch, tmp_path):
+def test_startup_installs_policy_before_nonebot_init(
+    monkeypatch, tmp_path, tls_policy_state
+):
     stale_context = ssl.create_default_context(cafile=str(_AFFECTED_ROOT))
     monkeypatch.setattr(connector, "_SSL_CONTEXT_VERIFIED", stale_context)
     monkeypatch.setattr(
@@ -185,7 +187,9 @@ def test_startup_installs_policy_before_nonebot_init(monkeypatch, tmp_path):
         runpy.run_path(str(Path(__file__).resolve().parents[1] / "bot.py"))
 
 
-def test_probe_startup_installs_policy_before_download(monkeypatch, tmp_path):
+def test_probe_startup_installs_policy_before_download(
+    monkeypatch, tmp_path, tls_policy_state
+):
     from scripts import douyin_link_probe as probe
 
     stale_context = ssl.create_default_context(cafile=str(_AFFECTED_ROOT))

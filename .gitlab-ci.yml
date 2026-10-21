@@ -35,7 +35,8 @@ python:
       - .cache/pip
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends fonts-noto-cjk
-    - python -m pip install -r requirements.txt
+    - python scripts/secure_pip.py install -r requirements.txt
+    - python scripts/playwright_install.py install --with-deps chromium
   script:
     - ruff check .
     - ruff format --check .

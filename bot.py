@@ -11,7 +11,7 @@ from nonebot.adapters.qq import Adapter as QQAdapter
 from nonebot.log import LoguruHandler, logger
 
 from shared.security.database_url import mask_database_url
-from shared.security.tls import configure_aiohttp_tls
+from shared.security.tls import configure_tls
 
 # 启动时记录仍通过环境变量生效的配置
 _SECRET_ENV_VARS = frozenset({"WEB_SECRET_KEY"})
@@ -164,7 +164,7 @@ if _env_path.exists():
     except ImportError:
         pass
 
-configure_aiohttp_tls()
+configure_tls()
 
 # 默认 SQLite 路径（与 env.example 一致）
 if not os.getenv("SQLALCHEMY_DATABASE_URL"):

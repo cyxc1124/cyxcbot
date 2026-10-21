@@ -15,6 +15,8 @@ from urllib.parse import urlparse
 
 from nonebot.log import logger
 
+from shared.security.tls import create_http_ssl_context
+
 # Vendored from f2 conf (commit 019b3fb…); do not fetch remote YAML at runtime.
 _VENDORED_MS_TOKEN_CONF = Path(__file__).with_name("f2_ms_token.json")
 _ALLOWED_MS_TOKEN_HOSTS = frozenset(
@@ -118,7 +120,11 @@ class MsTokenManager:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as resp:
+            with urllib.request.urlopen(
+                request,
+                timeout=self.timeout_seconds,
+                context=create_http_ssl_context(),
+            ) as resp:
                 token = self._extract_ms_token_from_headers(resp.headers)
             if self._is_valid_ms_token(token):
                 logger.debug("已通过 mssdk 生成真实 msToken")

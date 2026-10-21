@@ -121,26 +121,35 @@ RUN apt-get update \
 
 # 复制依赖文件
 COPY requirements.txt .
+COPY scripts/secure_pip.py scripts/secure_pip.py
+COPY shared/__init__.py shared/__init__.py
+COPY shared/security/__init__.py shared/security/__init__.py
+COPY shared/security/ca.py shared/security/ca.py
+COPY shared/security/distrusted_roots.json shared/security/distrusted_roots.json
 
 # 安装 Python 依赖
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python scripts/secure_pip.py install --no-cache-dir -r requirements.txt
 
 # 复制启动脚本
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # 安装 Playwright Chromium 浏览器
-RUN playwright install chromium
+COPY scripts/playwright_install.py scripts/playwright_install.py
+COPY shared/security/playwright.py shared/security/playwright.py
+COPY shared/security/node_ca.cjs shared/security/node_ca.cjs
+RUN python scripts/playwright_install.py install chromium
 
 # 复制 Web Admin 前端构建产物（web/dist 不入库，须在镜像构建时生成）
 COPY --from=web-builder /app/web/dist ./web/dist
 
 # 复制项目文件
 COPY . .
+RUN python scripts/check_tls_artifacts.py
 
 # 暴露端口（OneBot + Web Admin）
 EXPOSE 8080 8081
 
 # 设置默认 shell 为 bash
 SHELL ["/bin/bash", "-c"]
-ENTRYPOINT ["docker-entrypoint.sh"] 
+ENTRYPOINT ["docker-entrypoint.sh"]

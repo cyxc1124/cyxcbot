@@ -29,7 +29,7 @@
 
 ## 开发与测试
 
-- 使用 **Python 3.14** 与仓库根目录 `.venv/`，勿用系统全局 Python 运行项目。不存在时：`python3.14 -m venv .venv && ./.venv/bin/pip install -r requirements.txt`；已有环境可用 `./.venv/bin/python --version` 确认版本。
+- 使用 **Python 3.14** 与仓库根目录 `.venv/`，勿用系统全局 Python 运行项目。不存在时：`python3.14 -m venv .venv && ./.venv/bin/python scripts/secure_pip.py install -r requirements.txt`；已有环境可用 `./.venv/bin/python --version` 确认版本。
 - 按改动影响选择下列检查，不要求每次全跑；格式化仅覆盖本次修改文件。涉及跨模块行为或发版时按影响扩大验证范围。
 
 | 改动 | 验证入口 |

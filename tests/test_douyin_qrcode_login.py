@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -19,6 +20,7 @@ from shared.douyin.qrcode_login import (
     poll_qrcode_login,
     refresh_qrcode_login,
 )
+from shared.security import browser as browser_policy
 
 
 def test_qr_selectors_prefer_live_hashed_container():
@@ -77,6 +79,102 @@ def _make_fake_session(session_id: str = "abc123def456") -> DouyinQrSession:
         context=context,
         page=page,
     )
+
+
+@pytest.fixture
+def qr_runtime(monkeypatch, isolated_qr_sessions):
+    browser = SimpleNamespace(close=AsyncMock())
+    page = SimpleNamespace(goto=AsyncMock(), wait_for_timeout=AsyncMock())
+    context = SimpleNamespace(
+        browser=browser,
+        close=AsyncMock(),
+        new_page=AsyncMock(return_value=page),
+        add_init_script=AsyncMock(),
+    )
+    playwright = SimpleNamespace(
+        chromium=SimpleNamespace(
+            launch_persistent_context=AsyncMock(return_value=context)
+        ),
+        stop=AsyncMock(),
+    )
+    manager = SimpleNamespace(
+        start=AsyncMock(return_value=playwright), __aexit__=playwright.stop
+    )
+    monkeypatch.setattr(qr_mod, "async_playwright", lambda: manager)
+    monkeypatch.setattr(browser_policy, "_seed_profile", lambda profile: ())
+    verify = AsyncMock()
+    monkeypatch.setattr(browser_policy, "_verify_profile", verify)
+    monkeypatch.setattr(
+        qr_mod,
+        "_wait_for_qr_element",
+        AsyncMock(
+            return_value=SimpleNamespace(screenshot=AsyncMock(return_value=b"png"))
+        ),
+    )
+    return SimpleNamespace(
+        browser=browser,
+        context=context,
+        page=page,
+        playwright=playwright,
+        verify=verify,
+    )
+
+
+async def test_start_and_close_qr_releases_private_browser_and_driver(qr_runtime):
+    result = await qr_mod.start_qrcode_login()
+    assert result["image_base64"] == "cG5n"
+    qr_runtime.verify.assert_awaited_once()
+    await close_qr_session(result["session_id"])
+    await close_qr_session(result["session_id"])
+    qr_runtime.context.close.assert_awaited_once()
+    qr_runtime.browser.close.assert_awaited_once()
+    qr_runtime.playwright.stop.assert_awaited_once()
+
+
+async def test_qr_start_cleanup_failure_preserves_api_error_and_closes_driver(
+    qr_runtime,
+):
+    qr_runtime.page.goto.side_effect = RuntimeError("navigation failed")
+    qr_runtime.context.close.side_effect = RuntimeError("cleanup failed")
+    with pytest.raises(DouyinQrcodeError, match="navigation failed"):
+        await qr_mod.start_qrcode_login()
+    qr_runtime.browser.close.assert_awaited_once()
+    qr_runtime.playwright.stop.assert_awaited_once()
+
+
+@pytest.mark.parametrize("stage", ["verify", "navigation"])
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_qr_start_failure_or_cancel_closes_all_resources(
+    qr_runtime, monkeypatch, stage, cancel
+):
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:8080")
+    operation = qr_runtime.verify if stage == "verify" else qr_runtime.page.goto
+    if cancel:
+        entered = asyncio.Event()
+
+        async def block(*args, **kwargs):
+            entered.set()
+            await asyncio.Event().wait()
+
+        operation.side_effect = block
+        task = asyncio.create_task(qr_mod.start_qrcode_login())
+        await entered.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    else:
+        operation.side_effect = RuntimeError("TLS policy or navigation failed")
+        with pytest.raises(DouyinQrcodeError):
+            await qr_mod.start_qrcode_login()
+    qr_runtime.context.close.assert_awaited_once()
+    qr_runtime.browser.close.assert_awaited_once()
+    qr_runtime.playwright.stop.assert_awaited_once()
+    assert not qr_mod._sessions
+    import os
+
+    assert os.environ["HTTPS_PROXY"] == "http://proxy.invalid:8080"
+    if stage == "verify":
+        qr_runtime.page.goto.assert_not_awaited()
 
 
 @pytest.fixture
