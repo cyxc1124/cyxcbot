@@ -13,37 +13,46 @@ Write-Host "=========================================="
 # Build web frontend
 Write-Host "Building web frontend..."
 Push-Location web
-if (Test-Path package-lock.json) {
-    npm ci
-} else {
-    npm install
-}
-if ($LASTEXITCODE -ne 0) { throw "Web frontend build failed" }
-
-# Extract frontend versions for build-info.env (exact versions from lockfile)
 try {
-    $lockJson = Get-Content -Raw package-lock.json | ConvertFrom-Json -AsHashtable
-    $env:REACT_VERSION = $lockJson.packages.'node_modules/react'.version
-    $env:TAILWIND_VERSION = $lockJson.packages.'node_modules/tailwindcss'.version
-    Write-Host "Frontend versions: React $env:REACT_VERSION, Tailwind $env:TAILWIND_VERSION"
-} catch {
-    Write-Warning "Failed to extract frontend versions from lockfile: $_"
+    if (Test-Path package-lock.json) {
+        node ../scripts/secure_npm.cjs ci
+    } else {
+        node ../scripts/secure_npm.cjs install
+    }
+    if ($LASTEXITCODE -ne 0) { throw "Web frontend build failed" }
+
+    # Extract frontend versions for build-info.env (exact versions from lockfile)
+    try {
+        $lockJson = Get-Content -Raw package-lock.json | ConvertFrom-Json -AsHashtable
+        $env:REACT_VERSION = $lockJson.packages.'node_modules/react'.version
+        $env:TAILWIND_VERSION = $lockJson.packages.'node_modules/tailwindcss'.version
+        Write-Host "Frontend versions: React $env:REACT_VERSION, Tailwind $env:TAILWIND_VERSION"
+    } catch {
+        Write-Warning "Failed to extract frontend versions from lockfile: $_"
+    }
+    node ../scripts/secure_npm.cjs run build
+    if ($LASTEXITCODE -ne 0) { throw "Web frontend build failed" }
+} finally {
+    Pop-Location
 }
-npm run build
-if ($LASTEXITCODE -ne 0) { throw "Web frontend build failed" }
-Pop-Location
 
 # Python dependencies
 Write-Host "Installing Python dependencies..."
-python -m pip install -r requirements.txt
+python scripts/secure_pip.py install -r requirements.txt
 if ($LASTEXITCODE -ne 0) { throw "Python dependency installation failed" }
-python -m pip install "pyinstaller>=6.0" tzdata
+python scripts/secure_pip.py install "pyinstaller>=6.0" tzdata
 if ($LASTEXITCODE -ne 0) { throw "Packaging tool installation failed" }
+
+Write-Host "Checking TLS trust policy..."
+python -m pytest -q tests/test_aiohttp_tls.py tests/test_dependency_security.py tests/test_tls_policy.py tests/test_ca_chains.py tests/test_secure_pip.py tests/test_secure_npm.py
+if ($LASTEXITCODE -ne 0) { throw "TLS trust regression checks failed" }
 
 # Playwright browser (bundled into dist after PyInstaller)
 Write-Host "Installing Playwright Chromium..."
-python -m playwright install chromium
+python scripts/playwright_install.py install chromium
 if ($LASTEXITCODE -ne 0) { throw "Playwright install failed" }
+python -m pytest -q tests/test_browser_security.py tests/test_screenshot_lifecycle.py tests/test_douyin_qrcode_login.py
+if ($LASTEXITCODE -ne 0) { throw "Browser TLS regression checks failed" }
 
 # Build metadata (read by admin about page / startup logs)
 $env:BUILD_VERSION = $Version
@@ -63,15 +72,28 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
 $distDir = Join-Path "dist" "cyxcbot"
 
 # Bundle Playwright browsers next to the executable
-$playwrightSrc = Join-Path $env:LOCALAPPDATA "ms-playwright"
+$browserPathScript = @'
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+from shared.security.playwright import configure_playwright_tls
+
+configure_playwright_tls()
+with sync_playwright() as playwright:
+    print(Path(playwright.chromium.executable_path).parents[2])
+'@
+$playwrightSrc = python -X utf8 -c $browserPathScript
+if ($LASTEXITCODE -ne 0) { throw "Playwright browser location lookup failed" }
 $playwrightDst = Join-Path $distDir "ms-playwright"
 if (Test-Path $playwrightSrc) {
     Write-Host "Copying Playwright browsers..."
     if (Test-Path $playwrightDst) { Remove-Item -Recurse -Force $playwrightDst }
     Copy-Item -Recurse -Force $playwrightSrc $playwrightDst
 } else {
-    Write-Warning "Playwright browsers not found at $playwrightSrc"
+    throw "Playwright browsers not found at $playwrightSrc"
 }
+
+python scripts/check_tls_artifacts.py $distDir
+if ($LASTEXITCODE -ne 0) { throw "Packaged CA bundle verification failed" }
 
 # Include example env for first-time setup
 Copy-Item -Force env.example (Join-Path $distDir "env.example")

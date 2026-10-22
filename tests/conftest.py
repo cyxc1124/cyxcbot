@@ -41,3 +41,24 @@ def web_secret_key(monkeypatch: pytest.MonkeyPatch) -> None:
         "WEB_SECRET_KEY",
         "test-secret-key-for-pytest-only-not-for-production",
     )
+
+
+@pytest.fixture
+def tls_policy_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Restore process-wide client defaults after startup/policy tests."""
+    import ssl
+
+    import httpx
+    import httpx._config
+    import httpx._transports.default
+    from aiohttp import connector
+
+    for module, name in (
+        (ssl, "create_default_context"),
+        (ssl, "_create_default_https_context"),
+        (httpx, "create_ssl_context"),
+        (httpx._config, "create_ssl_context"),
+        (httpx._transports.default, "create_ssl_context"),
+        (connector, "_SSL_CONTEXT_VERIFIED"),
+    ):
+        monkeypatch.setattr(module, name, getattr(module, name))

@@ -15,6 +15,7 @@ from nonebot.log import logger
 
 from admin.deps import AdminUser, RequireSetup
 from admin.schemas.about import AboutResponse
+from shared.security.tls import create_http_ssl_context
 
 router = APIRouter(
     tags=["about"],
@@ -108,7 +109,7 @@ def _fetch_json(url: str) -> dict | None:
             url,
             headers={"Accept": "application/vnd.github+json", "User-Agent": "cyxcbot"},
         )
-        with urlopen(req, timeout=5) as resp:
+        with urlopen(req, timeout=5, context=create_http_ssl_context()) as resp:
             return json.loads(resp.read())
     except Exception:
         logger.debug("GitHub API request failed: {}", url)

@@ -29,18 +29,19 @@
 
 ## 开发与测试
 
-- 使用 **Python 3.14** 与仓库根目录 `.venv/`，勿用系统全局 Python 运行项目。不存在时：`python3.14 -m venv .venv && ./.venv/bin/pip install -r requirements.txt`；已有环境可用 `./.venv/bin/python --version` 确认版本。
+- 使用 **Python 3.14** 与仓库根目录 `.venv/`，勿用系统全局 Python 运行项目。不存在时：`python3.14 -m venv .venv && ./.venv/bin/python scripts/secure_pip.py install -r requirements.txt`；已有环境可用 `./.venv/bin/python --version` 确认版本。
 - 按改动影响选择下列检查，不要求每次全跑；格式化仅覆盖本次修改文件。涉及跨模块行为或发版时按影响扩大验证范围。
 
 | 改动 | 验证入口 |
 |------|----------|
 | Python | `./.venv/bin/ruff check <相关文件>`；`./.venv/bin/ruff format <修改文件>`；`./.venv/bin/pytest tests/<相关测试文件>` |
-| 前端行为 | `cd web && npm test -- <相关测试文件>`（Vitest）；完整前端测试为 `npm test` |
-| 前端构建/类型 | `cd web && npm run build` |
-| 文档站 | `cd docs && npm run build`；普通 Markdown 修改检查内容和链接即可 |
+| 前端行为 | `cd web && node ../scripts/secure_npm.cjs test -- <相关测试文件>`（Vitest）；完整前端测试省略文件参数 |
+| 前端构建/类型 | `cd web && node ../scripts/secure_npm.cjs run build` |
+| 文档站 | `cd docs && node ../scripts/secure_npm.cjs run build`；普通 Markdown 修改检查内容和链接即可 |
 
+- npm 安装与构建使用 `node ../scripts/secure_npm.cjs <npm 命令>`（在 `web/` 或 `docs/` 中），沿用过滤后的 CA 信任库；Node.js 使用 22.23.4+（22.x）、24.22.1+（24.x）或 26.12.1+。
 - Python 测试在 `tests/`；前端测试沿用 `web/` 的 Vitest。需要完整 Python 回归时运行 `./.venv/bin/pytest`。
-- 本地启动：`./.venv/bin/python bot.py`；前端 `cd web && npm run dev`；文档预览 `cd docs && npm start`。
+- 本地启动：`./.venv/bin/python bot.py`；前端 `cd web && node ../scripts/secure_npm.cjs run dev`；文档预览 `cd docs && node ../scripts/secure_npm.cjs start`。
 - 本地验证使用隔离数据库和测试目标；`bot.py` 会连接配置的数据库并执行迁移，不作为无副作用的检查命令。
 - `bot.py` 的 E402 是 `nonebot.init()` 后导入所需，Ruff 已忽略。
 

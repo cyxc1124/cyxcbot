@@ -18,25 +18,27 @@ API 由 NoneBot / Admin 服务提供，本地请使用项目虚拟环境启动�
 
 ## 开发
 
+需 Node.js **22.23.4+（22.x）**、**24.22.1+（24.x）** 或 **26.12.1+**。
+
 ```bash
 cd web
-npm install
-npm run dev
+node ../scripts/secure_npm.cjs install
+node ../scripts/secure_npm.cjs run dev
 ```
 
-或从仓库根目录：`cd web && npm run dev`
+或从仓库根目录：`cd web && node ../scripts/secure_npm.cjs run dev`
 
 开发服务器默认运行在 http://localhost:5173，API 请求通过 Vite 代理转发到 `http://localhost:8081`。
 
 ## 构建
 
 ```bash
-npm run build
+node ../scripts/secure_npm.cjs run build
 ```
 
 产物输出至 `web/dist/`，由后端静态文件服务托管。
 
-本地拉取新代码后，访问后端 8081 的页面仍会使用上次构建的 `web/dist/`，不会自动更新。请在 `web/` 执行 `npm run build` 后刷新页面；若后端 Python 代码也有变化，需要重启自己启动的 `bot.py`。开发时可改用 Vite 终端实际显示的地址（默认 5173，端口占用时可能改变），前端源码会自动更新。
+本地拉取新代码后，访问后端 8081 的页面仍会使用上次构建的 `web/dist/`，不会自动更新。请在 `web/` 执行 `node ../scripts/secure_npm.cjs run build` 后刷新页面；若后端 Python 代码也有变化，需要重启自己启动的 `bot.py`。开发时可改用 Vite 终端实际显示的地址（默认 5173，端口占用时可能改变），前端源码会自动更新。
 
 ## 外观设置
 
