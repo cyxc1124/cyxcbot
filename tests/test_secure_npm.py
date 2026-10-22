@@ -1,6 +1,7 @@
 """npm and its lifecycle children must use filtered CAs without losing private trust."""
 
 import asyncio
+import hashlib
 import json
 import os
 import shutil
@@ -37,9 +38,10 @@ def environment(monkeypatch, tmp_path):
     return dict(os.environ)
 
 
+@pytest.mark.parametrize("separator", ["--", "---"])
 @pytest.mark.parametrize("exit_code", [0, 7])
 def test_npm_children_filter_roots_and_preserve_private_ca_proxy_and_unicode_paths(
-    monkeypatch, tmp_path, tls_contexts, exit_code
+    monkeypatch, tmp_path, tls_contexts, exit_code, separator
 ):
     project = tmp_path / "项目 with spaces"
     project.mkdir()
@@ -79,13 +81,14 @@ def test_npm_children_filter_roots_and_preserve_private_ca_proxy_and_unicode_pat
         "worker.once('message',workerRoots=>{process.stdout.write(JSON.stringify({roots:roots(),workerRoots,"
         "bundle:process.env.CYXCBOT_CA_BUNDLE,reject:process.env.NODE_TLS_REJECT_UNAUTHORIZED,"
         "proxy:process.env.HTTPS_PROXY==='http://proxy.invalid:8080',"
-        "heap:require('node:v8').getHeapStatistics().heap_size_limit,args:process.argv.slice(2)})+'\\n',()=>{"
+        "heap:require('node:v8').getHeapStatistics().heap_size_limit,options:process.env.NODE_OPTIONS,args:process.argv.slice(2)})+'\\n',()=>{"
         f"process.exit({exit_code});"
         "})});worker.once('error',error=>{throw error});",
         encoding="utf-8",
     )
     env = environment(monkeypatch, tmp_path)
     env["HTTPS_PROXY"] = "http://proxy.invalid:8080"
+    env["NODE_OPTIONS"] = "--trace-warnings"
     result = subprocess.run(
         [
             NODE,
@@ -93,8 +96,9 @@ def test_npm_children_filter_roots_and_preserve_private_ca_proxy_and_unicode_pat
             "run",
             "ca-audit",
             "--silent",
-            "--",
+            separator,
             "forwarded=中文 with spaces",
+            "--ca=literal-script-argument",
         ],
         cwd=project,
         env=env,
@@ -107,8 +111,6 @@ def test_npm_children_filter_roots_and_preserve_private_ca_proxy_and_unicode_pat
     audit = json.loads(result.stdout.strip())
     assert not set(audit["roots"]) & DISTRUSTED_ROOTS
     assert set(audit["workerRoots"]) == set(audit["roots"])
-    import hashlib
-
     assert (
         hashlib.sha256(root[:-1] + bytes([root[-1] ^ 1])).hexdigest()
         not in audit["roots"]
@@ -121,7 +123,11 @@ def test_npm_children_filter_roots_and_preserve_private_ca_proxy_and_unicode_pat
     check_trust_store(private)
     assert audit["proxy"] and audit["reject"] == "1"
     assert audit["heap"] < 400 * 1024 * 1024
-    assert audit["args"] == ["forwarded=中文 with spaces"]
+    assert "--trace-warnings" in audit["options"]
+    assert audit["args"] == [
+        "forwarded=中文 with spaces",
+        "--ca=literal-script-argument",
+    ]
     assert not Path(audit["bundle"]).exists()
 
 
@@ -133,6 +139,14 @@ def test_npm_children_filter_roots_and_preserve_private_ca_proxy_and_unicode_pat
         ("wrong_hostname", None),
         ("untrusted", "--no-strict-ssl"),
         ("wrong_hostname", "--no-strict-ssl"),
+        ("distrusted", "cafile_ca"),
+        ("distrusted", "ca_cafile"),
+        ("distrusted", "repeated_ca"),
+        ("distrusted", "equals"),
+        ("distrusted", "abbreviated"),
+        ("distrusted", "no_prefix"),
+        ("distrusted", "expanded_key"),
+        ("distrusted", "nested"),
     ],
 )
 async def test_npm_actual_registry_tls_rejects_before_auth(
@@ -167,15 +181,62 @@ async def test_npm_actual_registry_tls_rejects_before_auth(
         encoding="utf-8",
     )
     env = environment(monkeypatch, tmp_path)
+    wrapper = ROOT / "scripts/secure_npm.cjs"
+    options = [override] if override else []
+    command = ["view", "ca-regression", "version"]
+    if trust == "distrusted":
+        checkout = tmp_path / "checkout"
+        (checkout / "scripts").mkdir(parents=True)
+        policy = checkout / "shared/security"
+        shutil.copytree(ROOT / "shared/security", policy)
+        wrapper = checkout / "scripts/secure_npm.cjs"
+        shutil.copyfile(ROOT / "scripts/secure_npm.cjs", wrapper)
+        roots = policy / "distrusted_roots.json"
+        denied = json.loads(roots.read_text())
+        private = (tmp_path / "cert.pem").read_text()
+        denied["local regression canary"] = hashlib.sha256(
+            ssl.PEM_cert_to_DER_cert(private)
+        ).hexdigest()
+        roots.write_text(json.dumps(denied))
+        clean = (
+            Path(certifi.where()).read_text().split("-----END CERTIFICATE-----", 1)[0]
+            + "-----END CERTIFICATE-----\n"
+        )
+        mixed = clean + private
+        ca = tmp_path / "mixed.pem"
+        ca.write_text(mixed)
+        options = {
+            "cafile_ca": ["--cafile", str(ca), "--ca", mixed],
+            "ca_cafile": ["--ca", mixed, "--cafile", str(ca)],
+            "repeated_ca": ["--cafile", str(ca), "--ca", clean, "--ca", private],
+            "equals": [f"--cafile={ca}", f"--ca={mixed}"],
+            "abbreviated": ["--cafile", str(ca), "--ca", mixed, "--strict-ss=false"],
+            "no_prefix": ["--cafile", str(ca), "--no-no-ca", mixed],
+            "expanded_key": ["--cafile", str(ca), f"--${{ca_option}}={mixed}"],
+            "nested": ["--cafile", str(ca), "--ca", mixed],
+        }[override]
+        env["ca_option"] = "ca"
+        env["NPM_CONFIG_CA"] = mixed
+        env["npm_config_CA"] = mixed
+        if override == "nested":
+            (tmp_path / "package.json").write_text(
+                json.dumps({"scripts": {"registry-audit": "node registry-audit.cjs"}})
+            )
+            (tmp_path / "registry-audit.cjs").write_text(
+                "const {spawnSync}=require('node:child_process');"
+                "const result=spawnSync(process.execPath,[process.env.npm_execpath,"
+                "'view','ca-regression','version','--fetch-retries=0',"
+                "'--fetch-timeout=3000','--loglevel=error'],{stdio:'inherit'});"
+                "if(result.error)throw result.error;process.exitCode=result.status??1;"
+            )
+            command = ["run", "registry-audit", "--silent"]
     process = None
     try:
         process = await asyncio.create_subprocess_exec(
             NODE,
-            str(ROOT / "scripts/secure_npm.cjs"),
-            *([override] if override else []),
-            "view",
-            "ca-regression",
-            "version",
+            str(wrapper),
+            *options,
+            *command,
             "--fetch-retries=0",
             "--fetch-timeout=3000",
             "--loglevel=error",
@@ -199,7 +260,7 @@ async def test_npm_actual_registry_tls_rejects_before_auth(
                     b"UNABLE_TO_VERIFY",
                     b"TLS overrides",
                 )
-            ), stderr
+            ), (process.returncode, stdout, stderr)
             assert not received
     finally:
         if process is not None and process.returncode is None:
