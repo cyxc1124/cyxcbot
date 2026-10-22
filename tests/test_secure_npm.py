@@ -122,7 +122,18 @@ def test_npm_children_filter_roots_and_preserve_private_ca_proxy_and_unicode_pat
     assert fingerprints(private) <= set(audit["roots"])
     check_trust_store(private)
     assert audit["proxy"] and audit["reject"] == "1"
-    assert audit["heap"] < 400 * 1024 * 1024
+    expected_heap = int(
+        subprocess.check_output(
+            [
+                NODE,
+                "--max-old-space-size=256",
+                "-p",
+                "require('node:v8').getHeapStatistics().heap_size_limit",
+            ],
+            env=env,
+        )
+    )
+    assert audit["heap"] == expected_heap
     assert "--trace-warnings" in audit["options"]
     assert audit["args"] == [
         "forwarded=中文 with spaces",
