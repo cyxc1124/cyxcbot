@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
+import sys
 import uuid
 
 import pytest
 
 _PROD_DB_MARKERS = ("/data/cyxcbot.db", "cyxcbot.db")
+
+
+def pytest_asyncio_loop_factories(item):
+    factories = {"asyncio": asyncio.new_event_loop}
+    if item.path.name == "test_browser_security.py" and sys.platform != "win32":
+        import uvloop
+
+        factories["uvloop"] = uvloop.new_event_loop
+    return factories
 
 
 def _pytest_memory_db_url() -> str:

@@ -114,6 +114,15 @@ def _seed_profile(profile: Path) -> tuple[ssl.SSLContext, ssl.SSLContext]:
 
 async def _verify_profile(context, ssl_contexts) -> None:
     received = []
+    connections = set()
+
+    def connected(reader, writer):
+        connections.add(writer)
+        return respond(reader, writer)
+
+    def abort_connections():
+        for writer in tuple(connections):
+            writer.transport.abort()
 
     async def respond(reader, writer):
         try:
@@ -129,16 +138,23 @@ async def _verify_profile(context, ssl_contexts) -> None:
             writer.close()
             with suppress(ConnectionError):
                 await writer.wait_closed()
+            connections.discard(writer)
 
     async with AsyncExitStack() as resources:
         ports = []
         for ssl_context in ssl_contexts:
             server = await asyncio.start_server(
-                respond, "127.0.0.1", 0, ssl=ssl_context
+                connected,
+                "127.0.0.1",
+                0,
+                ssl=ssl_context,
+                # Pending handshakes have no StreamWriter to abort on uvloop.
+                ssl_handshake_timeout=5,
+                ssl_shutdown_timeout=1,
             )
             await resources.enter_async_context(server)
             # Chromium can leave idle TLS preconnections behind after closing a page.
-            resources.callback(server.abort_clients)
+            resources.callback(abort_connections)
             resources.callback(server.close)
             ports.append(server.sockets[0].getsockname()[1])
         page = await context.new_page()
