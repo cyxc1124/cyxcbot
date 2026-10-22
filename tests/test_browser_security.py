@@ -1,7 +1,7 @@
 """Real bundled Chromium must enforce its private trust policy before cookies."""
 
 import asyncio
-from contextlib import closing
+from contextlib import closing, suppress
 
 import pytest
 from playwright.async_api import Error, async_playwright
@@ -133,9 +133,12 @@ async def test_browser_policy_probes_bypass_proxy_but_business_requests_use_it()
                 b"HTTP/1.1 502 Test proxy\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
             )
             await writer.drain()
+        except asyncio.IncompleteReadError, ConnectionError, TimeoutError:
+            pass
         finally:
             writer.close()
-            await writer.wait_closed()
+            with suppress(ConnectionError):
+                await writer.wait_closed()
 
     server = await asyncio.start_server(proxy, "127.0.0.1", 0)
     resources = None

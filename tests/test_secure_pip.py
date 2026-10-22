@@ -295,14 +295,15 @@ def test_old_pip_bootstrap_honors_proxy_selection(
     assert "--no-proxy-env" not in calls[0][0]
     assert calls[1][0][-len(args) :] == args
     for command, env in calls:
-        assert ("HTTPS_PROXY" not in {key.upper() for key in env}) == ignore_env
+        names = {key.lower() for key in env}
         for name in ("HTTP_PROXY", "https_proxy", "ALL_PROXY", "no_proxy"):
-            assert (name not in env) == ignore_env
+            assert (name.lower() not in names) == ignore_env
         for name, value in proxy_env.items():
             assert env[name] == value
-    if proxy := next(
+    proxy = next(
         (arg.split("=", 1)[1] for arg in proxy_args if arg.startswith("--proxy=")), None
-    ):
+    )
+    if proxy is not None:
         assert calls[0][0][-3:] == ["--proxy", proxy, "pip==26.2.2"]
 
 
