@@ -5,23 +5,32 @@ const os = require('node:os');
 const path = require('node:path');
 const tls = require('node:tls');
 const { spawnSync } = require('node:child_process');
+const { createRequire } = require('node:module');
 const { certificates, isDistrusted } = require('../shared/security/node_ca_policy.cjs');
 
 async function main() {
   const directory = path.dirname(process.execPath);
-  const npm = [
+  let npm = [
     path.join(directory, 'node_modules/npm'),
     path.resolve(directory, '../lib/node_modules/npm'),
   ].find(candidate => fs.existsSync(path.join(candidate, 'bin/npm-cli.js')));
+  if (!npm) {
+    const entrypoint = path.join(directory, 'npm');
+    if (fs.existsSync(entrypoint)) {
+      const candidate = path.dirname(path.dirname(fs.realpathSync(entrypoint)));
+      if (fs.existsSync(path.join(candidate, 'bin/npm-cli.js'))) npm = candidate;
+    }
+  }
   if (!npm) throw new Error('Cannot locate npm bundled with this Node runtime');
   if (typeof tls.getCACertificates !== 'function') throw new Error('Unsupported Node CA policy');
-  const cli = path.join(npm, 'bin/npm-cli.js');
+  const cli = fs.realpathSync(path.join(npm, 'bin/npm-cli.js'));
   const args = process.argv.slice(2);
   if (!args.length) throw new Error('Usage: secure_npm.cjs <npm command>');
   // Use npm's own configuration parser, including option aliases and project .npmrc.
-  const Config = require(path.join(npm, 'node_modules/@npmcli/config'));
-  const { definitions, shorthands, flatten } = require(path.join(npm, 'node_modules/@npmcli/config/lib/definitions'));
-  const envReplace = require(path.join(npm, 'node_modules/@npmcli/config/lib/env-replace'));
+  const npmRequire = createRequire(cli);
+  const Config = npmRequire('@npmcli/config');
+  const { definitions, shorthands, flatten } = npmRequire('@npmcli/config/lib/definitions');
+  const envReplace = npmRequire('@npmcli/config/lib/env-replace');
   const config = new Config({ npmPath: npm, definitions, shorthands, flatten, env: { ...process.env }, argv: [process.execPath, cli, ...args] });
   await config.load();
   const cafile = config.get('cafile');

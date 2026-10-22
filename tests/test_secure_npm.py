@@ -7,6 +7,7 @@ import os
 import shutil
 import ssl
 import subprocess
+import sys
 from pathlib import Path
 
 import certifi
@@ -36,6 +37,61 @@ def environment(monkeypatch, tmp_path):
     monkeypatch.setenv("NPM_CONFIG_GLOBALCONFIG", str(tmp_path / "global.npmrc"))
     monkeypatch.setenv("NPM_CONFIG_UPDATE_NOTIFIER", "false")
     return dict(os.environ)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX split npm symlink layout")
+@pytest.mark.parametrize("split_dependencies", [False, True])
+@pytest.mark.parametrize("bundled_symlink", [False, True])
+def test_npm_supports_split_package_and_dependency_layouts(
+    monkeypatch, tmp_path, split_dependencies, bundled_symlink
+):
+    npm_entrypoint = shutil.which("npm")
+    assert npm_entrypoint
+    original = Path(npm_entrypoint).resolve().parent.parent
+    npm = tmp_path / "distribution/share/nodejs/npm"
+    shutil.copytree(original, npm, symlinks=True)
+    if split_dependencies:
+        shutil.move(npm / "node_modules", npm.parent / "node_modules")
+    binary_directory = tmp_path / "distribution/bin"
+    binary_directory.mkdir()
+    node = binary_directory / "node"
+    node.symlink_to(Path(NODE).resolve())
+    (binary_directory / "npm").symlink_to(npm / "bin/npm-cli.js")
+    if bundled_symlink:
+        bundled = tmp_path / "distribution/lib/node_modules/npm"
+        bundled.parent.mkdir(parents=True)
+        bundled.symlink_to(npm, target_is_directory=True)
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "package.json").write_text(
+        json.dumps({"scripts": {"ca-audit": "node audit.cjs"}}), encoding="utf-8"
+    )
+    (project / "audit.cjs").write_text(
+        "console.log(JSON.stringify({roots:require('node:tls').getCACertificates('default').map("
+        "c=>new (require('node:crypto').X509Certificate)(c).fingerprint256.replaceAll(':','').toLowerCase()),"
+        "args:process.argv.slice(2)}))",
+        encoding="utf-8",
+    )
+    wrapper = str(ROOT / "scripts/secure_npm.cjs")
+    arguments = [str(node), wrapper, "run", "ca-audit", "--silent", "--", "kept value"]
+    script = (
+        f"Object.defineProperty(process,'execPath',{{value:{json.dumps(str(node))}}});"
+        f"process.argv={json.dumps(arguments)};require({json.dumps(wrapper)});"
+    )
+    env = environment(monkeypatch, tmp_path)
+    env["PATH"] = str(binary_directory) + os.pathsep + env["PATH"]
+    result = subprocess.run(
+        [NODE, "-e", script],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    audit = json.loads(result.stdout.strip())
+    assert audit["roots"] and not set(audit["roots"]) & DISTRUSTED_ROOTS
+    assert audit["args"] == ["kept value"]
 
 
 @pytest.mark.parametrize("separator", ["--", "---"])

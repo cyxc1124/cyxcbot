@@ -119,4 +119,8 @@ def main(args=None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except subprocess.CalledProcessError as exc:
+        # The exception's command can contain index or proxy credentials.
+        raise SystemExit(exc.returncode) from None

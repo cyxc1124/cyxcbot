@@ -106,6 +106,53 @@ def test_installer_stops_on_failed_secure_bootstrap(monkeypatch):
 
 
 @pytest.mark.parametrize(
+    "pip_version,fail_on", [("24.3.1", 1), ("24.3.1", 2), ("26.2.2", 1)]
+)
+@pytest.mark.parametrize(
+    "network_args",
+    [
+        ["--index-url", "https://audit-user:audit-secret@index.invalid/simple"],
+        ["--extra-index-u=https://audit-user:audit-secret@extra.invalid/simple"],
+        ["--proxy=http://audit-user:audit-secret@proxy.invalid:8080"],
+        ["-ihttps://audit-user:audit-secret@index.invalid/simple"],
+    ],
+)
+def test_installer_cli_failure_preserves_status_without_logging_credentials(
+    pip_version, fail_on, network_args
+):
+    script = f"""
+import importlib.metadata
+import runpy
+import subprocess
+import sys
+
+original_version = importlib.metadata.version
+importlib.metadata.version = lambda name: {pip_version!r} if name == 'pip' else original_version(name)
+calls = 0
+def fail(command, **kwargs):
+    global calls
+    calls += 1
+    if calls == {fail_on}:
+        print('pip diagnostic from child', flush=True)
+        raise subprocess.CalledProcessError(23, command)
+    return subprocess.CompletedProcess(command, 0)
+subprocess.run = fail
+sys.argv = [{secure_pip.__file__!r}, 'install', *{network_args!r}, 'example']
+runpy.run_path({secure_pip.__file__!r}, run_name='__main__')
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 23
+    assert "pip diagnostic from child" in result.stdout
+    assert "audit-secret" not in result.stdout + result.stderr
+    assert "Traceback" not in result.stderr
+
+
+@pytest.mark.parametrize(
     "network_args,expected",
     [
         (
