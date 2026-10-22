@@ -78,7 +78,7 @@ def main(args=None) -> None:
     # PEP 517 build-dependency subprocesses do not inherit the parent's argv.
     env["PIP_USE_DEPRECATED"] = "legacy-certs"
     if (
-        getattr(options, "proxy", env.get("PIP_PROXY")) is not None
+        getattr(options, "proxy", env.get("PIP_PROXY") or None) is not None
         or getattr(options, "no_proxy_env", False)
         or strtobool(env.get("PIP_NO_PROXY_ENV", "no") or "no")
     ):

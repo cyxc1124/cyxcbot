@@ -264,6 +264,7 @@ def test_tls_restrictions_respect_option_values(monkeypatch, pip_version, instal
         (["--proxy="], {}, True),
         ([], {"PIP_NO_PROXY_ENV": "true"}, True),
         ([], {"PIP_PROXY": "http://configured.invalid:8080"}, True),
+        ([], {"PIP_PROXY": ""}, False),
         ([], {"PIP_NO_PROXY_ENV": "0"}, False),
     ],
 )
