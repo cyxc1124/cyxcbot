@@ -195,6 +195,44 @@ def test_bootstrap_preserves_callback_options_and_environment_defaults(
     assert calls[1][-len(args) :] == args
 
 
+@pytest.mark.parametrize("group_args", [["--group", "test"], ["--group=test"]])
+def test_bootstrap_defers_new_install_options_to_upgraded_pip(monkeypatch, group_args):
+    from pip._internal import commands
+
+    command = commands.create_command("install", isolated=True)
+    command.parser.remove_option("--group")
+    command.parser.get_option("--progress-bar").choices = ["on", "off", "raw"]
+    command.parser.defaults["progress_bar"] = "on"
+    monkeypatch.setattr(commands, "create_command", lambda *args, **kwargs: command)
+    monkeypatch.setattr(secure_pip, "version", lambda name: "24.3.1")
+    calls = []
+    monkeypatch.setattr(
+        secure_pip.subprocess, "run", lambda command, **kwargs: calls.append(command)
+    )
+    args = [
+        "install",
+        *group_args,
+        "--progress-bar=auto",
+        "-ihttps://index.invalid/simple",
+        "--proxy=http://proxy.invalid:8080",
+        "--retries=0",
+        "-C",
+        "--proxy=build-setting",
+    ]
+    secure_pip.main(args)
+    assert len(calls) == 2
+    assert calls[0][calls[0].index("--upgrade") + 1 :] == [
+        "--index-url",
+        "https://index.invalid/simple",
+        "--proxy",
+        "http://proxy.invalid:8080",
+        "--retries",
+        "0",
+        "pip==26.2.2",
+    ]
+    assert calls[1][-len(args) :] == args
+
+
 @pytest.mark.parametrize(
     "override",
     [
