@@ -154,7 +154,7 @@ async def _verify_profile(context, ssl_contexts) -> None:
             )
             await resources.enter_async_context(server)
             # Chromium can leave idle TLS preconnections behind after closing a page.
-            resources.callback(abort_connections)
+            resources.callback(getattr(server, "abort_clients", abort_connections))
             resources.callback(server.close)
             ports.append(server.sockets[0].getsockname()[1])
         page = await context.new_page()
