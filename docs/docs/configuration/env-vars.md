@@ -70,7 +70,11 @@ SQLALCHEMY_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/cyxcbo
 
 Playwright 的 Node 驱动及浏览器下载使用同一 certifi CA 包，并强制开启证书校验。截图与抖音扫码使用完整 Chromium 的独立临时配置目录，按公钥拒绝本次 emSign 事件披露的中间 CA（含交叉签名）；每次启动先通过本机的允许 / 拒绝证书检查，再加载业务页面或 Cookie。配置不兼容或检查失败时停止浏览器功能，不回退为忽略证书错误。策略不修改宿主机信任库。
 
-源码安装请使用 `python scripts/secure_pip.py install -r requirements.txt` 与 `python scripts/playwright_install.py install chromium`。安装器会过滤事件涉及的四个根证书，在过滤后的 CA 包上安全升级 pip 至至少 26.2.2，并关闭 pip 对系统信任库的自动合并。私有构建 CA 可通过 `PIP_CERT` 提供（仍会过滤受影响根）；索引和代理可用命令行参数或环境变量配置。安装器不读取用户 / 系统 pip 配置，也不接受跳过 TLS 校验的覆盖。镜像与 Windows 构建会检查实际打包的 CA、Node 和 Chromium 行为。
+源码安装请使用 `python scripts/secure_pip.py install -r requirements.txt` 与 `python scripts/playwright_install.py install chromium`。安装器按公钥身份过滤事件涉及的四个根证书及八个受影响中间 CA，包括重编码和不同自签名的信任锚，在过滤后的 CA 包上安全升级 pip 至至少 26.2.2，并关闭 pip 对系统信任库的自动合并。私有构建 CA 可通过 `PIP_CERT` 提供（仍会过滤受影响公钥）；索引和代理可用命令行参数或环境变量配置。安装器不读取用户 / 系统 pip 配置，也不接受跳过 TLS 校验的覆盖。镜像与 Windows 构建会检查实际打包的 CA、Node 和 Chromium 行为。
+
+前端与文档依赖使用 `node ../scripts/secure_npm.cjs ci`（在 `web/` 或 `docs/` 内执行），构建使用 `node ../scripts/secure_npm.cjs run build`。需 Node.js 22.23.4+（22.x）、24.22.1+（24.x）或 26.12.1+。npm 包装器过滤默认及 `NODE_EXTRA_CA_CERTS` 信任中的事件公钥；显式 `cafile` / `ca` 保持替换默认信任库的语义并接受同样过滤。registry、代理和认证配置继续由 npm 读取；`strict-ssl` 和 Node 证书校验被强制开启，生命周期子进程沿用同一过滤后的 CA 包。
+
+requirements 和 npm 生命周期脚本属于可信构建输入，需按代码审查；不得在 requirements 中加入 `--trusted-host` 等跳过证书校验的选项。
 
 事件证书样本及来源记录在仓库 `tests/fixtures/ca_incident/README.md`，来自 [事件披露站点](https://emudhra.we-have-a-problem.com/)。浏览器证书数据库目前使用 Chromium schema v1；升级 Playwright / Chromium 时须执行 `tests/test_browser_security.py` 和 `scripts/check_tls_artifacts.py`。
 

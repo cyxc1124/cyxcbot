@@ -13,25 +13,28 @@ Write-Host "=========================================="
 # Build web frontend
 Write-Host "Building web frontend..."
 Push-Location web
-if (Test-Path package-lock.json) {
-    npm ci
-} else {
-    npm install
-}
-if ($LASTEXITCODE -ne 0) { throw "Web frontend build failed" }
-
-# Extract frontend versions for build-info.env (exact versions from lockfile)
 try {
-    $lockJson = Get-Content -Raw package-lock.json | ConvertFrom-Json -AsHashtable
-    $env:REACT_VERSION = $lockJson.packages.'node_modules/react'.version
-    $env:TAILWIND_VERSION = $lockJson.packages.'node_modules/tailwindcss'.version
-    Write-Host "Frontend versions: React $env:REACT_VERSION, Tailwind $env:TAILWIND_VERSION"
-} catch {
-    Write-Warning "Failed to extract frontend versions from lockfile: $_"
+    if (Test-Path package-lock.json) {
+        node ../scripts/secure_npm.cjs ci
+    } else {
+        node ../scripts/secure_npm.cjs install
+    }
+    if ($LASTEXITCODE -ne 0) { throw "Web frontend build failed" }
+
+    # Extract frontend versions for build-info.env (exact versions from lockfile)
+    try {
+        $lockJson = Get-Content -Raw package-lock.json | ConvertFrom-Json -AsHashtable
+        $env:REACT_VERSION = $lockJson.packages.'node_modules/react'.version
+        $env:TAILWIND_VERSION = $lockJson.packages.'node_modules/tailwindcss'.version
+        Write-Host "Frontend versions: React $env:REACT_VERSION, Tailwind $env:TAILWIND_VERSION"
+    } catch {
+        Write-Warning "Failed to extract frontend versions from lockfile: $_"
+    }
+    node ../scripts/secure_npm.cjs run build
+    if ($LASTEXITCODE -ne 0) { throw "Web frontend build failed" }
+} finally {
+    Pop-Location
 }
-npm run build
-if ($LASTEXITCODE -ne 0) { throw "Web frontend build failed" }
-Pop-Location
 
 # Python dependencies
 Write-Host "Installing Python dependencies..."
@@ -41,7 +44,7 @@ python scripts/secure_pip.py install "pyinstaller>=6.0" tzdata
 if ($LASTEXITCODE -ne 0) { throw "Packaging tool installation failed" }
 
 Write-Host "Checking TLS trust policy..."
-python -m pytest -q tests/test_aiohttp_tls.py tests/test_dependency_security.py tests/test_tls_policy.py tests/test_ca_chains.py tests/test_secure_pip.py
+python -m pytest -q tests/test_aiohttp_tls.py tests/test_dependency_security.py tests/test_tls_policy.py tests/test_ca_chains.py tests/test_secure_pip.py tests/test_secure_npm.py
 if ($LASTEXITCODE -ne 0) { throw "TLS trust regression checks failed" }
 
 # Playwright browser (bundled into dist after PyInstaller)

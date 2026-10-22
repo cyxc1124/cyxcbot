@@ -15,18 +15,28 @@ from tests.test_x_https_proxy import tls_contexts as tls_contexts
 
 
 @pytest.mark.parametrize("pip_version", ["24.3.1", "26.2.2"])
+@pytest.mark.parametrize(
+    "ca_variable", ["PIP_CERT", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "SSL_CERT_FILE"]
+)
 def test_installer_filters_roots_preserves_private_ca_and_proxy(
-    monkeypatch, tmp_path, tls_contexts, pip_version
+    monkeypatch, tmp_path, tls_contexts, pip_version, ca_variable
 ):
     from pip._vendor import certifi as vendored
 
     roots = Path(__file__).parent / "fixtures" / "ca_incident" / "roots.pem"
     monkeypatch.setattr(vendored, "where", lambda: str(roots))
     private_ca = tmp_path / "private.pem"
-    private_ca.write_bytes(
-        Path(certifi.where()).read_bytes() + (tmp_path / "cert.pem").read_bytes()
+    original = ssl.PEM_cert_to_DER_cert(
+        (Path(__file__).parent / "fixtures" / "emsign_ecc_root_ca_g3.pem").read_text()
     )
-    monkeypatch.setenv("PIP_CERT", str(private_ca))
+    private_ca.write_bytes(
+        Path(certifi.where()).read_bytes()
+        + (tmp_path / "cert.pem").read_bytes()
+        + ssl.DER_cert_to_PEM_cert(original[:-1] + bytes([original[-1] ^ 1])).encode()
+    )
+    for name in ("PIP_CERT", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "SSL_CERT_FILE"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(ca_variable, str(private_ca))
     monkeypatch.setenv("PIP_TRUSTED_HOST", "pypi.org")
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:8080")
     monkeypatch.setenv("PIP_INDEX_URL", "https://index.invalid/simple")
@@ -44,6 +54,9 @@ def test_installer_filters_roots_preserves_private_ca_and_proxy(
         assert env["PIP_INDEX_URL"] == "https://index.invalid/simple"
         context = ssl.create_default_context(cafile=env["PIP_CERT"])
         assert not fingerprints(context) & DISTRUSTED_ROOTS
+        from shared.security.ca import check_trust_store
+
+        check_trust_store(context)
         assert (tmp_path / "cert.pem").read_text().strip() in Path(
             env["PIP_CERT"]
         ).read_text()
