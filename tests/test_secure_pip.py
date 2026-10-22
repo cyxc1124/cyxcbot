@@ -106,6 +106,134 @@ def test_installer_stops_on_failed_secure_bootstrap(monkeypatch):
 
 
 @pytest.mark.parametrize(
+    "network_args,expected",
+    [
+        (
+            [
+                "-ihttps://index.invalid/simple",
+                "--extra-index-u=https://extra.invalid",
+                "--proxy=http://proxy.invalid:8080",
+                "--retries=0",
+            ],
+            [
+                "--index-url",
+                "https://index.invalid/simple",
+                "--extra-index-url",
+                "https://extra.invalid",
+                "--proxy",
+                "http://proxy.invalid:8080",
+                "--retries",
+                "0",
+            ],
+        ),
+        (
+            [
+                "--no-index",
+                "-fwheels with spaces",
+                "--find-links=second",
+                "--client-cert=client.pem",
+                "--timeout=3",
+            ],
+            [
+                "--no-index",
+                "--find-links",
+                "wheels with spaces",
+                "--find-links",
+                "second",
+                "--client-cert",
+                "client.pem",
+                "--timeout",
+                "3.0",
+            ],
+        ),
+    ],
+)
+def test_bootstrap_uses_cli_network_settings_without_pip_config(
+    monkeypatch, tmp_path, network_args, expected
+):
+    config = tmp_path / "pip.conf"
+    config.write_text("[global]\nindex-url=https://ignored.invalid/simple\n")
+    monkeypatch.setenv("PIP_CONFIG_FILE", str(config))
+    monkeypatch.setattr(secure_pip, "version", lambda name: "26.0.1")
+    calls = []
+    monkeypatch.setattr(
+        secure_pip.subprocess, "run", lambda command, **kwargs: calls.append(command)
+    )
+    args = ["install", *network_args, "-r", "requirements.txt"]
+    secure_pip.main(args)
+    assert len(calls) == 2
+    bootstrap = calls[0][calls[0].index("--upgrade") + 1 : -1]
+    assert bootstrap == expected
+    assert "ignored.invalid" not in " ".join(calls[0])
+    assert calls[1][-len(args) :] == args
+
+
+@pytest.mark.parametrize(
+    "install_args",
+    [
+        ["--only-binary=:all:"],
+        ["--no-binary=:all:"],
+        ["-C", "build-option=value"],
+        ["--group", "test"],
+        ["--no-cache-dir"],
+        [],
+    ],
+)
+def test_bootstrap_preserves_callback_options_and_environment_defaults(
+    monkeypatch, install_args
+):
+    monkeypatch.setattr(secure_pip, "version", lambda name: "26.0.1")
+    monkeypatch.setenv("PIP_INDEX_URL", "https://environment.invalid/simple")
+    calls = []
+    monkeypatch.setattr(
+        secure_pip.subprocess, "run", lambda command, **kwargs: calls.append(command)
+    )
+    args = ["install", *install_args, "example"]
+    secure_pip.main(args)
+    assert len(calls) == 2
+    assert calls[0][calls[0].index("--upgrade") + 1 :] == ["pip==26.2.2"]
+    assert calls[1][-len(args) :] == args
+
+
+@pytest.mark.parametrize("group_args", [["--group", "test"], ["--group=test"]])
+def test_bootstrap_defers_new_install_options_to_upgraded_pip(monkeypatch, group_args):
+    from pip._internal import commands
+
+    command = commands.create_command("install", isolated=True)
+    command.parser.remove_option("--group")
+    command.parser.get_option("--progress-bar").choices = ["on", "off", "raw"]
+    command.parser.defaults["progress_bar"] = "on"
+    monkeypatch.setattr(commands, "create_command", lambda *args, **kwargs: command)
+    monkeypatch.setattr(secure_pip, "version", lambda name: "24.3.1")
+    calls = []
+    monkeypatch.setattr(
+        secure_pip.subprocess, "run", lambda command, **kwargs: calls.append(command)
+    )
+    args = [
+        "install",
+        *group_args,
+        "--progress-bar=auto",
+        "-ihttps://index.invalid/simple",
+        "--proxy=http://proxy.invalid:8080",
+        "--retries=0",
+        "-C",
+        "--proxy=build-setting",
+    ]
+    secure_pip.main(args)
+    assert len(calls) == 2
+    assert calls[0][calls[0].index("--upgrade") + 1 :] == [
+        "--index-url",
+        "https://index.invalid/simple",
+        "--proxy",
+        "http://proxy.invalid:8080",
+        "--retries",
+        "0",
+        "pip==26.2.2",
+    ]
+    assert calls[1][-len(args) :] == args
+
+
+@pytest.mark.parametrize(
     "override",
     [
         "--trusted-host=pypi.org",

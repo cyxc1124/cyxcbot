@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 from importlib.metadata import version
+from optparse import BadOptionError, Values
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -59,8 +60,50 @@ def main(args=None) -> None:
             "--use-deprecated=legacy-certs",
         ]
         if tuple(int(part) for part in version("pip").split(".")[:3]) < (26, 2, 2):
+            from pip._internal.commands import create_command
+
+            network_flags = (
+                ("index_url", "--index-url"),
+                ("extra_index_urls", "--extra-index-url"),
+                ("no_index", "--no-index"),
+                ("find_links", "--find-links"),
+                ("proxy", "--proxy"),
+                ("client_cert", "--client-cert"),
+                ("timeout", "--timeout"),
+                ("retries", "--retries"),
+            )
+            parser = create_command("install", isolated=True).parser
+            # Defer install-option validation to upgraded pip, retaining known arities.
+            network_names = {name for name, _ in network_flags}
+            for option in parser._get_all_options():
+                if option.dest not in network_names:
+                    option.process = lambda *args: None
+            process_args = parser._process_args
+
+            def process_network_args(largs, rargs, values):
+                while True:
+                    try:
+                        return process_args(largs, rargs, values)
+                    except BadOptionError:
+                        # New install options need not exist in the bootstrapping pip.
+                        continue
+
+            parser._process_args = process_network_args
+            options, _ = parser.parse_args(args[1:], values=Values())
+            bootstrap_options = []
+            for name, flag in network_flags:
+                value = getattr(options, name, None)
+                if value is None:
+                    continue
+                if value is True:
+                    bootstrap_options.append(flag)
+                else:
+                    for item in value if isinstance(value, list) else [value]:
+                        bootstrap_options.extend((flag, str(item)))
             subprocess.run(
-                [*command, "install", "--upgrade", "pip==26.2.2"], env=env, check=True
+                [*command, "install", "--upgrade", *bootstrap_options, "pip==26.2.2"],
+                env=env,
+                check=True,
             )
         subprocess.run([*command, *args], env=env, check=True)
 

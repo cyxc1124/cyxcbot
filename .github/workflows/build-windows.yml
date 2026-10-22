@@ -81,6 +81,7 @@ jobs:
           TMPDIR: ${{ runner.temp }}
           TEMP: ${{ runner.temp }}
           TMP: ${{ runner.temp }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/Playwright browsers 中文
           GIT_COMMIT: ${{ steps.version.outputs.git-commit }}
           GIT_TAG: ${{ steps.version.outputs.git-tag }}
           GIT_BRANCH: ${{ steps.version.outputs.git-branch }}

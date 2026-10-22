@@ -8,11 +8,15 @@ $env:LOCALAPPDATA = Join-Path $workspace "AppData"
 $env:GIT_COMMIT = "test-commit"
 New-Item -ItemType Directory -Path (Join-Path $env:LOCALAPPDATA "ms-playwright") -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $workspace "dist/cyxcbot") -Force | Out-Null
+$global:CyxcBuildTestBrowserRoot = Join-Path $workspace "自定义 Playwright browsers"
+New-Item -ItemType Directory -Path $global:CyxcBuildTestBrowserRoot -Force | Out-Null
+'custom-browser' | Set-Content (Join-Path $global:CyxcBuildTestBrowserRoot "browser-marker.txt")
+'# isolated test configuration' | Set-Content (Join-Path $workspace "env.example")
 '{"packages":{"":{},"node_modules/react":{"version":"19.3.1"},"node_modules/tailwindcss":{"version":"4.3.3"}}}' |
     Set-Content (Join-Path $workspace "web/package-lock.json")
 
 try {
-    foreach ($failure in @("web_install", "web_build", "requirements", "tools", "tls", "playwright", "browser", "pyinstaller", "artifact")) {
+    foreach ($failure in @("web_install", "web_build", "requirements", "tools", "tls", "playwright", "browser", "pyinstaller", "browser_path", "artifact", "none")) {
         $global:CyxcBuildTestCalls = [System.Collections.Generic.List[string]]::new()
         $global:CyxcBuildTestFailure = $failure
         function node {
@@ -33,9 +37,11 @@ try {
                 ($global:CyxcBuildTestFailure -eq "playwright" -and $command -eq "scripts/playwright_install.py install chromium") -or
                 ($global:CyxcBuildTestFailure -eq "browser" -and $command -like "-m pytest -q tests/test_browser_security.py*") -or
                 ($global:CyxcBuildTestFailure -eq "pyinstaller" -and $command -eq "-m PyInstaller --noconfirm cyxcbot.spec") -or
+                ($global:CyxcBuildTestFailure -eq "browser_path" -and $command -like "-X utf8 -c *") -or
                 ($global:CyxcBuildTestFailure -eq "artifact" -and $command -like "scripts/check_tls_artifacts.py*")) {
                 $global:LASTEXITCODE = 1
             }
+            if ($command -like "-X utf8 -c *") { Write-Output $global:CyxcBuildTestBrowserRoot }
         }
 
         Push-Location $workspace
@@ -49,13 +55,22 @@ try {
                 "playwright" { "Playwright install failed" }
                 "browser" { "Browser TLS regression checks failed" }
                 "pyinstaller" { "PyInstaller build failed" }
+                "browser_path" { "Playwright browser location lookup failed" }
                 "artifact" { "Packaged CA bundle verification failed" }
             }
-            try {
+            if ($failure -eq "none") {
                 & $buildScript -Version "test"
-                throw "Build continued after a failed prerequisite check"
-            } catch {
-                if ($_.Exception.Message -ne $expectedError) { throw }
+                if ((Get-Content "dist/cyxcbot/ms-playwright/browser-marker.txt") -ne "custom-browser") {
+                    throw "Build packaged a stale default browser instead of the resolved custom location"
+                }
+                if (-not (Test-Path "cyxcbot-windows-test.zip")) { throw "Build did not create the isolated test archive" }
+            } else {
+                try {
+                    & $buildScript -Version "test"
+                    throw "Build continued after a failed prerequisite check"
+                } catch {
+                    if ($_.Exception.Message -ne $expectedError) { throw }
+                }
             }
             $expectedCalls = switch ($failure) {
                 "web_install" { 0 }
@@ -66,7 +81,9 @@ try {
                 "playwright" { 4 }
                 "browser" { 5 }
                 "pyinstaller" { 6 }
-                "artifact" { 7 }
+                "browser_path" { 7 }
+                "artifact" { 8 }
+                "none" { 8 }
             }
             if ($global:CyxcBuildTestCalls.Count -ne $expectedCalls) {
                 throw "Playwright or PyInstaller ran after a failed prerequisite check"
@@ -84,7 +101,7 @@ try {
     $env:GIT_COMMIT = $savedGitCommit
     Remove-Item -Recurse -Force $workspace
     Remove-Item Function:node, Function:python
-    Remove-Variable CyxcBuildTestCalls, CyxcBuildTestFailure -Scope Global
+    Remove-Variable CyxcBuildTestCalls, CyxcBuildTestFailure, CyxcBuildTestBrowserRoot -Scope Global
 }
 $global:LASTEXITCODE = 0
-Write-Host "Windows build failure-path checks passed"
+Write-Host "Windows build failure-path and custom-browser checks passed"

@@ -72,7 +72,17 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
 $distDir = Join-Path "dist" "cyxcbot"
 
 # Bundle Playwright browsers next to the executable
-$playwrightSrc = Join-Path $env:LOCALAPPDATA "ms-playwright"
+$browserPathScript = @'
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+from shared.security.playwright import configure_playwright_tls
+
+configure_playwright_tls()
+with sync_playwright() as playwright:
+    print(Path(playwright.chromium.executable_path).parents[2])
+'@
+$playwrightSrc = python -X utf8 -c $browserPathScript
+if ($LASTEXITCODE -ne 0) { throw "Playwright browser location lookup failed" }
 $playwrightDst = Join-Path $distDir "ms-playwright"
 if (Test-Path $playwrightSrc) {
     Write-Host "Copying Playwright browsers..."

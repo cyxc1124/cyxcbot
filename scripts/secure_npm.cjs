@@ -21,7 +21,8 @@ async function main() {
   // Use npm's own configuration parser, including option aliases and project .npmrc.
   const Config = require(path.join(npm, 'node_modules/@npmcli/config'));
   const { definitions, shorthands, flatten } = require(path.join(npm, 'node_modules/@npmcli/config/lib/definitions'));
-  const config = new Config({ npmPath: npm, definitions, shorthands, flatten, argv: [process.execPath, cli, ...args] });
+  const envReplace = require(path.join(npm, 'node_modules/@npmcli/config/lib/env-replace'));
+  const config = new Config({ npmPath: npm, definitions, shorthands, flatten, env: { ...process.env }, argv: [process.execPath, cli, ...args] });
   await config.load();
   const cafile = config.get('cafile');
   if (cafile) certificates(fs.readFileSync(cafile, 'utf8'));
@@ -36,20 +37,27 @@ async function main() {
     fs.writeFileSync(bundle, certs.join('\n') + '\n');
     const preload = path.resolve(__dirname, '../shared/security/node_ca.cjs');
     const nodeOptions = [process.env.NODE_OPTIONS, config.get('node-options'), `--require ${JSON.stringify(preload)}`].filter(Boolean).join(' ');
-    const env = {
-      ...process.env,
+    const protectedKeys = new Set(['ca', 'cafile', 'strict-ssl', 'node-options']);
+    const env = { ...process.env };
+    for (const key of Object.keys(env)) {
+      if (/^npm_config_/i.test(key) && protectedKeys.has(key.slice(11).toLowerCase().replaceAll('_', '-'))) delete env[key];
+    }
+    Object.assign(env, {
       NODE_OPTIONS: nodeOptions,
       CYXCBOT_CA_BUNDLE: bundle,
       NODE_TLS_REJECT_UNAUTHORIZED: '1',
+      npm_config_ca: 'null',
       npm_config_cafile: bundle,
       npm_config_strict_ssl: 'true',
       npm_config_node_options: nodeOptions,
-    };
-    // Last config value wins; keep policy options before npm's script-argument separator.
-    const separator = args.indexOf('--');
-    const boundary = separator < 0 ? args.length : separator;
-    const protectedArgs = ['--cafile', bundle, '--strict-ssl=true', `--node-options=${nodeOptions}`];
-    const command = [...args.slice(0, boundary), ...protectedArgs, ...args.slice(boundary)];
+    });
+    // ca is an array: appending cafile cannot erase the original CLI trust.
+    const options = Object.fromEntries(Object.entries(config.data.get('cli').raw)
+      .filter(([key]) => key !== 'argv' && !protectedKeys.has(envReplace(key, process.env))));
+    Object.assign(options, { cafile: bundle, 'strict-ssl': true, 'node-options': nodeOptions });
+    const command = Object.entries(options).flatMap(([key, values]) => [values].flat()
+      .map(value => `--${key}=${value instanceof Date ? value.toISOString() : value}`));
+    command.push('--', ...config.parsedArgv.remain);
     const result = spawnSync(process.execPath, [cli, ...command], { env, stdio: 'inherit' });
     if (result.error) throw result.error;
     process.exitCode = result.status ?? 1;
