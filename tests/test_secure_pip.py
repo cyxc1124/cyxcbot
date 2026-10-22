@@ -109,6 +109,9 @@ def test_installer_stops_on_failed_secure_bootstrap(monkeypatch):
     "pip_version,fail_on", [("24.3.1", 1), ("24.3.1", 2), ("26.2.2", 1)]
 )
 @pytest.mark.parametrize(
+    "returncode,expected_status", [(23, 23), (-2, 130), (-15, 143)]
+)
+@pytest.mark.parametrize(
     "network_args",
     [
         ["--index-url", "https://audit-user:audit-secret@index.invalid/simple"],
@@ -118,7 +121,7 @@ def test_installer_stops_on_failed_secure_bootstrap(monkeypatch):
     ],
 )
 def test_installer_cli_failure_preserves_status_without_logging_credentials(
-    pip_version, fail_on, network_args
+    pip_version, fail_on, network_args, returncode, expected_status
 ):
     script = f"""
 import importlib.metadata
@@ -134,7 +137,7 @@ def fail(command, **kwargs):
     calls += 1
     if calls == {fail_on}:
         print('pip diagnostic from child', flush=True)
-        raise subprocess.CalledProcessError(23, command)
+        raise subprocess.CalledProcessError({returncode}, command)
     return subprocess.CompletedProcess(command, 0)
 subprocess.run = fail
 sys.argv = [{secure_pip.__file__!r}, 'install', *{network_args!r}, 'example']
@@ -146,7 +149,7 @@ runpy.run_path({secure_pip.__file__!r}, run_name='__main__')
         text=True,
         timeout=15,
     )
-    assert result.returncode == 23
+    assert result.returncode == expected_status
     assert "pip diagnostic from child" in result.stdout
     assert "audit-secret" not in result.stdout + result.stderr
     assert "Traceback" not in result.stderr

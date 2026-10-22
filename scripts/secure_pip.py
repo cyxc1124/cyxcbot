@@ -123,4 +123,6 @@ if __name__ == "__main__":
         main()
     except subprocess.CalledProcessError as exc:
         # The exception's command can contain index or proxy credentials.
-        raise SystemExit(exc.returncode) from None
+        raise SystemExit(
+            128 - exc.returncode if exc.returncode < 0 else exc.returncode
+        ) from None
