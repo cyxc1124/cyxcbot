@@ -233,6 +233,81 @@ def test_bootstrap_defers_new_install_options_to_upgraded_pip(monkeypatch, group
     assert calls[1][-len(args) :] == args
 
 
+@pytest.mark.parametrize("pip_version", ["24.3.1", "26.2.2"])
+@pytest.mark.parametrize(
+    "install_args",
+    [
+        ["-C", "--cert=signing.pem"],
+        ["--config-settings", "--trusted-host=backend-value"],
+        ["--config-settings=--cert=signing.pem"],
+        ["--", "--cert=package-name"],
+    ],
+)
+def test_tls_restrictions_respect_option_values(monkeypatch, pip_version, install_args):
+    monkeypatch.setattr(secure_pip, "version", lambda name: pip_version)
+    calls = []
+    monkeypatch.setattr(
+        secure_pip.subprocess, "run", lambda command, **kwargs: calls.append(command)
+    )
+    args = ["install", *install_args, "example"]
+    secure_pip.main(args)
+    assert len(calls) == (2 if pip_version == "24.3.1" else 1)
+    assert calls[-1][-len(args) :] == args
+
+
+@pytest.mark.parametrize(
+    "proxy_args,proxy_env,ignore_env",
+    [
+        (["--no-proxy-env"], {}, True),
+        (["--no-proxy-env", "--proxy=http://explicit.invalid:8080"], {}, True),
+        (["--proxy=http://explicit.invalid:8080"], {}, True),
+        (["--proxy="], {}, True),
+        ([], {"PIP_NO_PROXY_ENV": "true"}, True),
+        ([], {"PIP_PROXY": "http://configured.invalid:8080"}, True),
+        ([], {"PIP_PROXY": ""}, False),
+        ([], {"PIP_NO_PROXY_ENV": "0"}, False),
+    ],
+)
+def test_old_pip_bootstrap_honors_proxy_selection(
+    monkeypatch, proxy_args, proxy_env, ignore_env
+):
+    from pip._internal import commands
+
+    command = commands.create_command("install", isolated=True)
+    if command.parser.has_option("--no-proxy-env"):
+        command.parser.remove_option("--no-proxy-env")
+    monkeypatch.setattr(commands, "create_command", lambda *args, **kwargs: command)
+    monkeypatch.setattr(secure_pip, "version", lambda name: "24.3.1")
+    for name in ("PIP_PROXY", "PIP_NO_PROXY_ENV"):
+        monkeypatch.delenv(name, raising=False)
+    for name in ("HTTP_PROXY", "https_proxy", "ALL_PROXY", "no_proxy"):
+        monkeypatch.setenv(name, "http://unwanted.invalid:8080")
+    for name, value in proxy_env.items():
+        monkeypatch.setenv(name, value)
+    calls = []
+    monkeypatch.setattr(
+        secure_pip.subprocess,
+        "run",
+        lambda command, **kwargs: calls.append((command, kwargs["env"].copy())),
+    )
+    args = ["install", *proxy_args, "example"]
+    secure_pip.main(args)
+    assert len(calls) == 2
+    assert "--no-proxy-env" not in calls[0][0]
+    assert calls[1][0][-len(args) :] == args
+    for command, env in calls:
+        names = {key.lower() for key in env}
+        for name in ("HTTP_PROXY", "https_proxy", "ALL_PROXY", "no_proxy"):
+            assert (name.lower() not in names) == ignore_env
+        for name, value in proxy_env.items():
+            assert env[name] == value
+    proxy = next(
+        (arg.split("=", 1)[1] for arg in proxy_args if arg.startswith("--proxy=")), None
+    )
+    if proxy is not None:
+        assert calls[0][0][-3:] == ["--proxy", proxy, "pip==26.2.2"]
+
+
 @pytest.mark.parametrize(
     "override",
     [

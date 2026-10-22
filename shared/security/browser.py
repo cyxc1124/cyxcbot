@@ -162,6 +162,12 @@ async def _verify_profile(context, ssl_contexts) -> None:
 
 
 async def create_browser_context(playwright, **options):
+    if proxy := options.get("proxy"):
+        # Policy probes must reach this process, never the proxy's loopback.
+        options["proxy"] = {
+            **proxy,
+            "bypass": ",".join(filter(None, (proxy.get("bypass"), "127.0.0.1"))),
+        }
     async with AsyncExitStack() as resources:
         profile = resources.enter_context(
             tempfile.TemporaryDirectory(prefix="cyxcbot-chromium-")

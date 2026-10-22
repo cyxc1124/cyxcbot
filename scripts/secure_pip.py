@@ -14,20 +14,51 @@ from shared.security.ca import filtered_ca_bundle  # noqa: E402
 
 
 def main(args=None) -> None:
+    from pip._internal.commands import create_command
+    from pip._internal.utils.misc import strtobool
     from pip._vendor import certifi
 
     args = sys.argv[1:] if args is None else args
     if not args or args[0] != "install":
         raise SystemExit("Usage: secure_pip.py install <pip install arguments>")
     restricted = ("--cert", "--trusted-host", "--use-feature", "--isolated")
-    # pip also accepts unambiguous long-option abbreviations.
-    if any(
-        option.startswith("--")
-        and len(option) > 2
-        and any(flag.startswith(option) for flag in restricted)
-        for option in (arg.split("=", 1)[0] for arg in args)
-    ):
+    network_flags = (
+        ("index_url", "--index-url"),
+        ("extra_index_urls", "--extra-index-url"),
+        ("no_index", "--no-index"),
+        ("find_links", "--find-links"),
+        ("proxy", "--proxy"),
+        ("client_cert", "--client-cert"),
+        ("timeout", "--timeout"),
+        ("retries", "--retries"),
+    )
+    parser = create_command("install", isolated=True).parser
+    if not parser.has_option("--no-proxy-env"):
+        parser.add_option("--no-proxy-env", action="store_true", dest="no_proxy_env")
+    network_names = {name for name, _ in network_flags} | {"no_proxy_env"}
+    restricted_options = {parser.get_option(flag) for flag in restricted}
+
+    def reject_tls_override(*args):
         raise SystemExit("TLS overrides must use a reviewed PIP_CERT bundle")
+
+    # Reuse pip's option arities so backend values cannot become TLS options.
+    for option in parser._get_all_options():
+        if option in restricted_options:
+            option.process = reject_tls_override
+        elif option.dest not in network_names:
+            option.process = lambda *args: None
+    process_args = parser._process_args
+
+    def process_network_args(largs, rargs, values):
+        while True:
+            try:
+                return process_args(largs, rargs, values)
+            except BadOptionError:
+                # New install options need not exist in the bootstrapping pip.
+                continue
+
+    parser._process_args = process_network_args
+    options, _ = parser.parse_args(args[1:], values=Values())
 
     pem = Path(certifi.where()).read_text(encoding="ascii")
     for key in ("PIP_CERT", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "SSL_CERT_FILE"):
@@ -46,6 +77,15 @@ def main(args=None) -> None:
     env["PIP_CONFIG_FILE"] = os.devnull
     # PEP 517 build-dependency subprocesses do not inherit the parent's argv.
     env["PIP_USE_DEPRECATED"] = "legacy-certs"
+    if (
+        getattr(options, "proxy", env.get("PIP_PROXY") or None) is not None
+        or getattr(options, "no_proxy_env", False)
+        or strtobool(env.get("PIP_NO_PROXY_ENV", "no") or "no")
+    ):
+        # Older pip lacks both --no-proxy-env and explicit-proxy precedence.
+        for key in tuple(env):
+            if key.lower() in {"http_proxy", "https_proxy", "all_proxy", "no_proxy"}:
+                env.pop(key)
     with tempfile.TemporaryDirectory(prefix="cyxcbot-pip-ca-") as directory:
         bundle = Path(directory) / "cacert.pem"
         bundle.write_text(pem, encoding="ascii")
@@ -60,36 +100,6 @@ def main(args=None) -> None:
             "--use-deprecated=legacy-certs",
         ]
         if tuple(int(part) for part in version("pip").split(".")[:3]) < (26, 2, 2):
-            from pip._internal.commands import create_command
-
-            network_flags = (
-                ("index_url", "--index-url"),
-                ("extra_index_urls", "--extra-index-url"),
-                ("no_index", "--no-index"),
-                ("find_links", "--find-links"),
-                ("proxy", "--proxy"),
-                ("client_cert", "--client-cert"),
-                ("timeout", "--timeout"),
-                ("retries", "--retries"),
-            )
-            parser = create_command("install", isolated=True).parser
-            # Defer install-option validation to upgraded pip, retaining known arities.
-            network_names = {name for name, _ in network_flags}
-            for option in parser._get_all_options():
-                if option.dest not in network_names:
-                    option.process = lambda *args: None
-            process_args = parser._process_args
-
-            def process_network_args(largs, rargs, values):
-                while True:
-                    try:
-                        return process_args(largs, rargs, values)
-                    except BadOptionError:
-                        # New install options need not exist in the bootstrapping pip.
-                        continue
-
-            parser._process_args = process_network_args
-            options, _ = parser.parse_args(args[1:], values=Values())
             bootstrap_options = []
             for name, flag in network_flags:
                 value = getattr(options, name, None)
