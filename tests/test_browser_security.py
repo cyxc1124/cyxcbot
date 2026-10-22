@@ -120,3 +120,51 @@ async def test_browser_probe_cleans_up_idle_tls_preconnections(monkeypatch):
             await writer.wait_closed()
         if resources is not None:
             await resources.aclose()
+
+
+async def test_browser_policy_probes_bypass_proxy_but_business_requests_use_it():
+    received = []
+
+    async def proxy(reader, writer):
+        try:
+            request = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 5)
+            received.append(request.split(b"\r\n", 1)[0])
+            writer.write(
+                b"HTTP/1.1 502 Test proxy\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            await writer.drain()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    server = await asyncio.start_server(proxy, "127.0.0.1", 0)
+    resources = None
+    try:
+        configure_playwright_tls()
+        async with async_playwright() as pw:
+            context, resources = await browser.create_browser_context(
+                pw,
+                headless=True,
+                args=["--no-sandbox"],
+                proxy={
+                    "server": f"http://127.0.0.1:{server.sockets[0].getsockname()[1]}",
+                    "bypass": "retained.invalid",
+                },
+            )
+            try:
+                assert not any(
+                    line.startswith(b"CONNECT 127.0.0.1:") for line in received
+                )
+                page = await context.new_page()
+                with pytest.raises(Error, match="ERR_TUNNEL_CONNECTION_FAILED"):
+                    await page.goto("https://ca-proxy.invalid/", timeout=5000)
+                assert b"CONNECT ca-proxy.invalid:443 HTTP/1.1" in received
+            finally:
+                await resources.aclose()
+                resources = None
+    finally:
+        if resources is not None:
+            await resources.aclose()
+        server.close()
+        server.abort_clients()
+        await server.wait_closed()

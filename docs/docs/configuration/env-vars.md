@@ -68,9 +68,9 @@ SQLALCHEMY_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/cyxcbo
 
 默认客户端不再从操作系统、`SSL_CERT_FILE`、`SSL_CERT_DIR` 或 HTTPX 的 CA 环境覆盖加载附加根证书。开发调用方如需连接私有 CA 服务或代理，应显式传入仅包含所需信任的 `SSLContext`；服务端客户端证书验证用途和显式 CA 参数仍保留。代理地址、认证与路由环境设置继续生效。
 
-Playwright 的 Node 驱动及浏览器下载使用同一 certifi CA 包，并强制开启证书校验。截图与抖音扫码使用完整 Chromium 的独立临时配置目录，按已披露证书的 SPKI 拒绝本次 emSign 事件的中间 CA（含交叉签名）；每次启动先通过本机的允许 / 拒绝证书检查，再加载业务页面或 Cookie。Chromium 保留自己的根信任库，此策略未将浏览器默认根替换为 certifi，也不保证识别未经披露的其他 SPKI 表示。修改已披露中间证书的 SPKI 会使其父 CA 签名失效，不能仅凭中间私钥完成。配置不兼容或检查失败时停止浏览器功能，不回退为忽略证书错误。策略不修改宿主机信任库。
+Playwright 的 Node 驱动及浏览器下载使用同一 certifi CA 包，并强制开启证书校验。截图与抖音扫码使用完整 Chromium 的独立临时配置目录，按已披露证书的 SPKI 拒绝本次 emSign 事件的中间 CA（含交叉签名）；每次启动先通过本机的允许 / 拒绝证书检查，再加载业务页面或 Cookie。本机探针直接连接 `127.0.0.1`，保留其余浏览器代理配置。Chromium 保留自己的根信任库，此策略未将浏览器默认根替换为 certifi，也不保证识别未经披露的其他 SPKI 表示。修改已披露中间证书的 SPKI 会使其父 CA 签名失效，不能仅凭中间私钥完成。配置不兼容或检查失败时停止浏览器功能，不回退为忽略证书错误。策略不修改宿主机信任库。
 
-源码安装请使用 `python scripts/secure_pip.py install -r requirements.txt` 与 `python scripts/playwright_install.py install chromium`。安装器按公钥身份过滤事件涉及的四个根证书及八个受影响中间 CA，包括重编码和不同自签名的信任锚，在过滤后的 CA 包上安全升级 pip 至至少 26.2.2，并关闭 pip 对系统信任库的自动合并。私有构建 CA 可通过 `PIP_CERT` 提供（仍会过滤受影响公钥）；索引和代理可用命令行参数或环境变量配置。安装器不读取用户 / 系统 pip 配置，也不接受跳过 TLS 校验的覆盖。镜像与 Windows 构建会检查实际打包的 CA、Node 和 Chromium 行为。
+源码安装请使用 `python scripts/secure_pip.py install -r requirements.txt` 与 `python scripts/playwright_install.py install chromium`。安装器按公钥身份过滤事件涉及的四个根证书及八个受影响中间 CA，包括重编码和不同自签名的信任锚，在过滤后的 CA 包上安全升级 pip 至至少 26.2.2，并关闭 pip 对系统信任库的自动合并。私有构建 CA 可通过 `PIP_CERT` 提供（仍会过滤受影响公钥）；索引和代理可用命令行参数或环境变量配置。`--no-proxy-env` 或显式 `--proxy` 在旧版 pip 升级阶段同样生效；`-C` / `--config-settings` 的构建后端参数按 pip 的选项语法处理。安装器不读取用户 / 系统 pip 配置，也不接受跳过 TLS 校验的覆盖。镜像与 Windows 构建会检查实际打包的 CA、Node 和 Chromium 行为。
 
 前端与文档依赖使用 `node ../scripts/secure_npm.cjs ci`（在 `web/` 或 `docs/` 内执行），构建使用 `node ../scripts/secure_npm.cjs run build`。需 Node.js 22.23.4+（22.x）、24.22.1+（24.x）或 26.12.1+。npm 包装器过滤默认及 `NODE_EXTRA_CA_CERTS` 信任中的事件公钥；显式 `cafile` / `ca` 保持替换默认信任库的语义并接受同样过滤。转交 npm 时使用其解析后的参数，移除原始 CA 参数和环境副本，避免数组 `ca` 再覆盖过滤结果。registry、代理和认证配置继续由 npm 读取；`strict-ssl` 和 Node 证书校验被强制开启，普通生命周期及嵌套 npm 子进程沿用同一过滤后的 CA 包，原有 `NODE_OPTIONS` 与 npm 的 `node-options` 合并保留。
 
