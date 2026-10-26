@@ -1,6 +1,7 @@
 """Real bundled Chromium must enforce its private trust policy before cookies."""
 
 import asyncio
+import ssl
 from contextlib import closing, suppress
 
 import pytest
@@ -88,17 +89,29 @@ async def test_browser_fails_closed_if_certificate_database_is_not_honored(
         assert all(not profile.exists() for profile in profiles)
 
 
-async def test_browser_probe_cleans_up_idle_tls_preconnections(monkeypatch):
+@pytest.mark.parametrize("preconnection", ["tcp", "tls", "plaintext"])
+async def test_browser_probe_cleans_up_idle_tls_preconnections(
+    monkeypatch, preconnection
+):
     start_server = asyncio.start_server
     connections = []
 
     async def preconnect(*args, **kwargs):
         server = await start_server(*args, **kwargs)
+        client_tls = None
+        if preconnection == "tls":
+            # Keep a test peer connected to both generated probe certificates.
+            client_tls = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            client_tls.check_hostname = False
+            client_tls.verify_mode = ssl.CERT_NONE
         connections.append(
             await asyncio.open_connection(
-                "127.0.0.1", server.sockets[0].getsockname()[1]
+                "127.0.0.1", server.sockets[0].getsockname()[1], ssl=client_tls
             )
         )
+        if preconnection == "plaintext":
+            connections[-1][1].write(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            await connections[-1][1].drain()
         return server
 
     monkeypatch.setattr(browser.asyncio, "start_server", preconnect)
@@ -113,11 +126,13 @@ async def test_browser_probe_cleans_up_idle_tls_preconnections(monkeypatch):
             await resources.aclose()
             resources = None
             for reader, _ in connections:
-                assert await asyncio.wait_for(reader.read(1), 1) == b""
+                with suppress(ConnectionError):
+                    assert await asyncio.wait_for(reader.read(1), 6) == b""
     finally:
         for _, writer in connections:
             writer.close()
-            await writer.wait_closed()
+            with suppress(ConnectionError):
+                await writer.wait_closed()
         if resources is not None:
             await resources.aclose()
 
@@ -169,5 +184,4 @@ async def test_browser_policy_probes_bypass_proxy_but_business_requests_use_it()
         if resources is not None:
             await resources.aclose()
         server.close()
-        server.abort_clients()
         await server.wait_closed()
