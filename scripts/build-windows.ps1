@@ -51,7 +51,7 @@ if ($LASTEXITCODE -ne 0) { throw "TLS trust regression checks failed" }
 Write-Host "Installing Playwright Chromium..."
 python scripts/playwright_install.py install chromium
 if ($LASTEXITCODE -ne 0) { throw "Playwright install failed" }
-python -m pytest -q tests/test_browser_security.py tests/test_screenshot_lifecycle.py tests/test_douyin_qrcode_login.py
+python -m pytest -q tests/test_browser_security.py tests/test_screenshot_lifecycle.py tests/test_douyin_qrcode_login.py tests/test_dynamic_timestamps.py
 if ($LASTEXITCODE -ne 0) { throw "Browser TLS regression checks failed" }
 
 # Build metadata (read by admin about page / startup logs)
