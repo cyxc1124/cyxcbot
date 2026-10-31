@@ -4,7 +4,7 @@ sidebar_position: 10
 
 # Rust 群积分与商城
 
-群内签到、SteamID 绑定、积分查询与积分商城兑换。对应插件：`rust_player`（**仅群聊**）。
+群内签到、SteamID 绑定、积分查询与积分商城兑换。对应插件：`rust_player`（**仅 OneBot 群聊**）。
 
 RCON 任意远控命令见 [Rust RCON 远控](./rust-rcon)。两者共用「Rust 远控」总开关，配置入口为 **Web Admin → 游戏 → Rust 管理**，分为「远控与权限」与「玩家与积分」。
 

@@ -46,7 +46,7 @@ export default function Home(): ReactNode {
   return (
     <Layout
       title={siteConfig.title}
-      description="机器草 cyxcbot 官方文档：B 站动态、直播监控与群消息推送的 QQ 机器人">
+      description="机器草 cyxcbot 官方文档：支持 OneBot 与官方 QQ Bot 的 B 站 / X 监控、链接解析与消息推送机器人">
       <HomepageHeader />
       <main>
         <HomepageFeatures />

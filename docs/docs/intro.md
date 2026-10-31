@@ -5,7 +5,9 @@ slug: /intro
 
 # 介绍
 
-**机器草（cyxcbot）** 是基于 [NoneBot2](https://nonebot.dev/) 的 QQ 机器人，支持 B 站动态/直播监控、X 推文监控，以及 B 站 / 抖音 / X 链接解析与群消息推送。内置 **Web Admin** 管理面板，可在浏览器中完成监控配置、权限策略与消息模板管理，无需反复改环境变量。
+**机器草（cyxcbot）** 是基于 [NoneBot2](https://nonebot.dev/) 的 QQ 机器人，支持 **OneBot V11 与官方 QQ Bot（群聊 / C2C）**，提供 B 站动态/直播监控、X 推文监控，以及 B 站 / 抖音 / X 链接解析与群聊、私聊推送。内置 **Web Admin** 管理面板，可在浏览器中完成监控配置、权限策略与消息模板管理，无需反复改环境变量。
+
+首次使用从 [快速开始](./getting-started/quick-start) 选择部署方式，再按 [初始化与机器人接入](./configuration/web-admin-setup) 完成配置。
 
 ## 项目由来
 
@@ -25,9 +27,9 @@ slug: /intro
 
 ### B 站监控
 
-- **直播监控**（`live_monitor`）：WebSocket 弹幕 + API 轮询双重机制，开播/下播秒级推送
-- **动态监控**（`dynamic_monitor`）：轮询 UP 主动态与置顶变更推送，可选 Playwright 网页截图
-- **视频查询**（`video_monitor`）：在已配置映射的群中响应 `最新视频` / `最新投稿` 命令
+- **直播监控**（`live_monitor`）：WebSocket 弹幕 + API 轮询双重机制，推送开播/下播通知
+- **动态监控**（`dynamic_monitor`）：轮询 UP 主动态、置顶变更与新投稿，可选卡片或 Playwright 网页截图
+- **视频查询**（`video_monitor`）：在已配置映射的群中响应 `最新视频` / `最新投稿` 命令；新投稿自动推送由动态监控负责
 
 ### X 监控
 
@@ -42,16 +44,24 @@ slug: /intro
 - **主动查询**：群内发送 `最新动态` / `置顶动态` / `最新视频` 等命令
 - **消息模板**：按平台（B 站 / X / 抖音）自定义推送与链接解析文案
 
-### Rust 群管
+### Rust 群管（仅 OneBot）
 
 - **RCON 远控**（`rust_rcon`）：群/私聊通过触发词向 Rust 服务器发送 WebRCON 指令（默认关闭，需配置绑定与白名单）
 - **群积分与商城**（`rust_player`）：群内签到、SteamID 绑定、积分查询与 `giveto` 兑换（仅群聊；与远控共用会话开关）
 
 ### 权限与安全
 
-- **群消息守卫**（`group_guard`）、**私聊守卫**（`private_guard`）
+- **群消息守卫**（`group_guard`）、**私聊守卫**（`private_guard`）：控制入站命令和链接解析，不影响监控主动推送
 - **状态查询**（`status_check`）：超级用户或指定 QQ 可查询机器人运行状态
-- **群头衔**（`group_special_title`）：群成员自助设置 QQ 专属头衔（须群主、白名单；默认关闭）
+- **群头衔**（`group_special_title`）：群成员自助设置 QQ 专属头衔（仅 OneBot；须群主、白名单；默认关闭）
+
+### 机器人接入
+
+- **OneBot V11**：数字 QQ 号 / 群号，协议端通过反向 WebSocket 连接机器人服务
+- **官方 QQ Bot**：使用群 / 用户 openid，在「系统 → 机器人接入」保存凭证后热应用；默认 Webhook `/qq/webhook`，转发到机器人端口 8080
+- **监控投递**：动态、直播与 X 支持官方目标，主动推送以 QQ 平台权限与实际回执为准；Webhook 接入状态不等同于长连接在线状态
+
+详见 [机器人接入说明](./configuration/web-admin-setup)。
 
 ### Web Admin
 
@@ -66,17 +76,19 @@ slug: /intro
 | `/bilibili/templates` 等 | 各平台下的消息模板 |
 | `/rust/remote/servers`、`/rust/players/accounts` | Rust 远控与权限、玩家与积分两个分组 |
 | `/bilibili/settings`、`/x/settings` | 各平台订阅参数；账号和解析同在平台分组 |
-| `/system/connections`、`permissions`、`commands`、`advanced` | 机器人接入、权限、命令与高级配置 |
+| `/system/connections`、`/system/permissions`、`/system/commands`、`/system/advanced` | 机器人接入、权限、命令与高级配置 |
 | `/logs` | 实时运行日志（持久化见 [日志配置](./configuration/logging)） |
 | `/about` | 版本与构建信息 |
 
 ## 技术栈
 
 - **机器人**：NoneBot2 + OneBot V11，可选官方 QQ Bot（群/C2C）双栈
-- **后端 API**：FastAPI + SQLAlchemy（SQLite，理论上支持 PostgreSQL 但需自行安装驱动）
+- **后端 API**：FastAPI + SQLAlchemy + Alembic（默认 SQLite；使用 PostgreSQL 需另装匹配驱动并配置连接串）
 - **前端**：React + TypeScript + Tailwind CSS + Vite
 - **截图**：Playwright + Chromium
 - **打包**：Docker / PyInstaller（Windows）
+
+源码开发使用 **Python 3.14** 与 **Node.js 26.13.0+（26.x）**。依赖安装、浏览器安装与构建命令见 [本地开发](./getting-started/local-dev)，升级前备份数据库与原有 `WEB_SECRET_KEY`。
 
 ## 致谢
 

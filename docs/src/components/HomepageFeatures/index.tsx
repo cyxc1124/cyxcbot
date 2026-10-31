@@ -18,11 +18,11 @@ type QuickLink = {
 
 const FeatureList: FeatureItem[] = [
   {
-    title: 'B 站监控',
+    title: '监控与解析',
     Icon: IconMonitor,
     description: (
       <>
-        直播、动态、投稿三重监控，WebSocket + API 轮询双重机制，开播下播秒级推送。
+        B 站动态、直播与 X 推文订阅，支持 B 站 / 抖音 / X 链接解析，通过 OneBot 或官方 QQ Bot 收发消息。
       </>
     ),
   },
@@ -31,7 +31,7 @@ const FeatureList: FeatureItem[] = [
     Icon: IconPanel,
     description: (
       <>
-        浏览器管理面板，监控映射、B 站账号、消息模板、权限策略一站式配置，无需改环境变量。
+        浏览器管理订阅、平台账号、消息模板、会话权限与机器人接入，查看连接状态和运行日志。
       </>
     ),
   },
@@ -64,7 +64,7 @@ const QuickLinks: QuickLink[] = [
   },
   {
     title: '插件文档',
-    description: '直播、动态、链接解析等',
+    description: 'B 站 / X 监控、链接解析与 Rust 功能',
     to: '/docs/plugins/dynamic-monitor',
   },
 ];
