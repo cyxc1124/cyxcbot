@@ -4,7 +4,7 @@ sidebar_position: 9
 
 # Rust RCON 远控
 
-通过 QQ 向 Rust 游戏服务器发送 [WebRCON](https://github.com/Facepunch/webrcon) 指令。对应插件：`rust_rcon`。
+通过 QQ 向 Rust 游戏服务器发送 [WebRCON](https://github.com/Facepunch/webrcon) 指令。对应插件：`rust_rcon`，仅支持 OneBot 群聊/私聊。
 
 群内签到、SteamID 绑定与积分商城见 [Rust 群积分与商城](./rust-player)（共用「Rust 远控」总开关）。
 

@@ -1,8 +1,23 @@
 # 机器草
 
-基于 [NoneBot2](https://nonebot.dev/) 的 QQ 机器人，专注 B 站动态、直播监控与群消息推送。内置 Web Admin 管理面板，业务配置在浏览器中完成，环境变量只保留启动级项。
+基于 [NoneBot2](https://nonebot.dev/) 的 QQ 机器人，支持 **OneBot V11 与官方 QQ Bot（群聊 / C2C）**，提供 B 站动态与直播监控、X 推文监控，以及 B 站 / 抖音 / X 链接解析。内置 Web Admin 管理面板，业务配置在浏览器中完成，环境变量只保留启动级项。
 
-📖 **完整文档**（功能说明、插件与配置）：https://cyxc1124.github.io/cyxcbot/（源码在 [docs/](docs/)，本地预览：`cd docs && node ../scripts/secure_npm.cjs start`）
+📖 [**完整文档**](https://cyxc1124.github.io/cyxcbot/) · [快速开始](https://cyxc1124.github.io/cyxcbot/docs/getting-started/quick-start) · [Web Admin](https://cyxc1124.github.io/cyxcbot/docs/web-admin/overview) · [Windows 下载](https://github.com/cyxc1124/cyxcbot/releases)
+
+文档源码与本地预览见 [docs/README.md](docs/README.md)。
+
+## 功能概览
+
+| 功能 | 说明 |
+|------|------|
+| [B 站动态](docs/docs/plugins/dynamic-monitor.md) / [直播监控](docs/docs/plugins/live-monitor.md) | 动态、置顶变化、新投稿与开播 / 下播通知，支持群聊和私聊目标 |
+| [X 推文监控](docs/docs/plugins/x-monitor.md) | 博主订阅、媒体推送与代理配置，需配置 Bearer Token |
+| 链接解析 | [B 站](docs/docs/plugins/link-parser.md)、[抖音](docs/docs/plugins/douyin-link-parser.md)、[X](docs/docs/plugins/x-link-parser.md) 分享链接解析，按会话设置策略 |
+| 命令与会话管理 | 最新动态 / 视频查询、动态图片提取、状态查询、群聊与私聊守卫、自定义消息模板 |
+| Rust 群功能 | [RCON 远控](docs/docs/plugins/rust-rcon.md)、[签到 / 积分 / 商城](docs/docs/plugins/rust-player.md) |
+| Web Admin | 订阅、账号、权限、模板、运行日志和连接状态统一管理 |
+
+数字 QQ 号 / 群号走 OneBot，openid 走官方 QQ Bot。官方 Bot 的主动投递以平台权限和实际回执为准；Rust 功能与群专属头衔仅支持 OneBot。接入方式见 [初始化与机器人接入](docs/docs/configuration/web-admin-setup.md)。
 
 ---
 
@@ -24,8 +39,8 @@
 
 ## 技术栈
 
-- **机器人**：NoneBot2 + OneBot V11 适配器
-- **后端 API**：FastAPI + SQLAlchemy（SQLite，理论上支持 PostgreSQL 但需自行安装驱动）
+- **机器人**：NoneBot2 + OneBot V11 / 官方 QQ 适配器
+- **后端 API**：FastAPI + SQLAlchemy + Alembic（默认 SQLite；使用 PostgreSQL 需另装匹配驱动并配置连接串）
 - **前端**：React + TypeScript + Tailwind CSS + Vite
 - **截图**：Playwright + Chromium
 - **打包**：Docker / PyInstaller（Windows）
@@ -37,6 +52,10 @@
 ### 方式一：Docker（推荐用于服务器 / NAS）
 
 ```bash
+# 首次部署：准备启动配置，在 .env 中填写唯一随机 WEB_SECRET_KEY（至少 32 字符）
+cp env.example .env
+# 可用 openssl rand -hex 32 生成密钥；将输出填入 .env，升级时保留原值
+
 # 构建镜像（仓库根目录）
 docker build -t cyxcbot .
 
@@ -52,15 +71,19 @@ docker run -d \
 
 镜像由 GitHub Actions 自动构建并推送，详见 [`.github/workflows/build-and-push.yml`](.github/workflows/build-and-push.yml)。
 
-首次启动后访问 `http://<主机>:8081`，完成 `/setup` 初始化管理员账户，再在面板里配置监控与 OneBot 连接。
+使用预构建镜像可按 [Docker Compose](deploy/compose/README.md) 部署；Kubernetes 见 [Helm](deploy/helm/README.md)。
+
+首次启动后访问 `http://<主机>:8081`，尽快完成 `/setup` 初始化管理员账户，再配置机器人接入与订阅。OneBot 协议端反向 WebSocket 连接 `ws://<主机>:8080/onebot/v11/ws`；官方 Bot 在「系统 → 机器人接入」保存凭证，默认使用 Webhook，公网 HTTPS `/qq/webhook` 转发到 **8080**。
 
 ### 方式二：Windows 可执行包
 
-自 **2.0.0** 起提供 Windows 打包。Release 页下载 `cyxcbot-windows-<version>.zip`，解压后：
+自 **2.0.0** 起提供 Windows 打包。[Release 页](https://github.com/cyxc1124/cyxcbot/releases)下载 `cyxcbot-windows-<version>.zip`，解压后：
 
 1. 复制 `env.example` 为 `.env`，设置 `WEB_SECRET_KEY`（≥32 字符随机串）
 2. 运行 `cyxcbot.exe`
 3. 浏览器打开 `http://localhost:8081` 完成初始化
+
+包内包含 Python 运行时、管理面板与 Chromium；密钥生成和接入步骤见 [Windows 部署](docs/docs/getting-started/windows.md)。
 
 本地自行打包：
 
@@ -78,7 +101,7 @@ CI 流程见 [`.github/workflows/build-windows.yml`](.github/workflows/build-win
 
 ```bash
 # 1. 创建虚拟环境
-python3 -m venv .venv
+python3.14 -m venv .venv
 
 # 2. 安装依赖
 ./.venv/bin/python scripts/secure_pip.py install -r requirements.txt
@@ -89,22 +112,24 @@ python3 -m venv .venv
 # 4. 配置环境
 cp env.example .env
 # 生成并写入 WEB_SECRET_KEY（≥32 字符；未设置时机器人可启动，但 Web Admin 不会监听）
-python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+./.venv/bin/python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 # 5. 启动机器人（请用 venv，不要用系统 python3）
 ./.venv/bin/python bot.py
 
 # 6. 另开终端启动前端开发服务器（可选）
-cd web && node ../scripts/secure_npm.cjs install && node ../scripts/secure_npm.cjs run dev
+cd web && node ../scripts/secure_npm.cjs ci && node ../scripts/secure_npm.cjs run dev
 ```
 
 Windows（PowerShell）创建 venv：`py -3.14 -m venv .venv`，激活：`.\.venv\Scripts\Activate.ps1`。
 
-- OneBot：`http://localhost:8080`
+- 机器人服务（OneBot / 官方 QQ Webhook）：`http://localhost:8080`
 - Web Admin API：`http://localhost:8081`
 - 前端开发服务器：`http://localhost:5173`（Vite 代理 API 到 8081）
 
-更细的说明见文档站 [本地开发](https://cyxc1124.github.io/cyxcbot/getting-started/local-dev)。
+源码运行需先构建 `web/dist` 才能在 8081 使用管理页面，也可直接使用 Vite 开发服务器。`bot.py` 启动会连接数据库并执行迁移，本地开发请使用隔离数据库与测试会话。
+
+更细的说明见文档站 [本地开发](https://cyxc1124.github.io/cyxcbot/docs/getting-started/local-dev)。
 
 ---
 
@@ -114,13 +139,14 @@ Windows（PowerShell）创建 venv：`py -3.14 -m venv .venv`，激活：`.\.ven
 
 | 类别 | 变量 | 说明 |
 |------|------|------|
-| OneBot | `HOST`、`PORT` | 机器人监听地址与端口（默认 `0.0.0.0:8080`） |
+| 机器人 | `HOST`、`PORT` | OneBot / 官方 QQ Webhook 监听地址与端口（默认 `0.0.0.0:8080`） |
 | Web Admin | `WEB_HOST`、`WEB_PORT`、`WEB_ADMIN_ENABLED` | API 监听（默认 `8081`）；`false` 可禁用面板 |
 | 安全 | `WEB_SECRET_KEY` | JWT / Cookie 加密密钥（Web Admin 启动时必填，≥32 字符） |
+| 反向代理 | `WEB_PUBLIC_ORIGIN` | 代理改写 Host 时设置浏览器访问源（如 `https://bot.example.com`，不含路径） |
 | 数据库 | `SQLALCHEMY_DATABASE_URL` | 默认 SQLite `sqlite+aiosqlite:///data/cyxcbot.db` |
 | 日志 | `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` 等 |
 
-完整示例见 [`env.example`](env.example)；明细见 [环境变量](https://cyxc1124.github.io/cyxcbot/configuration/env-vars)。
+完整示例见 [`env.example`](env.example)；明细见 [环境变量](https://cyxc1124.github.io/cyxcbot/docs/configuration/env-vars)。升级前备份数据库与 `.env`，保留原有 `WEB_SECRET_KEY`，否则已加密的凭证无法正常解密。
 
 ---
 
@@ -134,8 +160,9 @@ cyxcbot/
 ├── plugins/               # NoneBot 插件
 ├── web/                   # 管理面板前端
 ├── docs/                  # 文档站（Docusaurus）
-├── utils/                 # B 站 / 抖音 API、截图等工具
-├── scripts/               # Windows 打包脚本
+├── utils/                 # B 站 / 抖音 / X API、截图等工具
+├── scripts/               # 依赖安装、浏览器安装与 Windows 打包工具
+├── deploy/                # Docker Compose / Helm 与发布说明
 ├── Dockerfile
 ├── env.example
 └── requirements.txt
@@ -146,10 +173,18 @@ cyxcbot/
 ## 开发与测试
 
 ```bash
-./.venv/bin/ruff check .
-./.venv/bin/ruff format .
-./.venv/bin/pytest
+# Python：按改动选择相关文件与测试，格式化只覆盖修改文件
+./.venv/bin/ruff check <相关文件>
+./.venv/bin/ruff format <修改文件>
+./.venv/bin/pytest tests/<相关测试文件>
+
+# 前端（web/）：省略测试文件名可跑完整 Vitest
+cd web
+node ../scripts/secure_npm.cjs test -- <相关测试文件>
+node ../scripts/secure_npm.cjs run build
 ```
+
+完整检查入口见 [测试文档](docs/docs/development/testing.md)。GitHub 是主仓库：功能分支通过 PR 合入 `develop`，发版通过 `develop` → `main` PR；GitLab 仅同步发行 tag。详细流程见 [维护者发布流程](deploy/README.md#维护者发布流程)。
 
 ---
 

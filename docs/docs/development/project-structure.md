@@ -25,9 +25,9 @@ cyxcbot/
 │   └── private_guard/
 ├── web/                   # 管理面板前端（React + Vite）
 ├── docs/                  # 文档站（Docusaurus）
-├── utils/                 # B 站 / 抖音 / Rust RCON、截图等工具
+├── utils/                 # B 站 / 抖音 / X / Rust RCON、截图等工具
 ├── deploy/                # Docker Compose / Helm
-├── scripts/               # Windows 打包脚本
+├── scripts/               # 依赖安装、浏览器安装、Windows 打包与诊断脚本
 ├── tests/                 # 单元测试
 ├── Dockerfile
 ├── env.example
@@ -39,6 +39,8 @@ cyxcbot/
 ### `admin/`
 
 FastAPI 应用，提供 Web Admin REST API 与 SSE 日志推送。启动逻辑在 `admin/startup.py`。
+
+监控状态、热重载与群/好友列表查询通过 `admin/services/` 的 bridge 模块调用；其他 Admin 模块不直接导入 `plugins.*`。
 
 ### `shared/`
 
@@ -54,11 +56,14 @@ FastAPI 应用，提供 Web Admin REST API 与 SSE 日志推送。启动逻辑�
 - `shared/logging/` — Web 日志广播（`broadcast.py`）与磁盘会话日志（`file_sink.py`）
 - `utils/bilibili_api/` — B 站 HTTP API 封装
 - `utils/douyin_api/` — 抖音解析与下载链路
+- `utils/x_api/` — X API 与媒体获取
 - `utils/rust_rcon/` — WebRCON 客户端、`status` / `giveto` 辅助
 
 ### `plugins/`
 
-NoneBot2 插件，每个插件一个目录，包含 `__init__.py` 入口。插件通过 `pyproject.toml` / NoneBot 插件加载机制自动发现。
+NoneBot2 插件，每个插件一个目录，包含 `__init__.py` 入口，由 `bot.py` 加载。业务配置通过 `shared/config/service.py` 的快照读取，热重载沿用各插件已有回调。
+
+`video_monitor` 只处理最新视频查询命令，新投稿自动推送由 `dynamic_monitor` 负责。`group_guard` / `private_guard` 控制入站消息，不拦截监控主动推送。
 
 ### `web/`
 
@@ -71,7 +76,7 @@ Docusaurus 文档站，独立 Node.js 项目。
 ## 数据流
 
 ```
-Web Admin (React) ──HTTP/WS──► admin/ (FastAPI) ──► shared/db
+Web Admin (React) ──HTTP/SSE──► admin/ (FastAPI) ──► shared/db
                                                       │
 NoneBot plugins ◄─────────────────────────────────────┘
         │
