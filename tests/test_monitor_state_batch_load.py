@@ -116,6 +116,30 @@ async def db_context():
         await engine.dispose()
 
 
+@pytest.mark.parametrize(
+    ("plugin", "class_name"),
+    [
+        ("dynamic_monitor", "DynamicMonitor"),
+        ("live_monitor", "LiveMonitor"),
+        ("x_monitor", "XMonitor"),
+    ],
+)
+async def test_monitor_last_check_at_is_utc(db_context, plugin, class_name):
+    from datetime import datetime, timedelta, timezone
+    from importlib import import_module
+    from types import SimpleNamespace
+
+    module = import_module(f"plugins.{plugin}.{plugin}")
+    monitor = SimpleNamespace(last_check_at=None)
+    before = datetime.now(timezone.utc).replace(microsecond=0)
+
+    getattr(module, class_name)._touch_last_check_at(monitor)
+
+    recorded = datetime.fromisoformat(monitor.last_check_at)
+    assert recorded.utcoffset() == timedelta(0)
+    assert before <= recorded <= datetime.now(timezone.utc)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["recipient", "part", "completed"])
 @pytest.mark.parametrize("is_pinned", [False, True])

@@ -5,7 +5,7 @@ UP主动态监控核心模块
 
 import asyncio
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Dict, List, Optional, Set
 
@@ -106,7 +106,7 @@ class DynamicMonitor:
         self._pending_targets: Dict[tuple[str, int | str, bool], PendingDelivery] = {}
 
     def _touch_last_check_at(self) -> None:
-        self.last_check_at = datetime.now().isoformat(timespec="seconds")
+        self.last_check_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     def _uid_list(self) -> List[str]:
         return list(self.config.dynamic_monitor_mapping.keys())
