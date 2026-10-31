@@ -52,6 +52,7 @@ web:
     paths:
       - .cache/npm
   before_script:
+    - node --version
     - cd web
     - node ../scripts/secure_npm.cjs ci
   script:
