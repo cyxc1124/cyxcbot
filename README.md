@@ -74,7 +74,7 @@ CI 流程见 [`.github/workflows/build-windows.yml`](.github/workflows/build-win
 
 本地开发请使用 **Python 3.14** 与仓库根目录下的 `.venv/`，不要使用系统全局 `python3`。
 
-前端开发与 Windows 本地打包需 Node.js **22.23.4+（22.x）**、**24.22.1+（24.x）** 或 **26.12.1+**，安装和构建命令通过下方包装器过滤 CA 信任库。
+前端开发与 Windows 本地打包统一使用 Node.js **26 LTS（26.13.0+，26.x）**，安装和构建命令通过下方包装器过滤 CA 信任库。使用 nvm 时，在仓库根目录运行 `nvm install`、`nvm use`，版本见 `.nvmrc`。Playwright 保留官方随包的 Node，由 Playwright 依赖版本管理。
 
 ```bash
 # 1. 创建虚拟环境

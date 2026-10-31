@@ -72,7 +72,7 @@ Playwright 的 Node 驱动及浏览器下载使用同一 certifi CA 包，并强
 
 源码安装请使用 `python scripts/secure_pip.py install -r requirements.txt` 与 `python scripts/playwright_install.py install chromium`。安装器按公钥身份过滤事件涉及的四个根证书及八个受影响中间 CA，包括重编码和不同自签名的信任锚，在过滤后的 CA 包上安全升级 pip 至至少 26.2.2，并关闭 pip 对系统信任库的自动合并。私有构建 CA 可通过 `PIP_CERT` 提供（仍会过滤受影响公钥）；索引和代理可用命令行参数或环境变量配置。`--no-proxy-env` 或显式 `--proxy` 在旧版 pip 升级阶段同样生效；`-C` / `--config-settings` 的构建后端参数按 pip 的选项语法处理。安装器不读取用户 / 系统 pip 配置，也不接受跳过 TLS 校验的覆盖。镜像与 Windows 构建会检查实际打包的 CA、Node 和 Chromium 行为。
 
-前端与文档依赖使用 `node ../scripts/secure_npm.cjs ci`（在 `web/` 或 `docs/` 内执行），构建使用 `node ../scripts/secure_npm.cjs run build`。需 Node.js 22.23.4+（22.x）、24.22.1+（24.x）或 26.12.1+。npm 包装器过滤默认及 `NODE_EXTRA_CA_CERTS` 信任中的事件公钥；显式 `cafile` / `ca` 保持替换默认信任库的语义并接受同样过滤。转交 npm 时使用其解析后的参数，移除原始 CA 参数和环境副本，避免数组 `ca` 再覆盖过滤结果。registry、代理和认证配置继续由 npm 读取；`strict-ssl` 和 Node 证书校验被强制开启，普通生命周期及嵌套 npm 子进程沿用同一过滤后的 CA 包，原有 `NODE_OPTIONS` 与 npm 的 `node-options` 合并保留。
+前端与文档依赖使用 `node ../scripts/secure_npm.cjs ci`（在 `web/` 或 `docs/` 内执行），构建使用 `node ../scripts/secure_npm.cjs run build`。项目工具链统一使用 Node.js 26 LTS（26.13.0+，26.x）。npm 包装器过滤默认及 `NODE_EXTRA_CA_CERTS` 信任中的事件公钥；显式 `cafile` / `ca` 保持替换默认信任库的语义并接受同样过滤。转交 npm 时使用其解析后的参数，移除原始 CA 参数和环境副本，避免数组 `ca` 再覆盖过滤结果。registry、代理和认证配置继续由 npm 读取；`strict-ssl` 和 Node 证书校验被强制开启，普通生命周期及嵌套 npm 子进程沿用同一过滤后的 CA 包，原有 `NODE_OPTIONS` 与 npm 的 `node-options` 合并保留。
 
 requirements 和 npm 生命周期脚本属于可信构建输入，需按代码审查；不得在 requirements 中加入 `--trusted-host` 等跳过证书校验的选项。
 

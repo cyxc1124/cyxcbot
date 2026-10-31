@@ -39,7 +39,7 @@
 | 前端构建/类型 | `cd web && node ../scripts/secure_npm.cjs run build` |
 | 文档站 | `cd docs && node ../scripts/secure_npm.cjs run build`；普通 Markdown 修改检查内容和链接即可 |
 
-- npm 安装与构建使用 `node ../scripts/secure_npm.cjs <npm 命令>`（在 `web/` 或 `docs/` 中），沿用过滤后的 CA 信任库；Node.js 使用 22.23.4+（22.x）、24.22.1+（24.x）或 26.12.1+。
+- npm 安装与构建使用 `node ../scripts/secure_npm.cjs <npm 命令>`（在 `web/` 或 `docs/` 中），沿用过滤后的 CA 信任库；项目工具链统一使用 Node.js 26 LTS（26.13.0+，26.x），Playwright 保留官方随包的 Node。
 - Python 测试在 `tests/`；前端测试沿用 `web/` 的 Vitest。需要完整 Python 回归时运行 `./.venv/bin/pytest`。
 - 本地启动：`./.venv/bin/python bot.py`；前端 `cd web && node ../scripts/secure_npm.cjs run dev`；文档预览 `cd docs && node ../scripts/secure_npm.cjs start`。
 - 本地验证使用隔离数据库和测试目标；`bot.py` 会连接配置的数据库并执行迁移，不作为无副作用的检查命令。

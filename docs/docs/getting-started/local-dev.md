@@ -8,7 +8,7 @@ sidebar_position: 6
 
 ## 环境准备
 
-前端开发与 Windows 本地打包需 Node.js **22.23.4+（22.x）**、**24.22.1+（24.x）** 或 **26.12.1+**；安装与构建使用本仓库的 CA 包装器。
+前端开发与 Windows 本地打包统一使用 Node.js **26 LTS（26.13.0+，26.x）**；使用 nvm 时，在仓库根目录运行 `nvm install`、`nvm use`。安装与构建使用本仓库的 CA 包装器，Playwright 保留官方随包的 Node。
 
 ```bash
 # 1. 创建虚拟环境
