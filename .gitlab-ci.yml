@@ -44,7 +44,7 @@ python:
 
 web:
   stage: test
-  image: harbor.cyxc.club/dockerhub/library/node:22
+  image: harbor.cyxc.club/dockerhub/library/node:26
   cache:
     key:
       files:
