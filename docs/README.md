@@ -16,6 +16,8 @@ node ../scripts/secure_npm.cjs start
 
 ## 构建
 
+以下命令在 `docs/` 目录执行，静态产物输出至 `docs/build/`：
+
 ```bash
 node ../scripts/secure_npm.cjs run build
 node ../scripts/secure_npm.cjs run serve   # 预览构建产物
@@ -24,9 +26,9 @@ node ../scripts/secure_npm.cjs run serve   # 预览构建产物
 ## 部署到 GitHub Pages
 
 - **`main` 推送**：构建并部署到 https://cyxc1124.github.io/cyxcbot/
-- **`develop` 推送 / PR**：仅构建校验（`node ../scripts/secure_npm.cjs run build`），不发布
+- **`develop` 推送 / PR**：安装锁定依赖后构建校验，不发布
 
-触发路径：`docs/**` 或 `.github/workflows/deploy-docs.yml`。Workflow：[`.github/workflows/deploy-docs.yml`](../.github/workflows/deploy-docs.yml)
+触发路径：`docs/**`、`.github/workflows/deploy-docs.yml`、`scripts/secure_npm.cjs`、`shared/security/*.cjs`、`shared/security/*.json`。CI 通过包装器执行 `ci` 与 `run build`。Workflow：[`.github/workflows/deploy-docs.yml`](../.github/workflows/deploy-docs.yml)
 
 ### 首次启用
 
@@ -35,7 +37,7 @@ node ../scripts/secure_npm.cjs run serve   # 预览构建产物
 1. **Source** 选择 **GitHub Actions**
 2. 合并含文档的变更到 `main` 后，等待 workflow 完成即可
 
-也可在 Actions 页手动运行 **Deploy Docs to GitHub Pages**（`workflow_dispatch`）。
+也可在 Actions 页手动运行 **Deploy Docs to GitHub Pages**（`workflow_dispatch`）；只有选择 `main` 分支时才会部署，其他分支仅构建。
 
 ### 部署失败排查
 

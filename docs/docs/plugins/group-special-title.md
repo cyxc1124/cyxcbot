@@ -4,7 +4,7 @@ sidebar_position: 11
 
 # 群头衔设置
 
-群成员通过命令设置自己的 QQ 专属头衔。对应插件：`group_special_title`。
+群成员通过命令设置自己的 QQ 专属头衔。对应插件：`group_special_title`，仅支持 OneBot 群聊。
 
 ## 使用方法
 

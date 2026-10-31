@@ -8,12 +8,12 @@ sidebar_position: 1
 
 完整示例见仓库 [`env.example`](https://github.com/cyxc1124/cyxcbot/blob/main/env.example)。
 
-## OneBot
+## 机器人监听与命令
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `HOST` | `0.0.0.0` | 机器人监听地址 |
-| `PORT` | `8080` | 机器人监听端口 |
+| `PORT` | `8080` | 机器人监听端口，供 OneBot 连接与官方 QQ Webhook `/qq/webhook` 使用 |
 | `COMMAND_START` | `["/"]` | 命令起始字符 |
 | `COMMAND_SEP` | `["."]` | 命令分隔字符 |
 | `DRIVER` | `~fastapi+~httpx+~websockets` | NoneBot 驱动。官方 Bot 默认 Webhook，`httpx` 用于调用官方 API，`websockets` 兼容旧连接方式；`bot.py` 未设置时会补上 |
@@ -26,11 +26,12 @@ sidebar_position: 1
 | `WEB_PORT` | `8081` | API 监听端口 |
 | `WEB_SECRET_KEY` | — | JWT 签名与 Cookie 加密密钥。Web Admin **启动时必填**（≥32 字符，勿用占位值）；未设置时机器人仍可启动，但面板不监听 |
 | `WEB_ADMIN_ENABLED` | `true` | 设为 `false` 可禁用 Web Admin（跳过密钥校验） |
+| `WEB_PUBLIC_ORIGIN` | — | 反向代理改写 Host 时，填写浏览器访问面板的源，例如 `https://bot.example.com`，用于 Cookie 会话的 Origin 校验；不含路径、查询参数或片段 |
 
 生成示例：
 
 ```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+./.venv/bin/python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
 Docker Compose 通过 `${WEB_SECRET_KEY:?...}` 注入，未设置时 **Compose 会直接失败**（与本地 `bot.py` 行为不同）。
@@ -47,7 +48,7 @@ PostgreSQL 示例：
 SQLALCHEMY_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/cyxcbot
 ```
 
-数据库在 `bot.py` 启动时自动初始化（建表 / 应用迁移）。
+默认依赖内置 SQLite 支持；使用 PostgreSQL 时需另外安装连接串指定的驱动。数据库在 `bot.py` 启动时通过 Alembic `upgrade` 应用迁移，升级前请备份数据库；不要用启动机器人来做无副作用的配置检查。
 
 ## 日志
 
@@ -70,7 +71,7 @@ SQLALCHEMY_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/cyxcbo
 
 Playwright 的 Node 驱动及浏览器下载使用同一 certifi CA 包，并强制开启证书校验。截图与抖音扫码使用完整 Chromium 的独立临时配置目录，按已披露证书的 SPKI 拒绝本次 emSign 事件的中间 CA（含交叉签名）；每次启动先通过本机的允许 / 拒绝证书检查，再加载业务页面或 Cookie。本机探针直接连接 `127.0.0.1`，保留其余浏览器代理配置。Chromium 保留自己的根信任库，此策略未将浏览器默认根替换为 certifi，也不保证识别未经披露的其他 SPKI 表示。修改已披露中间证书的 SPKI 会使其父 CA 签名失效，不能仅凭中间私钥完成。配置不兼容或检查失败时停止浏览器功能，不回退为忽略证书错误。策略不修改宿主机信任库。
 
-源码安装请使用 `python scripts/secure_pip.py install -r requirements.txt` 与 `python scripts/playwright_install.py install chromium`。安装器按公钥身份过滤事件涉及的四个根证书及八个受影响中间 CA，包括重编码和不同自签名的信任锚，在过滤后的 CA 包上安全升级 pip 至至少 26.2.2，并关闭 pip 对系统信任库的自动合并。私有构建 CA 可通过 `PIP_CERT` 提供（仍会过滤受影响公钥）；索引和代理可用命令行参数或环境变量配置。`--no-proxy-env` 或显式 `--proxy` 在旧版 pip 升级阶段同样生效；`-C` / `--config-settings` 的构建后端参数按 pip 的选项语法处理。安装器不读取用户 / 系统 pip 配置，也不接受跳过 TLS 校验的覆盖。镜像与 Windows 构建会检查实际打包的 CA、Node 和 Chromium 行为。
+源码安装请使用 `./.venv/bin/python scripts/secure_pip.py install -r requirements.txt` 与 `./.venv/bin/python scripts/playwright_install.py install chromium`。安装器按公钥身份过滤事件涉及的四个根证书及八个受影响中间 CA，包括重编码和不同自签名的信任锚，在过滤后的 CA 包上安全升级 pip 至至少 26.2.2，并关闭 pip 对系统信任库的自动合并。私有构建 CA 可通过 `PIP_CERT` 提供（仍会过滤受影响公钥）；索引和代理可用命令行参数或环境变量配置。`--no-proxy-env` 或显式 `--proxy` 在旧版 pip 升级阶段同样生效；`-C` / `--config-settings` 的构建后端参数按 pip 的选项语法处理。安装器不读取用户 / 系统 pip 配置，也不接受跳过 TLS 校验的覆盖。镜像与 Windows 构建会检查实际打包的 CA、Node 和 Chromium 行为。
 
 前端与文档依赖使用 `node ../scripts/secure_npm.cjs ci`（在 `web/` 或 `docs/` 内执行），构建使用 `node ../scripts/secure_npm.cjs run build`。项目工具链统一使用 Node.js 26 LTS（26.13.0+，26.x）。npm 包装器过滤默认及 `NODE_EXTRA_CA_CERTS` 信任中的事件公钥；显式 `cafile` / `ca` 保持替换默认信任库的语义并接受同样过滤。转交 npm 时使用其解析后的参数，移除原始 CA 参数和环境副本，避免数组 `ca` 再覆盖过滤结果。registry、代理和认证配置继续由 npm 读取；`strict-ssl` 和 Node 证书校验被强制开启，普通生命周期及嵌套 npm 子进程沿用同一过滤后的 CA 包，原有 `NODE_OPTIONS` 与 npm 的 `node-options` 合并保留。
 
@@ -85,7 +86,7 @@ requirements 和 npm 生命周期脚本属于可信构建输入，需按代码�
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `JWT_ALGORITHM` | `HS256` | JWT 算法 |
-| `JWT_EXPIRE_MINUTES` | `1440` | Token 过期时间（分钟） |
+| `JWT_EXPIRE_MINUTES` | `1440` | Token 过期时间（分钟），最少 15 分钟；无法解析为整数时回退为默认值 |
 
 ## 业务配置不在环境变量中
 

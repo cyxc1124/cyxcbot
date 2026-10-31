@@ -32,9 +32,13 @@ Web Admin 是机器草的浏览器管理界面，基于 React + TypeScript + Tai
 ## 与机器人的关系
 
 ```
-浏览器 ──► Web Admin (8081) ──► FastAPI ──► 数据库
-                                              │
-OneBot 协议端 ──► NoneBot (8080) ◄────────────┘
+浏览器 ──► Web Admin / FastAPI (8081) ◄──► 数据库
+                                           ▲
+                                           │
+OneBot 协议端 ◄──► NoneBot (8080) ◄──────────┘
+                        ▲
+                        │ Webhook / 官方 API
+                   官方 QQ Bot
 ```
 
-Web Admin 负责配置管理与状态展示；NoneBot 负责消息收发与监控任务执行。两者共享同一数据库。
+Web Admin 负责配置管理与状态展示；NoneBot 负责消息收发与监控任务执行。两者共享同一数据库。官方 QQ 回调 `/qq/webhook` 使用机器人端口 8080；接入方法见 [Web Admin 初始化](../configuration/web-admin-setup)。

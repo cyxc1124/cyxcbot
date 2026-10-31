@@ -4,7 +4,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
   title: '机器草',
-  tagline: 'B 站动态、直播监控与群消息推送的 QQ 机器人',
+  tagline: 'B 站与 X 监控、链接解析，支持 OneBot 与官方 QQ Bot',
   favicon: 'img/favicon.svg',
 
   future: {

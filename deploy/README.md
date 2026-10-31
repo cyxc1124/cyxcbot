@@ -9,6 +9,7 @@
 
 ```bash
 cd deploy/compose
+# 仅首次安装生成；将同一值保存到本目录 .env，后续重建与升级继续使用
 export WEB_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
 
 docker compose pull
@@ -16,6 +17,8 @@ docker compose up -d
 ```
 
 详见 [`compose/README.md`](compose/README.md)。
+
+`WEB_SECRET_KEY` 同时用于登录签名和数据库内敏感配置加密；请与数据一起备份，勿在升级时重新生成，否则已有 Cookie、Token 等加密配置将无法解密。
 
 ## Helm
 
@@ -27,6 +30,8 @@ helm install cyxcbot ./deploy/helm --set secret.name=cyxcbot-secret
 ```
 
 详见 [`helm/README.md`](helm/README.md)。
+
+两种部署均支持 OneBot 与官方 QQ Bot。官方 Bot 凭证在 Web Admin → 系统 → 机器人接入中保存；默认 Webhook 的公网 HTTPS `/qq/webhook` 应转发到机器人端口 **8080**，管理面板使用 **8081**。
 
 ## 维护者发布流程
 

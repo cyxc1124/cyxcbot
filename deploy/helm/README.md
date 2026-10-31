@@ -11,7 +11,7 @@ values.yaml
   ├── ConfigMap  → HOST / PORT / WEB_* / 数据库 URL / 日志级别
   ├── Secret     → WEB_SECRET_KEY
   ├── PVC        → /app/data（SQLite 与持久化数据）
-  └── Deployment → cyxcbot 容器（8080 OneBot + 8081 Web Admin）
+  └── Deployment → cyxcbot 容器（8080 OneBot / 官方 QQ Webhook + 8081 Web Admin）
 ```
 
 ## 前置条件
@@ -39,11 +39,15 @@ helm install cyxcbot ./deploy/helm \
   --set secret.value='请替换为足够长的随机字符串'
 ```
 
-安装完成后，访问 Web Admin（默认端口 **8081**），完成 `/setup` 初始化，再在面板里配置 OneBot 与 B 站监控。
+安装完成后，访问 Web Admin（默认端口 **8081**），完成 `/setup` 初始化，再在面板里配置监控订阅与会话策略。
 
-OneBot 协议端（如 NapCat）需反向 WebSocket 连接到 Service 的 **8080** 端口。
+OneBot 协议端（如 NapCat）需反向 WebSocket 连接 `ws://<Service 地址>:8080/onebot/v11/ws`，地址填写在协议端。
+
+官方 QQ Bot 在 Web Admin → 系统 → 机器人接入中配置 AppID 与 AppSecret。默认使用 Webhook，公网 HTTPS `/qq/webhook` 须经反向代理转发到 Service 的 **8080** 端口，不是管理面板的 **8081**。Chart 仅提供 Service，公网域名、TLS 与 Ingress 需自行配置。
 
 ## 升级与卸载
+
+升级前备份数据库及原有 `WEB_SECRET_KEY`，继续引用同一 Secret。更换密钥会使数据库内已有 Cookie、Token 等加密配置无法解密。
 
 ```bash
 helm upgrade cyxcbot ./deploy/helm -f my-values.yaml
@@ -57,14 +61,14 @@ helm uninstall cyxcbot
 | 字段 | 说明 |
 |------|------|
 | `image.repository` | 默认 `ghcr.io/cyxc1124/cyxcbot` |
-| `image.tag` | 镜像标签，留空则使用 `Chart.appVersion` |
+| `image.tag` | 镜像标签，留空则使用 `v` + `Chart.appVersion` |
 | `imagePullSecrets` | 拉取私有镜像时的 Secret 列表 |
 
 ### 服务端口
 
 | 字段 | 说明 |
 |------|------|
-| `service.onebot.port` | OneBot 协议端口，默认 `8080` |
+| `service.onebot.port` | OneBot / 官方 QQ Webhook 端口，默认 `8080` |
 | `service.webAdmin.port` | Web Admin 端口，默认 `8081` |
 | `service.type` | 默认 `LoadBalancer`，可按集群改为 `ClusterIP` / `NodePort` |
 
@@ -72,8 +76,9 @@ helm uninstall cyxcbot
 
 | values 字段 | 环境变量 | 说明 |
 |-------------|----------|------|
-| `nonebot.host` | `HOST` | OneBot 监听地址 |
-| `nonebot.port` | `PORT` | OneBot 监听端口 |
+| `nonebot.host` | `HOST` | 机器人监听地址 |
+| `nonebot.port` | `PORT` | OneBot / 官方 QQ Webhook 监听端口 |
+| `nonebot.driver` | `DRIVER` | 默认 `~fastapi+~httpx+~websockets`，供官方 Bot API 和旧版 WebSocket 使用 |
 | `nonebot.commandStart` | `COMMAND_START` | 命令前缀 |
 | `nonebot.commandSep` | `COMMAND_SEP` | 命令分隔符 |
 | `webAdmin.host` | `WEB_HOST` | Web Admin 监听地址 |
@@ -105,7 +110,7 @@ helm uninstall cyxcbot
 
 ### 共享媒体目录（可选）
 
-B 站 / 抖音链接解析发视频写入共享目录后以 `file://` 交给协议端读取（不再 base64）。分离部署时须让机器草与 OneBot 协议端 / QQ 客户端数据目录 **看到同一路径**。
+通过 OneBot 发送 B 站 / 抖音链接解析的视频时，文件写入共享目录后以 `file://` 交给协议端读取。分离部署时须让机器草与 OneBot 协议端 / QQ 客户端数据目录 **看到同一路径**。官方 Bot 直接上传媒体，不需要与 OneBot 协议端共享此卷。
 
 留空时默认写入 `data/tmp`。与 LLBot 等共用 QQ 数据持久化时，在 Web Admin 将共享媒体目录设为 `/root/.config/QQ/tmp`，并挂载协议端 QQ 数据卷（常见挂载点 `/root/.config/QQ`）：
 
@@ -125,7 +130,7 @@ sharedMedia:
 | `sharedMedia.accessMode` | 自动建 PVC 时的访问模式，默认 `ReadWriteMany` |
 | `sharedMedia.size` | 自动建 PVC 大小，默认 `5Gi` |
 
-Web Admin → 设置 → 机器人 →「链接解析共享媒体目录」设为 `/root/.config/QQ/tmp`（与 LLBot 共用时）。跨 Pod 共享时 PVC 须为 `ReadWriteMany`。
+Web Admin → 系统 → 高级配置 →「链接解析共享媒体目录」设为 `/root/.config/QQ/tmp`（与 LLBot 共用时）。跨节点共享时需使用支持 `ReadWriteMany` 的存储；`hostPath` 仅适用于共享同一节点路径的部署。
 
 ### 资源与健康检查
 
@@ -165,14 +170,14 @@ helm install cyxcbot ./deploy/helm -f my-values.yaml
 
 ## PostgreSQL（可选）
 
-若使用外部 PostgreSQL，修改 `database.url` 即可：
+默认依赖和镜像只安装 SQLite 数据库驱动；镜像中的 `libpq-dev` 不等于 Python PostgreSQL 驱动。使用外部 PostgreSQL 时，需先在自建镜像中通过 `scripts/secure_pip.py` 安装与连接串匹配的驱动（下例为 `psycopg`），并验证迁移和启动，再设置 `database.url`：
 
 ```yaml
 database:
   url: "postgresql+psycopg://user:password@postgres:5432/cyxcbot"
 ```
 
-此时可关闭 PVC：`persistence.enabled: false`（或保留用于其他本地文件）。
+`database.url` 由 ConfigMap 注入，勿将含真实密码的 values 文件提交 Git。仅修改 URL 不会迁移已有 SQLite 数据。确认不需要保留本地日志、缓存等文件后才关闭 PVC（`persistence.enabled: false`）；关闭后 `/app/data` 使用 `emptyDir`，Pod 删除后数据丢失。
 
 ## 版本历史
 

@@ -9,7 +9,8 @@
 ```bash
 cd deploy/compose
 
-# 在同目录 .env 或当前 shell 中设置（勿提交真实密钥）
+# 仅首次安装生成；将同一值保存到本目录 .env（WEB_SECRET_KEY=生成的值）
+# 后续重建与升级直接使用已保存的值，勿重新生成或提交真实密钥
 export WEB_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
 
 docker compose pull
@@ -18,7 +19,9 @@ docker compose up -d
 
 首次启动后访问 `http://<主机>:8081`，尽快完成 `/setup` 初始化（未初始化时任何人可抢先创建管理员）。
 
-OneBot 协议端（如 NapCat）反向 WebSocket 连接 **8080** 端口。
+OneBot 协议端（如 NapCat）反向 WebSocket 连接 `ws://<机器草主机>:8080/onebot/v11/ws`；此地址填写在协议端。官方 Bot 凭证在 Web Admin → 系统 → 机器人接入中保存。
+
+升级前备份 `data/` 与 `.env`。`WEB_SECRET_KEY` 用于登录签名和数据库内敏感配置加密；更换密钥会使已有 Cookie、Token 等加密配置无法解密。
 
 ## 配置
 
@@ -34,7 +37,7 @@ OneBot 协议端（如 NapCat）反向 WebSocket 连接 **8080** 端口。
 
 ### 与协议端共享媒体目录
 
-B 站 / 抖音链接解析发视频会把文件写到共享目录，协议端用 `file://` 直接读取（不再 base64）。分离部署时请让两侧挂到**同一路径**（常见为 QQ 客户端数据目录）：
+通过 OneBot 发送 B 站 / 抖音链接解析的视频时，文件会写到共享目录，协议端用 `file://` 直接读取。分离部署时请让两侧挂到**同一路径**（常见为 QQ 客户端数据目录）：
 
 ```yaml
 volumes:
@@ -42,7 +45,7 @@ volumes:
   - /path/to/shared/QQ:/root/.config/QQ
 ```
 
-默认 `data/tmp`。与 LLBot 共用 QQ 数据持久化时，在 Web Admin 设为 `/root/.config/QQ/tmp`（卷挂 QQ 数据根）。K8s 见 Helm README 的 `sharedMedia`。
+默认 `data/tmp`。与 LLBot 共用 QQ 数据持久化时，在 Web Admin → 系统 → 高级配置中设为 `/root/.config/QQ/tmp`（卷挂 QQ 数据根）。官方 Bot 直接上传媒体，不需要与 OneBot 协议端共享此卷。K8s 见 Helm README 的 `sharedMedia`。
 
 ## 常用命令
 
@@ -59,4 +62,6 @@ docker compose ps
 
 **Web Admin 无法访问** — `curl http://127.0.0.1:8081/health`
 
-**OneBot 连不上** — 协议端连接宿主机 IP 的 8080 端口
+**OneBot 连不上** — 检查协议端的反向 WebSocket 地址是否为 `ws://<机器草主机>:8080/onebot/v11/ws`
+
+**官方 Bot 收不到事件** — 检查公网 HTTPS `/qq/webhook` 是否转发到 **8080**，以及 Web Admin 中是否保存了对应 AppID 和 AppSecret
