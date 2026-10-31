@@ -3,9 +3,15 @@ import type { RuntimeLogEntry } from '../api/types'
 import {
   DISPLAY_MAX,
   LOG_FLUSH_MS,
+  LOG_VIEW_PRESETS,
   NEAR_BOTTOM_PX,
+  appendToLogBuffer,
+  filterLogs,
   isNearBottom,
+  logViewPreset,
   mergeLogs,
+  minLogLevel,
+  serializeLogs,
   trimLogs,
 } from './logsDisplay'
 
@@ -21,6 +27,43 @@ function entry(n: number, sessionId = 'sess-a'): RuntimeLogEntry {
 }
 
 describe('logsDisplay', () => {
+  it('filters levels and searches messages, modules, timestamps and levels without regex', () => {
+    const items = [
+      { ...entry(1), level: 'DEBUG', logger: 'monitor', message: 'poll (OK)' },
+      { ...entry(2), level: 'ERROR', message: 'connection failed' },
+    ]
+    expect(filterLogs(items, LOG_VIEW_PRESETS.运维)).toEqual([items[1]])
+    expect(filterLogs(items, LOG_VIEW_PRESETS.开发, ' MONITOR ')).toEqual([items[0]])
+    expect(filterLogs(items, LOG_VIEW_PRESETS.开发, '(ok)')).toEqual([items[0]])
+    expect(filterLogs(items, LOG_VIEW_PRESETS.开发, 'error')).toEqual([items[1]])
+    expect(filterLogs(items, LOG_VIEW_PRESETS.开发, '2026-01-01')).toEqual(items)
+    expect(filterLogs(items, { ...LOG_VIEW_PRESETS.开发, levels: [] })).toEqual([])
+  })
+
+  it('limits filtered results to the newest rows without discarding matching older history first', () => {
+    const items = [entry(1), { ...entry(2), level: 'DEBUG' }, entry(3)]
+    expect(filterLogs(items, { ...LOG_VIEW_PRESETS.运维, limit: 1 })).toEqual([items[2]])
+    expect(filterLogs(items, { ...LOG_VIEW_PRESETS.运维, limit: 1 }, 'message-1')).toEqual([items[0]])
+    expect(items).toHaveLength(3)
+  })
+
+  it('recognizes presets and derives the server threshold without losing the default INFO history', () => {
+    expect(LOG_VIEW_PRESETS.运维.limit).toBe(DISPLAY_MAX)
+    expect(logViewPreset(LOG_VIEW_PRESETS.开发)).toBe('开发')
+    expect(logViewPreset(LOG_VIEW_PRESETS.运维)).toBe('运维')
+    expect(logViewPreset(LOG_VIEW_PRESETS.精简)).toBe('精简')
+    expect(logViewPreset({ ...LOG_VIEW_PRESETS.运维, wrap: false })).toBe('自定义')
+    expect(minLogLevel(LOG_VIEW_PRESETS.运维.levels)).toBe('INFO')
+    expect(minLogLevel(['ERROR', 'DEBUG'])).toBe('DEBUG')
+    expect(minLogLevel([])).toBe('INFO')
+  })
+
+  it('exports full timestamps, levels, modules and multiline messages as plain text', () => {
+    const items = [{ ...entry(1), message: '<script>\nsecond line' }]
+    expect(serializeLogs(items)).toBe(`${items[0]!.ts} | INFO     | test | <script>\nsecond line`)
+    expect(serializeLogs([])).toBe('')
+  })
+
   it('keeps flush interval within suggested batching window', () => {
     expect(LOG_FLUSH_MS).toBeGreaterThanOrEqual(100)
     expect(LOG_FLUSH_MS).toBeLessThanOrEqual(250)
@@ -100,5 +143,40 @@ describe('logsDisplay', () => {
     const items = Array.from({ length: DISPLAY_MAX - 1 }, (_, i) => entry(i))
     expect(trimLogs(items)).toBe(items)
     expect(trimLogs(items).length).toBe(DISPLAY_MAX - 1)
+  })
+
+  it('bounds a long paused stream to the newest DISPLAY_MAX entries in arrival order', () => {
+    let buffer: RuntimeLogEntry[] = []
+    for (let i = 0; i < 12001; i++) {
+      buffer = appendToLogBuffer(buffer, [entry(i)])
+      expect(buffer.length).toBeLessThanOrEqual(DISPLAY_MAX)
+    }
+    expect(buffer.map((item) => item.entry_id)).toEqual(
+      Array.from({ length: DISPLAY_MAX }, (_, i) => 10001 + i),
+    )
+    const resumed = mergeLogs([entry(0)], buffer)
+    expect(resumed).toEqual(buffer)
+  })
+
+  it('bounds an oversized pending batch moved into the paused buffer', () => {
+    const buffer = [entry(0)]
+    const pending = Array.from({ length: 10001 }, (_, i) => entry(i + 1))
+    const result = appendToLogBuffer(buffer, pending)
+    expect(result).toEqual(pending.slice(-DISPLAY_MAX))
+    expect(buffer).toEqual([entry(0)])
+  })
+
+  it('keeps buffered replays for the existing resume deduplication', () => {
+    const displayed = [entry(1), entry(2)]
+    const buffer = appendToLogBuffer([entry(2)], [entry(3)])
+    expect(mergeLogs(displayed, buffer).map((item) => item.entry_id)).toEqual([1, 2, 3])
+  })
+
+  it('starts a fresh buffer after clearing paused logs', () => {
+    let buffer = appendToLogBuffer([], [entry(1), entry(2)])
+    expect(buffer).toHaveLength(2)
+    buffer = []
+    buffer = appendToLogBuffer(buffer, [entry(3)])
+    expect(mergeLogs([], buffer)).toEqual([entry(3)])
   })
 })

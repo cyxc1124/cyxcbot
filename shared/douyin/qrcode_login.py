@@ -13,10 +13,14 @@ import base64
 import os
 import time
 import uuid
+from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from nonebot.log import logger
+
+from shared.security.browser import create_browser_context
+from shared.security.playwright import configure_playwright_tls
 
 try:
     from playwright.async_api import Browser, BrowserContext, Page, async_playwright
@@ -77,6 +81,7 @@ class DouyinQrSession:
     # 避免 refresh bump epoch 后旧 poll 无法清除 active，拖死延迟清理）
     poll_ticket: int = 0
     poll_active: bool = False
+    resources: AsyncExitStack | None = None
 
 
 _sessions: dict[str, DouyinQrSession] = {}
@@ -279,6 +284,12 @@ async def _close_session(session: DouyinQrSession) -> None:
     if session.closed:
         return
     session.closed = True
+    if session.resources is not None:
+        try:
+            await session.resources.aclose()
+        except Exception:
+            logger.opt(exception=True).debug("关闭抖音扫码会话失败")
+        return
     for closer in (
         getattr(session.browser, "close", None),
         getattr(session.playwright, "stop", None),
@@ -312,12 +323,12 @@ async def start_qrcode_login() -> dict[str, str]:
     """
     if async_playwright is None:
         raise DouyinQrcodeError(
-            "未安装 Playwright，请执行: pip install playwright && playwright install chromium"
+            "未安装 Playwright，请在项目环境运行 python scripts/secure_pip.py install -r requirements.txt，"
+            "再运行 python scripts/playwright_install.py install chromium"
         )
 
     removed_proxy = _clear_proxy_env()
-    playwright = None
-    browser: Optional[Browser] = None
+    resources = AsyncExitStack()
     try:
         async with _lock:
             await _cleanup_stale_sessions_locked()
@@ -327,8 +338,12 @@ async def start_qrcode_login() -> dict[str, str]:
                 old = _sessions.pop(sid)
                 await _close_session(old)
 
-        playwright = await async_playwright().start()
-        browser = await playwright.chromium.launch(
+        configure_playwright_tls()
+        manager = async_playwright()
+        resources.push_async_callback(manager.__aexit__)
+        playwright = await manager.start()
+        context, browser_resources = await create_browser_context(
+            playwright,
             headless=True,
             args=[
                 "--disable-blink-features=AutomationControlled",
@@ -338,13 +353,12 @@ async def start_qrcode_login() -> dict[str, str]:
             handle_sigint=False,
             handle_sigterm=False,
             handle_sighup=False,
-        )
-        context = await browser.new_context(
             viewport={"width": 1280, "height": 800},
             user_agent=DOUYIN_UA,
             locale="zh-CN",
             timezone_id="Asia/Shanghai",
         )
+        resources.push_async_callback(browser_resources.aclose)
         await context.add_init_script(
             "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
         )
@@ -363,43 +377,33 @@ async def start_qrcode_login() -> dict[str, str]:
             session_id=session_id,
             image_base64=image_base64,
             playwright=playwright,
-            browser=browser,
+            browser=context.browser,
             context=context,
             page=page,
         )
         async with _lock:
             _sessions[session_id] = session
-        playwright = None
-        browser = None
+            session.resources = resources.pop_all()
         logger.info("抖音扫码会话已创建 session_id={}", session_id[:8])
         return {"session_id": session_id, "image_base64": image_base64}
     except DouyinQrcodeError:
-        if browser is not None:
-            await browser.close()
-        if playwright is not None:
-            await playwright.stop()
         raise
     except Exception as exc:
-        if browser is not None:
-            try:
-                await browser.close()
-            except Exception:
-                pass
-        if playwright is not None:
-            try:
-                await playwright.stop()
-            except Exception:
-                pass
         logger.opt(exception=True).error("抖音扫码启动失败")
         msg = str(exc)
         if "Executable doesn't exist" in msg or "playwright install" in msg.lower():
             raise DouyinQrcodeError(
                 "未安装 Playwright 浏览器，请在项目环境执行: "
-                "./.venv/bin/playwright install chromium"
+                "./.venv/bin/python scripts/playwright_install.py install chromium"
             ) from exc
         raise DouyinQrcodeError(f"获取二维码失败: {exc}") from exc
     finally:
-        _restore_proxy_env(removed_proxy)
+        try:
+            await resources.aclose()
+        except Exception:
+            logger.opt(exception=True).debug("关闭抖音扫码启动资源失败")
+        finally:
+            _restore_proxy_env(removed_proxy)
 
 
 async def _qr_fingerprint(page: Page) -> str | None:

@@ -82,6 +82,24 @@ def build_x_link_message(
     )
 
 
+def official_reply_message(message: Message, remaining: int) -> Message:
+    """官方群最多回复五次、C2C 四次：合并文案，超出媒体数量时明确提示。"""
+    if remaining <= 0:
+        return Message()
+    media = [segment for segment in message if segment.type in {"image", "video"}]
+    caption = message.extract_plain_text()
+    limit = remaining - 1 if caption or len(media) > remaining else remaining
+    omitted = len(media) - limit
+    if omitted > 0:
+        caption = (
+            f"官方 Bot 回复次数有限，另有 {omitted} 项媒体请查看原推文。\n{caption}"
+        )
+    parts = media[:limit]
+    if caption.strip():
+        parts.append(MessageSegment.text(caption))
+    return Message(parts)
+
+
 def _chunk_media(media: Message, *, size: int = MAX_MEDIA_PER_MESSAGE) -> list[Message]:
     chunks: list[Message] = []
     current = Message()

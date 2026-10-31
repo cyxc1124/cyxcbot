@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Optional
 
+from shared.notify.delivery import PendingDelivery
 from utils.bilibili_api import LiveStatus, RoomInfo, UserInfo
 
 
@@ -25,6 +26,8 @@ class LiveRoomState:
     pending_start_users: List[str] = field(default_factory=list)
     pending_end_groups: List[str] = field(default_factory=list)
     pending_end_users: List[str] = field(default_factory=list)
+    pending_start_delivery: Optional[PendingDelivery] = None
+    pending_end_delivery: Optional[PendingDelivery] = None
     # 观测代数：状态变迁 confirm 时递增，用于丢弃并发路径上的过期 API 快照
     observation_epoch: int = 0
     # 最近一次开播快照，供离线后补发 pending start 使用
@@ -35,11 +38,13 @@ class LiveRoomState:
         self.pending_start = False
         self.pending_start_groups = []
         self.pending_start_users = []
+        self.pending_start_delivery = None
 
     def clear_pending_end(self) -> None:
         self.pending_end = False
         self.pending_end_groups = []
         self.pending_end_users = []
+        self.pending_end_delivery = None
 
     def is_newer_live_stream(self, room_info: RoomInfo) -> bool:
         """判断 room_info 是否为比最近结束场次更新的一场开播。"""

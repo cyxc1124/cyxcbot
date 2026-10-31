@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncGenerator, AsyncIterator
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
-from nonebot_plugin_orm import get_session
-from sqlalchemy import select
+from anyio import BrokenResourceError
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.sse import EventSourceResponse
 
-from admin.auth.jwt import decode_access_token
 from admin.deps import AdminUser, RequireSetup
 from admin.schemas.logs import LogEntryResponse, RecentLogsResponse
-from shared.db.models import User
 from shared.logging.broadcast import (
     LEVEL_RANK,
     MAX_BUFFER_CATCH_UP_PASSES,
@@ -26,37 +26,6 @@ router = APIRouter(
     tags=["logs"],
     dependencies=[RequireSetup],
 )
-
-_WS_AUTH_PROTOCOL = "access_token"
-
-
-class _SubscriberOverloaded(Exception):
-    """Hub dropped this subscriber after queue overflow; close WS to force reconnect."""
-
-
-def _token_from_subprotocol(header: str | None) -> str | None:
-    if not header:
-        return None
-    parts = [part.strip() for part in header.split(",")]
-    for index, part in enumerate(parts):
-        if part == _WS_AUTH_PROTOCOL and index + 1 < len(parts):
-            return parts[index + 1]
-    return None
-
-
-async def _user_from_token(token: str) -> User | None:
-    payload = decode_access_token(token)
-    if not payload or "sub" not in payload:
-        return None
-
-    username = str(payload["sub"])
-    async with get_session() as session:
-        async with session.begin():
-            user = await session.scalar(select(User).where(User.username == username))
-            if user:
-                await session.refresh(user)
-                session.expunge(user)
-            return user
 
 
 def _serialize(entries: list[LogEntry]) -> list[LogEntryResponse]:
@@ -77,86 +46,6 @@ def _catch_up_entries(
     ]
 
 
-async def _send_buffer_catch_up(
-    websocket: WebSocket,
-    hub: LogBroadcastHub,
-    *,
-    sent: set[int],
-    limit: int,
-    min_level: str,
-    max_passes: int = MAX_BUFFER_CATCH_UP_PASSES,
-) -> None:
-    """Replay ring-buffer deltas before subscribing so the live queue stays empty."""
-    for _ in range(max_passes):
-        catch_up = _catch_up_entries(hub, sent=sent, limit=limit, min_level=min_level)
-        if not catch_up:
-            return
-        for entry in catch_up:
-            await websocket.send_json(entry.to_dict())
-            sent.add(entry.entry_id)
-    # ponytail: under sustained DEBUG, defer tail to post-subscribe handoff/live queue
-
-
-async def _drain_subscriber_backlog(
-    websocket: WebSocket,
-    queue: asyncio.Queue[LogEntry | None],
-    *,
-    sent: set[int],
-    threshold: str,
-) -> bool:
-    delivered = False
-    while True:
-        try:
-            entry = queue.get_nowait()
-        except asyncio.QueueEmpty:
-            return delivered
-        if entry is None:
-            raise _SubscriberOverloaded
-        if not _level_gte(entry.level, threshold):
-            continue
-        if entry.entry_id in sent:
-            continue
-        await websocket.send_json(entry.to_dict())
-        sent.add(entry.entry_id)
-        delivered = True
-
-
-async def _handoff_to_live(
-    websocket: WebSocket,
-    hub: LogBroadcastHub,
-    queue: asyncio.Queue[LogEntry | None],
-    *,
-    sent: set[int],
-    limit: int,
-    min_level: str,
-    threshold: str,
-    max_passes: int = MAX_HANDOFF_PASSES,
-) -> None:
-    """Subscribe handoff: merge ring-buffer delta and queued backlog before live loop."""
-    for _ in range(max_passes):
-        catch_up = _catch_up_entries(hub, sent=sent, limit=limit, min_level=min_level)
-        progressed = False
-
-        for entry in catch_up:
-            if entry.entry_id in sent:
-                continue
-            # Overflow may drop this subscriber during a slow send; don't flush
-            # the rest of catch-up before noticing the disconnect sentinel.
-            if not hub.is_subscribed(queue):
-                raise _SubscriberOverloaded
-            await websocket.send_json(entry.to_dict())
-            sent.add(entry.entry_id)
-            progressed = True
-
-        if await _drain_subscriber_backlog(
-            websocket, queue, sent=sent, threshold=threshold
-        ):
-            progressed = True
-
-        if not progressed:
-            return
-
-
 @router.get("/logs/recent", response_model=RecentLogsResponse)
 async def recent_logs(
     _: AdminUser,
@@ -172,79 +61,93 @@ async def recent_logs(
     )
 
 
-@router.websocket("/ws/logs")
-async def stream_logs(
-    websocket: WebSocket,
-    min_level: str = Query(default="DEBUG"),
-):
-    token = _token_from_subprotocol(websocket.headers.get("sec-websocket-protocol"))
-    user = await _user_from_token(token) if token else None
-    if not user or not user.is_admin:
-        await websocket.close(
-            code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized"
-        )
-        return
-
-    await websocket.accept(subprotocol=_WS_AUTH_PROTOCOL)
+async def _stream_logs(min_level: str) -> AsyncGenerator[dict[str, Any]]:
     hub = get_log_hub()
+    threshold = min_level.upper()
+    sent: set[int] = set()
 
-    try:
-        threshold = min_level.upper()
-        history = hub.recent(limit=MAX_HISTORY, min_level=min_level)
-        sent = {entry.entry_id for entry in history}
-
-        for entry in history:
-            await websocket.send_json(entry.to_dict())
-
-        await _send_buffer_catch_up(
-            websocket,
-            hub,
-            sent=sent,
-            limit=MAX_HISTORY,
-            min_level=min_level,
+    # Replay before subscribing so a slow history download cannot fill the live queue.
+    for _ in range(1 + MAX_BUFFER_CATCH_UP_PASSES):
+        catch_up = _catch_up_entries(
+            hub, sent=sent, limit=MAX_HISTORY, min_level=min_level
         )
+        if not catch_up:
+            break
+        for entry in catch_up:
+            sent.add(entry.entry_id)
+            yield entry.to_dict()
 
-        queue = hub.subscribe(min_level=min_level)
-        try:
-            await _handoff_to_live(
-                websocket,
-                hub,
-                queue,
-                sent=sent,
-                limit=MAX_HISTORY,
-                min_level=min_level,
-                threshold=threshold,
+    queue = hub.subscribe(min_level=min_level)
+    try:
+        for _ in range(MAX_HANDOFF_PASSES):
+            catch_up = _catch_up_entries(
+                hub, sent=sent, limit=MAX_HISTORY, min_level=min_level
             )
+            progressed = False
+            for entry in catch_up:
+                if not hub.is_subscribed(queue):
+                    return
+                sent.add(entry.entry_id)
+                yield entry.to_dict()
+                progressed = True
 
-            # Live queue delivers each entry once; dedupe set only bridges replay/catch-up.
-            sent.clear()
-
+            # Merge queued entries with the ring delta before entering the live loop.
             while True:
-                entry = await queue.get()
+                try:
+                    entry = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
                 if entry is None:
-                    raise _SubscriberOverloaded
+                    return
                 if not _level_gte(entry.level, threshold):
                     continue
-                await websocket.send_json(entry.to_dict())
-        finally:
-            hub.unsubscribe(queue)
-    except _SubscriberOverloaded:
-        try:
-            await websocket.close(
-                code=status.WS_1013_TRY_AGAIN_LATER,
-                reason="log backlog overflow",
-            )
-        except Exception:
-            pass
-    except WebSocketDisconnect:
-        pass
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        try:
-            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
-        except Exception:
-            pass
+                if entry.entry_id in sent:
+                    continue
+                sent.add(entry.entry_id)
+                yield entry.to_dict()
+                progressed = True
+            if not progressed:
+                break
+
+        # Worker callbacks may enqueue replayed entries after handoff returns.
+        replay_end = max(sent, default=0)
+        while True:
+            entry = await queue.get()
+            if entry is None:
+                return
+            if not _level_gte(entry.level, threshold):
+                continue
+            if entry.entry_id in sent:
+                sent.remove(entry.entry_id)
+                continue
+            if entry.entry_id > replay_end:
+                sent.clear()
+            yield entry.to_dict()
+    finally:
+        hub.unsubscribe(queue)
+
+
+async def _managed_log_stream(
+    request: Request, min_level: str = Query(default="DEBUG")
+) -> AsyncIterator[AsyncIterator[dict[str, Any]]]:
+    stream = _stream_logs(min_level)
+    try:
+        yield stream
+    except* BrokenResourceError:
+        # shortcut: native SSE teardown races on disconnect; remove after FastAPI #15725 is fixed.
+        if not await request.is_disconnected():
+            raise
+    finally:
+        await stream.aclose()
+
+
+@router.get("/logs/stream", response_class=EventSourceResponse)
+async def stream_logs(
+    _: AdminUser,
+    stream: Annotated[AsyncIterator[dict[str, Any]], Depends(_managed_log_stream)],
+) -> AsyncIterator[dict[str, Any]]:
+    async for entry in stream:
+        yield entry
 
 
 def _level_gte(level: str, minimum: str) -> bool:

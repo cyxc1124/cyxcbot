@@ -5,6 +5,8 @@ import { buildForm } from './commandsForm'
 
 function baseSettings(commandAliases: Settings['command_aliases']): Settings {
   return {
+    log_level: 'INFO',
+    log_file_level: 'INFO',
     dynamic_monitor_interval: 60,
     dynamic_monitor_use_stagger: false,
     dynamic_enable_screenshot: false,
@@ -38,6 +40,12 @@ function baseSettings(commandAliases: Settings['command_aliases']): Settings {
       port: 7890,
       username: '',
       password_configured: false,
+    },
+    official_qq: {
+      app_id: '',
+      secret: { configured: false, preview: null },
+      is_sandbox: false,
+      use_websocket: false,
     },
     status_check_allowed_qq: [],
     nonebot_superusers: [],

@@ -33,7 +33,7 @@ export function SettingsRustRconPage({ embedded = false }: { embedded?: boolean 
 
   return (
     <div className="space-y-6">
-      <div className="card space-y-4">
+      <div className={`card space-y-5 ${embedded && !showForm ? 'min-h-112 lg:min-h-[calc(100dvh-14rem)]' : ''}`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             {!embedded && (
@@ -51,12 +51,6 @@ export function SettingsRustRconPage({ embedded = false }: { embedded?: boolean 
                   <code className="font-mono">@机器人 rcon2 say 大家好</code>
                 </p>
               </>
-            )}
-            {embedded && (
-              <p className="text-sm text-muted-foreground">
-                示例：<code className="font-mono">@机器人 rcon1 status</code>、
-                <code className="font-mono">@机器人 rcon2 say 大家好</code>
-              </p>
             )}
           </div>
           {!showForm && (

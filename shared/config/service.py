@@ -75,15 +75,20 @@ from shared.db.models import (
     XMonitorState,
     XTarget,
 )
+from shared.logging.levels import default_log_levels, normalize_log_level
 from shared.security.crypto import decrypt_value
 
 ReloadCallback = Callable[[AppConfigSnapshot], Awaitable[None]]
 UnregisterReloadCallback: TypeAlias = Callable[[], None]
 
 SETTING_KEYS = {
+    "log_level": ("", str),
+    "log_file_level": ("", str),
     "dynamic_monitor_interval": ("30", int),
     "dynamic_monitor_use_stagger": ("true", bool),
     "dynamic_enable_screenshot": ("true", bool),
+    "dynamic_image_mode": ("screenshot", str),
+    "dynamic_card_color_source": ("avatar", str),
     "live_monitor_interval": ("60", int),
     "live_monitor_include_info": ("true", bool),
     "live_monitor_use_websocket": ("true", bool),
@@ -126,6 +131,10 @@ SETTING_KEYS = {
     "x_proxy_port": ("7890", int),
     "x_proxy_username": ("", str),
     "x_proxy_password_encrypted": ("", str),
+    "official_qq_app_id": ("", str),
+    "official_qq_app_secret_encrypted": ("", str),
+    "official_qq_is_sandbox": ("false", bool),
+    "official_qq_use_websocket": ("false", bool),
 }
 
 for key, default in MESSAGE_TEMPLATE_KEYS.items():
@@ -256,6 +265,16 @@ class ConfigService:
             except ValueError as exc:
                 logger.error("X API Bearer Token 解密失败: {}", exc)
 
+        official_qq_secret_encrypted = settings.get(
+            "official_qq_app_secret_encrypted", ""
+        )
+        official_qq_app_secret = ""
+        if official_qq_secret_encrypted:
+            try:
+                official_qq_app_secret = decrypt_value(official_qq_secret_encrypted)
+            except ValueError as exc:
+                logger.error("官方 Bot AppSecret 解密失败: {}", exc)
+
         x_proxy_password_encrypted = settings.get("x_proxy_password_encrypted", "")
         x_proxy_password = ""
         if x_proxy_password_encrypted:
@@ -266,7 +285,14 @@ class ConfigService:
         settings["x_proxy_password"] = x_proxy_password
         x_proxy = ProxyConfig.from_settings(settings)
 
+        default_log_level, default_file_level = default_log_levels()
         self._snapshot = AppConfigSnapshot(
+            log_level=normalize_log_level(
+                settings.get("log_level", ""), default_log_level
+            ),
+            log_file_level=normalize_log_level(
+                settings.get("log_file_level", ""), default_file_level
+            ),
             dynamic_monitor_mapping=dynamic_mapping,
             dynamic_monitor_user_mapping=dynamic_user_mapping,
             dynamic_subscription_mapping=dynamic_subscription_mapping,
@@ -277,6 +303,10 @@ class ConfigService:
                 "dynamic_monitor_use_stagger", True
             ),
             dynamic_enable_screenshot=settings.get("dynamic_enable_screenshot", True),
+            dynamic_image_mode=settings.get("dynamic_image_mode", "screenshot"),
+            dynamic_card_color_source=settings.get(
+                "dynamic_card_color_source", "avatar"
+            ),
             dynamic_message_templates=dynamic_templates_from_settings(settings),
             live_monitor_mapping=live_mapping,
             live_monitor_user_mapping=live_user_mapping,
@@ -362,6 +392,11 @@ class ConfigService:
             x_api_bearer=x_api_bearer,
             x_api_bearer_set=bool(x_api_bearer_encrypted),
             x_proxy=x_proxy,
+            official_qq_app_id=str(settings.get("official_qq_app_id", "") or ""),
+            official_qq_app_secret=official_qq_app_secret,
+            official_qq_app_secret_set=bool(official_qq_secret_encrypted),
+            official_qq_is_sandbox=settings.get("official_qq_is_sandbox", False),
+            official_qq_use_websocket=settings.get("official_qq_use_websocket", False),
         )
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
         warn_rust_rcon_command_alias_conflicts(
@@ -1061,9 +1096,13 @@ class ConfigService:
         xt = snap.x_message_templates
         xp = snap.x_proxy
         return {
+            "log_level": snap.log_level,
+            "log_file_level": snap.log_file_level,
             "dynamic_monitor_interval": snap.dynamic_monitor_interval,
             "dynamic_monitor_use_stagger": snap.dynamic_monitor_use_stagger,
             "dynamic_enable_screenshot": snap.dynamic_enable_screenshot,
+            "dynamic_image_mode": snap.dynamic_image_mode,
+            "dynamic_card_color_source": snap.dynamic_card_color_source,
             "dynamic_template_push": dt.push,
             "dynamic_template_pinned": dt.pinned,
             "dynamic_template_query_latest": dt.query_latest,
@@ -1115,6 +1154,15 @@ class ConfigService:
                 "port": xp.port,
                 "username": xp.username,
                 "password_configured": bool(xp.password),
+            },
+            "official_qq": {
+                "app_id": snap.official_qq_app_id,
+                "secret": {
+                    "configured": snap.official_qq_app_secret_set,
+                    "preview": None,
+                },
+                "is_sandbox": False,
+                "use_websocket": snap.official_qq_use_websocket,
             },
         }
 

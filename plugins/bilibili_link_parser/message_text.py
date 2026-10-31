@@ -5,8 +5,6 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
-from nonebot.adapters.onebot.v11 import GroupMessageEvent, PrivateMessageEvent
-
 from .miniapp import (
     extract_bilibili_miniapp_urls,
     looks_bilibili_related,
@@ -61,7 +59,7 @@ def _urls_from_xml_segment(raw: str) -> list[str]:
     return [url for url in _URL_IN_TEXT.findall(raw) if looks_bilibili_related(url)]
 
 
-def collect_message_text(event: GroupMessageEvent | PrivateMessageEvent) -> str:
+def collect_message_text(event: Any) -> str:
     """Collect plain text plus bilibili-related URLs from structured segments."""
     parts: list[str] = []
 
@@ -69,7 +67,7 @@ def collect_message_text(event: GroupMessageEvent | PrivateMessageEvent) -> str:
     if plain:
         parts.append(plain)
 
-    for segment in event.message:
+    for segment in event.get_message():
         if segment.type == "json":
             segment_data = segment.data.get("data", segment.data)
             payload = parse_json_segment_data(segment_data)

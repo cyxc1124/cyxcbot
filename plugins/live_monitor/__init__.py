@@ -5,11 +5,18 @@ B 站直播监控插件：WebSocket 弹幕 + API 轮询，开播/下播推送。
 """
 
 from nonebot import get_driver, on_message
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
+from nonebot.adapters import Bot, Event
+from nonebot.exception import FinishedException
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
-from shared.config.command_aliases import match_command_arg, match_plain
+from shared.adapter.bots import is_console_bot
+from shared.adapter.inbound import group_id_of, is_group_event, is_tome, plaintext_of
+from shared.config.command_aliases import (
+    command_aliases_for_event,
+    match_command_arg,
+    match_plain,
+)
 from shared.config.service import get_config_service
 from shared.notify.message_template import safe_text_message
 from shared.onebot.lifecycle import stop_monitor_if_no_bots
@@ -31,7 +38,7 @@ __plugin_meta__ = PluginMetadata(
     type="application",
     homepage="https://github.com/cyxc1124/cyxcbot",
     config=Config,
-    supported_adapters={"~onebot.v11"},
+    supported_adapters={"~onebot.v11", "~qq"},
 )
 
 driver = get_driver()
@@ -40,6 +47,8 @@ driver = get_driver()
 @driver.on_bot_connect
 async def _(bot):
     """机器人连接后开始监控"""
+    if is_console_bot(bot):
+        return
     logger.info(f"机器人 {bot.self_id} 已连接，开始初始化直播监控...")
     try:
         await start_live_monitor()
@@ -79,15 +88,21 @@ live_status_cmd = on_message(priority=10, block=False)
 
 
 @live_status_cmd.handle()
-async def handle_live_status(bot: Bot, event: GroupMessageEvent):
+async def handle_live_status(bot: Bot, event: Event):
     """处理直播状态查询命令"""
-    text = event.get_plaintext().strip()
+    if not is_group_event(event):
+        return
+    text = plaintext_of(event)
     snap = get_config_service().get_snapshot()
-    room_id_arg = match_command_arg(text, "live_status", snap.command_aliases)
+    room_id_arg = match_command_arg(
+        text, "live_status", await command_aliases_for_event(snap, bot, event)
+    )
     if room_id_arg is None:
         return
     room_id = room_id_arg.strip()
-    logger.info(f"直播状态查询: group={event.group_id} room={room_id or '(未指定)'}")
+    logger.info(
+        f"直播状态查询: group={group_id_of(event)} room={room_id or '(未指定)'}"
+    )
 
     if not room_id:
         await live_status_cmd.finish("请指定房间号，例如：直播状态 12345")
@@ -151,6 +166,8 @@ async def handle_live_status(bot: Bot, event: GroupMessageEvent):
                 )
             )
 
+    except FinishedException:
+        raise
     except Exception as e:
         logger.error(f"查询直播状态失败: {e}")
         await live_status_cmd.finish(safe_text_message(f"查询失败：{str(e)}"))
@@ -161,16 +178,23 @@ list_monitor_cmd = on_message(priority=10, block=False)
 
 
 @list_monitor_cmd.handle()
-async def handle_list_monitor(bot: Bot, event: GroupMessageEvent):
+async def handle_list_monitor(bot: Bot, event: Event):
     """列出当前监控的房间"""
-    text = event.get_plaintext().strip()
+    if not is_group_event(event):
+        return
+    text = plaintext_of(event)
     snap = get_config_service().get_snapshot()
     if not match_plain(
-        text, "live_monitor_list", snap.command_aliases, is_tome=event.is_tome()
+        text,
+        "live_monitor_list",
+        await command_aliases_for_event(snap, bot, event),
+        is_tome=is_tome(event),
     ):
         return
 
-    group_id = str(event.group_id)
+    group_id = group_id_of(event)
+    if not group_id:
+        return
     config = Config.from_service()
 
     # 找出当前群组监控的房间

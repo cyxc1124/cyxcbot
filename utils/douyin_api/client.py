@@ -4,15 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import json
-import random
 import re
 from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import aiohttp
 from nonebot.log import logger
+from yarl import URL
 
-from .cookie_utils import sanitize_cookies
+from .cookie_utils import (
+    cookie_header,
+    cookie_value,
+    cookies_from_http_response,
+    cookies_from_morsels,
+    sanitize_cookies,
+)
 from .ms_token import MsTokenManager
 from .xbogus import XBogus
 
@@ -24,16 +30,33 @@ except Exception:  # pragma: no cover - optional dependency
 
 _LOGIN_REQUIRED_STATUS_CODES = {2483}
 
-_USER_AGENT_POOL = [
-    (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
-    ),
-    (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
-    ),
-]
+# 与 _default_query 里 Windows / Chrome 139 指纹对齐；随机 Mac UA 会和 query 打架。
+_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
+)
+
+# 空 403 / 429 仍可能是这次 a_bogus 被拒；换签再试经常能过。
+# Argus 明文拒绝（UIFID / 签名缺失）换签无效，不应再耗重试。
+_RETRYABLE_HTTP_STATUSES = frozenset({403, 429})
+_ARGUS_NON_RETRYABLE = ("Uifid Not Found", "Signature Not Found")
+_GATEWAY_ERROR_READ_LIMIT = 512
+_GATEWAY_ERROR_READ_TIMEOUT = 1.0
+# Argus 目前只检查头存在、不验值；真验签名后日志会变成 Signature Not Found。
+_ARGUS_PLACEHOLDER = "1"
+
+
+def _should_retry_http_status(status: int) -> bool:
+    return status >= 500 or status in _RETRYABLE_HTTP_STATUSES
+
+
+def _gateway_error_snippet(text: str) -> str:
+    cleaned = " ".join((text or "").split())
+    for marker in _ARGUS_NON_RETRYABLE:
+        reason = f"Blocked by ArgusSecurityPlugin {marker}"
+        if reason in cleaned:
+            return reason
+    return ""
 
 
 class LoginRequiredError(Exception):
@@ -86,7 +109,7 @@ class DouyinAPIClient:
         self.cookies = sanitize_cookies(cookies or {})
         self.proxy = str(proxy or "").strip()
         self._session: Optional[aiohttp.ClientSession] = None
-        selected_ua = random.choice(_USER_AGENT_POOL)
+        selected_ua = _USER_AGENT
         self.headers = {
             "User-Agent": selected_ua,
             "Referer": "https://www.douyin.com/?recommend=1",
@@ -108,11 +131,41 @@ class DouyinAPIClient:
     async def __aexit__(self, exc_type, exc, tb):
         await self.close()
 
+    def _seed_cookie_jar(self) -> aiohttp.CookieJar:
+        jar = aiohttp.CookieJar()
+        if self.cookies:
+            jar.update_cookies(self.cookies, response_url=URL(f"{self.BASE_URL}/"))
+        return jar
+
+    def _request_cookie_header(self, url: str | None = None) -> str:
+        merged = dict(self.cookies)
+        jar = getattr(self._session, "cookie_jar", None) if self._session else None
+        if jar is not None:
+            merged.update(
+                cookies_from_morsels(
+                    jar.filter_cookies(URL(url or f"{self.BASE_URL}/"))
+                )
+            )
+        return cookie_header(merged)
+
+    def _merge_response_cookies(self, response: object) -> None:
+        incoming = cookies_from_http_response(response)
+        if not incoming:
+            return
+        self.cookies.update(incoming)
+        if incoming.get("msToken"):
+            self._ms_token = incoming["msToken"]
+        jar = getattr(self._session, "cookie_jar", None) if self._session else None
+        if jar is None:
+            return
+        raw_url = str(getattr(response, "url", "") or "")
+        jar.update_cookies(incoming, response_url=URL(raw_url or f"{self.BASE_URL}/"))
+
     async def _ensure_session(self):
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
                 headers=self.headers,
-                cookies=self.cookies,
+                cookie_jar=self._seed_cookie_jar(),
                 timeout=aiohttp.ClientTimeout(total=30),
                 raise_for_status=False,
             )
@@ -137,13 +190,17 @@ class DouyinAPIClient:
         self._ms_token = token.strip()
         if self._ms_token:
             self.cookies["msToken"] = self._ms_token
-            if self._session and not self._session.closed:
-                self._session.cookie_jar.update_cookies({"msToken": self._ms_token})
+            jar = getattr(self._session, "cookie_jar", None) if self._session else None
+            if jar is not None:
+                jar.update_cookies(
+                    {"msToken": self._ms_token},
+                    response_url=URL(f"{self.BASE_URL}/"),
+                )
         return self._ms_token
 
     async def _default_query(self) -> dict[str, Any]:
         ms_token = await self._ensure_ms_token()
-        return {
+        query: dict[str, Any] = {
             "device_platform": "webapp",
             "aid": "6383",
             "channel": "channel_pc_web",
@@ -172,9 +229,17 @@ class DouyinAPIClient:
             "round_trip_time": "200",
             "support_h265": "1",
             "support_dash": "1",
-            "uifid": "",
             "msToken": ms_token,
         }
+        # 空 uifid= 会被 Argus 当成 Uifid Not Found；有 Cookie 才带查询参数和请求头。
+        uifid = cookie_value(self.cookies, "UIFID", "uifid")
+        if uifid:
+            query["uifid"] = uifid
+        web_fp = cookie_value(self.cookies, "s_v_web_id")
+        if web_fp:
+            query["verifyFp"] = web_fp
+            query["fp"] = web_fp
+        return query
 
     def sign_url(self, url: str) -> tuple[str, str]:
         signed_url, _xbogus, ua = self._signer.build(url)
@@ -242,6 +307,13 @@ class DouyinAPIClient:
                 signing_kwargs["request_data"] = data
             signed_url, ua = self.build_signed_path(path, params, **signing_kwargs)
             headers = {**self.headers, **(request_headers or {}), "User-Agent": ua}
+            uifid = cookie_value(self.cookies, "UIFID", "uifid")
+            if uifid:
+                headers["uifid"] = uifid
+                headers["x-tt-argus"] = _ARGUS_PLACEHOLDER
+            cookie = self._request_cookie_header(signed_url)
+            if cookie:
+                headers["Cookie"] = cookie
             request = self._session.post if method == "POST" else self._session.get
             request_kwargs: dict[str, Any] = {
                 "headers": headers,
@@ -251,6 +323,7 @@ class DouyinAPIClient:
                 request_kwargs["data"] = data or {}
             try:
                 async with request(signed_url, **request_kwargs) as response:
+                    self._merge_response_cookies(response)
                     if response.status == 200:
                         body = await response.read()
                         if not body:
@@ -288,7 +361,7 @@ class DouyinAPIClient:
                                 path,
                             )
                         return result
-                    if response.status < 500 and response.status != 429:
+                    if not _should_retry_http_status(response.status):
                         log_fn = logger.info if suppress_error else logger.error
                         log_fn(
                             "抖音 API HTTP 失败 path={} status={} attempt={}/{}",
@@ -296,6 +369,26 @@ class DouyinAPIClient:
                             response.status,
                             attempt + 1,
                             max_retries,
+                        )
+                        return {}
+                    try:
+                        # 错误正文只用于诊断，限制首字节等待且不为凑满前缀等后续分片。
+                        async with asyncio.timeout(_GATEWAY_ERROR_READ_TIMEOUT):
+                            prefix = await response.content.read(
+                                _GATEWAY_ERROR_READ_LIMIT
+                            )
+                    except Exception:
+                        prefix = b""
+                    snippet = _gateway_error_snippet(
+                        prefix.decode("utf-8", errors="replace")
+                    )
+                    if snippet:
+                        log_fn = logger.info if suppress_error else logger.error
+                        log_fn(
+                            "抖音 API 网关拒绝 path={} status={} reason={}",
+                            path,
+                            response.status,
+                            snippet,
                         )
                         return {}
                     last_exc = RuntimeError(f"HTTP {response.status} for {path}")
@@ -365,12 +458,18 @@ class DouyinAPIClient:
         try:
             await self._ensure_session()
             assert self._session is not None
+            headers: dict[str, str] = {}
+            cookie = self._request_cookie_header(short_url)
+            if cookie:
+                headers["Cookie"] = cookie
             async with self._session.get(
                 short_url,
                 allow_redirects=True,
+                headers=headers or None,
                 timeout=aiohttp.ClientTimeout(total=timeout_seconds),
                 proxy=self.proxy or None,
             ) as response:
+                self._merge_response_cookies(response)
                 final_url = str(response.url)
                 if response.status >= 400:
                     logger.warning(

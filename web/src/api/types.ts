@@ -13,10 +13,9 @@ export interface LoginRequest {
   password: string
 }
 
-export interface LoginResponse {
-  access_token: string
-  token_type: string
-  expires_in: number
+export interface ChangePasswordRequest {
+  current_password: string
+  new_password: string
 }
 
 export interface User {
@@ -45,9 +44,23 @@ export interface XProxySettings {
   password_configured: boolean
 }
 
+export interface OfficialQQSettings {
+  app_id: string
+  secret: CookieStatus
+  /** @deprecated 官方 QQ 已统一 API，固定为 false */
+  is_sandbox: boolean
+  use_websocket: boolean
+}
+
+export type LogLevel = 'TRACE' | 'DEBUG' | 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' | 'CRITICAL'
+
 export interface Settings {
+  log_level: LogLevel
+  log_file_level: LogLevel
   dynamic_monitor_interval: number
   dynamic_monitor_use_stagger: boolean
+  dynamic_image_mode?: 'screenshot' | 'card'
+  dynamic_card_color_source?: 'image' | 'avatar'
   dynamic_enable_screenshot: boolean
   dynamic_template_push: string
   dynamic_template_pinned: string
@@ -73,6 +86,7 @@ export interface Settings {
   douyin_cookie: CookieStatus
   x_api_bearer: CookieStatus
   x_proxy: XProxySettings
+  official_qq: OfficialQQSettings
   status_check_allowed_qq: string[]
   nonebot_superusers: string[]
   command_aliases: Record<string, CommandAliasEntry>
@@ -95,6 +109,7 @@ export type SettingsUpdate = Partial<
     | 'douyin_cookie'
     | 'x_api_bearer'
     | 'x_proxy'
+    | 'official_qq'
     | 'command_prefixes'
     | 'link_parser_shared_media_dir_default'
     | 'link_parser_shared_media_dir_resolved'
@@ -108,6 +123,11 @@ export type SettingsUpdate = Partial<
   x_proxy_username?: string
   /** 明文；undefined=不改；""=清除 */
   x_proxy_password?: string
+  official_qq_app_id?: string
+  official_qq_app_secret?: string
+  /** @deprecated 兼容旧客户端，仅接受 false */
+  official_qq_is_sandbox?: boolean
+  official_qq_use_websocket?: boolean
 }
 
 export interface CookieTestResult {
@@ -208,10 +228,13 @@ export type XTargetUpdate = Partial<
 >
 
 // Groups
+export type OneBotListStatus = 'ok' | 'offline' | 'incomplete'
+
 export interface Group {
   group_id: string
   group_name: string | null
   member_count?: number | null
+  source?: 'onebot' | 'official'
 }
 
 export interface GroupMessagePolicy {
@@ -219,11 +242,13 @@ export interface GroupMessagePolicy {
   enabled_group_ids: string[]
   groups: Group[]
   group_list_available: boolean
+  onebot_list_status?: OneBotListStatus | null
 }
 
 export interface Friend {
   user_id: string
   nickname: string | null
+  source?: 'onebot' | 'official'
 }
 
 export interface PrivateMessagePolicy {
@@ -231,6 +256,7 @@ export interface PrivateMessagePolicy {
   enabled_user_ids: string[]
   users: Friend[]
   friend_list_available: boolean
+  onebot_list_status?: OneBotListStatus | null
 }
 
 export interface StatusCheckDisplayOptions {
@@ -245,6 +271,7 @@ export interface GroupStatusPolicy {
   groups: Group[]
   display: StatusCheckDisplayOptions
   group_list_available: boolean
+  onebot_list_status?: OneBotListStatus | null
 }
 
 export interface GroupSpecialTitlePolicy {
@@ -261,12 +288,15 @@ export interface PrivateStatusPolicy {
   users: Friend[]
   display: StatusCheckDisplayOptions
   friend_list_available: boolean
+  onebot_list_status?: OneBotListStatus | null
 }
 
 export interface LinkParserGroupPolicyItem {
   group_id: string
   group_name: string | null
   member_count: number | null
+  source?: 'onebot' | 'official'
+  editable?: boolean
   customized: boolean
   video_enabled: boolean
   live_enabled: boolean
@@ -277,6 +307,7 @@ export interface LinkParserGroupPolicyItem {
 export interface LinkParserGroupPolicyList {
   groups: LinkParserGroupPolicyItem[]
   group_list_available: boolean
+  onebot_list_status?: OneBotListStatus
 }
 
 export interface LinkParserGroupPolicyMutation {
@@ -287,6 +318,8 @@ export interface LinkParserUserPolicyItem {
   user_id: string
   nickname: string | null
   name: string | null
+  source?: 'onebot' | 'official'
+  editable?: boolean
   customized: boolean
   video_enabled: boolean
   live_enabled: boolean
@@ -297,6 +330,7 @@ export interface LinkParserUserPolicyItem {
 export interface LinkParserUserPolicyList {
   users: LinkParserUserPolicyItem[]
   friend_list_available: boolean
+  onebot_list_status?: OneBotListStatus
 }
 
 export interface LinkParserUserPolicyMutation {
@@ -309,11 +343,14 @@ export interface DouyinLinkParserGroupPolicyItem {
   member_count?: number | null
   customized: boolean
   enabled: boolean
+  source?: 'onebot' | 'official'
+  editable?: boolean
 }
 
 export interface DouyinLinkParserGroupPolicyList {
   groups: DouyinLinkParserGroupPolicyItem[]
   group_list_available: boolean
+  onebot_list_status?: OneBotListStatus | null
 }
 
 export interface DouyinLinkParserGroupPolicyMutation {
@@ -326,11 +363,14 @@ export interface DouyinLinkParserUserPolicyItem {
   name?: string | null
   customized: boolean
   enabled: boolean
+  source?: 'onebot' | 'official'
+  editable?: boolean
 }
 
 export interface DouyinLinkParserUserPolicyList {
   users: DouyinLinkParserUserPolicyItem[]
   friend_list_available: boolean
+  onebot_list_status?: OneBotListStatus | null
 }
 
 export interface DouyinLinkParserUserPolicyMutation {
@@ -343,11 +383,14 @@ export interface XLinkParserGroupPolicyItem {
   member_count?: number | null
   customized: boolean
   enabled: boolean
+  source?: 'onebot' | 'official'
+  editable?: boolean
 }
 
 export interface XLinkParserGroupPolicyList {
   groups: XLinkParserGroupPolicyItem[]
   group_list_available: boolean
+  onebot_list_status?: OneBotListStatus | null
 }
 
 export interface XLinkParserGroupPolicyMutation {
@@ -360,11 +403,14 @@ export interface XLinkParserUserPolicyItem {
   name?: string | null
   customized: boolean
   enabled: boolean
+  source?: 'onebot' | 'official'
+  editable?: boolean
 }
 
 export interface XLinkParserUserPolicyList {
   users: XLinkParserUserPolicyItem[]
   friend_list_available: boolean
+  onebot_list_status?: OneBotListStatus | null
 }
 
 export interface XLinkParserUserPolicyMutation {
@@ -515,9 +561,23 @@ export interface QqConnectionStatus {
   message: string
 }
 
-export interface ConnectionsStatus {
-  bilibili: BilibiliConnectionStatus
+export interface OfficialQqConnectionStatus {
+  configured: boolean
+  connected: boolean
+  app_id: string
+  /** @deprecated 官方 QQ 已统一 API，固定为 false */
+  is_sandbox: boolean
+  use_websocket: boolean
+  message: string
+}
+
+export interface BotConnectionsStatus {
   qq: QqConnectionStatus
+  official_qq: OfficialQqConnectionStatus
+}
+
+export interface ConnectionsStatus extends BotConnectionsStatus {
+  bilibili: BilibiliConnectionStatus
 }
 
 export interface AboutInfo {

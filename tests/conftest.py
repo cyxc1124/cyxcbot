@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
+import sys
 import uuid
 
 import pytest
 
 _PROD_DB_MARKERS = ("/data/cyxcbot.db", "cyxcbot.db")
+
+
+def pytest_asyncio_loop_factories(item):
+    factories = {"asyncio": asyncio.new_event_loop}
+    if item.path.name == "test_browser_security.py" and sys.platform != "win32":
+        import uvloop
+
+        factories["uvloop"] = uvloop.new_event_loop
+    return factories
 
 
 def _pytest_memory_db_url() -> str:
@@ -41,3 +52,24 @@ def web_secret_key(monkeypatch: pytest.MonkeyPatch) -> None:
         "WEB_SECRET_KEY",
         "test-secret-key-for-pytest-only-not-for-production",
     )
+
+
+@pytest.fixture
+def tls_policy_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Restore process-wide client defaults after startup/policy tests."""
+    import ssl
+
+    import httpx
+    import httpx._config
+    import httpx._transports.default
+    from aiohttp import connector
+
+    for module, name in (
+        (ssl, "create_default_context"),
+        (ssl, "_create_default_https_context"),
+        (httpx, "create_ssl_context"),
+        (httpx._config, "create_ssl_context"),
+        (httpx._transports.default, "create_ssl_context"),
+        (connector, "_SSL_CONTEXT_VERIFIED"),
+    ):
+        monkeypatch.setattr(module, name, getattr(module, name))

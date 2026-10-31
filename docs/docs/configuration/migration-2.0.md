@@ -10,10 +10,10 @@ sidebar_position: 3
 
 | 配置项 | 1.x | 2.0 |
 |--------|-----|-----|
-| 直播/动态监控映射 | `LIVE_MONITOR_MAPPING` 等环境变量 | Web Admin `/live`、`/dynamic` |
-| B 站 Cookie | `BILIBILI_COOKIE` 环境变量 | Web Admin → 设置 → B 站账号 |
-| 超级用户 | `SUPERUSERS` 环境变量 | Web Admin → 设置 → 机器人 |
-| 状态查询权限 | `STATUS_CHECK_ALLOWED_QQ` | Web Admin → 设置 → 机器人 / 群组/好友策略 |
+| 直播/动态监控映射 | `LIVE_MONITOR_MAPPING` 等环境变量 | Web Admin `/bilibili/live`、`/bilibili/dynamic` |
+| B 站 Cookie | `BILIBILI_COOKIE` 环境变量 | Web Admin → B 站 → 账号 |
+| 超级用户 | `SUPERUSERS` 环境变量 | Web Admin → 系统 → 权限 |
+| 状态查询权限 | `STATUS_CHECK_ALLOWED_QQ` | Web Admin → 系统 → 权限 / 群组/好友策略 |
 | 链接解析开关 | 环境变量 | Web Admin → 群组/好友策略 |
 | 消息模板 | 硬编码或环境变量 | Web Admin → 消息模板 |
 | 部署 | 仅 Docker | Docker + Windows 可执行包 |

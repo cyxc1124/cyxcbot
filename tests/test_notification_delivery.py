@@ -91,7 +91,7 @@ def live_models_module():
 
 
 @pytest.fixture
-def dynamic_monitor_module():
+def dynamic_monitor_module(monkeypatch):
     _ensure_package("plugins", PLUGINS_ROOT)
     _ensure_package("plugins.dynamic_monitor", DYNAMIC_MONITOR_ROOT)
     sys.modules.setdefault(
@@ -120,15 +120,17 @@ def dynamic_monitor_module():
         DYNAMIC_MONITOR_ROOT,
         "sender.py",
     )
-    return _load_module(
+    module = _load_module(
         "plugins.dynamic_monitor.dynamic_monitor",
         DYNAMIC_MONITOR_ROOT,
         "dynamic_monitor.py",
     )
+    monkeypatch.setattr(module.DynamicMonitorStateStore, "persist", AsyncMock())
+    return module
 
 
 @pytest.fixture
-def live_monitor_module():
+def live_monitor_module(monkeypatch):
     _ensure_package("plugins", PLUGINS_ROOT)
     _ensure_package("plugins.live_monitor", LIVE_MONITOR_ROOT)
     sys.modules.setdefault(
@@ -154,11 +156,577 @@ def live_monitor_module():
         LIVE_MONITOR_ROOT,
         "sender.py",
     )
-    return _load_module(
+    module = _load_module(
         "plugins.live_monitor.live_monitor",
         LIVE_MONITOR_ROOT,
         "live_monitor.py",
     )
+    monkeypatch.setattr(module.LiveMonitorStateStore, "persist", AsyncMock())
+    return module
+
+
+@pytest.fixture
+def x_monitor_module(dynamic_monitor_module):
+    root = PLUGINS_ROOT / "x_monitor"
+    _ensure_package("plugins.x_monitor", root)
+    return _load_module("plugins.x_monitor.x_monitor", root, "x_monitor.py")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["dynamic", "x"])
+async def test_official_monitor_targets_route_alongside_onebot(
+    kind, dynamic_monitor_module, x_monitor_module
+):
+    cls = (
+        dynamic_monitor_module.DynamicMonitor
+        if kind == "dynamic"
+        else x_monitor_module.XMonitor
+    )
+    monitor = object.__new__(cls)
+    groups = ["official-group"]
+    monitor.config = SimpleNamespace(
+        **{
+            f"{kind}_monitor_mapping": {"target": groups},
+            f"{kind}_monitor_user_mapping": {"target": ["official-user"]},
+            f"{kind}_at_all": {},
+            "enable_screenshot": False,
+        }
+    )
+    monitor.sender = SimpleNamespace(
+        build_dynamic_message=MagicMock(return_value=Message("result")),
+        build_tweet_message=MagicMock(return_value=Message("result")),
+        plan_fingerprint=MagicMock(return_value="plan"),
+        send_message=AsyncMock(
+            side_effect=lambda message, groups, users, **kwargs: DeliveryResult(
+                [TargetDelivery("group", target, True) for target in groups]
+                + [TargetDelivery("user", target, True) for target in users]
+            )
+        ),
+    )
+    monitor._pending_tweet_delivery = {
+        "target": ("tweet", "", [("official-group", 0)], [])
+    }
+    monitor.last_tweet_ids = {}
+    monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
+    monitor._resolve_author_name = AsyncMock(return_value="author")
+    monitor.session = None
+    monitor._persist_state = AsyncMock()
+    item = SimpleNamespace(
+        id="new-item",
+        name="author",
+        media_items=[],
+        media_urls=[],
+        get_type_description=lambda: "text",
+    )
+    send = (
+        monitor._send_dynamic_notification
+        if kind == "dynamic"
+        else monitor._send_tweet_notification
+    )
+    assert await send("target", item)
+    assert monitor.sender.send_message.await_args.args[1:3] == (
+        ["official-group"],
+        ["official-user"],
+    )
+    groups.append("1001")
+    item.id = "next-item"
+    assert await send("target", item)
+    assert monitor.sender.send_message.await_args.args[1:3] == (
+        ["official-group", "1001"],
+        ["official-user"],
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("remove_all", [False, True])
+async def test_x_mapping_reload_during_plan_persist_filters_old_targets(
+    x_monitor_module, legacy, remove_all
+):
+    from utils.x_api.models import TweetItem
+
+    monitor = object.__new__(x_monitor_module.XMonitor)
+    monitor.config = SimpleNamespace(
+        x_monitor_mapping={"author": ["removed-group", "kept-group"]},
+        x_monitor_user_mapping={"author": ["removed-user", "kept-user"]},
+        x_at_all={},
+    )
+    monitor.sender = SimpleNamespace(
+        build_tweet_message=MagicMock(return_value=Message("caption")),
+        plan_fingerprint=MagicMock(return_value="plan"),
+        send_message=AsyncMock(
+            side_effect=lambda message, groups, users, **kwargs: DeliveryResult(
+                [TargetDelivery("group", target, True) for target in groups]
+                + [TargetDelivery("user", target, True) for target in users]
+            )
+        ),
+    )
+    monitor._pending_tweet_delivery = {}
+    if legacy:
+        monitor._pending_tweet_delivery["author"] = (
+            "200",
+            "plan",
+            [("removed-group", 1), ("kept-group", 2)],
+            [("removed-user", 1), ("kept-user", 2)],
+        )
+    monitor.last_tweet_ids = {"author": "100"}
+    monitor.session = None
+    first = True
+
+    async def persist(*args, **kwargs):
+        nonlocal first
+        if first:
+            first = False
+            monitor.config.x_monitor_mapping["author"] = (
+                [] if remove_all else ["kept-group"]
+            )
+            monitor.config.x_monitor_user_mapping["author"] = (
+                [] if remove_all else ["kept-user"]
+            )
+
+    monitor._persist_state = persist
+    tweet = TweetItem(
+        id="200",
+        text="caption",
+        created_at="",
+        username="author",
+        name="Author",
+        url="",
+    )
+    assert await monitor._send_tweet_notification("author", tweet)
+    if remove_all:
+        monitor.sender.send_message.assert_not_awaited()
+    else:
+        assert monitor.sender.send_message.await_args.args[1:3] == (
+            ["kept-group"],
+            ["kept-user"],
+        )
+    assert monitor.last_tweet_ids["author"] == "200"
+    assert not monitor._pending_tweet_delivery
+
+
+@pytest.fixture
+def x_reload_delivery(x_monitor_module, monkeypatch):
+    from nonebot.adapters.onebot.v11 import MessageSegment
+
+    from shared.adapter import outbound
+    from utils.x_api.models import TweetItem
+
+    monitor = x_monitor_module.XMonitor(
+        SimpleNamespace(
+            x_monitor_mapping={
+                "author": ["current-group", "later-group", "kept-group"]
+            },
+            x_monitor_user_mapping={"author": ["later-user", "kept-user"]},
+            x_at_all={},
+        )
+    )
+    monitor.last_tweet_ids = {"author": "100"}
+    monitor.sender = x_monitor_module.XSender()
+    monitor.sender.build_tweet_message = MagicMock(
+        return_value=Message(
+            [
+                MessageSegment.text("first"),
+                MessageSegment.image(b"image"),
+                MessageSegment.text("last"),
+            ]
+        )
+    )
+    monitor._persist_state = AsyncMock()
+    bot = SimpleNamespace(send_to_group=AsyncMock(), send_to_c2c=AsyncMock())
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [bot])
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    monkeypatch.setattr(outbound, "_official_last_sent", {})
+    monkeypatch.setattr(outbound, "_official_locks", {})
+    monkeypatch.setitem(
+        monitor.sender.send_message.__func__.__globals__,
+        "messaging_bots",
+        lambda: [bot],
+    )
+    tweet = TweetItem(
+        id="200",
+        text="caption",
+        created_at="",
+        username="author",
+        name="Author",
+        url="",
+    )
+    return monitor, bot, tweet, outbound
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("remove_current", [False, True])
+@pytest.mark.parametrize("retry_kept", [False, True])
+async def test_x_mapping_reload_after_ack_stops_removed_and_resumes_kept(
+    x_reload_delivery, remove_current, retry_kept
+):
+    monitor, bot, tweet, _ = x_reload_delivery
+    persisted = []
+
+    async def persist(*args, **kwargs):
+        persisted.append(monitor._pending_tweet_delivery.get("author"))
+        if len(persisted) == 2:
+            monitor.config.x_monitor_mapping["author"] = (
+                [] if remove_current else ["current-group"]
+            ) + ["kept-group"]
+            monitor.config.x_monitor_user_mapping["author"] = ["kept-user"]
+            await asyncio.sleep(0)
+
+    monitor._persist_state = persist
+    failed_once = False
+
+    async def send_group(*, group_openid, message, msg_seq):
+        nonlocal failed_once
+        if (
+            retry_kept
+            and group_openid == "kept-group"
+            and msg_seq == 2
+            and not failed_once
+        ):
+            failed_once = True
+            raise RuntimeError("temporary failure")
+
+    bot.send_to_group.side_effect = send_group
+    delivered = await monitor._send_tweet_notification(
+        "author", tweet, check_generation=0
+    )
+    assert delivered is not retry_kept
+    assert ("current-group", 1) in persisted[1][2]
+    if retry_kept:
+        assert monitor.last_tweet_ids["author"] == "100"
+        groups, users = monitor._pending_tweet_delivery["author"][2:]
+        assert ("kept-group", 1) in groups
+        assert all(target == "kept-group" or offset == -1 for target, offset in groups)
+        assert users == [("kept-user", -1)]
+        assert await monitor._send_tweet_notification(
+            "author", tweet, check_generation=0
+        )
+    group_calls = bot.send_to_group.await_args_list
+    assert not any(call.kwargs["group_openid"] == "later-group" for call in group_calls)
+    assert [
+        call.kwargs["msg_seq"]
+        for call in group_calls
+        if call.kwargs["group_openid"] == "current-group"
+    ] == ([1] if remove_current else [1, 2, 3])
+    assert [
+        call.kwargs["msg_seq"]
+        for call in group_calls
+        if call.kwargs["group_openid"] == "kept-group"
+    ] == ([1, 2, 2, 3] if retry_kept else [1, 2, 3])
+    assert [call.kwargs["openid"] for call in bot.send_to_c2c.await_args_list] == [
+        "kept-user"
+    ] * 3
+    assert monitor.last_tweet_ids["author"] == "200"
+    assert not monitor._pending_tweet_delivery
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wait_kind", ["pacing", "retry", "media"])
+async def test_x_mapping_reload_during_official_wait_stops_api(
+    x_reload_delivery, monkeypatch, wait_kind
+):
+    import time
+
+    monitor, bot, tweet, outbound = x_reload_delivery
+    sleep = asyncio.sleep
+
+    def remove_targets():
+        monitor.config.x_monitor_mapping["author"] = ["kept-group"]
+        monitor.config.x_monitor_user_mapping["author"] = ["kept-user"]
+
+    if wait_kind == "media":
+        materialize = outbound._materialize_media
+        first = True
+
+        async def download(value):
+            nonlocal first
+            if first:
+                first = False
+                remove_targets()
+                await sleep(0)
+            return await materialize(value)
+
+        monkeypatch.setattr(outbound, "_materialize_media", download)
+    else:
+
+        async def wait(_):
+            remove_targets()
+            await sleep(0)
+
+        monkeypatch.setattr(outbound.asyncio, "sleep", wait)
+        if wait_kind == "pacing":
+            monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 3)
+            outbound._official_last_sent["current-group"] = time.monotonic()
+        else:
+
+            async def reject(*, group_openid, message, msg_seq):
+                if group_openid == "current-group":
+                    raise RuntimeError("40034100")
+
+            bot.send_to_group.side_effect = reject
+
+    assert await monitor._send_tweet_notification("author", tweet, check_generation=0)
+    assert [
+        call.kwargs["msg_seq"]
+        for call in bot.send_to_group.await_args_list
+        if call.kwargs["group_openid"] == "current-group"
+    ] == ([] if wait_kind == "pacing" else [1])
+    assert not any(
+        call.kwargs["group_openid"] == "later-group"
+        for call in bot.send_to_group.await_args_list
+    )
+    assert [call.kwargs["openid"] for call in bot.send_to_c2c.await_args_list] == [
+        "kept-user"
+    ] * 3
+    assert monitor.last_tweet_ids["author"] == "200"
+    assert not monitor._pending_tweet_delivery
+
+
+@pytest.mark.asyncio
+async def test_x_mapping_reload_during_onebot_prefix_wait_stops_api(
+    x_reload_delivery, monkeypatch
+):
+    monitor, _, tweet, outbound = x_reload_delivery
+    monitor.config.x_monitor_mapping["author"] = ["1001", "1002"]
+    monitor.config.x_monitor_user_mapping["author"] = []
+    monitor.config.x_at_all = {"author": True}
+    monitor.sender.build_tweet_message.return_value = Message("caption")
+    bot = SimpleNamespace(send_group_msg=AsyncMock())
+    sender_globals = monitor.sender.send_message.__func__.__globals__
+    monkeypatch.setitem(sender_globals, "messaging_bots", lambda: [bot])
+    monkeypatch.setitem(sender_globals, "iter_onebot_bots", lambda: [bot])
+    monkeypatch.setattr(outbound, "iter_onebot_bots", lambda: [bot])
+
+    async def prefix(*args, **kwargs):
+        monitor.config.x_monitor_mapping["author"] = ["1002"]
+        await asyncio.sleep(0)
+        return Message("prefix")
+
+    monkeypatch.setitem(sender_globals, "resolve_at_all_prefix", prefix)
+    assert await monitor._send_tweet_notification("author", tweet, check_generation=0)
+    assert [call.kwargs["group_id"] for call in bot.send_group_msg.await_args_list] == [
+        1002,
+        1002,
+    ]
+    assert not monitor._pending_tweet_delivery
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_x_plan_change_then_cancel_resets_offsets_before_persisting(
+    x_monitor_module, monkeypatch, legacy
+):
+    from nonebot.adapters.onebot.v11 import MessageSegment
+
+    from utils.x_api.models import TweetItem
+
+    monitor = object.__new__(x_monitor_module.XMonitor)
+    monitor.config = SimpleNamespace(
+        x_monitor_mapping={"author": ["group-openid"]},
+        x_monitor_user_mapping={"author": []},
+        x_at_all={"author": True},
+    )
+    monitor.sender = x_monitor_module.XSender()
+    message = Message([MessageSegment.text("caption"), MessageSegment.image(b"image")])
+    monitor.sender.build_tweet_message = MagicMock(return_value=message)
+    old_fp = (
+        "ti"
+        if legacy
+        else monitor.sender.plan_fingerprint(message, at_all_enabled=False)
+    )
+    monitor._pending_tweet_delivery = {
+        "author": ("200", old_fp, [("group-openid", 1)], [])
+    }
+    monitor.last_tweet_ids = {"author": "100"}
+    monitor.session = None
+    persisted = []
+
+    async def persist(*args, **kwargs):
+        persisted.append(monitor._pending_tweet_delivery["author"])
+        raise asyncio.CancelledError
+
+    monitor._persist_state = persist
+    tweet = TweetItem(
+        id="200",
+        text="caption",
+        created_at="",
+        username="author",
+        name="Author",
+        url="",
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await monitor._send_tweet_notification("author", tweet)
+    assert persisted[0][1] == monitor.sender.plan_fingerprint(
+        message, at_all_enabled=True
+    )
+    assert persisted[0][2] == [("group-openid", 0)]
+    monkeypatch.setitem(
+        monitor.sender.send_to_groups.__func__.__globals__,
+        "messaging_bots",
+        lambda: [object()],
+    )
+    send = AsyncMock()
+    monkeypatch.setitem(
+        monitor.sender._send_official_batches.__func__.__globals__, "send_group", send
+    )
+    result = await monitor.sender.send_message(
+        message,
+        ["group-openid"],
+        [],
+        at_all_enabled=True,
+        group_starts={"group-openid": 0},
+        expected_fingerprint=persisted[0][1],
+    )
+    assert result.all_succeeded
+    assert send.await_args.kwargs["start"] == 0
+    assert "caption" in send.await_args.args[1].extract_plain_text()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "user"])
+@pytest.mark.parametrize("is_pinned", [False, True])
+async def test_dynamic_official_partial_retry_keeps_snapshot_and_resumes_parts(
+    scope,
+    is_pinned,
+    dynamic_monitor_module,
+    dynamic_sender_module,
+    monkeypatch,
+):
+    from nonebot.adapters.onebot.v11 import MessageSegment
+
+    from shared.adapter import outbound
+    from shared.adapter.qq_errors import LoggedQQApiError
+
+    monitor = object.__new__(dynamic_monitor_module.DynamicMonitor)
+    monitor.config = SimpleNamespace(
+        dynamic_monitor_mapping={"111": ["group-openid"] if scope == "group" else []},
+        dynamic_monitor_user_mapping={
+            "111": ["user-openid"] if scope == "user" else []
+        },
+        dynamic_at_all={},
+        enable_screenshot=True,
+    )
+    monitor._resolve_author_name = AsyncMock(return_value="author")
+    monitor._fetch_dynamic_screenshot = AsyncMock(return_value=b"original-image")
+    monitor._persist_state = AsyncMock()
+    monitor.sender = dynamic_sender_module.DynamicSender()
+    monitor.sender.build_dynamic_message = MagicMock(
+        return_value=Message(
+            [
+                MessageSegment.text("original-caption"),
+                MessageSegment.image(b"original-image"),
+            ]
+        )
+    )
+    accepted = []
+    failed = False
+
+    async def send(**kwargs):
+        nonlocal failed
+        message = kwargs["message"]
+        segment = message[0]
+        if segment.type == "file_image" and not failed:
+            failed = True
+            raise LoggedQQApiError(50055001, "临时发送失败")
+        accepted.append(
+            (
+                segment.type,
+                message.extract_plain_text()
+                if segment.type == "text"
+                else segment.data["content"],
+            )
+        )
+
+    bot = SimpleNamespace(send_to_group=send, send_to_c2c=send)
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [bot])
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    dynamic = SimpleNamespace(id=200, uid="111", get_type_description=lambda: "text")
+    assert not await monitor._send_dynamic_notification("111", dynamic, is_pinned)
+    pending = monitor._pending_targets[("111", 200, is_pinned)]
+    starts = pending.group_starts if scope == "group" else pending.user_starts
+    assert starts[f"{scope}-openid"] == 1
+
+    monitor.config.enable_screenshot = False
+    monitor.config.dynamic_at_all["111"] = True
+    monitor.sender.build_dynamic_message.return_value = Message("changed-template")
+    assert await monitor._send_dynamic_notification("111", dynamic, is_pinned)
+    assert accepted == [("text", "original-caption"), ("file_image", b"original-image")]
+    monitor._fetch_dynamic_screenshot.assert_awaited_once()
+    monitor.sender.build_dynamic_message.assert_called_once()
+    completed = monitor._pending_targets[("111", 200, is_pinned)]
+    assert not completed.groups and not completed.users
+
+
+@pytest.mark.asyncio
+async def test_live_official_targets_are_sent_alongside_onebot(live_monitor_module):
+    from plugins.live_monitor.models import LiveRoomState
+    from plugins.live_monitor.notification_delivery import LiveNotificationDelivery
+
+    groups = ["official-group"]
+    sender = SimpleNamespace(
+        send_notification=AsyncMock(return_value=_delivery_succeeded())
+    )
+    delivery = LiveNotificationDelivery(
+        sender,
+        get_group_mapping=lambda: {"1": groups},
+        get_user_mapping=lambda: {"1": ["official-user"]},
+        get_at_all=lambda: {},
+    )
+    state = LiveRoomState(room_id=1)
+    state.pending_start = True
+    state.pending_start_groups = ["official-group"]
+    assert await delivery.deliver_start("1", state, room_info=None, user_info=None)
+    assert not state.pending_start
+    sender.send_notification.assert_awaited_once()
+    assert sender.send_notification.await_args.kwargs["target_groups"] == [
+        "official-group"
+    ]
+    assert sender.send_notification.await_args.kwargs["target_users"] == []
+    groups.append("1001")
+    assert await delivery.deliver_start("1", state, room_info=None, user_info=None)
+    assert sender.send_notification.await_args.kwargs["target_groups"] == [
+        "official-group",
+        "1001",
+    ]
+    assert sender.send_notification.await_args.kwargs["target_users"] == [
+        "official-user"
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["get_latest_dynamic", "get_pinned_dynamic"])
+@pytest.mark.parametrize("has_dynamic", [False, True])
+async def test_dynamic_query_returns_message_for_event_reply(
+    method, has_dynamic, dynamic_monitor_module
+):
+    monitor = object.__new__(dynamic_monitor_module.DynamicMonitor)
+    monitor.config = SimpleNamespace(bilibili_cookie="", enable_screenshot=False)
+    dynamic = SimpleNamespace(
+        id=1,
+        uid="123",
+        timestamp=1,
+        is_pinned=False,
+        type=1,
+        get_type_description=lambda: "text",
+    )
+    monitor.fetcher = SimpleNamespace(
+        fetch_user_dynamics=AsyncMock(
+            return_value=([dynamic], 1) if has_dynamic else ([], None)
+        )
+    )
+    reply = Message("query result")
+    monitor.sender = SimpleNamespace(
+        build_dynamic_message=MagicMock(return_value=reply), send_to_groups=AsyncMock()
+    )
+    monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
+    monitor._resolve_author_name = AsyncMock(return_value="author")
+    result = await getattr(monitor, method)("123")
+    assert isinstance(result, Message)
+    if has_dynamic:
+        assert result == reply
+    else:
+        assert "暂无" in str(result)
+    monitor.sender.send_to_groups.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
@@ -226,7 +794,7 @@ async def test_dynamic_sender_no_bot_marks_all_targets_failed(
 ) -> None:
     sender = dynamic_sender_module.DynamicSender()
     driver = SimpleNamespace(bots={})
-    with patch("plugins.dynamic_monitor.sender.get_driver", return_value=driver):
+    with patch("nonebot.get_bots", return_value=driver.bots):
         result = await sender.send_message(Message("hi"), ["1001"], ["2002"])
 
     assert result.attempted
@@ -245,12 +813,107 @@ async def test_dynamic_sender_all_targets_succeed(dynamic_sender_module) -> None
     bot.send_private_msg = AsyncMock()
     driver = SimpleNamespace(bots={"bot": bot})
 
-    with patch("plugins.dynamic_monitor.sender.get_driver", return_value=driver):
+    with patch("nonebot.get_bots", return_value=driver.bots):
         result = await sender.send_message(Message("hi"), ["1001"], ["2002"])
 
     assert result.all_succeeded
     bot.send_group_msg.assert_awaited_once()
     bot.send_private_msg.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_official_group_no_permission_logs_info() -> None:
+    from shared.adapter.qq_errors import note_qq_api_error
+
+    class Denied(Exception):
+        code = 40034105
+        message = "主动消息失败，无权限"
+
+    with patch("shared.adapter.qq_errors.logger") as log:
+        noted = note_qq_api_error(Denied(), target="GROUPOPENID")
+
+    assert noted is not None
+    assert noted.code == 40034105
+    log.info.assert_called_once()
+    log.warning.assert_not_called()
+    log.opt.assert_not_called()
+
+
+def test_qq_rate_limit_logs_warning() -> None:
+    from shared.adapter.qq_errors import note_qq_api_error
+
+    class Limited(Exception):
+        code = 40034100
+        message = "主动消息发送超过频控限制"
+
+    with patch("shared.adapter.qq_errors.logger") as log:
+        noted = note_qq_api_error(Limited(), target="GROUPOPENID")
+
+    assert noted is not None
+    log.warning.assert_called_once()
+    log.info.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "error, terminal",
+    [
+        ("40034105 主动消息无权限", True),
+        ("40034101 机器人不是群成员", True),
+        ("40054003 机器人不是群成员", True),
+        ("40034006 消息内容违规", True),
+        ("40054007 消息长度超限", True),
+        ("304036 无 Markdown 模板权限", True),
+        ("22006 消息类型与内容不匹配", True),
+        ("40034100 主动消息超过频控", False),
+        ("40034004 富媒体转存失败", False),
+        ("304080 文件信息无效", False),
+        ("40054006 验证好友关系失败", False),
+        ("40054016 机器人已下线", False),
+        ("50055001 消息发送异常", False),
+        ("50055002 消息发送异常", False),
+        ("50055006 ARK 消息发送异常", False),
+        ("999999 未知错误", False),
+        ("down", False),
+        (" ", False),
+        (None, False),
+    ],
+)
+def test_terminal_qq_error_text_matches_documented_rejection(error, terminal) -> None:
+    from shared.adapter.qq_errors import is_terminal_qq_error_text
+
+    assert is_terminal_qq_error_text(error) is terminal
+
+
+def test_terminal_content_rejection_keeps_warning_log() -> None:
+    from shared.adapter.qq_errors import is_terminal_qq_error_text, note_qq_api_error
+
+    class Rejected(Exception):
+        code = 40034006
+        message = "消息内容违规"
+
+    with patch("shared.adapter.qq_errors.logger") as log:
+        noted = note_qq_api_error(Rejected(), target="GROUPOPENID")
+
+    assert noted is not None
+    assert is_terminal_qq_error_text(str(noted))
+    log.warning.assert_called_once()
+    log.info.assert_not_called()
+
+
+def test_c2c_user_reject_logs_info() -> None:
+    from shared.adapter.qq_errors import note_qq_api_error
+
+    class Rejected(Exception):
+        code = 40054013
+        message = "用户拒收消息"
+
+    with patch("shared.adapter.qq_errors.logger") as log:
+        noted = note_qq_api_error(Rejected(), target="USEROPENID")
+
+    assert noted is not None
+    assert noted.code == 40054013
+    log.info.assert_called_once()
+    log.warning.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -263,7 +926,7 @@ async def test_dynamic_sender_partial_failure(dynamic_sender_module) -> None:
     bot.send_private_msg = AsyncMock()
     driver = SimpleNamespace(bots={"bot": bot})
 
-    with patch("plugins.dynamic_monitor.sender.get_driver", return_value=driver):
+    with patch("nonebot.get_bots", return_value=driver.bots):
         result = await sender.send_message(Message("hi"), ["1001"], ["2002"])
 
     assert result.any_succeeded
@@ -285,7 +948,7 @@ async def test_dynamic_sender_any_bot_success_counts_as_delivered(
     succeeding_bot.send_group_msg = AsyncMock()
     driver = SimpleNamespace(bots={"a": failing_bot, "b": succeeding_bot})
 
-    with patch("plugins.dynamic_monitor.sender.get_driver", return_value=driver):
+    with patch("nonebot.get_bots", return_value=driver.bots):
         result = await sender.send_to_groups(Message("hi"), ["1001"])
 
     assert len(result.targets) == 1
@@ -307,7 +970,7 @@ async def test_dynamic_sender_does_not_duplicate_when_first_bot_succeeds(
     second_bot.send_group_msg = AsyncMock()
     driver = SimpleNamespace(bots={"a": first_bot, "b": second_bot})
 
-    with patch("plugins.dynamic_monitor.sender.get_driver", return_value=driver):
+    with patch("nonebot.get_bots", return_value=driver.bots):
         result = await sender.send_to_groups(Message("hi"), ["1001"])
 
     assert result.all_succeeded
@@ -316,21 +979,38 @@ async def test_dynamic_sender_does_not_duplicate_when_first_bot_succeeds(
 
 
 @pytest.mark.asyncio
-async def test_live_sender_no_bot_marks_targets_failed(live_sender_module) -> None:
+@pytest.mark.parametrize("status", ["start", "end"])
+async def test_live_sender_no_bot_marks_targets_failed(
+    live_sender_module, status
+) -> None:
     sender = live_sender_module.LiveNotificationSender()
     driver = SimpleNamespace(bots={})
 
-    with patch("plugins.live_monitor.sender.get_driver", return_value=driver):
+    async def filter_targets(pending):
+        pending.groups = ["1001"]
+
+    prepared = AsyncMock(side_effect=filter_targets)
+    with (
+        patch("nonebot.get_bots", return_value=driver.bots),
+        patch.object(sender, "_generate_card_if_needed", AsyncMock(return_value=None)),
+        patch.object(sender, "_send_group_message", AsyncMock()) as send_group,
+        patch.object(sender, "_send_private_message", AsyncMock()) as send_user,
+    ):
         result = await sender.send_notification(
-            status="start",
+            status=status,
             streamer_name="tester",
             room_info=None,
-            target_groups=["1001"],
+            target_groups=["1001", "removed"],
             target_users=["2002"],
+            on_prepared=prepared,
         )
 
+    prepared.assert_awaited_once()
+    assert "tester" in prepared.await_args.args[0].message.extract_plain_text()
     assert result.all_failed
-    assert len(result.targets) == 2
+    assert [target.target_id for target in result.targets] == ["1001", "2002"]
+    send_group.assert_not_awaited()
+    send_user.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -344,13 +1024,8 @@ async def test_live_sender_partial_failure(live_sender_module) -> None:
     driver = SimpleNamespace(bots={"bot": bot})
 
     with (
-        patch("plugins.live_monitor.sender.get_driver", return_value=driver),
+        patch("nonebot.get_bots", return_value=driver.bots),
         patch.object(sender, "_generate_card_if_needed", AsyncMock(return_value=None)),
-        patch.object(
-            sender,
-            "_resolve_at_all_map",
-            AsyncMock(return_value={"1001": False}),
-        ),
     ):
         result = await sender.send_notification(
             status="start",
@@ -382,13 +1057,8 @@ async def test_live_sender_any_bot_success_counts_as_delivered(
     driver = SimpleNamespace(bots={"fail": bot_fail, "ok": bot_ok})
 
     with (
-        patch("plugins.live_monitor.sender.get_driver", return_value=driver),
+        patch("nonebot.get_bots", return_value=driver.bots),
         patch.object(sender, "_generate_card_if_needed", AsyncMock(return_value=None)),
-        patch.object(
-            sender,
-            "_resolve_at_all_map",
-            AsyncMock(return_value={"1001": False}),
-        ),
     ):
         result = await sender.send_notification(
             status="start",
@@ -420,13 +1090,8 @@ async def test_live_sender_does_not_duplicate_when_first_bot_succeeds(
     driver = SimpleNamespace(bots={"a": first_bot, "b": second_bot})
 
     with (
-        patch("plugins.live_monitor.sender.get_driver", return_value=driver),
+        patch("nonebot.get_bots", return_value=driver.bots),
         patch.object(sender, "_generate_card_if_needed", AsyncMock(return_value=None)),
-        patch.object(
-            sender,
-            "_resolve_at_all_map",
-            AsyncMock(return_value={"1001": False}),
-        ),
     ):
         result = await sender.send_notification(
             status="start",
@@ -549,7 +1214,8 @@ async def test_dynamic_monitor_does_not_advance_cursor_when_send_fails(
 
     assert ok is True
     assert monitor.last_dynamic_ids["123"] == 10
-    monitor._persist_state.assert_not_awaited()
+    monitor._persist_state.assert_awaited_with("123", check_generation=0)
+    assert monitor._pending_targets[("123", 11, False)].groups == ["1001"]
 
 
 @pytest.mark.asyncio
@@ -593,7 +1259,8 @@ async def test_dynamic_monitor_advances_cursor_when_send_succeeds(
 
     assert ok is True
     assert monitor.last_dynamic_ids["123"] == 11
-    monitor._persist_state.assert_awaited_once()
+    monitor._persist_state.assert_awaited_with("123", check_generation=0)
+    assert not monitor._pending_targets
 
 
 @pytest.mark.asyncio
@@ -1368,7 +2035,7 @@ async def test_end_waits_for_in_flight_start_before_flushing_pending(
         start_task = asyncio.create_task(monitor._handle_live_signal("111"))
         await start_started.wait()
         assert state.previous_status == LiveStatus.LIVE
-        assert state.pending_start is False
+        assert state.pending_start is True
 
         end_task = asyncio.create_task(
             monitor._handle_preparing_signal("111", round_status=None)
@@ -2250,3 +2917,375 @@ async def test_stale_retry_pending_serializes_with_end_flush(
     assert statuses.count("start") == 1
     assert "end" in statuses
     assert state.pending_start is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["start", "end"])
+async def test_live_sender_mixes_official_and_onebot_routes_with_card(
+    status, live_sender_module, monkeypatch
+):
+    from nonebot.adapters.onebot.v11 import MessageSegment
+
+    from shared.adapter import outbound
+    from shared.notify.at_all import LIVE_AT_ALL_FALLBACK
+
+    sender = live_sender_module.LiveNotificationSender()
+    monkeypatch.setattr(
+        sender, "_generate_card_if_needed", AsyncMock(return_value=b"card")
+    )
+    onebot = SimpleNamespace(send_group_msg=AsyncMock(), send_private_msg=AsyncMock())
+    official = SimpleNamespace(send_to_group=AsyncMock(), send_to_c2c=AsyncMock())
+    monkeypatch.setattr(
+        live_sender_module, "messaging_bots", lambda: [onebot, official]
+    )
+    monkeypatch.setattr(outbound, "iter_onebot_bots", lambda: [onebot])
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [official])
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    prefix = AsyncMock(return_value=Message(MessageSegment.at("all")))
+    monkeypatch.setattr(outbound, "resolve_at_all_prefix", prefix)
+    result = await sender.send_notification(
+        status,
+        "author",
+        None,
+        ["1001", "group-openid"],
+        ["2002", "user-openid"],
+        at_all_enabled=True,
+        duration_seconds=60,
+    )
+    assert result.all_succeeded
+    onebot.send_group_msg.assert_awaited_once()
+    onebot.send_private_msg.assert_awaited_once()
+    group_calls = official.send_to_group.await_args_list
+    assert [call.kwargs["message"][0].type for call in group_calls] == (
+        ["text", "text", "file_image"]
+        if status == "start"
+        else ["text", "file_image", "text"]
+    )
+    if status == "start":
+        assert (
+            group_calls[0].kwargs["message"].extract_plain_text()
+            == LIVE_AT_ALL_FALLBACK
+        )
+        assert onebot.send_group_msg.await_args.kwargs["message"][0].type == "at"
+        prefix.assert_awaited_once()
+    else:
+        prefix.assert_not_awaited()
+    images = [
+        call.kwargs["message"][0]
+        for call in official.send_to_c2c.await_args_list
+        if call.kwargs["message"][0].type == "file_image"
+    ]
+    assert len(images) == 1 and images[0].data["content"] == b"card"
+
+
+@pytest.mark.asyncio
+async def test_live_permission_rejection_is_terminal(live_sender_module, monkeypatch):
+    from plugins.live_monitor.models import LiveRoomState
+    from plugins.live_monitor.notification_delivery import LiveNotificationDelivery
+    from shared.adapter import outbound
+    from shared.adapter.qq_errors import LoggedQQApiError
+
+    sender = live_sender_module.LiveNotificationSender()
+    monkeypatch.setattr(
+        sender, "_generate_card_if_needed", AsyncMock(return_value=None)
+    )
+    bot = SimpleNamespace(
+        send_to_group=AsyncMock(side_effect=LoggedQQApiError(40034105, "无权限")),
+        send_to_c2c=AsyncMock(),
+    )
+    monkeypatch.setattr(live_sender_module, "messaging_bots", lambda: [bot])
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [bot])
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    delivery = LiveNotificationDelivery(
+        sender,
+        get_group_mapping=lambda: {"1": ["group-openid"]},
+        get_user_mapping=lambda: {"1": ["user-openid"]},
+        get_at_all=lambda: {"1": False},
+    )
+    state = LiveRoomState(room_id=1)
+    assert await delivery.deliver_start("1", state, room_info=None, user_info=None)
+    assert not state.pending_start
+    bot.send_to_c2c.assert_awaited_once()
+    await delivery.retry_pending("1", state, room_info=None, user_info=None)
+    bot.send_to_group.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_live_finish_write_failure_retains_acknowledged_parts(
+    live_sender_module, monkeypatch
+):
+    from plugins.live_monitor.models import LiveRoomState
+    from plugins.live_monitor.notification_delivery import LiveNotificationDelivery
+    from shared.adapter import outbound
+
+    sender = live_sender_module.LiveNotificationSender()
+    monkeypatch.setattr(
+        sender, "_generate_card_if_needed", AsyncMock(return_value=b"card")
+    )
+    bot = SimpleNamespace(send_to_group=AsyncMock())
+    monkeypatch.setattr(live_sender_module, "messaging_bots", lambda: [bot])
+    monkeypatch.setattr(outbound, "iter_official_bots", lambda: [bot])
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    state = LiveRoomState(room_id=1)
+    fail_once = True
+
+    async def persist(_room_id):
+        nonlocal fail_once
+        if not state.pending_start and fail_once:
+            fail_once = False
+            raise RuntimeError("write failed")
+
+    delivery = LiveNotificationDelivery(
+        sender,
+        get_group_mapping=lambda: {"1": ["group-openid"]},
+        get_user_mapping=lambda: {},
+        get_at_all=lambda: {"1": False},
+        persist_state=persist,
+    )
+    with pytest.raises(RuntimeError, match="write failed"):
+        await delivery.deliver_start("1", state, room_info=None, user_info=None)
+    assert state.pending_start
+    assert state.pending_start_delivery.group_starts == {"group-openid": 2}
+    assert await delivery.deliver_start("1", state, room_info=None, user_info=None)
+    assert bot.send_to_group.await_count == 2
+    assert not state.pending_start
+
+
+@pytest.fixture
+def monitor_target_reload(dynamic_monitor_module, live_monitor_module, monkeypatch):
+    from nonebot.adapters.onebot.v11 import MessageSegment
+
+    from shared.adapter import outbound
+
+    monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
+    monkeypatch.setattr(outbound, "_official_last_sent", {})
+    monkeypatch.setattr(outbound, "_official_locks", {})
+    monkeypatch.setattr(live_monitor_module.api_manager, "init", AsyncMock())
+
+    def make(kind, scope, *, official=True):
+        target_ids = (
+            ["current", "later", "kept"] if official else ["1001", "1002", "1003"]
+        )
+        module = dynamic_monitor_module if kind == "dynamic" else live_monitor_module
+        prefix = "dynamic" if kind == "dynamic" else "live"
+        config = module.Config(
+            **{
+                f"{prefix}_monitor_mapping": {
+                    "111": target_ids if scope == "group" else []
+                },
+                f"{prefix}_monitor_user_mapping": {
+                    "111": target_ids if scope == "user" else []
+                },
+                f"{prefix}_at_all": {"111": False},
+                "enable_screenshot": False,
+                "use_websocket": False,
+            }
+        )
+        monitor = (
+            module.DynamicMonitor(config)
+            if kind == "dynamic"
+            else module.LiveMonitor(config)
+        )
+        monitor._persist_state = AsyncMock()
+        monitor._delete_persisted_state = AsyncMock()
+        message = Message(
+            [
+                MessageSegment.text("original-caption"),
+                MessageSegment.image(b"original-image"),
+                MessageSegment.text("original-last"),
+            ]
+        )
+        if kind == "dynamic":
+            monitor.sender = module.DynamicSender()
+            monitor._resolve_author_name = AsyncMock(return_value="author")
+            monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
+            monitor.sender.build_dynamic_message = MagicMock(return_value=message)
+            item = SimpleNamespace(
+                id=200, uid="111", get_type_description=lambda: "text"
+            )
+            generation = monitor._check_generation.get("111", 0)
+
+            async def deliver():
+                return await monitor._send_dynamic_notification(
+                    "111", item, check_generation=generation
+                )
+
+            def pending():
+                return monitor._pending_targets.get(("111", 200, False))
+
+        else:
+            sender = monitor._sender
+            sender._generate_card_if_needed = AsyncMock(return_value=None)
+            sender.build_start_message = MagicMock(return_value=message)
+            sender.build_end_message = MagicMock(return_value=message)
+            state = module.LiveRoomState(room_id=111)
+            monitor.room_states["111"] = state
+            monitor.initialized_rooms["111"] = True
+            status = "start" if kind == "live_start" else "end"
+
+            async def deliver():
+                return await getattr(monitor._delivery, f"deliver_{status}")(
+                    "111", state, room_info=None, user_info=None
+                )
+
+            def pending():
+                return getattr(state, f"pending_{status}_delivery")
+
+        bot = SimpleNamespace(
+            send_to_group=AsyncMock(),
+            send_to_c2c=AsyncMock(),
+            send_group_msg=AsyncMock(),
+            send_private_msg=AsyncMock(),
+        )
+        monkeypatch.setattr(
+            outbound, "iter_official_bots", lambda: [bot] if official else []
+        )
+        monkeypatch.setattr(
+            outbound, "iter_onebot_bots", lambda: [] if official else [bot]
+        )
+        if kind != "dynamic":
+            monkeypatch.setitem(
+                monitor._sender.send_notification.__func__.__globals__,
+                "messaging_bots",
+                lambda: [bot],
+            )
+
+        async def reload_targets(targets):
+            new_config = monitor.config.model_copy(deep=True)
+            mapping = getattr(
+                new_config,
+                f"{prefix}_monitor_{'user_mapping' if scope == 'user' else 'mapping'}",
+            )
+            mapping["111"] = targets
+            with patch.object(module.Config, "from_service", return_value=new_config):
+                await monitor.reload_config()
+
+        async def remove_and_readd():
+            original = monitor.config.model_copy(deep=True)
+            empty = original.model_copy(deep=True)
+            getattr(empty, f"{prefix}_monitor_mapping").clear()
+            getattr(empty, f"{prefix}_monitor_user_mapping").clear()
+            with patch.object(
+                module.Config, "from_service", side_effect=[empty, original]
+            ):
+                await monitor.reload_config()
+                await monitor.reload_config()
+
+        return (
+            monitor,
+            bot,
+            deliver,
+            pending,
+            reload_targets,
+            remove_and_readd,
+            target_ids,
+        )
+
+    return make
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["dynamic", "live_start", "live_end"])
+@pytest.mark.parametrize("scope", ["group", "user"])
+@pytest.mark.parametrize("official", [False, True])
+async def test_monitor_reload_skips_removed_later_targets(
+    monitor_target_reload, kind, scope, official
+):
+    _, bot, deliver, pending, reload_targets, _, ids = monitor_target_reload(
+        kind, scope, official=official
+    )
+    accepted = []
+
+    async def send(**kwargs):
+        target = (
+            kwargs["group_openid" if scope == "group" else "openid"]
+            if official
+            else str(kwargs[f"{scope if scope == 'group' else 'user'}_id"])
+        )
+        accepted.append(target)
+        if len(accepted) == 1:
+            await reload_targets([ids[0], ids[2], "added"])
+
+    api = (
+        (bot.send_to_group if scope == "group" else bot.send_to_c2c)
+        if official
+        else (bot.send_group_msg if scope == "group" else bot.send_private_msg)
+    )
+    api.side_effect = send
+    assert await deliver()
+    assert accepted == [ids[0]] * (3 if official else 1) + [ids[2]] * (
+        3 if official else 1
+    )
+    saved = pending()
+    assert saved is None or saved.groups == saved.users == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["dynamic", "live_start", "live_end"])
+@pytest.mark.parametrize("scope", ["group", "user"])
+async def test_monitor_reload_cancels_official_parts_and_resumes_kept_target(
+    monitor_target_reload, kind, scope
+):
+    _, bot, deliver, pending, reload_targets, _, ids = monitor_target_reload(
+        kind, scope
+    )
+    accepted = []
+    failed_once = False
+
+    async def send(**kwargs):
+        nonlocal failed_once
+        target = kwargs["group_openid" if scope == "group" else "openid"]
+        part = kwargs["message"][0]
+        if target == "kept" and part.type == "file_image" and not failed_once:
+            failed_once = True
+            raise RuntimeError("temporary failure")
+        accepted.append((target, part.type))
+        if accepted == [("current", "text")]:
+            await reload_targets(["kept", "added"])
+
+    api = bot.send_to_group if scope == "group" else bot.send_to_c2c
+    api.side_effect = send
+    assert not await deliver()
+    assert accepted == [("current", "text"), ("kept", "text")]
+    saved = pending()
+    assert saved.groups == (["kept"] if scope == "group" else [])
+    assert saved.users == (["kept"] if scope == "user" else [])
+    starts = saved.group_starts if scope == "group" else saved.user_starts
+    assert starts["kept"] == 1
+    assert starts["current"] == 1
+    assert await deliver()
+    assert accepted == [
+        ("current", "text"),
+        ("kept", "text"),
+        ("kept", "file_image"),
+        ("kept", "text"),
+    ]
+    assert pending() is None or pending().groups == pending().users == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["dynamic", "live_start", "live_end"])
+@pytest.mark.parametrize("scope", ["group", "user"])
+async def test_monitor_remove_and_readd_stops_old_delivery(
+    monitor_target_reload, kind, scope
+):
+    monitor, bot, deliver, pending, _, remove_and_readd, _ = monitor_target_reload(
+        kind, scope
+    )
+    accepted = []
+
+    async def send(**kwargs):
+        accepted.append(kwargs["group_openid" if scope == "group" else "openid"])
+        await remove_and_readd()
+
+    api = bot.send_to_group if scope == "group" else bot.send_to_c2c
+    api.side_effect = send
+    result = await deliver()
+    assert accepted == ["current"]
+    if kind == "dynamic":
+        assert not result
+        assert pending() is None
+    else:
+        state = monitor.room_states["111"]
+        assert not state.pending_start and not state.pending_end
+        assert state.pending_start_delivery is state.pending_end_delivery is None

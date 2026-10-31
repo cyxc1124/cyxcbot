@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -11,6 +11,8 @@ class LinkParserGroupPolicyItem(BaseModel):
     group_id: str
     group_name: Optional[str] = None
     member_count: Optional[int] = None
+    source: Literal["onebot", "official"] = "onebot"
+    editable: bool = True
     customized: bool
     video_enabled: bool
     live_enabled: bool
@@ -21,6 +23,7 @@ class LinkParserGroupPolicyItem(BaseModel):
 class LinkParserGroupPolicyListResponse(BaseModel):
     groups: List[LinkParserGroupPolicyItem]
     group_list_available: bool = True
+    onebot_list_status: Literal["ok", "offline", "incomplete"] = "ok"
 
 
 class LinkParserGroupPolicyMutationResponse(BaseModel):
@@ -38,6 +41,8 @@ class LinkParserUserPolicyItem(BaseModel):
     user_id: str
     nickname: Optional[str] = None
     name: Optional[str] = None
+    source: Literal["onebot", "official"] = "onebot"
+    editable: bool = True
     customized: bool
     video_enabled: bool
     live_enabled: bool
@@ -48,6 +53,7 @@ class LinkParserUserPolicyItem(BaseModel):
 class LinkParserUserPolicyListResponse(BaseModel):
     users: List[LinkParserUserPolicyItem]
     friend_list_available: bool = True
+    onebot_list_status: Literal["ok", "offline", "incomplete"] = "ok"
 
 
 class LinkParserUserPolicyMutationResponse(BaseModel):

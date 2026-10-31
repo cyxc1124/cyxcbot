@@ -43,6 +43,11 @@ spec:
             configMapKeyRef:
               name: {{ include "cyxcbot.fullname" . }}-config
               key: port
+        - name: DRIVER
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "cyxcbot.fullname" . }}-config
+              key: driver
         - name: COMMAND_START
           valueFrom:
             configMapKeyRef:
@@ -96,7 +101,7 @@ spec:
         - name: shared-media
           mountPath: {{ .Values.sharedMedia.mountPath | quote }}
         {{- end }}
-        {{- if .Values.probes.enabled }}
+        {{- if and .Values.probes.enabled .Values.webAdmin.enabled }}
         # 存活 / 就绪探测：Web Admin GET /health
         livenessProbe:
           httpGet:

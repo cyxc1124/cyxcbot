@@ -2,9 +2,11 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ApiClientError } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
+import { AuthShell } from '../components/AuthShell'
+import { PasswordInput } from '../components/PasswordInput'
+import { Icon } from '../components/Icon'
 import {
-  acceptPasswordInput,
-  getPasswordValidationError,
+  getLoginPasswordValidationError,
   MIN_PASSWORD_LENGTH,
 } from '../utils/password'
 
@@ -20,7 +22,7 @@ export function LoginPage() {
     e.preventDefault()
     setError('')
 
-    const passwordError = getPasswordValidationError(password)
+    const passwordError = getLoginPasswordValidationError(password)
     if (passwordError) {
       setError(passwordError)
       return
@@ -38,67 +40,62 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-linear-to-br from-muted to-secondary p-4 dark:from-background dark:to-card">
-      <div className="card w-full max-w-md">
-        <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold text-foreground">
-            登录 机器草
-          </h1>
-          <p className="mt-2 text-sm text-muted-foreground">Web 管理面板</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="label" htmlFor="username">
-              用户名
-            </label>
+    <AuthShell subtitle="登录 Web 管理面板">
+      <form onSubmit={handleSubmit} className="space-y-6" aria-busy={loading}>
+        <div>
+          <label className="label" htmlFor="username">
+            用户名
+          </label>
+          <div className="relative">
+            <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-muted-foreground"><Icon name="user" /></span>
             <input
               id="username"
-              className="input"
+              name="username"
+              className="input h-14 pl-10 text-base"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
               minLength={3}
               maxLength={64}
               autoComplete="username"
+              placeholder="请输入用户名"
             />
           </div>
-          <div>
-            <label className="label" htmlFor="password">
-              密码
-            </label>
-            <input
-              id="password"
-              type="password"
-              className="input"
-              value={password}
-              onChange={(e) =>
-                setPassword(acceptPasswordInput(password, e.target.value))
-              }
-              required
-              minLength={MIN_PASSWORD_LENGTH}
-              autoComplete="current-password"
-            />
-          </div>
+        </div>
+        <div>
+          <label className="label" htmlFor="password">
+            密码
+          </label>
+          <PasswordInput
+            id="password"
+            name="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={MIN_PASSWORD_LENGTH}
+            autoComplete="current-password"
+            placeholder="请输入密码"
+          />
+        </div>
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
-
-          <button type="submit" className="btn-primary w-full" disabled={loading}>
-            {loading ? '登录中…' : '登录'}
-          </button>
-        </form>
-
-        {initialized === false && (
-          <p className="mt-6 text-center text-xs text-muted-foreground">
-            首次使用？{' '}
-            <Link to="/setup" className="text-primary hover:underline">
-              前往初始化
-            </Link>
-          </p>
+        {error && (
+          <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
         )}
-      </div>
-    </div>
+
+        <button type="submit" className="btn-primary h-14 w-full text-base" disabled={loading}>
+          {loading ? '登录中…' : '登录'}
+          {!loading && <Icon name="arrow-right" />}
+        </button>
+      </form>
+
+      {initialized === false && (
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          首次使用？{' '}
+          <Link to="/setup" className="text-primary hover:underline">
+            前往初始化
+          </Link>
+        </p>
+      )}
+    </AuthShell>
   )
 }

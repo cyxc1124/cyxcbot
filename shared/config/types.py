@@ -33,12 +33,15 @@ from shared.config.x_link_parser_policy import (
     XLinkParserGroupPolicyRecord,
     XLinkParserUserPolicyRecord,
 )
+from shared.logging.levels import LogLevel
 
 
 @dataclass
 class AppConfigSnapshot:
     """Full application configuration snapshot loaded from DB."""
 
+    log_level: LogLevel = "INFO"
+    log_file_level: LogLevel = "INFO"
     dynamic_monitor_mapping: Dict[str, List[str]] = field(default_factory=dict)
     dynamic_monitor_user_mapping: Dict[str, List[str]] = field(default_factory=dict)
     dynamic_subscription_mapping: Dict[str, List[str]] = field(default_factory=dict)
@@ -49,6 +52,8 @@ class AppConfigSnapshot:
     dynamic_monitor_interval: int = 30
     dynamic_monitor_use_stagger: bool = True
     dynamic_enable_screenshot: bool = True
+    dynamic_image_mode: str = "screenshot"
+    dynamic_card_color_source: str = "avatar"
     dynamic_message_templates: DynamicMessageTemplates = field(
         default_factory=DynamicMessageTemplates
     )
@@ -141,3 +146,8 @@ class AppConfigSnapshot:
     x_api_bearer: str = ""
     x_api_bearer_set: bool = False
     x_proxy: ProxyConfig = field(default_factory=ProxyConfig)
+    official_qq_app_id: str = ""
+    official_qq_app_secret: str = ""
+    official_qq_app_secret_set: bool = False
+    official_qq_is_sandbox: bool = False
+    official_qq_use_websocket: bool = False

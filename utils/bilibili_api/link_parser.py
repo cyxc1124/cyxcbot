@@ -68,20 +68,15 @@ def _live_room_id_from_url(url: str) -> int | None:
 
 
 def _dynamic_id_from_url(url: str) -> int | None:
-    match = DYNAMIC_URL_PATTERN.search(url)
-    if match:
-        raw_id = next(group for group in match.groups() if group)
-        if raw_id.isdigit() and int(raw_id) > 0:
-            return int(raw_id)
-
     parsed = urlparse(url)
-    if parsed.netloc.endswith("bilibili.com"):
+    host = parsed.hostname or ""
+    if host == "bilibili.com" or host.endswith(".bilibili.com"):
         opus_match = re.search(r"/opus/(\d+)", parsed.path, re.IGNORECASE)
         if opus_match:
             return int(opus_match.group(1))
 
-    if "t.bilibili.com" in parsed.netloc:
-        path_match = re.fullmatch(r"/(\d+)", parsed.path)
+    if host == "t.bilibili.com":
+        path_match = re.fullmatch(r"/(\d+)/?", parsed.path)
         if path_match:
             return int(path_match.group(1))
 

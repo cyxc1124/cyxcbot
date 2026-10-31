@@ -130,14 +130,14 @@ Web Admin → 设置 → 机器人 →「链接解析共享媒体目录」设为
 ### 资源与健康检查
 
 - `resources`：建议为 Playwright 动态截图预留至少 `512Mi` 内存 request、`2Gi` limit
-- `probes`：对 Web Admin `/health` 做存活/就绪探测
+- `probes`：对 Web Admin `/health` 做存活/就绪探测；仅在 `probes.enabled` 和 `webAdmin.enabled` 均为 `true` 时启用
 
 ## 配置示例
 
 ```yaml
 # my-values.yaml
 image:
-  tag: "v2.9.0"
+  tag: "v2.11.8"
 
 secret:
   name: cyxcbot-secret

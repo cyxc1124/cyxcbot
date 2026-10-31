@@ -88,7 +88,7 @@ async def poll_douyin_qrcode_login(body: DouyinQrcodePollRequest, _: AdminUser):
     if not keys_ok:
         message = (
             "抖音扫码登录成功，但 Cookie 可能缺少部分建议字段"
-            "（ttwid / odin_tt / passport_csrf_token）"
+            "（ttwid / odin_tt / passport_csrf_token / UIFID）"
         )
 
     return DouyinQrcodeLoginResponse(

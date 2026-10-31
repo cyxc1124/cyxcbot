@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from nonebot import get_bots
 from nonebot.log import logger
+
+from shared.adapter.bots import messaging_bots
 
 
 async def stop_monitor_if_no_bots(
@@ -23,7 +24,7 @@ async def stop_monitor_if_no_bots(
 
     Returns True when *stop_fn* was invoked.
     """
-    remaining = get_bots()
+    remaining = messaging_bots()
     if remaining:
         logger.info(
             "机器人 {} 断开连接，仍有 {} 个 Bot 在线，{} 继续运行",

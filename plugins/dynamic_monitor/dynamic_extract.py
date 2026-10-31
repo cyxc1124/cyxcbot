@@ -1,25 +1,25 @@
-"""Extract all images from a Bilibili dynamic via {prefix}提取/获取{dynamic_id}."""
+"""Extract dynamic images by ID or by quoting a bot message with a dynamic URL."""
 
 from __future__ import annotations
 
-import re
 from typing import Literal
 
 import aiohttp
 from nonebot import on_message
-from nonebot.adapters.onebot.v11 import (
-    Bot,
-    GroupMessageEvent,
-    Message,
-    MessageSegment,
-    PrivateMessageEvent,
-)
+from nonebot.adapters import Bot, Event
+from nonebot.adapters.onebot.v11 import Message, MessageEvent, MessageSegment
 from nonebot.log import logger
 
+from shared.adapter.inbound import (
+    group_id_of,
+    is_group_event,
+    is_private_event,
+    user_id_of,
+)
+from shared.adapter.outbound import send_event_message
 from shared.config.command_aliases import (
-    CommandAliasEntry,
-    prefix_alternation,
-    trigger_alternation,
+    command_aliases_for_event,
+    parse_extract_dynamic_id,
 )
 from shared.config.message_templates import DynamicMessageTemplates
 from shared.config.service import get_config_service
@@ -32,28 +32,12 @@ from shared.notify.message_template import (
     render_message_template,
 )
 from utils.bilibili_api import DynamicFetcher
+from utils.bilibili_api.link_parser import DYNAMIC_URL_PATTERN
 
 from .config import Config
 
 group_dynamic_extract = on_message(priority=4, block=False)
 private_dynamic_extract = on_message(priority=4, block=False)
-
-
-def _build_extract_pattern(
-    command_aliases: dict[str, CommandAliasEntry],
-) -> re.Pattern[str] | None:
-    """Build the ``{prefix}{触发词}{id|url}`` pattern from configured trigger words."""
-    alternation = trigger_alternation("dynamic_extract", command_aliases)
-    if alternation is None:
-        return None
-    return re.compile(
-        rf"^(?:{prefix_alternation()})(?:{alternation})(?:"
-        r"https?://(?:www\.)?bilibili\.com/opus/(\d+)|"
-        r"https?://t\.bilibili\.com/(\d+)|"
-        r"(\d{10,})"
-        r")\s*$",
-        re.IGNORECASE,
-    )
 
 
 def _register_extract_startup() -> None:
@@ -72,19 +56,6 @@ def _register_extract_startup() -> None:
 
 
 _register_extract_startup()
-
-
-def parse_extract_dynamic_id(
-    message_text: str, command_aliases: dict[str, CommandAliasEntry]
-) -> str | None:
-    """Return dynamic ID from '{prefix}{触发词}{id|url}' message, or None."""
-    pattern = _build_extract_pattern(command_aliases)
-    if pattern is None:
-        return None
-    match = pattern.match(message_text.strip())
-    if not match:
-        return None
-    return next((group for group in match.groups() if group), None)
 
 
 def build_extract_reply_message(
@@ -134,50 +105,68 @@ async def _fetch_dynamic_images(dynamic_id: str, cookie: str | None) -> list[str
         return dynamic.images
 
 
-async def _send_reply(
-    bot: Bot,
-    event: GroupMessageEvent | PrivateMessageEvent,
-    message: Message | str,
-) -> None:
-    if isinstance(event, GroupMessageEvent):
-        await bot.send_group_msg(group_id=event.group_id, message=message)
-    else:
-        await bot.send_private_msg(user_id=event.user_id, message=message)
+async def _send_reply(bot: Bot, event: Event, message: Message | str) -> None:
+    payload = message if isinstance(message, Message) else Message(str(message))
+    await send_event_message(bot, event, payload)
 
 
-def _subscription_allowed(event: GroupMessageEvent | PrivateMessageEvent) -> bool:
+def _quoted_dynamic_id(bot: Bot, event: Event) -> str | None:
+    if not isinstance(event, MessageEvent):
+        return None
+    reply = event.reply
+    if reply is None or str(reply.sender.user_id) != str(bot.self_id):
+        return None
+    dynamic_ids = {
+        next(group for group in match.groups() if group)
+        for match in DYNAMIC_URL_PATTERN.finditer(reply.message.extract_plain_text())
+    }
+    return dynamic_ids.pop() if len(dynamic_ids) == 1 else None
+
+
+def _subscription_allowed(event: Event) -> bool:
     snap = get_config_service().get_snapshot()
-    if isinstance(event, GroupMessageEvent):
-        return is_group_dynamic_subscribed(str(event.group_id), snap)
-    return is_user_dynamic_subscribed(str(event.user_id), snap)
+    if is_group_event(event):
+        group_id = group_id_of(event)
+        return bool(group_id) and is_group_dynamic_subscribed(group_id, snap)
+    return is_user_dynamic_subscribed(user_id_of(event), snap)
 
 
-async def _handle_extract(
-    bot: Bot, event: GroupMessageEvent | PrivateMessageEvent
-) -> None:
-    if isinstance(event, GroupMessageEvent) and str(event.user_id) == str(
-        event.self_id
-    ):
+async def _handle_extract(bot: Bot, event: Event) -> None:
+    user_id = user_id_of(event)
+    if is_group_event(event) and user_id == str(getattr(bot, "self_id", "")):
         return
 
     message_text = event.get_plaintext().strip()
     snap = get_config_service().get_snapshot()
-    dynamic_id = parse_extract_dynamic_id(message_text, snap.command_aliases)
-    if not dynamic_id:
+    dynamic_id = parse_extract_dynamic_id(
+        message_text, await command_aliases_for_event(snap, bot, event)
+    )
+    if dynamic_id is None:
         return
 
     if not _subscription_allowed(event):
-        scope = "群" if isinstance(event, GroupMessageEvent) else "好友"
+        scope = "群" if is_group_event(event) else "好友"
         target = (
-            f"group={event.group_id}"
-            if isinstance(event, GroupMessageEvent)
-            else f"user={event.user_id}"
+            f"group={group_id_of(event)}"
+            if is_group_event(event)
+            else f"user={user_id}"
         )
         logger.warning(
-            f"拒绝提取动态图片: id={dynamic_id} user={event.user_id} {target} "
+            f"拒绝提取动态图片: id={dynamic_id} user={user_id} {target} "
             f"scope={scope} reason=no_subscription"
         )
         return
+
+    if not dynamic_id:
+        dynamic_id = _quoted_dynamic_id(bot, event)
+        if not dynamic_id:
+            await _send_reply(
+                bot,
+                event,
+                "无法确定要提取的动态，请引用机器人发送且包含动态链接的消息，"
+                "或在提取命令后填写动态ID。",
+            )
+            return
 
     config = Config.from_service()
     templates = config.message_templates
@@ -185,7 +174,7 @@ async def _handle_extract(
     if not cookie:
         logger.warning("提取动态图片：未配置 Cookie，部分动态可能无法访问")
 
-    logger.info(f"提取动态图片: id={dynamic_id} user={event.user_id}")
+    logger.info(f"提取动态图片: id={dynamic_id} user={user_id}")
 
     try:
         images = await _fetch_dynamic_images(dynamic_id, cookie)
@@ -207,10 +196,14 @@ async def _handle_extract(
 
 
 @group_dynamic_extract.handle()
-async def handle_group_dynamic_extract(bot: Bot, event: GroupMessageEvent):
+async def handle_group_dynamic_extract(bot: Bot, event: Event):
+    if not is_group_event(event):
+        return
     await _handle_extract(bot, event)
 
 
 @private_dynamic_extract.handle()
-async def handle_private_dynamic_extract(bot: Bot, event: PrivateMessageEvent):
+async def handle_private_dynamic_extract(bot: Bot, event: Event):
+    if not is_private_event(event):
+        return
     await _handle_extract(bot, event)

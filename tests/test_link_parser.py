@@ -55,6 +55,65 @@ def test_dynamic_id_from_t_bilibili_url() -> None:
     assert _dynamic_id_from_url(url) == 1217074344495153155
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://notbilibili.com/opus/123",
+        "https://bilibili.com.evil.invalid/opus/123",
+        "https://nott.bilibili.com/123",
+        "https://t.bilibili.com.evil.invalid/123",
+        "https://bilibili.com@evil.invalid/opus/123",
+        "https://t.bilibili.com@evil.invalid/123",
+        "https://evil.invalid/?next=https://www.bilibili.com/opus/123",
+        "https://evil.invalid/path/https://t.bilibili.com/123",
+        "https://evil.invalid/#https://t.bilibili.com/123",
+    ],
+)
+def test_dynamic_id_from_url_rejects_unrelated_hosts(url: str) -> None:
+    assert _dynamic_id_from_url(url) is None
+    assert _ref_from_url(url) is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://bilibili.com/opus/123",
+        "https://space.bilibili.com/opus/123/",
+        "https://WWW.BILIBILI.COM:443/opus/123?plat_id=5",
+        "https://user@www.bilibili.com/opus/123",
+        "https://t.bilibili.com/123/",
+        "https://T.BILIBILI.COM:443/123/?plat_id=5",
+    ],
+)
+def test_dynamic_id_from_url_uses_hostname_and_path(url: str) -> None:
+    assert _dynamic_id_from_url(url) == 123
+    assert _ref_from_url(url) == BilibiliRef(kind="dynamic", dynamic_id=123)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "final_url",
+    [
+        "https://notbilibili.com/opus/123",
+        "https://t.bilibili.com.evil.invalid/123",
+        "https://evil.invalid/?next=https://t.bilibili.com/123",
+    ],
+)
+async def test_extract_bilibili_refs_rejects_unrelated_redirect_hosts(
+    monkeypatch: pytest.MonkeyPatch, final_url: str
+) -> None:
+    async def fake_resolve(
+        _session: object, _url: str, *, cookie: str | None = None
+    ) -> str:
+        return final_url
+
+    monkeypatch.setattr(
+        "utils.bilibili_api.link_parser.resolve_short_url", fake_resolve
+    )
+    refs = await extract_bilibili_refs("https://b23.tv/abc", MagicMock())
+    assert refs == []
+
+
 @pytest.mark.asyncio
 async def test_extract_bilibili_refs_b23_opus_short_url(
     monkeypatch: pytest.MonkeyPatch,

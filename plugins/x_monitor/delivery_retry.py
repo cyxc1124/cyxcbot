@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from shared.adapter.qq_errors import is_terminal_qq_error_text
 from shared.notify.delivery import DeliveryResult
+
+# A completed target remains in the pending roster so replacements cannot resend it.
+COMPLETED_TARGET = -1
+ROSTER_PREFIX = "roster:"
 
 
 def failed_target_ids(delivery: DeliveryResult) -> tuple[list[str], list[str]]:
@@ -18,7 +23,10 @@ def failed_targets_with_resume(
     groups: list[tuple[str, int]] = []
     users: list[tuple[str, int]] = []
     for target in delivery.targets:
-        if target.success:
+        error = str(target.error or "")
+        if error.startswith("resume_from:"):
+            error = error.split(":", 2)[-1]
+        if target.success or is_terminal_qq_error_text(error):
             continue
         resume = parse_resume_from(target.error)
         item = (target.target_id, resume)
@@ -78,6 +86,8 @@ def normalize_batch_start(
     if batch_count <= 0:
         return True, 0, None
     if start > 0 and start >= batch_count:
+        if start == batch_count and expected and actual and expected == actual:
+            return True, start, None
         return (
             False,
             0,
@@ -126,7 +136,13 @@ def encode_pending_targets(targets: list[tuple[str, int]]) -> str:
             idx = max(0, int(start))
         except TypeError, ValueError:
             idx = 0
-        parts.append(f"{tid}@{idx}" if idx else tid)
+        parts.append(
+            f"{tid}@done"
+            if start == COMPLETED_TARGET
+            else f"{tid}@{idx}"
+            if idx
+            else tid
+        )
     return ",".join(parts)
 
 
@@ -139,7 +155,12 @@ def decode_pending_targets(raw: str | None) -> list[tuple[str, int]]:
             if not tid:
                 continue
             try:
-                result.append((tid, max(0, int(idx_raw))))
+                result.append(
+                    (
+                        tid,
+                        COMPLETED_TARGET if idx_raw == "done" else max(0, int(idx_raw)),
+                    )
+                )
             except ValueError:
                 result.append((tid, 0))
         else:

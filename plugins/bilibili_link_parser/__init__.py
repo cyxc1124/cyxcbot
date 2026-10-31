@@ -9,16 +9,25 @@ from __future__ import annotations
 
 import asyncio
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from nonebot import get_driver, on_message
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, PrivateMessageEvent
+from nonebot.adapters import Bot, Event
 from nonebot.adapters.onebot.v11.exception import ActionFailed
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
+from shared.adapter.bots import is_official_qq_bot
+from shared.adapter.inbound import (
+    group_id_of,
+    is_group_event,
+    is_private_event,
+    user_id_of,
+)
+from shared.adapter.outbound import OfficialReplyLimitError, official_reply_remaining
+from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.link_parser_policy import (
     LinkParserScopePolicy,
     resolve_link_parser_policy,
@@ -55,7 +64,7 @@ __plugin_meta__ = PluginMetadata(
     usage="发送含 BV 号、直播间链接、b23.tv 短链或 B 站 QQ 小程序分享即可触发",
     type="application",
     config=Config,
-    supported_adapters={"~onebot.v11"},
+    supported_adapters={"~onebot.v11", "~qq"},
 )
 
 group_link_parser = on_message(priority=4, block=False)
@@ -255,32 +264,33 @@ def _cleanup_temp(file_path: Path | None) -> None:
         logger.opt(exception=True).debug("清理 B 站临时文件失败: {}", file_path)
 
 
-async def _handle_link_message(
-    bot: Bot, event: GroupMessageEvent | PrivateMessageEvent
-) -> None:
+async def _handle_link_message(bot: Bot, event: Event) -> None:
     config = get_config()
     snap = get_config_service().get_snapshot()
+    user_id = user_id_of(event)
 
-    if isinstance(event, PrivateMessageEvent):
+    if is_private_event(event):
         scope = resolve_link_parser_policy(
             snap,
-            user_id=str(event.user_id),
+            user_id=user_id,
             is_private=True,
         )
-    else:
-        if str(event.user_id) == str(event.self_id):
+    elif is_group_event(event):
+        if user_id and user_id == str(getattr(bot, "self_id", "")):
             return
         scope = resolve_link_parser_policy(
             snap,
-            group_id=str(event.group_id),
-            user_id=str(event.user_id),
+            group_id=group_id_of(event),
+            user_id=user_id,
             is_private=False,
         )
+    else:
+        return
 
     if not scope.video_enabled and not scope.live_enabled and not scope.dynamic_enabled:
         logger.info(
             "B 站链接解析: 策略未启用 user={} video={} live={} dynamic={} send_video={}",
-            event.user_id,
+            user_id,
             scope.video_enabled,
             scope.live_enabled,
             scope.dynamic_enabled,
@@ -290,19 +300,19 @@ async def _handle_link_message(
 
     message_text = collect_message_text(event)
     if not message_text:
-        logger.debug("B 站链接解析：未提取到文本/链接 user={}", event.user_id)
+        logger.debug("B 站链接解析：未提取到文本/链接 user={}", user_id)
         return
 
     logger.info(
         "B 站链接解析：收到消息 user={} text={!r}",
-        event.user_id,
+        user_id,
         message_text[:120],
     )
 
     # 仅在可能下载视频时占流水线名额；封面/文字路径保持轻量
     if scope.video_enabled and scope.send_video_enabled:
         if _PIPELINE_SEM.locked():
-            logger.info("B 站链接解析：等待流水线名额 user={}", event.user_id)
+            logger.info("B 站链接解析：等待流水线名额 user={}", user_id)
         async with _PIPELINE_SEM:
             await _resolve_and_reply(
                 bot,
@@ -326,14 +336,22 @@ async def _handle_link_message(
 
 async def _resolve_and_reply(
     bot: Bot,
-    event: GroupMessageEvent | PrivateMessageEvent,
+    event: Event,
     config: Config,
     message_text: str,
     scope: LinkParserScopePolicy,
     *,
     enable_dynamic_screenshot: bool,
 ) -> None:
+    if is_official_qq_bot(bot):
+        remaining = official_reply_remaining(event)
+        if not remaining:
+            return
+        if remaining == 1:
+            scope = replace(scope, send_video_enabled=False)
+            enable_dynamic_screenshot = False
     resolved = _ResolvedReply()
+    user_id = user_id_of(event)
     try:
         resolved = await _resolve_reply(
             config,
@@ -344,9 +362,7 @@ async def _resolve_and_reply(
         templates = resolved.templates or config.message_templates
         if resolved.video is not None and resolved.video_path is not None:
             if _ENCODE_SEND_SEM.locked():
-                logger.info(
-                    "B 站链接解析：等待前序编码/发送完成 user={}", event.user_id
-                )
+                logger.info("B 站链接解析：等待前序编码/发送完成 user={}", user_id)
             async with _ENCODE_SEND_SEM:
                 send_results = await send_video_with_cover_fallback(
                     bot,
@@ -363,29 +379,34 @@ async def _resolve_and_reply(
         if not all_sends_ok(send_results):
             logger.warning(
                 "B 站链接解析发送未确认成功 user={} results={!r}",
-                event.user_id,
+                user_id,
                 send_results,
             )
             return
 
         reply_scope = (
-            f"group={event.group_id}"
-            if isinstance(event, GroupMessageEvent)
-            else "private"
+            f"group={group_id_of(event)}" if is_group_event(event) else "private"
         )
         logger.info(
             "已回复 B 站链接解析: user={}, message_ids={}, {}",
-            event.user_id,
+            user_id,
             [_message_id_of(item) for item in send_results],
             reply_scope,
         )
+    except OfficialReplyLimitError:
+        logger.warning(
+            "B 站链接解析：本条官方消息的被动回复次数已用完 user={}", user_id
+        )
+    except LoggedQQApiError:
+        # 已由共享发送层按 QQ 平台错误码记录，避免重复异常栈。
+        return
     except ActionFailed as exc:
         detail = str(
             getattr(exc, "wording", None) or getattr(exc, "message", None) or exc
         )
         logger.warning(
             "B 站链接解析发送失败 user={} retcode={} detail={!r}",
-            event.user_id,
+            user_id,
             getattr(exc, "retcode", None),
             detail[:200],
         )
@@ -396,12 +417,16 @@ async def _resolve_and_reply(
 
 
 @group_link_parser.handle()
-async def handle_group_link(bot: Bot, event: GroupMessageEvent):
+async def handle_group_link(bot: Bot, event: Event):
+    if not is_group_event(event):
+        return
     await _handle_link_message(bot, event)
 
 
 @private_link_parser.handle()
-async def handle_private_link(bot: Bot, event: PrivateMessageEvent):
+async def handle_private_link(bot: Bot, event: Event):
+    if not is_private_event(event):
+        return
     await _handle_link_message(bot, event)
 
 

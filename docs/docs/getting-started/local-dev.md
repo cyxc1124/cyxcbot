@@ -8,15 +8,17 @@ sidebar_position: 6
 
 ## 环境准备
 
+前端开发与 Windows 本地打包统一使用 Node.js **26 LTS（26.13.0+，26.x）**；使用 nvm 时，在仓库根目录运行 `nvm install`、`nvm use`。安装与构建使用本仓库的 CA 包装器，Playwright 保留官方随包的 Node。
+
 ```bash
 # 1. 创建虚拟环境
 python3 -m venv .venv
 
 # 2. 安装依赖
-./.venv/bin/pip install -r requirements.txt
+./.venv/bin/python scripts/secure_pip.py install -r requirements.txt
 
 # 3. Playwright 浏览器（动态截图 / 抖音扫码需要，安装一次即可）
-./.venv/bin/playwright install chromium
+./.venv/bin/python scripts/playwright_install.py install chromium
 
 # 4. 配置环境
 cp env.example .env
@@ -43,7 +45,7 @@ Windows（PowerShell）创建 venv：`py -3.14 -m venv .venv`，激活：`.\.ven
 ./.venv/bin/python bot.py
 
 # 另开终端启动前端开发服务器（可选）
-cd web && npm install && npm run dev
+cd web && node ../scripts/secure_npm.cjs install && node ../scripts/secure_npm.cjs run dev
 ```
 
 | 服务 | 地址 |
@@ -60,6 +62,10 @@ cd web && npm install && npm run dev
 ./.venv/bin/pytest
 ```
 
-前端构建：`cd web && npm run build`，产物输出至 `web/dist/`，由后端静态文件服务托管。
+前端构建：`cd web && node ../scripts/secure_npm.cjs run build`，产物输出至 `web/dist/`，由后端静态文件服务托管。
+
+### 拉取更新后仍显示旧页面
+
+`git pull` 只更新源码，不会重建 `web/dist/`，也不会让已运行的 Python 进程重新加载模块。若直接访问后端 8081 的管理页面，请先在 `web/` 执行 `node ../scripts/secure_npm.cjs run build`，刷新浏览器；后端代码有变化时还需重启自己启动的 `bot.py`。开发服务器应使用 Vite 终端实际显示的地址，默认端口 5173 若被其他项目占用会变动。
 
 更多细节见 [开发指南](../development/project-structure)。

@@ -15,6 +15,7 @@ is_onebot_send_success = _mod.is_onebot_send_success
 
 
 def test_is_onebot_send_success():
+    assert is_onebot_send_success({"ok": True})
     assert is_onebot_send_success({"message_id": 123})
     assert is_onebot_send_success({"message_id": "456"})
     assert is_onebot_send_success(42)

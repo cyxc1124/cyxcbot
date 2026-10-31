@@ -8,10 +8,16 @@ on:
     paths:
       - 'docs/**'
       - '.github/workflows/deploy-docs.yml'
+      - 'scripts/secure_npm.cjs'
+      - 'shared/security/*.cjs'
+      - 'shared/security/*.json'
   pull_request:
     paths:
       - 'docs/**'
       - '.github/workflows/deploy-docs.yml'
+      - 'scripts/secure_npm.cjs'
+      - 'shared/security/*.cjs'
+      - 'shared/security/*.json'
   workflow_dispatch:
 
 permissions:
@@ -27,20 +33,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: '^26.13.0'
           cache: npm
           cache-dependency-path: docs/package-lock.json
 
       - name: Install dependencies and build
         working-directory: docs
         run: |
-          npm ci
-          npm run build
+          node ../scripts/secure_npm.cjs ci
+          node ../scripts/secure_npm.cjs run build
 
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useLoadingOnKeyChange } from '../hooks/useLoadingOnKeyChange'
 import { useMountAsync } from '../hooks/useMountAsync'
 import { createRetryHandler } from '../utils/retryLoad'
@@ -8,7 +8,7 @@ import {
   updateGroupStatusPolicy,
   updatePrivateStatusPolicy,
 } from '../api/client'
-import type { Friend, Group, StatusCheckDisplayOptions } from '../api/types'
+import type { Friend, Group, OneBotListStatus, StatusCheckDisplayOptions } from '../api/types'
 import { LoadErrorBanner } from './LoadErrorBanner'
 import { PageLoading } from './LoadingSpinner'
 import { ToggleSwitch } from './ToggleSwitch'
@@ -19,6 +19,18 @@ import {
   computeToggleAllPolicy,
   isItemEnabled,
 } from '../utils/restrictPolicy'
+
+// A tab remount must wait for the old save before reading its replacement allowlist.
+let pendingSave: Promise<unknown> | null = null
+
+async function saveStatusPolicy<T>(request: Promise<T>): Promise<T> {
+  pendingSave = request
+  try {
+    return await request
+  } finally {
+    pendingSave = null
+  }
+}
 
 type StatusScope = 'group' | 'friend'
 
@@ -89,18 +101,20 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
   })
   const [loading, setLoading] = useLoadingOnKeyChange(isGroup ? 'status-group' : 'status-friend')
   const [error, setError] = useState('')
-  const [togglingId, setTogglingId] = useState<string | null>(null)
-  const [savingDisplay, setSavingDisplay] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const savingRef = useRef(false)
   const [listAvailable, setListAvailable] = useState(true)
+  const [onebotListStatus, setOnebotListStatus] = useState<OneBotListStatus>('ok')
 
   const items = isGroup
-    ? groups.map((g) => ({ id: g.group_id, name: g.group_name, extra: g.member_count }))
-    : friends.map((f) => ({ id: f.user_id, name: f.nickname, extra: null as number | null }))
+    ? groups.map((g) => ({ id: g.group_id, name: g.group_name, extra: g.member_count, source: g.source }))
+    : friends.map((f) => ({ id: f.user_id, name: f.nickname, extra: null as number | null, source: f.source }))
 
   const allIds = items.map((item) => item.id)
 
   const load = useCallback(async () => {
     try {
+      await pendingSave?.catch(() => {})
       if (isGroup) {
         const data = await getGroupStatusPolicy()
         setGroups(data.groups)
@@ -108,6 +122,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
         setEnabledIds(data.enabled_group_ids)
         setDisplay(data.display)
         setListAvailable(data.group_list_available)
+        setOnebotListStatus(data.onebot_list_status ?? (data.group_list_available ? 'ok' : 'incomplete'))
       } else {
         const data = await getPrivateStatusPolicy()
         setFriends(data.users)
@@ -115,6 +130,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
         setEnabledIds(data.enabled_user_ids)
         setDisplay(data.display)
         setListAvailable(data.friend_list_available)
+        setOnebotListStatus(data.onebot_list_status ?? (data.friend_list_available ? 'ok' : 'incomplete'))
       }
       setError('')
     } catch (err) {
@@ -134,6 +150,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
     setEnabledIds(data.enabled_group_ids)
     setDisplay(data.display)
     setListAvailable(data.group_list_available)
+    setOnebotListStatus(data.onebot_list_status ?? (data.group_list_available ? 'ok' : 'incomplete'))
   }
 
   const applyFriendResponse = (data: Awaited<ReturnType<typeof getPrivateStatusPolicy>>) => {
@@ -142,29 +159,33 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
     setEnabledIds(data.enabled_user_ids)
     setDisplay(data.display)
     setListAvailable(data.friend_list_available)
+    setOnebotListStatus(data.onebot_list_status ?? (data.friend_list_available ? 'ok' : 'incomplete'))
   }
 
   const handleToggle = async (itemId: string, enabled: boolean) => {
-    const next = computePolicyAfterToggle(itemId, enabled, allIds, restrict, enabledIds)
+    const next = computePolicyAfterToggle(itemId, enabled, allIds, restrict, enabledIds, listAvailable)
 
     const prevRestrict = restrict
     const prevEnabledIds = enabledIds
+    if (savingRef.current || pendingSave) return
+    savingRef.current = true
+
     setRestrict(next.restrict)
     setEnabledIds(next.enabled_ids)
-    setTogglingId(itemId)
+    setBusy(true)
 
     try {
       if (isGroup) {
-        const updated = await updateGroupStatusPolicy({
+        const updated = await saveStatusPolicy(updateGroupStatusPolicy({
           restrict: next.restrict,
           enabled_group_ids: next.enabled_ids,
-        })
+        }))
         applyGroupResponse(updated)
       } else {
-        const updated = await updatePrivateStatusPolicy({
+        const updated = await saveStatusPolicy(updatePrivateStatusPolicy({
           restrict: next.restrict,
           enabled_user_ids: next.enabled_ids,
-        })
+        }))
         applyFriendResponse(updated)
       }
     } catch (err) {
@@ -172,31 +193,35 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
       setEnabledIds(prevEnabledIds)
       showToast('error', err instanceof Error ? err.message : '保存失败')
     } finally {
-      setTogglingId(null)
+      savingRef.current = false
+      setBusy(false)
     }
   }
 
   const handleToggleAll = async (enabled: boolean) => {
+    if (savingRef.current || pendingSave) return
+    savingRef.current = true
+
     const next = computeToggleAllPolicy(enabled)
 
     const prevRestrict = restrict
     const prevEnabledIds = enabledIds
     setRestrict(next.restrict)
     setEnabledIds(next.enabled_ids)
-    setTogglingId('__all__')
+    setBusy(true)
 
     try {
       if (isGroup) {
-        const updated = await updateGroupStatusPolicy({
+        const updated = await saveStatusPolicy(updateGroupStatusPolicy({
           restrict: next.restrict,
           enabled_group_ids: next.enabled_ids,
-        })
+        }))
         applyGroupResponse(updated)
       } else {
-        const updated = await updatePrivateStatusPolicy({
+        const updated = await saveStatusPolicy(updatePrivateStatusPolicy({
           restrict: next.restrict,
           enabled_user_ids: next.enabled_ids,
-        })
+        }))
         applyFriendResponse(updated)
       }
       showToast('success', enabled ? `已启用全部${isGroup ? '群组' : '好友'}` : `已关闭全部${isGroup ? '群组' : '好友'}`)
@@ -205,35 +230,40 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
       setEnabledIds(prevEnabledIds)
       showToast('error', err instanceof Error ? err.message : '保存失败')
     } finally {
-      setTogglingId(null)
+      savingRef.current = false
+      setBusy(false)
     }
   }
 
   const handleDisplayChange = async (next: StatusCheckDisplayOptions) => {
+    if (savingRef.current || pendingSave) return
+    savingRef.current = true
+
     const prev = display
     setDisplay(next)
-    setSavingDisplay(true)
+    setBusy(true)
     try {
       if (isGroup) {
-        const updated = await updateGroupStatusPolicy({
+        const updated = await saveStatusPolicy(updateGroupStatusPolicy({
           restrict,
           enabled_group_ids: enabledIds,
           display: next,
-        })
+        }))
         applyGroupResponse(updated)
       } else {
-        const updated = await updatePrivateStatusPolicy({
+        const updated = await saveStatusPolicy(updatePrivateStatusPolicy({
           restrict,
           enabled_user_ids: enabledIds,
           display: next,
-        })
+        }))
         applyFriendResponse(updated)
       }
     } catch (err) {
       setDisplay(prev)
       showToast('error', err instanceof Error ? err.message : '保存失败')
     } finally {
-      setSavingDisplay(false)
+      savingRef.current = false
+      setBusy(false)
     }
   }
 
@@ -241,7 +271,6 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
 
   const allEnabled = !restrict
   const noneEnabled = restrict && enabledIds.length === 0
-  const busy = togglingId !== null || savingDisplay
   const policyEditable = listAvailable
 
   return (
@@ -282,9 +311,13 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
 
       {!listAvailable && items.length > 0 && (
         <p className="text-sm text-amber-700 dark:text-amber-300">
-          {isGroup
-            ? '群列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改状态查询白名单；可先调整回复内容，待连接恢复后再改群组开关。'
-            : '好友列表尚未完整同步（例如部分机器人离线），当前展示可能不完整，暂不可修改状态查询白名单；可先调整回复内容，待连接恢复后再改好友开关。'}
+          {onebotListStatus === 'offline'
+            ? '当前未连接 OneBot，官方会话可独立配置。'
+            : 'OneBot 会话列表获取失败，暂不可批量调整或修改 OneBot 会话。'}
+          {restrict
+            ? '白名单模式下可单独调整已发现且启用消息的官方会话，其他会话的白名单保持不变。'
+            : '当前为全部启用模式，请等待 OneBot 列表恢复后再调整白名单。'}
+          回复内容仍可调整。
         </p>
       )}
 
@@ -297,11 +330,11 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
               ? '数据暂时无法加载'
               : listAvailable
                 ? isGroup
-                  ? '暂无已启用群消息的群组。请先在「群消息」Tab 中启用对应群组，或确保机器人已连接 OneBot。'
-                  : '暂无已启用好友消息的好友。请先在「好友消息」Tab 中启用对应好友，或确保机器人已连接 OneBot。'
+                  ? '暂无已启用群消息的群组。请先在「群消息」Tab 中启用对应群组，或确保 OneBot / 官方 Bot 已连接。'
+                  : '暂无已启用好友消息的好友。请先在「好友消息」Tab 中启用对应好友，或确保 OneBot / 官方 Bot 已连接。'
                 : isGroup
-                  ? '暂无群组数据。请确保机器人已连接 OneBot，或等待群列表同步完成。'
-                  : '暂无好友数据。请确保机器人已连接 OneBot，或等待好友列表同步完成。'}
+                  ? '暂无群组数据。请确保 OneBot / 官方 Bot 已连接，或等待群列表同步完成。'
+                  : '暂无好友数据。请确保 OneBot / 官方 Bot 已连接，或等待好友列表同步完成。'}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -309,15 +342,15 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
               <thead>
                 <tr className="border-b border-border text-muted-foreground border-border">
                   <th className="pb-3 pr-4 font-medium">{isGroup ? '群名称' : '昵称'}</th>
-                  <th className="pb-3 pr-4 font-medium">{isGroup ? '群号' : 'QQ 号'}</th>
+                  <th className="pb-3 pr-4 font-medium">{isGroup ? '群号 / OpenID' : 'QQ 号 / OpenID'}</th>
                   {isGroup && <th className="pb-3 pr-4 font-medium">成员数</th>}
                   <th className="pb-3 font-medium text-right">允许状态查询</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((item) => {
+                  const policyEditable = listAvailable || (restrict && item.source === 'official')
                   const enabled = isItemEnabled(item.id, restrict, enabledIds)
-                  const rowBusy = busy && (togglingId === item.id || togglingId === '__all__')
                   return (
                     <tr
                       key={item.id}
@@ -325,6 +358,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
                     >
                       <td className="py-3.5 pr-4 font-medium text-foreground">
                         {item.name ?? '—'}
+                        {item.source === 'official' && <span className="ml-2 text-xs text-muted-foreground">官方</span>}
                       </td>
                       <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">{item.id}</td>
                       {isGroup && (
@@ -341,7 +375,7 @@ export function StatusCheckPolicyTab({ scope }: StatusCheckPolicyTabProps) {
                           </span>
                           <ToggleSwitch
                             checked={enabled}
-                            disabled={rowBusy || !policyEditable}
+                            disabled={busy || !policyEditable}
                             onChange={(checked) => void handleToggle(item.id, checked)}
                           />
                         </div>

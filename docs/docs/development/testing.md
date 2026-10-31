@@ -25,18 +25,18 @@ Ruff 配置见 `pyproject.toml`，`web/` 与 `.venv/` 已排除。
 
 ```bash
 cd web
-npm run build   # 类型检查 + 构建
+node ../scripts/secure_npm.cjs run build   # 类型检查 + 构建
 ```
 
 ## 文档站
 
 ```bash
 cd docs
-npm run build   # 构建静态文档
-npm start       # 本地预览（http://localhost:3000）
+node ../scripts/secure_npm.cjs run build   # 构建静态文档
+node ../scripts/secure_npm.cjs start       # 本地预览（http://localhost:3000）
 ```
 
-CI 在 `develop` 推送与 PR 上仅执行 `npm run build`；合并到 `main` 后自动部署 GitHub Pages。
+CI 在 `develop` 推送与 PR 上仅执行 `node ../scripts/secure_npm.cjs run build`；合并到 `main` 后自动部署 GitHub Pages。
 
 ## 编写测试
 

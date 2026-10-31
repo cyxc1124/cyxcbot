@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from fastapi import APIRouter, HTTPException, status
 from nonebot_plugin_orm import get_session
 from sqlalchemy import select
@@ -14,8 +16,9 @@ from admin.schemas.rust_rcon import (
     RustRconBindingUpdate,
     RustRconPasswordStatus,
 )
+from shared.config.command_conflicts import new_rcon_command_conflict
 from shared.config.rust_rcon import (
-    alias_command_conflict,
+    RustRconBindingRecord,
     normalize_alias,
     normalize_allowed_qq_ids,
     normalize_port,
@@ -79,12 +82,28 @@ def _ensure_alias_available(
 ) -> None:
     svc = get_config_service()
     snap = svc.get_snapshot()
-    if require_command_clear:
-        conflict = alias_command_conflict(alias, snap)
-        if conflict:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail=conflict
-            )
+    proposed = [item for item in snap.rust_rcon_bindings if item.id != exclude_id]
+    previous = next(
+        (item for item in snap.rust_rcon_bindings if item.id == exclude_id), None
+    )
+    candidate = (
+        replace(previous, alias=alias, enabled=require_command_clear)
+        if previous
+        else RustRconBindingRecord(
+            id=-1,
+            alias=alias,
+            host="",
+            port=0,
+            password="",
+            enabled=require_command_clear,
+        )
+    )
+    proposed.append(candidate)
+    conflict = new_rcon_command_conflict(
+        snap.command_aliases, snap, snap.command_extra_prefixes, bindings=proposed
+    )
+    if conflict:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=conflict)
 
     for binding in snap.rust_rcon_bindings:
         if binding.alias == alias and binding.id != exclude_id:
@@ -186,6 +205,7 @@ async def update_rust_rcon_binding(
                 )
 
             was_enabled = row.enabled
+            alias_changed = False
 
             decrypted = ""
             snap = get_config_service().get_snapshot()
@@ -202,11 +222,7 @@ async def update_rust_rcon_binding(
                         status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
                     ) from exc
                 if alias != row.alias:
-                    _ensure_alias_available(
-                        alias,
-                        exclude_id=binding_id,
-                        require_command_clear=(was_enabled or body.enabled is True),
-                    )
+                    alias_changed = True
                     row.alias = alias
 
             if body.host is not None:
@@ -233,8 +249,10 @@ async def update_rust_rcon_binding(
             if body.enabled is not None:
                 row.enabled = body.enabled
 
-            if row.enabled and not was_enabled:
-                _ensure_alias_available(row.alias, exclude_id=binding_id)
+            if alias_changed or (row.enabled and not was_enabled):
+                _ensure_alias_available(
+                    row.alias, exclude_id=binding_id, require_command_clear=row.enabled
+                )
 
             if "name" in body.model_fields_set:
                 row.name = (body.name or "").strip() or None

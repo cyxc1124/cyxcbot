@@ -4,10 +4,14 @@
 """
 
 import asyncio
+from contextlib import AsyncExitStack
 from typing import List, Optional, Tuple
 from urllib.parse import urlparse
 
 from nonebot.log import logger
+
+from shared.security.browser import create_browser_context
+from shared.security.playwright import configure_playwright_tls
 
 try:
     from playwright.async_api import (
@@ -191,11 +195,9 @@ def _parse_cookie_string(cookie_str: str) -> list:
     return cookies
 
 
-async def init_browser(proxy=None, **kwargs) -> BrowserContext:
+async def _init_browser(proxy=None, **kwargs) -> tuple[BrowserContext, AsyncExitStack]:
     """初始化浏览器 - 最佳实践配置"""
     logger.info("初始化Playwright浏览器")
-
-    playwright = await async_playwright().start()
 
     # 优化的浏览器启动参数
     browser_args = [
@@ -217,46 +219,49 @@ async def init_browser(proxy=None, **kwargs) -> BrowserContext:
         "--disable-renderer-backgrounding",  # 禁用渲染器后台化
     ]
 
-    browser = await playwright.chromium.launch(
-        headless=True,
-        args=browser_args,
-        proxy={"server": proxy} if proxy else None,
-        # 内存和性能优化
-        handle_sigint=False,
-        handle_sigterm=False,
-        handle_sighup=False,
-        **kwargs,
-    )
+    async with AsyncExitStack() as resources:
+        configure_playwright_tls()
+        playwright_manager = async_playwright()
+        # start() 被取消时也须停止已经启动的 driver。
+        resources.push_async_callback(playwright_manager.__aexit__)
+        playwright = await playwright_manager.start()
+        context, browser_resources = await create_browser_context(
+            playwright,
+            headless=True,
+            args=browser_args,
+            proxy={"server": proxy} if proxy else None,
+            # 内存和性能优化
+            handle_sigint=False,
+            handle_sigterm=False,
+            handle_sighup=False,
+            # 高分辨率视口设置
+            viewport={"width": 1920, "height": 1080},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+            # 高质量渲染设置
+            bypass_csp=True,  # 绕过内容安全策略
+            # 禁用不必要的资源加载以提高性能
+            permissions=[],  # 不授予任何权限
+            # 高质量渲染选项
+            device_scale_factor=2,  # 默认2倍缩放，提高清晰度
+            is_mobile=False,  # PC模式
+            has_touch=False,  # 非触摸设备
+            **kwargs,
+        )
+        resources.push_async_callback(browser_resources.aclose)
 
-    # 创建优化的浏览器上下文 - 高质量截图配置
-    context = await browser.new_context(
-        # 高分辨率视口设置
-        viewport={"width": 1920, "height": 1080},
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
-        # 高质量渲染设置
-        ignore_https_errors=True,  # 忽略HTTPS错误
-        bypass_csp=True,  # 绕过内容安全策略
-        # 禁用不必要的资源加载以提高性能
-        permissions=[],  # 不授予任何权限
-        # 高质量渲染选项
-        device_scale_factor=2,  # 默认2倍缩放，提高清晰度
-        is_mobile=False,  # PC模式
-        has_touch=False,  # 非触摸设备
-    )
+        # 注入B站Cookie
+        from utils.bilibili_api.config import BilibiliConfig
 
-    # 注入B站Cookie
-    from utils.bilibili_api.config import BilibiliConfig
+        cookie_str = BilibiliConfig.get_bilibili_cookie()
+        if cookie_str:
+            cookies = _parse_cookie_string(cookie_str)
+            await context.add_cookies(cookies)
+            logger.info("已注入 {} 个B站Cookie", len(cookies))
+        else:
+            logger.warning("未登录 B 站，截图可能触发验证码")
 
-    cookie_str = BilibiliConfig.get_bilibili_cookie()
-    if cookie_str:
-        cookies = _parse_cookie_string(cookie_str)
-        await context.add_cookies(cookies)
-        logger.info("已注入 {} 个B站Cookie", len(cookies))
-    else:
-        logger.warning("未登录 B 站，截图可能触发验证码")
-
-    logger.info("浏览器初始化完成")
-    return context
+        logger.info("浏览器初始化完成")
+        return context, resources.pop_all()
 
 
 class DynamicScreenshot:
@@ -264,6 +269,8 @@ class DynamicScreenshot:
 
     def __init__(self):
         self.browser_context: Optional[BrowserContext] = None
+        self._browser_resources = AsyncExitStack()
+        self._lifecycle_lock = asyncio.Lock()
 
     async def init_browser(self):
         """初始化浏览器"""
@@ -271,23 +278,26 @@ class DynamicScreenshot:
             logger.error("playwright不可用，无法初始化浏览器")
             return False
 
-        try:
-            self.browser_context = await init_browser()
-            logger.info("浏览器初始化成功")
-            return True
-        except Exception:
-            logger.opt(exception=True).error("浏览器初始化失败")
-            return False
+        async with self._lifecycle_lock:
+            try:
+                self.browser_context = None
+                await self._browser_resources.aclose()
+                self.browser_context, self._browser_resources = await _init_browser()
+                logger.info("浏览器初始化成功")
+                return True
+            except Exception:
+                logger.opt(exception=True).error("浏览器初始化失败")
+                return False
 
     async def close_browser(self):
         """关闭浏览器"""
-        try:
-            if self.browser_context:
-                await self.browser_context.close()
+        async with self._lifecycle_lock:
+            try:
                 self.browser_context = None
-            logger.info("浏览器已关闭")
-        except Exception:
-            logger.opt(exception=True).warning("关闭浏览器时出错")
+                await self._browser_resources.aclose()
+                logger.info("浏览器已关闭")
+            except Exception:
+                logger.opt(exception=True).warning("关闭浏览器时出错")
 
     async def _find_dynamic_card(self, page: Page) -> Optional[ElementHandle]:
         """按 DYNAMIC_CARD_SELECTORS 定位截图根节点。"""

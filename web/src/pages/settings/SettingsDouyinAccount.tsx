@@ -56,8 +56,8 @@ export function SettingsDouyinAccountPage() {
       <div className="card space-y-4">
         <h3 className="font-semibold text-foreground">抖音账号</h3>
         <p className="text-sm text-muted-foreground">
-          用于解析抖音分享链接并下载视频。未配置时仍会尝试游客态解析；建议扫码登录或粘贴
-          Cookie 以提高成功率。
+          用于解析抖音分享链接并下载视频。未配置时仍会尝试游客态解析；建议扫码登录或粘贴完整
+          Cookie（需含 UIFID）以提高成功率。详情接口缺 UIFID 会被拦截。
         </p>
 
         <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">

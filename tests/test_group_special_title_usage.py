@@ -12,6 +12,7 @@ import nonebot
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 
 def _shared_sqlite_url() -> str:
@@ -56,9 +57,12 @@ def _ensure_real_db_modules():
 
 
 @pytest.fixture
-async def db_context():
+async def db_context(tmp_path):
     Model, GroupSpecialTitleUsage = _ensure_real_db_modules()
-    engine = create_async_engine(_shared_sqlite_url())
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'usage.db'}",
+        poolclass=NullPool,
+    )
     async with engine.begin() as conn:
         await conn.run_sync(Model.metadata.create_all)
 
@@ -75,22 +79,72 @@ def usage_store(db_context, monkeypatch: pytest.MonkeyPatch):
     from plugins.group_special_title import usage_store as store
 
     monkeypatch.setattr(store, "get_session", lambda: factory())
-    monkeypatch.setattr(store, "today_usage_date", lambda: "2026-07-04")
     return store
 
 
 @pytest.mark.asyncio
 async def test_try_consume_respects_daily_limit(usage_store) -> None:
-    assert await usage_store.try_consume_daily_quota("1", "2", 2) is True
-    assert await usage_store.try_consume_daily_quota("1", "2", 2) is True
-    assert await usage_store.try_consume_daily_quota("1", "2", 2) is False
+    assert (
+        await usage_store.try_consume_daily_quota("1", "2", 2, usage_date="2026-07-04")
+        is True
+    )
+    assert (
+        await usage_store.try_consume_daily_quota("1", "2", 2, usage_date="2026-07-04")
+        is True
+    )
+    assert (
+        await usage_store.try_consume_daily_quota("1", "2", 2, usage_date="2026-07-04")
+        is False
+    )
 
 
 @pytest.mark.asyncio
 async def test_release_daily_quota_after_failed_api(usage_store) -> None:
-    assert await usage_store.try_consume_daily_quota("1", "2", 1) is True
-    await usage_store.release_daily_quota("1", "2")
-    assert await usage_store.try_consume_daily_quota("1", "2", 1) is True
+    assert (
+        await usage_store.try_consume_daily_quota("1", "2", 1, usage_date="2026-07-04")
+        is True
+    )
+    await usage_store.release_daily_quota("1", "2", usage_date="2026-07-04")
+    assert (
+        await usage_store.try_consume_daily_quota("1", "2", 1, usage_date="2026-07-04")
+        is True
+    )
+
+
+@pytest.mark.asyncio
+async def test_release_daily_quota_after_midnight_keeps_next_day_usage(
+    db_context, usage_store
+) -> None:
+    _, factory, GroupSpecialTitleUsage = db_context
+    for usage_date in ("2026-07-04", "2026-07-05"):
+        assert await usage_store.try_consume_daily_quota(
+            "1", "2", 1, usage_date=usage_date
+        )
+
+    await usage_store.release_daily_quota("1", "2", usage_date="2026-07-04")
+
+    async with factory() as session:
+        rows = (
+            await session.execute(
+                select(
+                    GroupSpecialTitleUsage.usage_date, GroupSpecialTitleUsage.count
+                ).order_by(GroupSpecialTitleUsage.usage_date)
+            )
+        ).all()
+    assert rows == [("2026-07-04", 0), ("2026-07-05", 1)]
+    assert not await usage_store.try_consume_daily_quota(
+        "1", "2", 1, usage_date="2026-07-05"
+    )
+
+
+@pytest.mark.asyncio
+async def test_unlimited_quota_does_not_record_usage(db_context, usage_store) -> None:
+    _, factory, GroupSpecialTitleUsage = db_context
+    assert await usage_store.try_consume_daily_quota(
+        "1", "2", 0, usage_date="2026-07-04"
+    )
+    async with factory() as session:
+        assert await session.scalar(select(GroupSpecialTitleUsage)) is None
 
 
 @pytest.mark.asyncio
@@ -100,8 +154,8 @@ async def test_concurrent_first_use_allows_only_one_when_limit_is_one(
 ) -> None:
     _, factory, GroupSpecialTitleUsage = db_context
     results = await asyncio.gather(
-        usage_store.try_consume_daily_quota("1", "2", 1),
-        usage_store.try_consume_daily_quota("1", "2", 1),
+        usage_store.try_consume_daily_quota("1", "2", 1, usage_date="2026-07-04"),
+        usage_store.try_consume_daily_quota("1", "2", 1, usage_date="2026-07-04"),
     )
 
     assert sorted(results) == [False, True]
@@ -126,7 +180,12 @@ async def test_concurrent_consume_never_exceeds_limit(
     _, factory, GroupSpecialTitleUsage = db_context
     daily_limit = 3
     results = await asyncio.gather(
-        *(usage_store.try_consume_daily_quota("9", "8", daily_limit) for _ in range(10))
+        *(
+            usage_store.try_consume_daily_quota(
+                "9", "8", daily_limit, usage_date="2026-07-04"
+            )
+            for _ in range(10)
+        )
     )
 
     assert sum(results) == daily_limit

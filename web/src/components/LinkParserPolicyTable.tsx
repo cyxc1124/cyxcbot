@@ -1,23 +1,30 @@
+import { useId } from 'react'
 import { ToggleSwitch } from './ToggleSwitch'
 import type { LinkParserPolicyRow } from '../hooks/useLinkParserPolicies'
 
 function PolicyToggleRow({
   checked,
   disabled,
+  busy,
   onChange,
+  label,
 }: {
   checked: boolean
   disabled: boolean
+  busy: boolean
   onChange: (checked: boolean) => void
+  label: string
 }) {
+  const labelId = useId()
   return (
-    <div className="inline-flex items-center gap-2">
+    <div className="relative inline-flex items-center gap-2">
+      <span id={labelId} className="sr-only">{label}</span>
       <span
         className={`text-xs ${checked ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}
       >
         {checked ? '已启用' : '已关闭'}
       </span>
-      <ToggleSwitch checked={checked} disabled={disabled} onChange={onChange} />
+      <ToggleSwitch checked={checked} disabled={disabled} busy={busy} onChange={onChange} ariaLabelledBy={labelId} />
     </div>
   )
 }
@@ -90,20 +97,23 @@ export function LinkParserPolicyTable<T extends LinkParserPolicyRow>({
           {items.map((item) => {
             const itemId = getItemId(item)
             const saving = savingIds.has(itemId) || togglingAll
-            const disabled = saving || !editable
+            const disabled = !(item.editable ?? editable)
             return (
               <tr key={itemId} className="border-b border-border last:border-0 border-border">
                 <td className="py-3.5 pr-4 font-medium text-foreground">
                   {getDisplayName(item) ?? '—'}
-                  {saving && (
-                    <span className="ml-2 text-[10px] text-muted-foreground">保存中…</span>
-                  )}
+                  <span className="ml-2 text-[10px] text-muted-foreground">
+                    {item.source === 'official' ? '官方 QQ' : 'OneBot'}
+                    {disabled ? ' · 只读' : ''}
+                  </span>
                 </td>
                 <td className="py-3.5 pr-4 font-mono text-xs text-muted-foreground">{itemId}</td>
                 <td className="py-3.5 pr-4">
                   <PolicyToggleRow
+                    label={`${itemId} 视频链接`}
                     checked={item.video_enabled}
                     disabled={disabled}
+                    busy={saving}
                     onChange={(checked) =>
                       void onPatch(
                         itemId,
@@ -116,8 +126,10 @@ export function LinkParserPolicyTable<T extends LinkParserPolicyRow>({
                 </td>
                 <td className="py-3.5 pr-4">
                   <PolicyToggleRow
+                    label={`${itemId} 发送视频`}
                     checked={item.send_video_enabled}
                     disabled={disabled}
+                    busy={saving}
                     onChange={(checked) =>
                       void onPatch(
                         itemId,
@@ -130,31 +142,35 @@ export function LinkParserPolicyTable<T extends LinkParserPolicyRow>({
                 </td>
                 <td className="py-3.5 pr-4">
                   <PolicyToggleRow
+                    label={`${itemId} 直播链接`}
                     checked={item.live_enabled}
                     disabled={disabled}
+                    busy={saving}
                     onChange={(checked) => void onPatch(itemId, { live_enabled: checked })}
                   />
                 </td>
                 <td className="py-3.5 pr-4">
                   <PolicyToggleRow
+                    label={`${itemId} 动态链接`}
                     checked={item.dynamic_enabled}
                     disabled={disabled}
+                    busy={saving}
                     onChange={(checked) =>
                       void onPatch(itemId, { dynamic_enabled: checked })
                     }
                   />
                 </td>
                 <td className="py-3.5 text-right">
-                  {item.customized && (
-                    <button
-                      type="button"
-                      className="btn-secondary text-xs"
-                      disabled={disabled}
-                      onClick={() => void onReset(itemId)}
-                    >
-                      恢复默认
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className={`btn-secondary whitespace-nowrap text-xs${item.customized ? '' : ' invisible'}${!disabled && item.customized ? ' disabled:opacity-100' : ''}`}
+                    aria-hidden={!item.customized}
+                    aria-busy={saving || undefined}
+                    disabled={saving || disabled || !item.customized}
+                    onClick={() => void onReset(itemId)}
+                  >
+                    恢复默认
+                  </button>
                 </td>
               </tr>
             )

@@ -3,13 +3,17 @@
 负责构建和发送视频通知消息
 """
 
-from typing import List, Optional
+from typing import List
 
-from nonebot import get_driver
-from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.log import logger
 
+from shared.adapter.outbound import (
+    OfficialReplyLimitError,
+    official_reply_remaining,
+    send_event_message,
+    truncate_text,
+)
 from shared.notify.message_template import safe_text
 from utils.bilibili_api import VideoInfo
 
@@ -67,32 +71,39 @@ class VideoSender:
 
         return message
 
-    async def send_to_group(
-        self, group_id: str, message: Message, bot: Optional[Bot] = None
-    ):
-        """发送消息到指定群组；优先使用事件 Bot，否则遍历已连接 Bot。"""
-        bots: List[Bot] = []
-        if bot is not None:
-            bots = [bot]
-        else:
-            bots = [
-                item for item in get_driver().bots.values() if isinstance(item, Bot)
-            ]
-
-        if not bots:
-            logger.warning("机器人未连接，跳过发送到群组 {}", group_id)
-            raise RuntimeError(f"机器人未连接，无法发送到群组 {group_id}")
-
-        errors: List[str] = []
-        for candidate in bots:
-            try:
-                await candidate.send_group_msg(group_id=int(group_id), message=message)
-                logger.info("成功发送视频消息到群组 {}", group_id)
-                return
-            except Exception as exc:
-                logger.opt(exception=True).error(
-                    "机器人 {} 发送消息到群组 {} 失败", candidate.self_id, group_id
-                )
-                errors.append(str(exc))
-
-        raise RuntimeError(errors[0] if errors else f"发送到群组 {group_id} 失败")
+    async def send_official_reply(self, bot, event, messages: list[Message]) -> None:
+        """先发送所有投稿文案，封面只使用剩余的官方回复预算。"""
+        remaining = official_reply_remaining(event)
+        if not remaining or not messages:
+            return
+        omitted_hint = (
+            "\n\n官方 Bot 回复次数有限，部分 UP 主结果未展示，请减少本群订阅后重试。"
+        )
+        text_limit = 2000 - len(omitted_hint)
+        captions = [""]
+        for message in messages:
+            text = message.extract_plain_text()
+            if len(text) > text_limit:
+                heading, _, link = text.rpartition("\n")
+                text = f"{truncate_text(heading, text_limit - len(link) - 1)}\n{link}"
+            if captions[-1] and len(captions[-1]) + len(text) + 2 > text_limit:
+                captions.append(text)
+            else:
+                captions[-1] += ("\n\n" if captions[-1] else "") + text
+        if len(captions) > remaining:
+            captions = captions[:remaining]
+            captions[-1] += omitted_hint
+        for caption in captions:
+            await send_event_message(bot, event, Message(safe_text(caption)))
+        for message in messages:
+            for segment in message:
+                if segment.type != "image":
+                    continue
+                if not official_reply_remaining(event):
+                    return
+                try:
+                    await send_event_message(bot, event, Message(segment))
+                except OfficialReplyLimitError:
+                    return
+                except Exception:
+                    logger.opt(exception=True).warning("发送视频封面失败")

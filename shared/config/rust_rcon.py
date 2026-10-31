@@ -10,6 +10,9 @@ from shared.config.command_aliases import (
     CommandAliasEntry,
     resolve_entry,
 )
+from shared.config.command_aliases import (
+    _strip_command_prefix as _strip_with_prefixes,
+)
 
 if TYPE_CHECKING:
     from shared.config.types import AppConfigSnapshot
@@ -105,6 +108,8 @@ def _strip_command_prefix(text: str) -> str | None:
 def match_rust_rcon_binding(
     text: str,
     bindings: list[RustRconBindingRecord],
+    *,
+    prefixes: frozenset[str] | None = None,
 ) -> tuple[RustRconBindingRecord, str] | None:
     """Match ``[prefix]alias command``; return (binding, command) or None."""
     enabled = [binding for binding in bindings if binding.enabled]
@@ -113,7 +118,11 @@ def match_rust_rcon_binding(
 
     text = text.strip()
     candidates = [text]
-    stripped = _strip_command_prefix(text)
+    stripped = (
+        _strip_command_prefix(text)
+        if prefixes is None
+        else _strip_with_prefixes(text, prefixes)
+    )
     if stripped is not None:
         candidates.append(stripped.strip())
 

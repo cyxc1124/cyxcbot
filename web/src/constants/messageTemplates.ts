@@ -332,6 +332,14 @@ export const allTemplateFields = [
   ...douyinTemplateFields,
 ]
 
+export function groupTemplateFields(fields: TemplateField[]) {
+  return [
+    { label: '订阅推送', fields: fields.filter((field) => !field.key.startsWith('link_') && !field.key.startsWith('dynamic_template_query_') && !field.key.startsWith('dynamic_template_extract')) },
+    { label: '命令回复', fields: fields.filter((field) => field.key.startsWith('dynamic_template_query_') || field.key.startsWith('dynamic_template_extract')) },
+    { label: '链接解析', fields: fields.filter((field) => field.key.startsWith('link_')) },
+  ].filter((group) => group.fields.length > 0)
+}
+
 export const templateCategoryLabels: Record<TemplateCategory, string> = {
   bilibili: 'B 站',
   x: 'X',

@@ -136,6 +136,26 @@ def test_normalize_batch_start_rejects_stale_plan():
     assert ok is True and start == 1
 
 
+def test_completed_checkpoint_requires_matching_plan():
+    delivery_retry = _load_delivery_retry()
+    assert delivery_retry.normalize_batch_start(
+        2, 2, expected_fingerprint="v2:known", actual_fingerprint="v2:known"
+    ) == (True, 2, None)
+
+
+def test_terminal_official_rejection_does_not_stall_other_targets():
+    delivery_retry = _load_delivery_retry()
+    result = DeliveryResult(
+        targets=[
+            TargetDelivery("group", "g-openid", False, "resume_from:1:40034105 无权限"),
+            TargetDelivery(
+                "user", "u-openid", False, "resume_from:2:50055001 暂时失败"
+            ),
+        ]
+    )
+    assert delivery_retry.failed_targets_with_resume(result) == ([], [("u-openid", 2)])
+
+
 def test_batch_plan_fingerprint():
     delivery_retry = _load_delivery_retry()
     assert delivery_retry.batch_plan_fingerprint(["v", "i", "v"]) == "v|i|v"
@@ -150,3 +170,14 @@ def test_encode_decode_pending_tweet_ref():
     assert delivery_retry.encode_pending_tweet_ref("123", "") == "123"
     # 指纹内 # 会被剥掉，避免破坏分隔
     assert delivery_retry.encode_pending_tweet_ref("1", "a#b") == "1#ab"
+
+
+def test_completed_target_checkpoint_roundtrip():
+    retry = _load_delivery_retry()
+    targets = [("finished", retry.COMPLETED_TARGET), ("pending", 2)]
+    assert retry.encode_pending_targets(targets) == "finished@done,pending@2"
+    assert retry.decode_pending_targets("finished@done,pending@2") == targets
+    assert retry.decode_pending_targets("old@-9,broken@oops") == [
+        ("old", 0),
+        ("broken", 0),
+    ]

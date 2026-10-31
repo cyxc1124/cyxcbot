@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from unittest.mock import Mock
+
+import pytest
+
 from utils.douyin_api.cookies import validate_cookie_header, validate_cookies
 from utils.douyin_api.url_parser import extract_video_id, parse_video_url
 from utils.douyin_api.validators import (
@@ -57,14 +61,30 @@ def test_parse_url_type_and_video_id():
 
 
 def test_validate_cookies_required_keys():
-    assert validate_cookies(
-        {
-            "ttwid": "1",
-            "odin_tt": "2",
-            "passport_csrf_token": "3",
-        }
-    )
+    legacy = {
+        "ttwid": "1",
+        "odin_tt": "2",
+        "passport_csrf_token": "3",
+    }
+    assert not validate_cookies(legacy)
+    assert validate_cookies({**legacy, "UIFID": "u"})
+    assert validate_cookies({**legacy, "uifid": "u"})
     assert not validate_cookie_header("ttwid=1; sessionid=x")
+
+
+@pytest.mark.parametrize("key", ["ttwid", "odin_tt", "passport_csrf_token"])
+def test_validate_cookies_rejects_misnamed_legacy_keys(key):
+    cookies = {
+        "ttwid": "1",
+        "odin_tt": "2",
+        "passport_csrf_token": "3",
+        "UIFID": "u",
+    }
+    cookies[key.upper()] = cookies.pop(key)
+    assert not validate_cookies(cookies)
+    assert not validate_cookie_header(
+        "; ".join(f"{name}={value}" for name, value in cookies.items())
+    )
 
 
 def test_xbogus_appends_param():
@@ -103,3 +123,40 @@ def test_is_watermarked_and_candidates_prefer_direct_cdn():
     candidates = build_video_url_candidates(_FakeClient(), aweme)  # type: ignore[arg-type]
     assert candidates
     assert candidates[0][0].startswith("https://v3-dy.douyinvod.com/")
+
+
+@pytest.mark.parametrize("watermark", [0, 1])
+@pytest.mark.parametrize(
+    ("authority", "should_sign"),
+    [
+        ("douyin.com", True),
+        ("www.douyin.com", True),
+        ("WWW.DOUYIN.COM:443", True),
+        ("user@www.douyin.com:443", True),
+        ("iesdouyin.com", True),
+        ("v.iesdouyin.com", True),
+        ("notdouyin.com", False),
+        ("notiesdouyin.com", False),
+        ("douyin.com.evil.invalid", False),
+        ("douyin.com@evil.invalid", False),
+        ("evil.invalid@notdouyin.com", False),
+        ("v3-dy.douyinvod.com", False),
+    ],
+)
+def test_video_candidates_sign_only_douyin_hosts(
+    monkeypatch: pytest.MonkeyPatch, authority: str, should_sign: bool, watermark: int
+):
+    client = _FakeClient()
+    sign_url = Mock(wraps=client.sign_url)
+    monkeypatch.setattr(client, "sign_url", sign_url)
+    url = f"https://{authority}/aweme/v1/play/?video_id=v123&watermark={watermark}"
+    aweme = {"video": {"play_addr": {"url_list": [url]}}}
+
+    candidates = build_video_url_candidates(client, aweme)  # type: ignore[arg-type]
+
+    expected_url = f"{url}&X-Bogus=fake" if should_sign else url
+    assert [candidate[0] for candidate in candidates] == [expected_url]
+    if should_sign:
+        sign_url.assert_called_once_with(url)
+    else:
+        sign_url.assert_not_called()

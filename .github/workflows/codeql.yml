@@ -8,6 +8,7 @@ on:
   pull_request:
     branches:
       - main
+      - develop
   schedule:
     # 每周一 14:00（北京时间）扫描默认分支
     - cron: "0 6 * * 1"
@@ -31,19 +32,25 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4.37.3
         with:
           languages: ${{ matrix.language }}
 
+      - name: Set up Node.js
+        if: matrix.language == 'javascript'
+        uses: actions/setup-node@v6
+        with:
+          node-version: '^26.13.0'
+
       - name: Build web frontend (JavaScript/TypeScript)
         if: matrix.language == 'javascript'
         working-directory: web
         run: |
-          npm ci
-          npm run build
+          node ../scripts/secure_npm.cjs ci
+          node ../scripts/secure_npm.cjs run build
 
       - name: Autobuild Python
         if: matrix.language == 'python'

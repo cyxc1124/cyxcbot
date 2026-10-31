@@ -3,7 +3,7 @@
 定义动态相关的核心数据结构
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import List
 
 
@@ -18,7 +18,7 @@ class DynamicItem:
         dynamic_id: int,
         uid: int,
         name: str,
-        timestamp: int,
+        timestamp: int | float | str,
         dynamic_type: int,
         title: str = "",
         content: str = "",
@@ -27,11 +27,17 @@ class DynamicItem:
         author_type: str = "",
         is_pinned: bool = False,
         live_room_id: int | None = None,
+        avatar: str = "",
+        forward_text: str = "",
+        stats: dict[str, int] | None = None,
     ):
+        self.forward_text = forward_text
+        self.avatar = avatar
+        self.stats = stats or {}
         self.id = dynamic_id
         self.uid = uid
         self.name = name
-        self.timestamp = timestamp
+        self.timestamp = int(timestamp) if isinstance(timestamp, str) else timestamp
         self.type = dynamic_type
         self.title = title
         self.content = content
@@ -49,8 +55,9 @@ class DynamicItem:
 
     def format_beijing_time(self) -> str:
         """格式化北京时间为字符串"""
-        # 时间戳已经是北京时间，直接转换
-        beijing_time = datetime.fromtimestamp(self.timestamp)
+        beijing_time = datetime.fromtimestamp(
+            self.timestamp, timezone(timedelta(hours=8))
+        )
         # 格式化为易读的字符串
         return beijing_time.strftime("%Y-%m-%d %H:%M:%S")
 

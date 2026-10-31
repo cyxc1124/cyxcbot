@@ -16,6 +16,7 @@ from admin.services.connection_status import (
     bilibili_status_message,
     get_bilibili_connection_status,
 )
+from shared.adapter.ids import is_qq_user_id
 from shared.config.command_aliases import (
     merge_partial_command_aliases,
     normalize_command_aliases,
@@ -23,9 +24,8 @@ from shared.config.command_aliases import (
     serialize_command_aliases,
     validation_error,
 )
+from shared.config.command_conflicts import new_rcon_command_conflict
 from shared.config.message_templates import MESSAGE_TEMPLATE_KEYS
-from shared.config.rust_rcon import command_aliases_rust_rcon_conflict
-from shared.config.rust_rcon_custom import command_aliases_custom_command_conflict
 from shared.config.service import get_config_service
 from shared.security.crypto import encrypt_value
 
@@ -48,6 +48,11 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
     svc = get_config_service()
     updates: dict[str, str] = {}
 
+    for key in ("log_level", "log_file_level"):
+        value = getattr(body, key)
+        if value is not None:
+            updates[key] = value
+
     if body.dynamic_monitor_interval is not None:
         updates["dynamic_monitor_interval"] = str(body.dynamic_monitor_interval)
     if body.dynamic_monitor_use_stagger is not None:
@@ -58,6 +63,10 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         updates["dynamic_enable_screenshot"] = str(
             body.dynamic_enable_screenshot
         ).lower()
+    if body.dynamic_image_mode is not None:
+        updates["dynamic_image_mode"] = body.dynamic_image_mode
+    if body.dynamic_card_color_source is not None:
+        updates["dynamic_card_color_source"] = body.dynamic_card_color_source
     for key in MESSAGE_TEMPLATE_KEYS:
         value = getattr(body, key, None)
         if value is not None:
@@ -99,23 +108,24 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         updates["x_proxy_password_encrypted"] = (
             encrypt_value(password) if password else ""
         )
-    if body.status_check_allowed_qq is not None:
-        cleaned = [
-            item.strip()
-            for qq in body.status_check_allowed_qq
-            for item in [str(qq).strip()]
-            if item.isdigit()
-        ]
-        updates["status_check_allowed_qq"] = json.dumps(cleaned, ensure_ascii=False)
-    if body.nonebot_superusers is not None:
-        cleaned = [
-            item.strip()
-            for qq in body.nonebot_superusers
-            for item in [str(qq).strip()]
-            if item.isdigit()
-        ]
-        updates["nonebot_superusers"] = json.dumps(cleaned, ensure_ascii=False)
-    if body.command_aliases is not None:
+    for key in ("status_check_allowed_qq", "nonebot_superusers"):
+        values = getattr(body, key)
+        if values is not None:
+            cleaned = list(
+                dict.fromkeys(item.strip() for item in values if item.strip())
+            )
+            if not all(is_qq_user_id(item) for item in cleaned):
+                raise HTTPException(
+                    status_code=400, detail="用户 ID 须为 QQ 号或 8–64 位官方 openid"
+                )
+            updates[key] = json.dumps(cleaned, ensure_ascii=False)
+    if body.command_aliases is not None or body.command_extra_prefixes is not None:
+        snap = svc.get_snapshot()
+        extra_prefixes = (
+            normalize_extra_prefixes(body.command_extra_prefixes)
+            if body.command_extra_prefixes is not None
+            else snap.command_extra_prefixes
+        )
         # 与当前快照合并后再 normalize：
         # 1) 只传部分命令时，未提及的命令保留原有配置（而非被
         #    normalize_command_aliases 的缺省填充逻辑重置为出厂默认）；
@@ -123,35 +133,45 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         #    只取客户端真正传入的字段与当前值合并，而不是用 Pydantic 为未传
         #    字段填的默认值（enabled=True/triggers=[]）整条覆盖，否则单独
         #    改开关会清空触发词、单独改触发词会误重启用。
-        current = serialize_command_aliases(svc.get_snapshot().command_aliases)
+        current = serialize_command_aliases(snap.command_aliases)
         patch = {
             cid: entry.model_dump(exclude_unset=True)
-            for cid, entry in body.command_aliases.items()
+            for cid, entry in (body.command_aliases or {}).items()
         }
         normalized = normalize_command_aliases(
             merge_partial_command_aliases(current, patch)
         )
-        error = validation_error(normalized)
+        error = validation_error(normalized, extra_prefixes)
         if error:
             raise HTTPException(status_code=400, detail=error)
-        snap = svc.get_snapshot()
-        rcon_conflict = command_aliases_rust_rcon_conflict(
-            normalized, snap.rust_rcon_bindings
-        )
+        rcon_conflict = new_rcon_command_conflict(normalized, snap, extra_prefixes)
         if rcon_conflict:
             raise HTTPException(status_code=400, detail=rcon_conflict)
-        custom_conflict = command_aliases_custom_command_conflict(
-            normalized, snap.rust_rcon_custom_commands
+        if body.command_aliases is not None:
+            updates["command_aliases"] = json.dumps(
+                serialize_command_aliases(normalized), ensure_ascii=False
+            )
+        if body.command_extra_prefixes is not None:
+            updates["command_extra_prefixes"] = json.dumps(
+                extra_prefixes, ensure_ascii=False
+            )
+    if body.official_qq_app_id is not None:
+        updates["official_qq_app_id"] = body.official_qq_app_id.strip()
+    if body.official_qq_app_secret is not None:
+        secret = body.official_qq_app_secret.strip()
+        updates["official_qq_app_secret_encrypted"] = (
+            encrypt_value(secret) if secret else ""
         )
-        if custom_conflict:
-            raise HTTPException(status_code=400, detail=custom_conflict)
-        updates["command_aliases"] = json.dumps(
-            serialize_command_aliases(normalized), ensure_ascii=False
-        )
-    if body.command_extra_prefixes is not None:
-        updates["command_extra_prefixes"] = json.dumps(
-            normalize_extra_prefixes(body.command_extra_prefixes), ensure_ascii=False
-        )
+    if body.official_qq_is_sandbox is not None:
+        if body.official_qq_is_sandbox:
+            raise HTTPException(
+                status_code=400, detail="官方 QQ 已统一 API，不再支持沙箱环境开关"
+            )
+        updates["official_qq_is_sandbox"] = "false"
+    if body.official_qq_use_websocket is not None:
+        updates["official_qq_use_websocket"] = str(
+            body.official_qq_use_websocket
+        ).lower()
     if body.link_parser_shared_media_dir is not None:
         raw = body.link_parser_shared_media_dir.strip()
         if "\x00" in raw:

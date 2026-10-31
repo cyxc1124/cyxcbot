@@ -89,10 +89,10 @@ def summarize_rcon_command_for_log(command: str) -> str:
     stripped = command.strip()
     if not stripped:
         return "(empty)"
-    name, _, rest = stripped.partition(" ")
-    if not rest:
-        return name
-    return f"{name} <{len(rest)} chars>"
+    parts = stripped.split(None, 1)
+    if len(parts) == 1:
+        return parts[0]
+    return f"{parts[0]} <{len(parts[1])} chars>"
 
 
 def _abort_websocket(ws: aiohttp.ClientWebSocketResponse) -> None:

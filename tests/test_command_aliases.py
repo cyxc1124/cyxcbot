@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 import shared.config.command_aliases as command_aliases_module
 from shared.config.command_aliases import (
     COMMAND_DEFAULTS,
@@ -23,6 +25,18 @@ from shared.config.command_aliases import (
     trigger_alternation,
     validation_error,
 )
+
+
+@pytest.fixture(autouse=True)
+def _fixed_command_prefixes(monkeypatch):
+    monkeypatch.setattr(
+        command_aliases_module, "_configured_command_starts", lambda: frozenset({"/"})
+    )
+    monkeypatch.setattr(
+        command_aliases_module,
+        "_extra_prefixes",
+        lambda: frozenset(DEFAULT_EXTRA_PREFIXES),
+    )
 
 
 def test_normalize_fills_missing_ids_with_defaults() -> None:
@@ -460,3 +474,101 @@ def test_command_prefixes_respects_configured_extra_prefixes(monkeypatch) -> Non
         command_aliases_module, "_extra_prefixes", lambda: frozenset({"~"})
     )
     assert command_prefixes() == frozenset({"/", "~"})
+
+
+@pytest.mark.parametrize("trigger", ["/status", "/ status", "!status"])
+def test_validation_rejects_prefixed_alias_conflicts(trigger):
+    config = normalize_command_aliases({"live_status": {"triggers": [trigger]}})
+    assert validation_error(config) is not None
+    config["status"].enabled = False
+    assert validation_error(config) is None
+
+
+def test_validation_uses_new_prefixes_and_longest_prefix():
+    config = normalize_command_aliases({"live_status": {"triggers": ["~status"]}})
+    assert validation_error(config, []) is None
+    assert validation_error(config, ["~"]) is not None
+    assert validation_error(config, ["~", "~s"]) is None
+
+
+def test_distinct_prefixed_triggers_do_not_conflict():
+    config = normalize_command_aliases(
+        {
+            "status": {"triggers": ["/状态"]},
+            "live_status": {"triggers": ["!状态"]},
+        }
+    )
+    assert validation_error(config) is None
+
+
+@pytest.mark.parametrize("mentioned", [False, True])
+def test_legacy_prefixed_trigger_takes_precedence(mentioned):
+    config = normalize_command_aliases({"live_status": {"triggers": ["/status"]}})
+    assert not match_plain("/status", "status", config, is_tome=mentioned)
+    assert match_plain("/status", "live_status", config, is_tome=mentioned)
+    assert match_command_arg("/status", "live_status", config) == ""
+    assert match_plain("status", "status", config, is_tome=mentioned)
+    assert match_command_arg("/status 12345", "live_status", config) == "12345"
+
+
+def test_argument_command_yields_to_legacy_prefixed_exact_trigger():
+    config = normalize_command_aliases(
+        {"live_status": {"triggers": ["status"]}, "status": {"triggers": ["/status"]}}
+    )
+    assert match_command_arg("/status", "live_status", config) is None
+    assert match_plain("/status", "status", config)
+    assert match_command_arg("status 12345", "live_status", config) == "12345"
+
+
+@pytest.mark.parametrize("text", ["/查询", "/查询 12345", "/查询   12345"])
+def test_legacy_prefixed_argument_trigger_takes_precedence(text):
+    config = normalize_command_aliases(
+        {
+            "live_status": {"triggers": ["查询"]},
+            "rust_player_bind": {"triggers": ["/查询"]},
+        }
+    )
+    expected = "12345" if "12345" in text else ""
+    assert match_command_arg(text, "live_status", config) == (
+        expected if expected else None
+    )
+    assert match_command_arg(text, "rust_player_bind", config) == expected
+    assert match_command_arg("查询 12345", "live_status", config) == "12345"
+
+
+@pytest.mark.parametrize("command_id", ["dynamic_extract", "group_special_title"])
+def test_prefixed_required_argument_alias_is_not_plain_conflict(command_id):
+    config = normalize_command_aliases({command_id: {"triggers": ["/status"]}})
+    assert validation_error(config) is None
+
+
+@pytest.mark.parametrize("command_id", ["dynamic_extract", "group_special_title"])
+@pytest.mark.parametrize("mentioned", [False, True])
+def test_prefix_required_alias_does_not_shadow_plain_trigger(command_id, mentioned):
+    config = normalize_command_aliases({command_id: {"triggers": ["/status"]}})
+    assert match_plain("/status", "status", config, is_tome=mentioned)
+
+
+@pytest.mark.parametrize("command_id", ["dynamic_extract", "group_special_title"])
+def test_prefix_required_alias_does_not_shadow_argument_trigger(command_id):
+    config = normalize_command_aliases(
+        {command_id: {"triggers": ["/查询"]}, "live_status": {"triggers": ["查询"]}}
+    )
+    assert match_command_arg("/查询 12345", "live_status", config) == "12345"
+
+
+@pytest.mark.parametrize(
+    "other_command", ["live_status", "rust_player_bind", "rust_player_shop_redeem"]
+)
+def test_quoted_extract_head_conflicts_with_whole_argument_alias(other_command):
+    from shared.config.command_aliases import parse_extract_dynamic_id
+
+    config = normalize_command_aliases(
+        {
+            "dynamic_extract": {"triggers": ["采图"]},
+            other_command: {"triggers": ["/采图"]},
+        }
+    )
+    assert parse_extract_dynamic_id("/采图", config, prefixes=frozenset({"/"})) == ""
+    assert match_command_arg("/采图", other_command, config) == ""
+    assert validation_error(config, extra_prefixes=["/"]) is not None

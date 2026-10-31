@@ -11,11 +11,24 @@ import asyncio
 from pathlib import Path
 
 from nonebot import get_driver, on_message
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, PrivateMessageEvent
+from nonebot.adapters import Bot, Event
 from nonebot.adapters.onebot.v11.exception import ActionFailed
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
+from shared.adapter.bots import is_official_qq_bot
+from shared.adapter.inbound import (
+    group_id_of,
+    is_group_event,
+    is_private_event,
+    user_id_of,
+)
+from shared.adapter.outbound import (
+    OfficialReplyLimitError,
+    official_reply_remaining,
+    send_event_message,
+)
+from shared.adapter.qq_errors import LoggedQQApiError
 from shared.config.douyin_link_parser_policy import resolve_douyin_link_parser_policy
 from shared.config.service import get_config_service
 from shared.config.shared_media import (
@@ -30,6 +43,7 @@ from utils.douyin_api import (
 
 from .config import Config, get_config, reload_config
 from .message_text import collect_message_text
+from .official_reply import prepare_official_reply
 from .send_result import is_onebot_send_success
 from .sender import build_douyin_link_message, reply_batches
 
@@ -39,7 +53,7 @@ __plugin_meta__ = PluginMetadata(
     usage="发送含抖音短链或作品链接即可触发",
     type="application",
     config=Config,
-    supported_adapters={"~onebot.v11"},
+    supported_adapters={"~onebot.v11", "~qq"},
 )
 
 group_douyin_link_parser = on_message(priority=4, block=False)
@@ -52,27 +66,28 @@ _PIPELINE_SEM = asyncio.Semaphore(_PIPELINE_LIMIT)
 _SEND_SEM = asyncio.Semaphore(1)
 
 
-async def _handle_douyin_link_message(
-    bot: Bot, event: GroupMessageEvent | PrivateMessageEvent
-) -> None:
+async def _handle_douyin_link_message(bot: Bot, event: Event) -> None:
     config = get_config()
     snap = get_config_service().get_snapshot()
+    user_id = user_id_of(event)
 
-    if isinstance(event, PrivateMessageEvent):
+    if is_private_event(event):
         scope = resolve_douyin_link_parser_policy(
             snap,
-            user_id=str(event.user_id),
+            user_id=user_id,
             is_private=True,
         )
-    else:
-        if str(event.user_id) == str(event.self_id):
+    elif is_group_event(event):
+        if user_id and user_id == str(getattr(bot, "self_id", "")):
             return
         scope = resolve_douyin_link_parser_policy(
             snap,
-            group_id=str(event.group_id),
-            user_id=str(event.user_id),
+            group_id=group_id_of(event),
+            user_id=user_id,
             is_private=False,
         )
+    else:
+        return
 
     if not scope.enabled:
         return
@@ -87,12 +102,12 @@ async def _handle_douyin_link_message(
 
     logger.info(
         "抖音链接解析：收到消息 user={} text={!r}",
-        event.user_id,
+        user_id,
         message_text[:120],
     )
 
     if _PIPELINE_SEM.locked():
-        logger.info("抖音链接解析：等待流水线名额 user={}", event.user_id)
+        logger.info("抖音链接解析：等待流水线名额 user={}", user_id)
 
     async with _PIPELINE_SEM:
         await _download_and_reply(bot, event, config, message_text)
@@ -100,12 +115,18 @@ async def _handle_douyin_link_message(
 
 async def _download_and_reply(
     bot: Bot,
-    event: GroupMessageEvent | PrivateMessageEvent,
+    event: Event,
     config: Config,
     message_text: str,
 ) -> None:
     result = None
+    generated: list[Path] = []
+    user_id = user_id_of(event)
     try:
+        official = is_official_qq_bot(bot)
+        if official and not official_reply_remaining(event):
+            logger.warning("抖音链接解析：本事件的官方回复次数已用完 user={}", user_id)
+            return
         # 与 B 站一致：媒体扁平写入共享根目录（无 douyin_* 子目录）。
         media_dir = ensure_shared_media_dir(
             get_config_service().get_snapshot().link_parser_shared_media_dir
@@ -119,44 +140,45 @@ async def _download_and_reply(
         if result.file_path:
             chmod_shared_media_file(result.file_path)
         if _SEND_SEM.locked():
-            logger.info("抖音链接解析：等待前序发送完成 user={}", event.user_id)
+            logger.info("抖音链接解析：等待前序发送完成 user={}", user_id)
         async with _SEND_SEM:
             reply = build_douyin_link_message(result, config.message_templates)
+            if official:
+                reply, generated = await prepare_official_reply(
+                    reply, official_reply_remaining(event), media_dir
+                )
             # 含 video 时拆成媒体 + 文案两条：同条混排时 QQ 常只显示视频
             batches = reply_batches(reply)
-            send_results: list[object] = []
-            for batch in batches:
-                if isinstance(event, GroupMessageEvent):
-                    send_results.append(
-                        await bot.send_group_msg(group_id=event.group_id, message=batch)
-                    )
-                else:
-                    send_results.append(
-                        await bot.send_private_msg(user_id=event.user_id, message=batch)
-                    )
+            send_results: list[object] = [
+                await send_event_message(bot, event, batch) for batch in batches
+            ]
 
         if not send_results or not all(
             is_onebot_send_success(item) for item in send_results
         ):
             logger.warning(
                 "抖音链接解析发送未确认成功 user={} aweme_id={} results={!r}",
-                event.user_id,
+                user_id,
                 result.aweme_id,
                 send_results,
             )
             return
 
         reply_scope = (
-            f"group={event.group_id}"
-            if isinstance(event, GroupMessageEvent)
-            else "private"
+            f"group={group_id_of(event)}" if is_group_event(event) else "private"
         )
         logger.info(
             "已回复抖音链接解析: user={}, aweme_id={}, message_ids={}, {}",
-            event.user_id,
+            user_id,
             result.aweme_id,
             [_message_id_of(item) for item in send_results],
             reply_scope,
+        )
+    except LoggedQQApiError, OfficialReplyLimitError:
+        logger.warning(
+            "抖音链接解析：官方消息未完成 user={} aweme_id={}",
+            user_id,
+            getattr(result, "aweme_id", None),
         )
     except DouyinResolveError as exc:
         logger.warning("抖音链接解析失败: {}", exc)
@@ -167,7 +189,7 @@ async def _download_and_reply(
         )
         logger.warning(
             "抖音链接解析发送失败 user={} aweme_id={} retcode={} detail={!r}",
-            event.user_id,
+            user_id,
             getattr(result, "aweme_id", None),
             getattr(exc, "retcode", None),
             detail[:200],
@@ -179,6 +201,8 @@ async def _download_and_reply(
         # 失败路径同样清理，避免临时文件泄漏（共享根目录本身不删）。
         if result is not None:
             _cleanup_result_files(result)
+        for path in generated:
+            path.unlink(missing_ok=True)
 
 
 def _message_id_of(send_result: object) -> object:
@@ -201,12 +225,16 @@ def _cleanup_result_files(result) -> None:
 
 
 @group_douyin_link_parser.handle()
-async def handle_group_douyin_link(bot: Bot, event: GroupMessageEvent):
+async def handle_group_douyin_link(bot: Bot, event: Event):
+    if not is_group_event(event):
+        return
     await _handle_douyin_link_message(bot, event)
 
 
 @private_douyin_link_parser.handle()
-async def handle_private_douyin_link(bot: Bot, event: PrivateMessageEvent):
+async def handle_private_douyin_link(bot: Bot, event: Event):
+    if not is_private_event(event):
+        return
     await _handle_douyin_link_message(bot, event)
 
 

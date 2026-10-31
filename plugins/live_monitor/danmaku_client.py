@@ -552,7 +552,7 @@ class DanmakuClient:
 
         # 处理开播命令
         if cmd == DanmakuCommand.LIVE.value:
-            logger.info("房间 {} 收到开播信号 (LIVE)", self.room_id)
+            logger.debug("房间 {} 收到开播信号 (LIVE)", self.room_id)
             if self.on_live:
                 try:
                     await self.on_live()
@@ -565,7 +565,7 @@ class DanmakuClient:
         elif cmd == DanmakuCommand.PREPARING.value:
             # round=1 表示轮播
             round_status = msg.get("round", 0)
-            logger.info(
+            logger.debug(
                 "房间 {} 收到关播信号 (PREPARING, round={})",
                 self.room_id,
                 round_status,

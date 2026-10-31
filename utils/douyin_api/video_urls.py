@@ -6,6 +6,8 @@ from typing import Any, Optional
 from urllib.parse import urlparse
 
 from .client import DouyinAPIClient
+from .cookie_utils import cookie_header
+from .validators import _is_douyin_web_host
 
 _PLAY_ADDR_KEYS = (
     "play_addr_h264",
@@ -27,12 +29,16 @@ _QUALITY_TARGET_WIDTH: dict[str, int] = {
 def download_headers(
     api_client: DouyinAPIClient, *, user_agent: Optional[str] = None
 ) -> dict[str, str]:
-    return {
+    headers = {
         "Referer": f"{api_client.BASE_URL}/",
         "Origin": api_client.BASE_URL,
         "Accept": "*/*",
         "User-Agent": user_agent or api_client.headers.get("User-Agent", ""),
     }
+    cookie = cookie_header(getattr(api_client, "cookies", {}) or {})
+    if cookie:
+        headers["Cookie"] = cookie
+    return headers
 
 
 def is_watermarked_media_url(url: str) -> bool:
@@ -166,7 +172,7 @@ def _partition_video_candidates(
 
     for candidate in url_candidates:
         is_watermarked = is_watermarked_media_url(candidate)
-        if urlparse(candidate).netloc.endswith("douyin.com"):
+        if _is_douyin_web_host(urlparse(candidate).hostname or ""):
             if is_watermarked:
                 if watermarked is None:
                     watermarked = _sign_play_candidate(api_client, candidate)

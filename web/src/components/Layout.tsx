@@ -1,79 +1,28 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { useAuth } from '../contexts/AuthContext'
 import { useSidebar } from '../contexts/SidebarContext'
 import { getAbout } from '../api/client'
 import type { AboutInfo } from '../api/types'
-import {
-  applyTheme,
-  getSavedColorTheme,
-  getSavedFontFamily,
-  getSavedThemeMode,
-  type ColorTheme,
-  type FontFamily,
-  type ThemeMode,
-} from '../lib/theme'
-
-type NavItem = { to: string; label: string }
-type NavSection = { section: string; items: NavItem[] }
-
-const navSections: NavSection[] = [
-  { section: '概览', items: [{ to: '/', label: '仪表盘' }] },
-  {
-    section: 'B 站',
-    items: [
-      { to: '/dynamic', label: '动态订阅' },
-      { to: '/live', label: '直播订阅' },
-      { to: '/templates/bilibili', label: '消息模板' },
-    ],
-  },
-  {
-    section: 'X',
-    items: [
-      { to: '/x', label: '推文订阅' },
-      { to: '/templates/x', label: '消息模板' },
-    ],
-  },
-  { section: '抖音', items: [{ to: '/templates/douyin', label: '消息模板' }] },
-  {
-    section: '会话',
-    items: [
-      { to: '/groups', label: '群组' },
-      { to: '/private', label: '好友' },
-    ],
-  },
-  { section: '游戏', items: [{ to: '/rust-rcon', label: 'Rust 群管' }] },
-  {
-    section: '系统',
-    items: [
-      { to: '/settings', label: '系统设置' },
-      { to: '/logs', label: '运行日志' },
-      { to: '/about', label: '关于' },
-    ],
-  },
-]
+import { ThemeModeSwitch } from './ThemeModeSwitch'
+import { BotConnectionStatus } from './BotConnectionStatus'
+import { UserMenu } from './UserMenu'
+import { Icon } from './Icon'
+import { AppBrand, AppFooter } from './AppBrand'
+import { findNavigation, navigationSections as navSections } from '../constants/navigation'
 
 const RAIL_WIDTH_CLASS = 'w-12'
-const SIDEBAR_WIDTH_CLASS = 'w-64'
-const NAV_SECTION_COLLAPSED_KEY = 'cyxcbot.navSectionCollapsed'
-
-function pathInSection(pathname: string, items: NavItem[]): boolean {
-  return items.some((item) =>
-    item.to === '/'
-      ? pathname === '/'
-      : pathname === item.to || pathname.startsWith(`${item.to}/`),
-  )
-}
+const SIDEBAR_WIDTH_CLASS = 'w-72 max-w-[calc(100vw-2rem)] xl:w-80'
+const NAV_SECTION_COLLAPSED_KEY = 'cyxcbot.navSectionCollapsed.v2'
 
 function loadCollapsedSections(): Set<string> {
   try {
     const raw = localStorage.getItem(NAV_SECTION_COLLAPSED_KEY)
-    if (!raw) return new Set()
+    if (!raw) return new Set(navSections.map((section) => section.section))
     const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return new Set()
+    if (!Array.isArray(parsed)) return new Set(navSections.map((section) => section.section))
     return new Set(parsed.filter((v): v is string => typeof v === 'string'))
   } catch {
-    return new Set()
+    return new Set(navSections.map((section) => section.section))
   }
 }
 
@@ -87,28 +36,39 @@ function persistCollapsedSections(collapsed: Set<string>) {
 
 /** 展开含当前路由的分组；直达/刷新时也要跑，不能只靠 pathname 变化。 */
 function expandActiveSection(collapsed: Set<string>, pathname: string): Set<string> {
-  const active = navSections.find((group) => pathInSection(pathname, group.items))
-  if (!active || !collapsed.has(active.section)) return collapsed
-  const next = new Set(collapsed)
-  next.delete(active.section)
+  const active = findNavigation(pathname)
+  if (!active) return collapsed
+  const next = new Set(navSections.filter((section) => section.section !== active.section).map((section) => section.section))
+  if (next.size === collapsed.size && [...next].every((section) => collapsed.has(section))) return collapsed
   persistCollapsedSections(next)
   return next
 }
 
 export function Layout() {
-  const { user, logout } = useAuth()
   const { navCollapsed, setNavCollapsed } = useSidebar()
   const location = useLocation()
-  const [mode, setMode] = useState<ThemeMode>(() => getSavedThemeMode())
-  const [colorTheme, setColorTheme] = useState<ColorTheme>(() => getSavedColorTheme())
-  const [fontFamily, setFontFamily] = useState<FontFamily>(() => getSavedFontFamily())
+  const current = findNavigation(location.pathname)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
   const [navHoverExpanded, setNavHoverExpanded] = useState(false)
   const [prevPathname, setPrevPathname] = useState(location.pathname)
   const [about, setAbout] = useState<AboutInfo | null>(null)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() =>
     expandActiveSection(loadCollapsedSections(), location.pathname),
   )
+
+  useEffect(() => { window.scrollTo(0, 0) }, [location.pathname])
+
+  useEffect(() => {
+    if (!sidebarOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setSidebarOpen(false)
+      menuButtonRef.current?.focus()
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [sidebarOpen])
 
   useEffect(() => {
     let cancelled = false
@@ -136,30 +96,19 @@ export function Layout() {
   const toggleSection = (section: string) => {
     setCollapsedSections((prev) => {
       const next = new Set(prev)
-      if (next.has(section)) next.delete(section)
-      else next.add(section)
-      persistCollapsedSections(next)
-      return next
+      if (!next.has(section)) {
+        next.add(section)
+        persistCollapsedSections(next)
+        return next
+      }
+      const collapsed = new Set(navSections.map((group) => group.section))
+      collapsed.delete(section)
+      persistCollapsedSections(collapsed)
+      return collapsed
     })
   }
 
   const showFullNav = !navCollapsed || navHoverExpanded
-
-  const toggleMode = () => {
-    const next: ThemeMode = mode === 'dark' ? 'light' : 'dark'
-    setMode(next)
-    applyTheme(next, colorTheme, fontFamily)
-  }
-
-  const handleColorThemeChange = (next: ColorTheme) => {
-    setColorTheme(next)
-    applyTheme(mode, next, fontFamily)
-  }
-
-  const handleFontChange = (next: FontFamily) => {
-    setFontFamily(next)
-    applyTheme(mode, colorTheme, next)
-  }
 
   const toggleNavCollapsed = () => {
     if (navCollapsed) {
@@ -177,10 +126,10 @@ export function Layout() {
     : SIDEBAR_WIDTH_CLASS
 
   const asideTranslateClass = navCollapsed
-    ? '-translate-x-full lg:translate-x-0'
+    ? 'invisible -translate-x-full lg:visible lg:translate-x-0'
     : sidebarOpen
       ? 'translate-x-0'
-      : '-translate-x-full lg:translate-x-0'
+      : 'invisible -translate-x-full lg:visible lg:translate-x-0'
 
   const GITHUB_REPO = 'https://github.com/cyxc1124/cyxcbot'
 
@@ -209,7 +158,7 @@ export function Layout() {
   })()
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="console-shell min-h-screen bg-background">
       {sidebarOpen && !navCollapsed && (
         <button
           type="button"
@@ -220,6 +169,8 @@ export function Layout() {
       )}
 
       <aside
+        id="app-navigation"
+        aria-label="主导航"
         className={`fixed inset-y-0 left-0 z-50 flex h-screen flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width,transform,box-shadow] duration-200 ${asideWidthClass} ${asideTranslateClass} ${
           navCollapsed && navHoverExpanded ? 'shadow-xl' : ''
         }`}
@@ -231,17 +182,16 @@ export function Layout() {
         }}
       >
         <div
-          className={`flex h-16 shrink-0 items-center border-b border-sidebar-border ${
-            showFullNav ? 'gap-3 px-6' : 'justify-center px-0'
+          className={`relative flex min-h-22 shrink-0 items-center border-b border-sidebar-border ${
+            showFullNav ? 'gap-3 px-4 py-4' : 'justify-center px-0'
           }`}
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
-            C
-          </span>
+          {!showFullNav && <img src="/brand-avatar.png" alt="机器草头像" className="size-9 rounded-xl border border-border" width={36} height={36} />}
+          {showFullNav && <button type="button" aria-label={navCollapsed ? '展开导航' : '收起导航'} title={navCollapsed ? '展开导航' : '收起导航'} onClick={toggleNavCollapsed} className="btn-ghost absolute top-3 right-1 hidden min-h-7 px-1 lg:inline-flex"><Icon name="chevron-down" className="size-3 rotate-90" /></button>}
           {showFullNav && (
             <div className="min-w-0">
-              <h1 className="flex items-center gap-1.5 truncate text-sm font-bold text-sidebar-foreground">
-                <span>机器草</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <AppBrand compact version={versionLine ?? undefined} subtitle="机器人管理后台" />
                 {about?.update_available && about?.update_url && (
                   <a
                     href={about.update_url}
@@ -252,20 +202,52 @@ export function Layout() {
                     有新版本
                   </a>
                 )}
-              </h1>
-              <p className="truncate text-xs text-muted-foreground">
-                {versionLine}
-              </p>
+              </div>
             </div>
           )}
         </div>
 
         {showFullNav ? (
           <>
-            <nav className="flex-1 space-y-2 overflow-y-auto p-4">
-              {navSections.map((group) => {
+            <nav aria-label="功能导航" className="flex-1 space-y-1 overflow-y-auto px-4 py-4">
+              {navSections.map((group, sectionIndex) => {
                 const expanded = !collapsedSections.has(group.section)
-                const panelId = `nav-section-${group.section}`
+                const panelId = `nav-section-${sectionIndex}`
+                const items = group.groups.map((subgroup, index) => {
+                  const links = subgroup.items.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.to === '/'}
+                      onClick={() => {
+                        setSidebarOpen(false)
+                        setNavHoverExpanded(false)
+                      }}
+                      className={({ isActive }) => `${isActive ? 'nav-link nav-link-active' : 'nav-link'} py-2 text-[13px]`}
+                    >
+                      {!subgroup.label && <Icon name={item.icon} className="size-4 shrink-0" />}
+                      <span>{item.label}</span>
+                    </NavLink>
+                  ))
+                  return subgroup.label ? (
+                    <details key={subgroup.label} open className="group/subnav">
+                      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-2 text-xs font-semibold hover:bg-sidebar-accent">
+                        <Icon name="chevron-down" className="size-3 -rotate-90 group-open/subnav:rotate-0" />
+                        {subgroup.label}
+                      </summary>
+                      <div className="ml-3 space-y-0.5 border-l border-sidebar-border pl-2">{links}</div>
+                    </details>
+                  ) : <div key={index} className="space-y-0.5">{links}</div>
+                })
+                const standaloneItem = !group.branch && group.groups.length === 1 && !group.groups[0].label && group.groups[0].items.length === 1
+                  ? group.groups[0].items[0]
+                  : null
+                if (standaloneItem) return (
+                  <NavLink key={group.section} to={standaloneItem.to} end={standaloneItem.to === '/'} onClick={() => setSidebarOpen(false)}
+                    className={({ isActive }) => isActive ? 'nav-link nav-link-active text-sm' : 'nav-link text-sm'}>
+                    <Icon name={standaloneItem.icon} className="size-4 shrink-0" /><span>{standaloneItem.label}</span>
+                  </NavLink>
+                )
                 return (
                   <div key={group.section} className="space-y-1">
                     <button
@@ -273,54 +255,36 @@ export function Layout() {
                       onClick={() => toggleSection(group.section)}
                       aria-expanded={expanded}
                       aria-controls={panelId}
-                      className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-left text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-sidebar-accent ${current?.section === group.section ? 'text-sidebar-primary' : 'text-sidebar-foreground'}`}
                     >
-                      <span>{group.section}</span>
+                      <span className="flex items-center gap-3"><Icon name={group.icon} className="size-4 shrink-0" />{group.section}</span>
                       <span
                         className={`text-xs font-normal text-muted-foreground transition-transform ${
-                          expanded ? 'rotate-90' : ''
+                          expanded ? 'rotate-180' : ''
                         }`}
                         aria-hidden
                       >
-                        ›
+                        <Icon name="chevron-down" className="size-3" />
                       </span>
                     </button>
                     {expanded && (
-                      <div id={panelId} className="space-y-0.5 pl-1">
-                        {group.items.map((item) => (
-                          <NavLink
-                            key={item.to}
-                            to={item.to}
-                            end={item.to === '/'}
-                            onClick={() => {
-                              setSidebarOpen(false)
-                              setNavHoverExpanded(false)
-                            }}
-                            className={({ isActive }) =>
-                              isActive
-                                ? 'nav-link nav-link-active text-[13px]'
-                                : 'nav-link text-[13px]'
-                            }
-                          >
-                            {item.label}
-                          </NavLink>
-                        ))}
+                      <div id={panelId} className="space-y-0.5 pl-7">
+                        {group.branch ? (
+                          <details key={location.pathname} open className="group/branch">
+                            <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-2 text-[13px] font-medium hover:bg-sidebar-accent">
+                              <Icon name="server" className="size-4 shrink-0" />
+                              {group.branch}
+                              <Icon name="chevron-down" className="ml-auto size-3 -rotate-90 group-open/branch:rotate-0" />
+                            </summary>
+                            <div className="pl-3">{items}</div>
+                          </details>
+                        ) : items}
                       </div>
                     )}
                   </div>
                 )
               })}
             </nav>
-
-            <div className="shrink-0 border-t border-sidebar-border p-4">
-              <div className="mb-3 text-sm">
-                <p className="font-medium text-sidebar-foreground">{user?.username}</p>
-                <p className="text-xs text-muted-foreground">{user?.is_admin ? '管理员' : '用户'}</p>
-              </div>
-              <button type="button" onClick={logout} className="btn-secondary w-full text-sm">
-                退出登录
-              </button>
-            </div>
           </>
         ) : (
           <div className="flex flex-1 items-center justify-center">
@@ -336,65 +300,48 @@ export function Layout() {
 
       <div
         className={`flex min-h-screen flex-col transition-[padding] duration-200 ${
-          navCollapsed ? 'lg:pl-12' : 'lg:pl-64'
+          navCollapsed ? 'lg:pl-12' : 'lg:pl-72 xl:pl-80'
         }`}
       >
-        <header className="sticky top-0 z-30 flex h-16 items-center border-b border-border bg-background/80 px-4 backdrop-blur-sm lg:px-8">
-          <div className="flex items-center gap-2">
+        <header className="sticky top-0 z-30 flex min-h-16 flex-wrap items-center justify-between gap-2 border-b border-transparent bg-background/95 px-3 py-2 backdrop-blur-sm sm:flex-nowrap sm:px-4 lg:pointer-events-none lg:bg-transparent lg:px-7 lg:backdrop-blur-none">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
-              className="btn-ghost text-sm"
+              className={navCollapsed ? "btn-ghost pointer-events-auto hidden text-sm lg:inline-flex" : "hidden"}
               onClick={toggleNavCollapsed}
             >
               {navCollapsed ? '展开导航' : '收起导航'}
             </button>
             <button
               type="button"
-              className="btn-ghost text-sm lg:hidden"
+              className="btn-ghost px-2 text-sm lg:hidden"
+              ref={menuButtonRef}
+              aria-expanded={sidebarOpen}
+              aria-controls="app-navigation"
               onClick={() => setSidebarOpen(true)}
             >
               菜单
             </button>
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span className="hidden sm:inline">字体</span>
-              <select
-                className="input w-auto min-w-28 py-1.5 text-sm"
-                value={fontFamily}
-                onChange={(e) => handleFontChange(e.target.value as FontFamily)}
-                aria-label="字体"
-              >
-                <option value="maple">Maple Mono</option>
-                <option value="system">系统字体</option>
-              </select>
-            </label>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span className="hidden sm:inline">配色</span>
-              <select
-                className="input w-auto min-w-28 py-1.5 text-sm"
-                value={colorTheme}
-                onChange={(e) => handleColorThemeChange(e.target.value as ColorTheme)}
-                aria-label="配色方案"
-              >
-                <option value="default">默认</option>
-                <option value="claude">Claude</option>
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={toggleMode}
-              className="btn-ghost text-sm"
-              title="切换浅色/深色"
-            >
-              {mode === 'dark' ? '浅色' : '深色'}
-            </button>
+          <div className="pointer-events-auto contents sm:flex sm:items-center sm:gap-4">
+            <div className="order-1 flex w-full items-center justify-end gap-2 sm:order-none sm:w-auto sm:gap-4">
+              <BotConnectionStatus />
+              <ThemeModeSwitch />
+            </div>
+            <UserMenu />
           </div>
         </header>
 
-        <main className="flex-1 p-4 lg:p-8">
+        <main className="mx-auto w-full max-w-[1560px] min-w-0 flex-1 px-4 py-5 lg:px-7 lg:pb-8 lg:pt-2">
+          {current && <nav aria-label="当前位置" className="mb-3 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+            {current.section !== current.item.label && <><span>{current.section}</span><span aria-hidden="true">/</span></>}
+            {current.branch && <><span>{current.branch}</span><span aria-hidden="true">/</span></>}
+            {current.group && <><span>{current.group}</span><span aria-hidden="true">/</span></>}
+            <span aria-current="page">{current.item.label}</span>
+          </nav>}
           <Outlet />
         </main>
+        <AppFooter />
       </div>
     </div>
   )

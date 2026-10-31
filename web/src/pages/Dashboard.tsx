@@ -15,6 +15,7 @@ import type {
   ConnectionsStatus,
   DynamicMonitorStatus,
   LiveMonitorStatus,
+  OfficialQqConnectionStatus,
   QqConnectionStatus,
   SystemMonitorStatus,
   XMonitorStatus,
@@ -48,8 +49,8 @@ function bilibiliSettingsLink(action = '登录') {
   return (
     <>
       前往
-      <Link to="/settings/account" className="font-medium text-primary hover:opacity-80 hover:underline">
-      系统设置
+      <Link to="/bilibili/account" className="font-medium text-primary hover:opacity-80 hover:underline">
+      B 站账号
       </Link>
       {action}
     </>
@@ -80,6 +81,29 @@ function qqCardValue(q: QqConnectionStatus | undefined): string {
     return q.bots[0].nickname || q.bots[0].qq
   }
   return `${q.bot_count} 个账号`
+}
+
+function officialQqCardValue(q: OfficialQqConnectionStatus | undefined): string {
+  if (!q) return '—'
+  if (q.connected) return '已连接'
+  if (q.configured) return '未连接'
+  return '未配置'
+}
+
+function officialQqSubtitle(q: OfficialQqConnectionStatus | undefined) {
+  if (!q) return undefined
+  if (!q.configured) {
+    return (
+      <>
+        前往
+        <Link to="/system/connections" className="font-medium text-primary hover:opacity-80 hover:underline">
+          官方 Bot
+        </Link>
+        配置
+      </>
+    )
+  }
+  return q.message
 }
 
 export function DashboardPage() {
@@ -140,7 +164,7 @@ export function DashboardPage() {
 
       {error && <LoadErrorBanner message={error} onRetry={retryLoad} />}
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="机器草状态"
           value={running ? '运行中' : '已停止'}
@@ -155,6 +179,11 @@ export function DashboardPage() {
           title="QQ 登录"
           value={qqCardValue(connections?.qq)}
           subtitle={connections?.qq.message}
+        />
+        <StatCard
+          title="官方 Bot"
+          value={officialQqCardValue(connections?.official_qq)}
+          subtitle={officialQqSubtitle(connections?.official_qq)}
         />
       </div>
 
@@ -176,7 +205,7 @@ export function DashboardPage() {
                 : undefined,
               <>
                 管理订阅见
-                <Link to="/dynamic" className="font-medium text-primary hover:opacity-80 hover:underline">
+                <Link to="/bilibili/dynamic" className="font-medium text-primary hover:opacity-80 hover:underline">
                   动态监控
                 </Link>
               </>,
@@ -202,7 +231,7 @@ export function DashboardPage() {
                 : undefined,
               <>
                 管理订阅见
-                <Link to="/live" className="font-medium text-primary hover:opacity-80 hover:underline">
+                <Link to="/bilibili/live" className="font-medium text-primary hover:opacity-80 hover:underline">
                   直播监控
                 </Link>
               </>,
@@ -228,7 +257,7 @@ export function DashboardPage() {
                 : undefined,
               <>
                 管理订阅见
-                <Link to="/x" className="font-medium text-primary hover:opacity-80 hover:underline">
+                <Link to="/x/subscriptions" className="font-medium text-primary hover:opacity-80 hover:underline">
                   推文订阅
                 </Link>
               </>,

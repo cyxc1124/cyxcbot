@@ -8,20 +8,25 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+  pull_request:
+    branches: [develop, main]
 
 env:
   PYTHON_VERSION: '3.14'
+  PYTHONUNBUFFERED: '1'
+  PYTEST_ADDOPTS: '-x -vv -o faulthandler_timeout=60'
 
 jobs:
   build-windows:
     name: Build Windows Package
     runs-on: windows-latest
+    timeout-minutes: 15
     permissions:
       contents: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -30,7 +35,7 @@ jobs:
         shell: bash
         run: |
           GIT_COMMIT=$(git rev-parse HEAD)
-          GIT_BRANCH=${GITHUB_REF#refs/heads/}
+          GIT_BRANCH=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
           GIT_TAG=""
           BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           BUILD_NUMBER=${{ github.run_number }}
@@ -39,6 +44,8 @@ jobs:
             GIT_TAG=${GITHUB_REF#refs/tags/}
             GIT_BRANCH=""
             VERSION=${GIT_TAG}
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            VERSION="pr-${{ github.event.number }}-${GIT_COMMIT:0:8}"
           else
             VERSION="${GIT_BRANCH}-${GIT_COMMIT:0:8}"
           fi
@@ -63,19 +70,26 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: '^26.13.0'
           cache: npm
           cache-dependency-path: web/package-lock.json
 
       - name: Build Windows package
         shell: pwsh
         env:
+          # Keep pip's C++ build paths below MSVC's legacy path-length limit.
+          TMPDIR: ${{ runner.temp }}
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/Playwright browsers 中文
           GIT_COMMIT: ${{ steps.version.outputs.git-commit }}
           GIT_TAG: ${{ steps.version.outputs.git-tag }}
           GIT_BRANCH: ${{ steps.version.outputs.git-branch }}
           BUILD_TIME: ${{ steps.version.outputs.build-time }}
           BUILD_NUMBER: ${{ steps.version.outputs.build-number }}
-        run: ./scripts/build-windows.ps1 -Version "${{ steps.version.outputs.version }}"
+        run: |
+          ./tests/test_windows_build.ps1
+          ./scripts/build-windows.ps1 -Version "${{ steps.version.outputs.version }}"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7

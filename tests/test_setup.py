@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from tests.db_test_helpers import ensure_real_db_modules, shared_sqlite_url
+from tests.db_test_helpers import ensure_real_db_modules
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -18,10 +19,12 @@ def _init_nonebot() -> None:
 
 
 @pytest.fixture
-async def session_factory():
+async def session_factory(tmp_path: Path):
     from shared.db.base import Model
 
-    engine = create_async_engine(shared_sqlite_url())
+    # aiosqlite 把 mode=memory 当成非文件库，走 StaticPool，两条会话共用一条连接。
+    # 并发时失败事务的回滚会把另一条已写入的用户一起清掉。
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'setup.db'}")
     async with engine.begin() as conn:
         await conn.run_sync(Model.metadata.create_all)
 
@@ -41,20 +44,19 @@ async def _complete_setup(
     from shared.db.models import User
 
     async with factory() as session:
-        async with session.begin():
-            try:
+        try:
+            async with session.begin():
                 await claim_initial_setup(session)
-            except HTTPException as exc:
-                return str(exc.status_code)
-
-            session.add(
-                User(
-                    username=username,
-                    password_hash=hash_password("password123"),
-                    is_admin=True,
+                session.add(
+                    User(
+                        username=username,
+                        password_hash=hash_password("password123"),
+                        is_admin=True,
+                    )
                 )
-            )
-            return "success"
+        except HTTPException as exc:
+            return str(exc.status_code)
+        return "success"
 
 
 @pytest.mark.asyncio

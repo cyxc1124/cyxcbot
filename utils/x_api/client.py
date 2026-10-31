@@ -26,25 +26,17 @@ _API_BASE = "https://api.x.com/2"
 def create_session(proxy: ProxyConfig | None = None) -> aiohttp.ClientSession:
     """Create an aiohttp session.
 
-    已配置的 http/https/socks5 代理一律走 ProxyConnector，保证同 session 上的
-    API 与 t.co 解析请求都经代理，避免部分请求直连。
+    HTTPS 代理由 aiohttp 维护 TLS；HTTP/SOCKS5 走 ProxyConnector。
+    同 session 上的 API、短链接和媒体请求均经代理。
     """
     if proxy is not None and proxy.is_configured:
         url = proxy.to_url()
         if url:
+            if proxy.scheme == "https":
+                return aiohttp.ClientSession(proxy=url)
+
             from aiohttp_socks import ProxyConnector
 
-            # aiohttp_socks 只认 http/socks4/socks5。
-            # UI 的 https 多为误选（Clash 等本地代理实际是 HTTP CONNECT）；
-            # 真 TLS-to-proxy 会连不上，且账号密码会以明文发往代理主机。
-            if proxy.scheme == "https":
-                logger.warning(
-                    "X 代理 scheme=https 不受支持，已按 http://{}:{} 连接；"
-                    "若代理仅接受 TLS，请改用 http/socks5 或升级客户端",
-                    proxy.host,
-                    proxy.port,
-                )
-                url = "http://" + url.removeprefix("https://")
             return aiohttp.ClientSession(connector=ProxyConnector.from_url(url))
     return aiohttp.ClientSession()
 

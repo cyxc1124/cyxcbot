@@ -18,6 +18,10 @@ from admin.schemas.status_check import (
     PrivateStatusPolicyUpdateRequest,
     StatusCheckDisplayOptions,
 )
+from admin.services.message_policy import (
+    ensure_message_policy_edit_allowed,
+    visible_message_policy_rows,
+)
 from admin.services.onebot_bridge import (
     get_friend_list,
     get_friend_list_with_availability,
@@ -44,16 +48,6 @@ def _normalized_user_ids(user_ids: list[str]) -> list[str]:
     return sorted({str(uid).strip() for uid in user_ids if str(uid).strip()})
 
 
-async def _ensure_friend_list_complete_for_mutation() -> None:
-    invalidate_user_list_cache()
-    _, fetch_status = await get_friend_list_with_availability()
-    if fetch_status != "ok":
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="好友列表不完整，暂不可修改策略",
-        )
-
-
 @router.get("/friends", response_model=FriendListResponse)
 async def list_friends(_: AdminUser):
     users = await get_friend_list()
@@ -69,10 +63,12 @@ async def get_message_policy(_: AdminUser):
     return PrivateMessagePolicyResponse(
         restrict=snap.message_private_restrict,
         enabled_user_ids=snap.message_enabled_user_ids,
-        users=[]
-        if fetch_status == "offline"
-        else [FriendInfo(**user) for user in users],
+        users=[
+            FriendInfo(**user)
+            for user in visible_message_policy_rows(users, fetch_status)
+        ],
         friend_list_available=available,
+        onebot_list_status=fetch_status,
     )
 
 
@@ -81,11 +77,22 @@ async def update_message_policy(
     body: PrivateMessagePolicyUpdateRequest,
     _: AdminUser,
 ):
-    await _ensure_friend_list_complete_for_mutation()
     svc = get_config_service()
+    invalidate_user_list_cache()
+    users, fetch_status = await get_friend_list_with_availability()
+    snap = svc.get_snapshot()
     enabled_ids = [
         str(uid).strip() for uid in body.enabled_user_ids if str(uid).strip()
     ]
+    ensure_message_policy_edit_allowed(
+        fetch_status=fetch_status,
+        rows=users,
+        id_key="user_id",
+        current_restrict=snap.message_private_restrict,
+        current_ids=snap.message_enabled_user_ids,
+        restrict=body.restrict,
+        enabled_ids=enabled_ids,
+    )
     await svc.set_settings(
         {
             "message_private_restrict": str(body.restrict).lower(),
@@ -100,10 +107,12 @@ async def update_message_policy(
     return PrivateMessagePolicyResponse(
         restrict=snap.message_private_restrict,
         enabled_user_ids=snap.message_enabled_user_ids,
-        users=[]
-        if fetch_status == "offline"
-        else [FriendInfo(**user) for user in users],
+        users=[
+            FriendInfo(**user)
+            for user in visible_message_policy_rows(users, fetch_status)
+        ],
         friend_list_available=_friend_list_available(fetch_status),
+        onebot_list_status=fetch_status,
     )
 
 
@@ -132,8 +141,9 @@ def _ensure_private_message_enabled(user_id: str, snap) -> None:
 
 
 def _status_policy_response(
-    snap, users: list[dict], *, friend_list_available: bool
+    snap, users: list[dict], *, fetch_status: str
 ) -> PrivateStatusPolicyResponse:
+    friend_list_available = _friend_list_available(fetch_status)
     return PrivateStatusPolicyResponse(
         restrict=snap.status_check_private_restrict,
         enabled_user_ids=filter_enabled_user_ids_to_visible_users(
@@ -144,6 +154,7 @@ def _status_policy_response(
         users=[FriendInfo(**user) for user in users],
         display=_status_display_options(snap),
         friend_list_available=friend_list_available,
+        onebot_list_status=fetch_status,
     )
 
 
@@ -152,9 +163,10 @@ async def get_status_policy(_: AdminUser):
     snap = get_config_service().get_snapshot()
     invalidate_user_list_cache()
     friends, fetch_status = await get_friend_list_with_availability()
-    available = _friend_list_available(fetch_status)
-    users = [] if fetch_status == "offline" else _message_enabled_users(snap, friends)
-    return _status_policy_response(snap, users, friend_list_available=available)
+    users = _message_enabled_users(
+        snap, visible_message_policy_rows(friends, fetch_status)
+    )
+    return _status_policy_response(snap, users, fetch_status=fetch_status)
 
 
 @router.put("/status-policy", response_model=PrivateStatusPolicyResponse)
@@ -167,8 +179,8 @@ async def update_status_policy(
     invalidate_user_list_cache()
     friends, fetch_status = await get_friend_list_with_availability()
     available = _friend_list_available(fetch_status)
-    message_users = (
-        [] if fetch_status == "offline" else _message_enabled_users(snap, friends)
+    message_users = _message_enabled_users(
+        snap, visible_message_policy_rows(friends, fetch_status)
     )
     body_enabled_ids = [
         str(uid).strip() for uid in body.enabled_user_ids if str(uid).strip()
@@ -180,11 +192,20 @@ async def update_status_policy(
             != _normalized_user_ids(snap.status_check_enabled_user_ids)
         )
         if whitelist_changed:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="好友列表不完整，暂不可修改状态查询白名单",
+            ensure_message_policy_edit_allowed(
+                fetch_status=fetch_status,
+                rows=message_users,
+                id_key="user_id",
+                current_restrict=snap.status_check_private_restrict,
+                current_ids=snap.status_check_enabled_user_ids,
+                restrict=body.restrict,
+                enabled_ids=body_enabled_ids,
             )
-        enabled_ids = list(snap.status_check_enabled_user_ids)
+        enabled_ids = (
+            body_enabled_ids
+            if whitelist_changed
+            else list(snap.status_check_enabled_user_ids)
+        )
         restrict = snap.status_check_private_restrict
     else:
         enabled_ids = body_enabled_ids
@@ -212,6 +233,7 @@ async def update_status_policy(
 
     snap = svc.get_snapshot()
     friends, fetch_status = await get_friend_list_with_availability()
-    available = _friend_list_available(fetch_status)
-    users = [] if fetch_status == "offline" else _message_enabled_users(snap, friends)
-    return _status_policy_response(snap, users, friend_list_available=available)
+    users = _message_enabled_users(
+        snap, visible_message_policy_rows(friends, fetch_status)
+    )
+    return _status_policy_response(snap, users, fetch_status=fetch_status)

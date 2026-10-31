@@ -15,13 +15,14 @@ export function computePolicyAfterToggle(
   allIds: string[],
   restrict: boolean,
   enabledIds: string[],
+  listComplete = true,
 ): { restrict: boolean; enabled_ids: string[] } {
   if (enabled) {
     if (!restrict) {
       return { restrict: false, enabled_ids: [] }
     }
     const nextEnabled = [...new Set([...enabledIds, itemId])]
-    if (nextEnabled.length >= allIds.length) {
+    if (listComplete && nextEnabled.length >= allIds.length) {
       return { restrict: false, enabled_ids: [] }
     }
     return { restrict: true, enabled_ids: nextEnabled }

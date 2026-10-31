@@ -2,7 +2,7 @@
 
 基于 [NoneBot2](https://nonebot.dev/) 的 QQ 机器人，专注 B 站动态、直播监控与群消息推送。内置 Web Admin 管理面板，业务配置在浏览器中完成，环境变量只保留启动级项。
 
-📖 **完整文档**（功能说明、插件与配置）：https://cyxc1124.github.io/cyxcbot/（源码在 [docs/](docs/)，本地预览：`cd docs && npm start`）
+📖 **完整文档**（功能说明、插件与配置）：https://cyxc1124.github.io/cyxcbot/（源码在 [docs/](docs/)，本地预览：`cd docs && node ../scripts/secure_npm.cjs start`）
 
 ---
 
@@ -74,15 +74,17 @@ CI 流程见 [`.github/workflows/build-windows.yml`](.github/workflows/build-win
 
 本地开发请使用 **Python 3.14** 与仓库根目录下的 `.venv/`，不要使用系统全局 `python3`。
 
+前端开发与 Windows 本地打包统一使用 Node.js **26 LTS（26.13.0+，26.x）**，安装和构建命令通过下方包装器过滤 CA 信任库。使用 nvm 时，在仓库根目录运行 `nvm install`、`nvm use`，版本见 `.nvmrc`。Playwright 保留官方随包的 Node，由 Playwright 依赖版本管理。
+
 ```bash
 # 1. 创建虚拟环境
 python3 -m venv .venv
 
 # 2. 安装依赖
-./.venv/bin/pip install -r requirements.txt
+./.venv/bin/python scripts/secure_pip.py install -r requirements.txt
 
 # 3. Playwright 浏览器（截图 / 抖音扫码需要，安装一次即可）
-./.venv/bin/playwright install chromium
+./.venv/bin/python scripts/playwright_install.py install chromium
 
 # 4. 配置环境
 cp env.example .env
@@ -93,7 +95,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 ./.venv/bin/python bot.py
 
 # 6. 另开终端启动前端开发服务器（可选）
-cd web && npm install && npm run dev
+cd web && node ../scripts/secure_npm.cjs install && node ../scripts/secure_npm.cjs run dev
 ```
 
 Windows（PowerShell）创建 venv：`py -3.14 -m venv .venv`，激活：`.\.venv\Scripts\Activate.ps1`。

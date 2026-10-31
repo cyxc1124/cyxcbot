@@ -128,12 +128,13 @@ async def try_consume_daily_quota(
     group_id: str,
     user_id: str,
     daily_limit: int,
+    *,
+    usage_date: str,
 ) -> bool:
-    """Atomically reserve one daily usage slot; False when limit reached."""
+    """Atomically reserve one slot for usage_date; False when limit reached."""
     if daily_limit <= 0:
         return True
 
-    usage_date = today_usage_date()
     async with get_session() as session:
         async with session.begin():
             upsert_stmt = _upsert_consume_stmt(
@@ -156,9 +157,8 @@ async def try_consume_daily_quota(
             )
 
 
-async def release_daily_quota(group_id: str, user_id: str) -> None:
-    """Return one reserved slot when the title API call fails."""
-    usage_date = today_usage_date()
+async def release_daily_quota(group_id: str, user_id: str, *, usage_date: str) -> None:
+    """Return one slot on the original reservation date when the title API fails."""
     async with get_session() as session:
         async with session.begin():
             await session.execute(

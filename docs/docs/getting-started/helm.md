@@ -6,7 +6,7 @@ sidebar_position: 5
 
 在 Kubernetes 上通过 Helm Chart 部署机器草，适用于 **2.0+** 版本。
 
-Helm 仅注入启动级环境变量；监控映射、B 站 Cookie、权限策略等业务配置均在 **Web Admin** 中管理。
+Helm 仅注入启动级环境变量；监控映射、B 站 Cookie、官方 Bot 凭证、权限策略等业务配置均在 **Web Admin** 中管理。默认 `DRIVER=~fastapi+~httpx+~websockets`（`nonebot.driver`）。
 
 ## 前置条件
 

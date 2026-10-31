@@ -13,11 +13,20 @@ B站视频查询插件
 """
 
 from nonebot import get_driver, on_message
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
+from nonebot.adapters import Bot, Event
+from nonebot.adapters.onebot.v11.message import Message
 from nonebot.log import logger
 
-from shared.config.command_aliases import match_plain
+from shared.adapter.bots import is_official_qq_bot
+from shared.adapter.inbound import group_id_of, is_group_event, is_tome, plaintext_of
+from shared.adapter.outbound import (
+    official_reply_remaining,
+    send_event_message,
+    send_event_text,
+)
+from shared.config.command_aliases import command_aliases_for_event, match_plain
 from shared.config.service import get_config_service
+from shared.notify.message_template import safe_text
 
 from .config import get_cached_config, reload_config
 from .sender import VideoSender
@@ -69,15 +78,18 @@ _register_config_reload()
 
 
 @video_command.handle()
-async def handle_video_commands(bot: Bot, event: GroupMessageEvent):
+async def handle_video_commands(bot: Bot, event: Event):
     """处理视频查询命令"""
-    message_text = event.get_plaintext().strip()
+    if not is_group_event(event):
+        return
+    message_text = plaintext_of(event)
     logger.debug("收到群消息: {}", message_text)
 
     config = get_cached_config()
 
-    # 获取群组ID
-    group_id = str(event.group_id)
+    group_id = group_id_of(event)
+    if not group_id:
+        return
 
     # 查找该群对应的UP主
     uids = config.get_uids_by_group_id(group_id)
@@ -86,16 +98,22 @@ async def handle_video_commands(bot: Bot, event: GroupMessageEvent):
         return
 
     # 检查是否是视频查询命令（触发词可在 Web Admin 设置 → 命令 中自定义）
-    command_aliases = get_config_service().get_snapshot().command_aliases
+    command_aliases = await command_aliases_for_event(
+        get_config_service().get_snapshot(), bot, event
+    )
     is_command = match_plain(
         message_text,
         "video_query_latest",
         command_aliases,
-        is_tome=event.is_tome(),
+        is_tome=is_tome(event),
     )
 
     if not is_command:
         logger.debug("消息 '{}' 不是视频查询命令", message_text)
+        return
+
+    official = is_official_qq_bot(bot)
+    if official and not official_reply_remaining(event):
         return
 
     try:
@@ -117,6 +135,7 @@ async def handle_video_commands(bot: Bot, event: GroupMessageEvent):
 
         fetch_results = await run_with_concurrency(uids, fetch_videos)
 
+        official_messages = []
         for uid, videos in zip(uids, fetch_results):
             try:
                 if isinstance(videos, BaseException):
@@ -126,30 +145,37 @@ async def handle_video_commands(bot: Bot, event: GroupMessageEvent):
 
                 if videos:
                     message = video_sender.build_video_message(videos)
-                    await video_sender.send_to_group(group_id, message, bot=bot)
-                    logger.info("UP主 {} 最新视频已回复到群 {}", uid, group_id)
+                    if official:
+                        official_messages.append(message)
+                    else:
+                        await send_event_message(bot, event, message)
+                        logger.info("UP主 {} 最新视频已回复到群 {}", uid, group_id)
                 else:
                     logger.warning("无法获取UP主 {} 的视频", uid)
-                    await bot.send_group_msg(
-                        group_id=int(group_id),
-                        message=f"无法获取UP主 {uid} 的视频，请检查UID是否正确",
-                    )
+                    text = f"无法获取UP主 {uid} 的视频，请检查UID是否正确"
+                    if official:
+                        official_messages.append(Message(safe_text(text)))
+                    else:
+                        await send_event_text(bot, event, text)
 
             except Exception:
                 logger.opt(exception=True).error("获取UP主 {} 最新视频失败", uid)
                 try:
-                    await bot.send_group_msg(
-                        group_id=int(group_id),
-                        message=f"UP主 {uid} 视频查询失败，请稍后重试",
-                    )
+                    text = f"UP主 {uid} 视频查询失败，请稍后重试"
+                    if official:
+                        official_messages.append(Message(safe_text(text)))
+                    else:
+                        await send_event_text(bot, event, text)
                 except Exception:
                     logger.opt(exception=True).error("发送失败提示消息失败")
+
+        if official:
+            await video_sender.send_official_reply(bot, event, official_messages)
+            logger.info("最新视频汇总已回复到官方群 {}", group_id)
 
     except Exception:
         logger.opt(exception=True).error("处理视频查询命令失败")
         try:
-            await bot.send_group_msg(
-                group_id=int(group_id), message="系统错误，请稍后重试"
-            )
+            await send_event_text(bot, event, "系统错误，请稍后重试")
         except Exception:
             logger.opt(exception=True).error("发送系统错误消息失败")

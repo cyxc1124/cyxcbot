@@ -15,8 +15,12 @@ from admin.schemas.rust_rcon_custom import (
     RustRconCustomCommandResponse,
     RustRconCustomCommandUpdateRequest,
 )
+from shared.config.command_conflicts import new_rcon_command_conflict
 from shared.config.rust_rcon import normalize_allowed_qq_ids
-from shared.config.rust_rcon_custom import custom_command_name_conflict
+from shared.config.rust_rcon_custom import (
+    RustRconCustomCommandRecord,
+    custom_command_name_conflict,
+)
 from shared.config.service import get_config_service
 from shared.db.models import (
     RustRconBinding,
@@ -72,17 +76,41 @@ async def _sync_allowed_users(
     ]
 
 
-def _ensure_name_available(name: str, *, exclude_id: int | None = None) -> None:
+def _ensure_name_available(
+    name: str, *, binding_id: int, enabled: bool, exclude_id: int | None = None
+) -> None:
+    snap = get_config_service().get_snapshot()
     conflict = custom_command_name_conflict(
         name,
-        get_config_service().get_snapshot(),
+        snap,
         exclude_id=exclude_id,
+        check_builtin_commands=False,
     )
     if conflict:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=conflict,
         )
+    proposed = [
+        item for item in snap.rust_rcon_custom_commands if item.id != exclude_id
+    ]
+    proposed.append(
+        RustRconCustomCommandRecord(
+            id=exclude_id if exclude_id is not None else -1,
+            name=name,
+            template="",
+            binding_id=binding_id,
+            enabled=enabled,
+        )
+    )
+    conflict = new_rcon_command_conflict(
+        snap.command_aliases,
+        snap,
+        snap.command_extra_prefixes,
+        custom_commands=proposed,
+    )
+    if conflict:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=conflict)
 
 
 @router.get("", response_model=RustRconCustomCommandListResponse)
@@ -112,7 +140,7 @@ async def create_rust_rcon_custom_command(
     body: RustRconCustomCommandCreateRequest,
     _: AdminUser,
 ) -> RustRconCustomCommandResponse:
-    _ensure_name_available(body.name)
+    _ensure_name_available(body.name, binding_id=body.binding_id, enabled=body.enabled)
 
     try:
         async with get_session() as session:
@@ -163,6 +191,11 @@ async def update_rust_rcon_custom_command(
                         status_code=status.HTTP_404_NOT_FOUND,
                         detail="自定义指令不存在",
                     )
+                old_name, old_binding_id, was_enabled = (
+                    row.name,
+                    row.binding_id,
+                    row.enabled,
+                )
 
                 if body.name is not None and body.name != row.name:
                     row.name = body.name
@@ -176,9 +209,16 @@ async def update_rust_rcon_custom_command(
                 if body.allowed_qq_ids is not None:
                     await _sync_allowed_users(session, row, body.allowed_qq_ids)
 
-                # 启用中的指令始终按最终 name 复核冲突（含仅打开开关的路径）。
-                if row.enabled:
-                    _ensure_name_available(row.name, exclude_id=command_id)
+                if row.name != old_name or (
+                    row.enabled
+                    and (not was_enabled or row.binding_id != old_binding_id)
+                ):
+                    _ensure_name_available(
+                        row.name,
+                        binding_id=row.binding_id,
+                        enabled=row.enabled,
+                        exclude_id=command_id,
+                    )
 
                 await session.flush()
                 await session.refresh(row, ["allowed_users"])

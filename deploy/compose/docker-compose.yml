@@ -1,6 +1,6 @@
 services:
   cyxcbot:
-    image: ghcr.io/cyxc1124/cyxcbot:v2.9.0
+    image: ghcr.io/cyxc1124/cyxcbot:v3.1.2
     container_name: cyxcbot
     restart: unless-stopped
     ports:
@@ -14,6 +14,7 @@ services:
     environment:
       HOST: "0.0.0.0"
       PORT: "8080"
+      DRIVER: "~fastapi+~httpx+~websockets"
       COMMAND_START: '["/"]'
       COMMAND_SEP: '["."]'
       WEB_HOST: "0.0.0.0"
