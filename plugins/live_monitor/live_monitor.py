@@ -9,7 +9,7 @@ B站直播监控核心模块
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 import aiohttp
@@ -113,7 +113,7 @@ class LiveMonitor:
         self.checks_total = 0
 
     def _touch_last_check_at(self) -> None:
-        self.last_check_at = datetime.now().isoformat(timespec="seconds")
+        self.last_check_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     def _configured_room_ids(self) -> list[str]:
         return list(self.config.live_monitor_mapping.keys())

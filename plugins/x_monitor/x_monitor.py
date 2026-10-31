@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
@@ -100,7 +100,7 @@ class XMonitor:
         self._state_store = XMonitorStateStore()
 
     def _touch_last_check_at(self) -> None:
-        self.last_check_at = datetime.now().isoformat(timespec="seconds")
+        self.last_check_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     def _username_list(self) -> List[str]:
         return list(self.config.x_monitor_mapping.keys())
