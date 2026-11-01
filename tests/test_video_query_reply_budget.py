@@ -76,9 +76,13 @@ def _official_event():
 @pytest.fixture
 def pipeline(monkeypatch):
     plugin = _load_plugin()
-    snapshot = AppConfigSnapshot(command_aliases=normalize_command_aliases({}))
+    monkeypatch.setattr(nonebot.get_driver().config, "command_start", {"/"})
+    snapshot = AppConfigSnapshot(
+        command_aliases=normalize_command_aliases({}), command_extra_prefixes=[]
+    )
     service = SimpleNamespace(get_snapshot=lambda: snapshot)
     monkeypatch.setattr(plugin, "get_config_service", lambda: service)
+    monkeypatch.setattr("shared.config.service.get_config_service", lambda: service)
     monkeypatch.setattr(outbound, "_OFFICIAL_MIN_INTERVAL", 0)
     monkeypatch.setattr(
         outbound, "_materialize_media", AsyncMock(return_value=b"cover")
@@ -230,11 +234,15 @@ async def test_text_over_budget_explains_omitted_results(pipeline):
 
 
 @pytest.mark.asyncio
-async def test_onebot_keeps_individual_video_and_error_messages(pipeline):
+@pytest.mark.parametrize("prefix", ["/", "#", "%"])
+async def test_onebot_keeps_individual_video_and_error_messages(
+    pipeline, monkeypatch, prefix
+):
     plugin, _, _, set_results = pipeline
+    monkeypatch.setattr(nonebot.get_driver().config, "command_start", {prefix})
     set_results({"1": [_video(1)], "2": [_video(2, cover=False)], "3": []}, "1001")
     event = SimpleNamespace(
-        group_id=1001, user_id=2001, get_plaintext=lambda: "/最新视频"
+        group_id=1001, user_id=2001, get_plaintext=lambda: f"{prefix}最新视频"
     )
     bot = SimpleNamespace(send_group_msg=AsyncMock(), send=AsyncMock())
     await plugin.handle_video_commands(bot, event)
@@ -246,3 +254,19 @@ async def test_onebot_keeps_individual_video_and_error_messages(pipeline):
     assert all(segment.type == "text" for segment in second)
     assert _video(2).get_video_url() in second.extract_plain_text()
     bot.send.assert_awaited_once_with(event, "无法获取UP主 3 的视频，请检查UID是否正确")
+
+
+@pytest.mark.asyncio
+async def test_onebot_ignores_unconfigured_prefix(pipeline, monkeypatch):
+    plugin, _, _, set_results = pipeline
+    monkeypatch.setattr(nonebot.get_driver().config, "command_start", {"#"})
+    manager = set_results({"1": [_video(1)]}, "1001")
+    event = SimpleNamespace(
+        group_id=1001, user_id=2001, get_plaintext=lambda: "/最新视频"
+    )
+    bot = SimpleNamespace(send_group_msg=AsyncMock(), send=AsyncMock())
+    await plugin.handle_video_commands(bot, event)
+    manager.init.assert_not_awaited()
+    manager.get_user_videos.assert_not_awaited()
+    bot.send_group_msg.assert_not_awaited()
+    bot.send.assert_not_awaited()

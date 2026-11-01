@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+from shared.config.message_templates import LinkMessageTemplates
 from utils.bilibili_api import DynamicItem, VideoInfo
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +53,35 @@ def test_build_dynamic_link_message_falls_back_to_api_images() -> None:
     image_segments = [seg for seg in msg if seg.type == "image"]
     assert len(image_segments) == 2
     assert "正文摘要" in str(msg)
+
+
+def test_video_page_menu_is_bounded_plain_text():
+    video = VideoInfo.from_api_data(
+        {
+            "title": "[CQ:at,qq=all]" + "标题" * 500,
+            "pages": [{"cid": n, "part": "内容" * 100} for n in range(1, 101)],
+        }
+    )
+    menu = _sender.build_video_page_menu(video)
+    assert all(segment.type == "text" for segment in menu)
+    text = menu.extract_plain_text()
+    assert len(text) < 2000
+    assert "P1 " in text and "P10 " in text and "P11 " not in text
+    assert "其余 90 P" in text and "1～100" in text and "5 分钟" in text
+
+
+def test_selected_page_caption_survives_custom_template():
+    video = VideoInfo.from_api_data(
+        {
+            "bvid": "BV1xx411c7mD",
+            "title": "测试视频",
+            "pages": [{"cid": 100, "part": "开场"}, {"cid": 200, "part": "正式内容"}],
+        }
+    ).select_page(2)
+    for template in (LinkMessageTemplates(), LinkMessageTemplates(video="{url}")):
+        caption = build_video_link_message(video, template).extract_plain_text()
+        assert caption.count("P2 正式内容") == 1
+        assert "?p=2" in caption
 
 
 def test_build_video_link_message_with_file_keeps_cover(

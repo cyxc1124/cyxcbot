@@ -48,4 +48,5 @@ node ../scripts/secure_npm.cjs start       # 本地预览（http://localhost:300
 
 - 新功能优先在 `tests/` 添加单元测试
 - 异步代码使用 `pytest.mark.asyncio`
+- 命令测试应使用 `monkeypatch` 显式设置 NoneBot 的 `command_start` 及配置快照中的额外前缀，测试结束后恢复；不要依赖开发机 `.env` 中的 `COMMAND_START`。自定义前缀与未配置前缀均应按影响覆盖。
 - 测试配置见 `tests/conftest.py`

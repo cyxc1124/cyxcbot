@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from html import unescape
 from typing import Iterable, Literal
 from urllib.parse import parse_qs, urlparse
 
@@ -14,9 +15,13 @@ from shared.monitor.concurrency import run_with_concurrency
 
 BV_PATTERN = re.compile(r"BV1[a-zA-Z0-9]{9}")
 AV_PATTERN = re.compile(r"(?:^|[^\w])av(\d+)", re.IGNORECASE)
-B23_URL_PATTERN = re.compile(r"https?://(?:www\.)?b23\.tv/[A-Za-z0-9]+", re.IGNORECASE)
+B23_URL_PATTERN = re.compile(
+    r"https?://(?:www\.)?b23\.tv/[A-Za-z0-9]+(?:\?[^\s<>\"']*)?",
+    re.IGNORECASE,
+)
 BILIBILI_VIDEO_URL_PATTERN = re.compile(
-    r"https?://(?:www\.|m\.)?bilibili\.com/video/(BV1[a-zA-Z0-9]{9}|av\d+)",
+    r"https?://(?:www\.|m\.)?bilibili\.com/video/(BV1[a-zA-Z0-9]{9}|av\d+)"
+    r"/?(?:\?[^\s<>\"']*)?",
     re.IGNORECASE,
 )
 LIVE_URL_PATTERN = re.compile(
@@ -37,6 +42,7 @@ class BilibiliRef:
     aid: int | None = None
     room_id: int | None = None
     dynamic_id: int | None = None
+    page: int | None = None  # 0 表示显式指定了非法的 p 参数。
 
 
 def _normalize_bvid(value: str) -> str:
@@ -84,25 +90,38 @@ def _dynamic_id_from_url(url: str) -> int | None:
 
 
 def _video_ref_from_url(url: str) -> BilibiliRef | None:
+    url = unescape(url).rstrip(".,，。!！;；)）]】")
+    values = parse_qs(urlparse(url).query, keep_blank_values=True).get("p")
+    page = None
+    if values is not None:
+        page = (
+            int(values[0])
+            if len(values) == 1 and re.fullmatch(r"[0-9]{1,9}", values[0])
+            else 0
+        )
     match = BILIBILI_VIDEO_URL_PATTERN.search(url)
     if match:
         ref = match.group(1)
         if ref.lower().startswith("av"):
-            return BilibiliRef(kind="video", aid=int(ref[2:]))
-        return BilibiliRef(kind="video", bvid=_normalize_bvid(ref))
+            return BilibiliRef(kind="video", aid=int(ref[2:]), page=page)
+        return BilibiliRef(kind="video", bvid=_normalize_bvid(ref), page=page)
 
     path = urlparse(url).path
     bv_match = BV_PATTERN.search(path)
     if bv_match:
-        return BilibiliRef(kind="video", bvid=_normalize_bvid(bv_match.group(0)))
+        return BilibiliRef(
+            kind="video", bvid=_normalize_bvid(bv_match.group(0)), page=page
+        )
 
     av_match = re.search(r"/video/av(\d+)", path, re.IGNORECASE)
     if av_match:
-        return BilibiliRef(kind="video", aid=int(av_match.group(1)))
+        return BilibiliRef(kind="video", aid=int(av_match.group(1)), page=page)
 
     bv_in_url = BV_PATTERN.search(url)
     if bv_in_url:
-        return BilibiliRef(kind="video", bvid=_normalize_bvid(bv_in_url.group(0)))
+        return BilibiliRef(
+            kind="video", bvid=_normalize_bvid(bv_in_url.group(0)), page=page
+        )
 
     return None
 
@@ -170,6 +189,7 @@ def _dedupe_preserve_order(items: Iterable[BilibiliRef]) -> list[BilibiliRef]:
             item.aid,
             item.room_id,
             item.dynamic_id,
+            item.page,
         )
         if key in seen:
             continue
@@ -188,18 +208,18 @@ async def extract_bilibili_refs(
     """Extract unique video or live room references from plain text."""
     refs: list[BilibiliRef] = []
 
-    for match in BV_PATTERN.finditer(text):
+    for match in BILIBILI_VIDEO_URL_PATTERN.finditer(text):
+        ref = _video_ref_from_url(match.group(0))
+        if ref:
+            refs.append(ref)
+
+    # 完整链接优先，避免链接中的 BV/AV 被再次识别成未指定分 P 的引用。
+    bare_text = BILIBILI_VIDEO_URL_PATTERN.sub(" ", text)
+    for match in BV_PATTERN.finditer(bare_text):
         refs.append(BilibiliRef(kind="video", bvid=_normalize_bvid(match.group(0))))
 
-    for match in AV_PATTERN.finditer(text):
+    for match in AV_PATTERN.finditer(bare_text):
         refs.append(BilibiliRef(kind="video", aid=int(match.group(1))))
-
-    for match in BILIBILI_VIDEO_URL_PATTERN.finditer(text):
-        ref = match.group(1)
-        if ref.lower().startswith("av"):
-            refs.append(BilibiliRef(kind="video", aid=int(ref[2:])))
-        else:
-            refs.append(BilibiliRef(kind="video", bvid=_normalize_bvid(ref)))
 
     for match in LIVE_URL_PATTERN.finditer(text):
         refs.append(BilibiliRef(kind="live", room_id=int(match.group(1))))
