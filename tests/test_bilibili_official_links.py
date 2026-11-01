@@ -685,6 +685,60 @@ async def test_simultaneous_numeric_choices_download_once(page_client):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("replacement_kind", ["multi", "single", "missing"])
+@pytest.mark.parametrize("pause_at", ["detail", "menu_send"])
+@pytest.mark.parametrize("send_video", [False, True])
+async def test_older_request_cannot_restore_replaced_selection(
+    page_client, monkeypatch, replacement_kind, pause_at, send_video
+):
+    c = page_client
+    for policies in (
+        c.snapshot.link_parser_group_policies,
+        c.snapshot.link_parser_user_policies,
+    ):
+        for key, policy in policies.items():
+            policies[key] = replace(policy, send_video_enabled=send_video)
+    monkeypatch.setattr(c.plugin, "_maybe_download_video", AsyncMock(return_value=None))
+    replacement = replace(
+        c.video,
+        bvid="BV1GJ411x7h7",
+        title="新视频",
+        pages=c.video.pages[:1] if replacement_kind == "single" else c.video.pages,
+    )
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def detail(*, bvid, aid):
+        if bvid == c.video.bvid:
+            if pause_at == "detail":
+                started.set()
+                await release.wait()
+            return c.video
+        return None if replacement_kind == "missing" else replacement
+
+    async def send(**kwargs):
+        text = kwargs["message"].extract_plain_text()
+        if pause_at == "menu_send" and f"《{c.video.title}》" in text:
+            started.set()
+            await release.wait()
+        return {"message_id": 42}
+
+    c.manager.get_video_detail.side_effect = detail
+    c.api.side_effect = send
+    tasks = [asyncio.create_task(c.handler(c.bot, c.event(c.video.bvid)))]
+    try:
+        await asyncio.wait_for(started.wait(), timeout=2)
+        tasks.append(asyncio.create_task(c.handler(c.bot, c.event(replacement.bvid))))
+        await asyncio.sleep(0)
+        release.set()
+        await asyncio.wait_for(asyncio.gather(*tasks), timeout=5)
+    finally:
+        release.set()
+        await asyncio.gather(*tasks, return_exceptions=True)
+    pending = c.plugin.pending_video(c.plugin.selection_key(c.bot, c.event("")))
+    assert pending is (replacement if replacement_kind == "multi" else None)
+
+
+@pytest.mark.asyncio
 async def test_another_user_and_non_numeric_message_keep_selection(page_client):
     c = page_client
     await c.handler(c.bot, c.event(c.video.bvid))

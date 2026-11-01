@@ -58,6 +58,7 @@ from .page_selection import (
     pending_video,
     remember_video,
     selection_key,
+    selection_lock,
 )
 from .sender import (
     build_dynamic_link_message,
@@ -345,29 +346,30 @@ async def _handle_link_message(bot: Bot, event: Event) -> None:
         message_text[:120],
     )
 
-    # 仅在可能下载视频时占流水线名额；封面/文字路径保持轻量
-    if scope.video_enabled and scope.send_video_enabled:
-        if _PIPELINE_SEM.locked():
-            logger.info("B 站链接解析：等待流水线名额 user={}", user_id)
-        async with _PIPELINE_SEM:
-            await _resolve_and_reply(
-                bot,
-                event,
-                config,
-                message_text,
-                scope,
-                enable_dynamic_screenshot=snap.dynamic_enable_screenshot,
-            )
-        return
+    # 先按用户串行，再占下载名额，避免旧请求恢复已被新链接替换的选择。
+    async with selection_lock(selection_key(bot, event)):
+        if scope.video_enabled and scope.send_video_enabled:
+            if _PIPELINE_SEM.locked():
+                logger.info("B 站链接解析：等待流水线名额 user={}", user_id)
+            async with _PIPELINE_SEM:
+                await _resolve_and_reply(
+                    bot,
+                    event,
+                    config,
+                    message_text,
+                    scope,
+                    enable_dynamic_screenshot=snap.dynamic_enable_screenshot,
+                )
+            return
 
-    await _resolve_and_reply(
-        bot,
-        event,
-        config,
-        message_text,
-        scope,
-        enable_dynamic_screenshot=snap.dynamic_enable_screenshot,
-    )
+        await _resolve_and_reply(
+            bot,
+            event,
+            config,
+            message_text,
+            scope,
+            enable_dynamic_screenshot=snap.dynamic_enable_screenshot,
+        )
 
 
 async def _resolve_and_reply(

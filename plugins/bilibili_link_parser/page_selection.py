@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from asyncio import Lock
 from time import monotonic
+from weakref import WeakValueDictionary
 
 from shared.adapter.inbound import group_id_of, user_id_of
 from utils.bilibili_api import VideoInfo
@@ -12,6 +14,7 @@ type SelectionKey = tuple[str, str, str | None, str]
 _TTL = 300
 _MAX_PENDING = 512
 _pending: dict[SelectionKey, tuple[float, VideoInfo]] = {}
+_locks: WeakValueDictionary[SelectionKey, Lock] = WeakValueDictionary()
 
 
 def selection_key(bot, event) -> SelectionKey:
@@ -29,6 +32,10 @@ def pending_video(key: SelectionKey) -> VideoInfo | None:
         _pending.pop(expired)
     record = _pending.get(key)
     return record[1] if record else None
+
+
+def selection_lock(key: SelectionKey) -> Lock:
+    return _locks.setdefault(key, Lock())
 
 
 def remember_video(key: SelectionKey, video: VideoInfo) -> None:
