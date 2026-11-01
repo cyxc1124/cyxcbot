@@ -38,7 +38,8 @@ from plugins.live_monitor.config import Config  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def _reset_live_monitor_instance():
+def _reset_live_monitor_instance(monkeypatch):
+    monkeypatch.setattr(nonebot.get_driver().config, "command_start", {"/"})
     live_monitor_mod.live_monitor_instance = None
     yield
     live_monitor_mod.live_monitor_instance = None

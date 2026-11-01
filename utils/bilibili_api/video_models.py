@@ -3,8 +3,16 @@ B站视频数据模型
 提供视频信息等通用数据模型
 """
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
+
+
+@dataclass(frozen=True)
+class VideoPage:
+    page: int
+    cid: int
+    part: str
+    duration: int
 
 
 @dataclass
@@ -27,7 +35,9 @@ class VideoInfo:
     coin_count: int = 0  # 投币数
     share_count: int = 0  # 分享数
     like_count: int = 0  # 点赞数
-    cid: int = 0  # 默认分 P 的 cid（下载用）
+    cid: int = 0  # 当前分 P 的 cid；未选择时为默认分 P。
+    pages: list[VideoPage] = field(default_factory=list)
+    page: int | None = None
 
     @classmethod
     def from_api_data(cls, data: dict) -> "VideoInfo":
@@ -37,8 +47,16 @@ class VideoInfo:
         if cover and not cover.startswith("http"):
             cover = "https:" + cover
 
-        pages = data.get("pages") or []
-        page_cid = pages[0].get("cid", 0) if pages else 0
+        pages = [
+            VideoPage(
+                page=index,
+                cid=int(item.get("cid") or 0),
+                part=str(item.get("part") or ""),
+                duration=int(item.get("duration") or 0),
+            )
+            for index, item in enumerate(data.get("pages") or [], 1)
+        ]
+        page_cid = pages[0].cid if pages else 0
         cid = int(data.get("cid") or page_cid or 0)
 
         return cls(
@@ -63,13 +81,25 @@ class VideoInfo:
             share_count=data.get("stat", {}).get("share", 0),
             like_count=data.get("stat", {}).get("like", 0),
             cid=cid,
+            pages=pages,
         )
+
+    def select_page(self, page: int) -> "VideoInfo":
+        count = max(1, len(self.pages))
+        if not 1 <= page <= count:
+            raise ValueError(f"分 P 无效，请回复 1～{count} 之间的数字。")
+        if not self.pages:
+            return replace(self, page=page)
+        selected = self.pages[page - 1]
+        return replace(self, cid=selected.cid, duration=selected.duration, page=page)
 
     def get_video_url(self) -> str:
         """获取视频链接"""
         if self.bvid:
-            return f"https://www.bilibili.com/video/{self.bvid}"
-        return f"https://www.bilibili.com/video/av{self.aid}"
+            url = f"https://www.bilibili.com/video/{self.bvid}"
+        else:
+            url = f"https://www.bilibili.com/video/av{self.aid}"
+        return f"{url}?p={self.page}" if self.page is not None else url
 
     def format_duration(self) -> str:
         """格式化时长"""
@@ -117,4 +147,6 @@ class VideoInfo:
             "share_count": self.share_count,
             "like_count": self.like_count,
             "cid": self.cid,
+            "pages": [asdict(page) for page in self.pages],
+            "page": self.page,
         }

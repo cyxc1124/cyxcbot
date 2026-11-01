@@ -98,8 +98,12 @@ def build_video_link_message(
     把 video 与封面/文案拆开，避免同条混排被 QQ 吞掉。
     """
     tpl = templates or LinkMessageTemplates()
+    page_title = ""
+    if video.page is not None and len(video.pages) > 1:
+        page_title = f"P{video.page} {video.pages[video.page - 1].part}"
     text_variables = {
-        "title": video.title or "暂无标题",
+        "title": (video.title or "暂无标题")
+        + (f"\n{page_title}" if page_title else ""),
         "author": video.author_name or "未知",
         "pub_date": video.format_pub_date(),
         "url": video.get_video_url(),
@@ -114,6 +118,8 @@ def build_video_link_message(
             "video": lambda: _video_parts(video_path),
         },
     )
+    if page_title and "{title}" not in tpl.video:
+        message.append(MessageSegment.text(f"\n{page_title}"))
     if video_path and not any(seg.type == "video" for seg in message):
         prepend = Message()
         for part in _video_parts(video_path):
@@ -124,6 +130,19 @@ def build_video_link_message(
         if prepend:
             return prepend + message
     return message
+
+
+def build_video_page_menu(video: VideoInfo) -> Message:
+    title = " ".join(video.title.split())[:160] or "暂无标题"
+    lines = [f"《{title}》共 {len(video.pages)} P：", ""]
+    lines.extend(
+        f"P{page.page} {' '.join(page.part.split())[:80] or '未命名'}"
+        for page in video.pages[:10]
+    )
+    if len(video.pages) > 10:
+        lines.append(f"其余 {len(video.pages) - 10} P 未展开，仍可回复对应序号。")
+    lines.append(f"\n请在 5 分钟内回复 1～{len(video.pages)} 之间的数字，选择分 P。")
+    return Message(MessageSegment.text("\n".join(lines)))
 
 
 def build_live_link_message(

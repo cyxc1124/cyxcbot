@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import sys
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,6 +13,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import nonebot
 import pytest
+from nonebot.adapters.onebot.v11 import Bot as OneBotBot
+from nonebot.adapters.onebot.v11 import GroupMessageEvent, PrivateMessageEvent
+from nonebot.adapters.onebot.v11 import Message as OneBotMessage
 from nonebot.adapters.qq import Bot as QQBot
 from nonebot.adapters.qq.event import C2CMessageCreateEvent, GroupAtMessageCreateEvent
 from nonebot.exception import IgnoredException
@@ -106,6 +110,9 @@ def _snapshot(*, parser_enabled=True, master_enabled=True):
 @pytest.fixture
 def pipeline(monkeypatch, tmp_path):
     plugin = _load_plugin("bilibili_native_test", "bilibili_link_parser")
+    monkeypatch.setattr(
+        sys.modules[f"{plugin.__name__}.page_selection"], "_pending", {}
+    )
     snapshot = _snapshot()
     snapshot.link_parser_shared_media_dir = str(tmp_path)
     service = SimpleNamespace(get_snapshot=lambda: snapshot)
@@ -460,3 +467,325 @@ async def test_single_native_reply_budget_skips_dynamic_screenshot(
     assert "动态标题" in caption and "动态正文" in caption
     assert snapshot.dynamic_enable_screenshot is True
     assert outbound.official_reply_remaining(event) == 0
+
+
+@pytest.fixture(params=["group", "c2c", "onebot_group", "onebot_private"])
+def page_client(request, pipeline, monkeypatch, tmp_path):
+    plugin, snapshot, manager = pipeline
+    video = manager.get_video_detail.return_value
+    video.pages = VideoInfo.from_api_data(
+        {
+            "pages": [
+                {"cid": 100, "part": "开场", "duration": 10},
+                {"cid": 200, "part": "正式内容", "duration": 20},
+                {"cid": 300, "part": "问答", "duration": 30},
+            ]
+        }
+    ).pages
+    scope = request.param
+    group = scope in {"group", "onebot_group"}
+    api = AsyncMock(return_value={"message_id": 42})
+    adapter = MagicMock()
+    if scope.startswith("onebot"):
+        adapter.get_name.return_value = "OneBot V11"
+        bot = OneBotBot(adapter, "1")
+        snapshot.message_enabled_group_ids.append("456")
+        snapshot.message_enabled_user_ids.append("123")
+        snapshot.link_parser_group_policies["456"] = LinkParserGroupPolicyRecord(
+            group_id="456", video_enabled=True, send_video_enabled=True
+        )
+        snapshot.link_parser_user_policies["123"] = LinkParserUserPolicyRecord(
+            user_id="123", video_enabled=True, send_video_enabled=True
+        )
+        monkeypatch.setattr(bot, "send_group_msg" if group else "send_private_msg", api)
+
+        def event(content):
+            cls = GroupMessageEvent if group else PrivateMessageEvent
+            return cls.model_validate(
+                {
+                    "time": 1,
+                    "self_id": 1,
+                    "post_type": "message",
+                    "message_type": "group" if group else "private",
+                    "sub_type": "normal" if group else "friend",
+                    "user_id": 123,
+                    **({"group_id": 456} if group else {}),
+                    "message_id": 1,
+                    "message": OneBotMessage(content),
+                    "raw_message": content,
+                    "font": 0,
+                    "sender": {"user_id": 123},
+                }
+            )
+
+    else:
+        adapter.get_name.return_value = "QQ"
+        bot = QQBot(adapter, "app", _bot_info("app", "secret", False))
+        monkeypatch.setattr(bot, "send_to_group" if group else "send_to_c2c", api)
+
+        def event(content):
+            return _event(scope, content)
+
+    path = tmp_path / "page.mp4"
+    path.write_bytes(b"video")
+    download = AsyncMock(return_value=path)
+    monkeypatch.setattr(plugin, "download_bilibili_video", download)
+    return SimpleNamespace(
+        plugin=plugin,
+        snapshot=snapshot,
+        manager=manager,
+        video=video,
+        bot=bot,
+        api=api,
+        event=event,
+        handler=plugin.handle_group_link if group else plugin.handle_private_link,
+        download=download,
+        path=path,
+        selections=sys.modules[f"{plugin.__name__}.page_selection"],
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["video", "card", "download_failure"])
+async def test_page_menu_and_numeric_choice(page_client, mode):
+    c = page_client
+    if mode == "card":
+        for policies in (
+            c.snapshot.link_parser_group_policies,
+            c.snapshot.link_parser_user_policies,
+        ):
+            for key, policy in policies.items():
+                policies[key] = replace(policy, send_video_enabled=False)
+    elif mode == "download_failure":
+        c.download.side_effect = BilibiliVideoDownloadError("download rejected")
+    await c.handler(c.bot, c.event(c.video.bvid))
+    c.api.assert_awaited_once()
+    menu = c.api.await_args.kwargs["message"].extract_plain_text()
+    assert "P1 开场\nP2 正式内容\nP3 问答" in menu
+    assert "5 分钟" in menu and "1～3" in menu
+    c.download.assert_not_awaited()
+    c.api.reset_mock()
+
+    await c.handler(c.bot, c.event(" 2 "))
+    caption = c.api.await_args.kwargs["message"].extract_plain_text()
+    assert "P2 正式内容" in caption and "?p=2" in caption
+    assert c.video.cid == 100 and c.video.page is None
+    c.manager.get_video_detail.assert_awaited_once()
+    if mode == "card":
+        c.download.assert_not_awaited()
+    else:
+        assert c.download.await_args.kwargs["cid"] == 200
+    if mode == "video":
+        assert not c.path.exists()
+    c.api.reset_mock()
+    await c.handler(c.bot, c.event("2"))
+    c.api.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "choice", ["0", "4", "9" * 5000], ids=["zero", "out-of-range", "huge"]
+)
+async def test_invalid_page_choice_can_retry(page_client, choice):
+    c = page_client
+    await c.handler(c.bot, c.event(c.video.bvid))
+    await c.handler(c.bot, c.event(choice))
+    assert "1～3" in c.api.await_args.kwargs["message"].extract_plain_text()
+    c.download.assert_not_awaited()
+    await c.handler(c.bot, c.event("3"))
+    assert c.download.await_args.kwargs["cid"] == 300
+
+
+@pytest.mark.asyncio
+async def test_expired_or_missing_selection_ignores_numbers(page_client, monkeypatch):
+    c = page_client
+    await c.handler(c.bot, c.event("2"))
+    c.api.assert_not_awaited()
+    c.manager.init.assert_not_awaited()
+    monkeypatch.setattr(c.selections, "monotonic", lambda: 100)
+    await c.handler(c.bot, c.event(c.video.bvid))
+    monkeypatch.setattr(c.selections, "monotonic", lambda: 400)
+    c.api.reset_mock()
+    await c.handler(c.bot, c.event("2"))
+    c.api.assert_not_awaited()
+    c.download.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_new_video_replaces_pending_even_when_detail_fails(page_client):
+    c = page_client
+    await c.handler(c.bot, c.event(c.video.bvid))
+    replacement = VideoInfo.from_api_data(c.video.to_dict())
+    replacement.bvid = "BV1GJ411x7h7"
+    replacement.pages = c.video.pages
+    c.manager.get_video_detail.return_value = replacement
+    await c.handler(c.bot, c.event(replacement.bvid))
+    await c.handler(c.bot, c.event("2"))
+    assert c.download.await_args.kwargs["bvid"] == replacement.bvid
+
+    await c.handler(c.bot, c.event(replacement.bvid))
+    c.manager.get_video_detail.return_value = None
+    await c.handler(c.bot, c.event(c.video.bvid))
+    c.api.reset_mock()
+    await c.handler(c.bot, c.event("2"))
+    c.api.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_numeric_choice_rechecks_video_policy(page_client):
+    c = page_client
+    await c.handler(c.bot, c.event(c.video.bvid))
+    for policies in (
+        c.snapshot.link_parser_group_policies,
+        c.snapshot.link_parser_user_policies,
+    ):
+        for key, policy in policies.items():
+            policies[key] = replace(policy, video_enabled=False)
+    c.api.reset_mock()
+    await c.handler(c.bot, c.event("2"))
+    c.api.assert_not_awaited()
+    c.download.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("page", [1, 2, 0, 4])
+async def test_explicit_page_skips_menu_or_reports_range(page_client, page):
+    c = page_client
+    await c.handler(
+        c.bot, c.event(f"https://www.bilibili.com/video/{c.video.bvid}?p={page}")
+    )
+    caption = c.api.await_args.kwargs["message"].extract_plain_text()
+    if page in {1, 2}:
+        assert c.download.await_args.kwargs["cid"] == page * 100
+        assert f"P{page} " in caption and f"?p={page}" in caption
+    else:
+        c.download.assert_not_awaited()
+        assert "1～3" in caption
+        await c.handler(c.bot, c.event("2"))
+        assert c.download.await_args.kwargs["cid"] == 200
+
+
+@pytest.mark.asyncio
+async def test_failed_menu_does_not_enable_numeric_choice(page_client):
+    c = page_client
+    c.api.side_effect = RuntimeError("send failed")
+    await c.handler(c.bot, c.event(c.video.bvid))
+    c.api.reset_mock()
+    await c.handler(c.bot, c.event("2"))
+    c.api.assert_not_awaited()
+    c.download.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_simultaneous_numeric_choices_download_once(page_client):
+    c = page_client
+    await c.handler(c.bot, c.event(c.video.bvid))
+    await asyncio.gather(c.handler(c.bot, c.event("2")), c.handler(c.bot, c.event("2")))
+    c.download.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("replacement_kind", ["multi", "single", "missing"])
+@pytest.mark.parametrize("pause_at", ["detail", "menu_send"])
+@pytest.mark.parametrize("send_video", [False, True])
+async def test_older_request_cannot_restore_replaced_selection(
+    page_client, monkeypatch, replacement_kind, pause_at, send_video
+):
+    c = page_client
+    for policies in (
+        c.snapshot.link_parser_group_policies,
+        c.snapshot.link_parser_user_policies,
+    ):
+        for key, policy in policies.items():
+            policies[key] = replace(policy, send_video_enabled=send_video)
+    monkeypatch.setattr(c.plugin, "_maybe_download_video", AsyncMock(return_value=None))
+    replacement = replace(
+        c.video,
+        bvid="BV1GJ411x7h7",
+        title="新视频",
+        pages=c.video.pages[:1] if replacement_kind == "single" else c.video.pages,
+    )
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def detail(*, bvid, aid):
+        if bvid == c.video.bvid:
+            if pause_at == "detail":
+                started.set()
+                await release.wait()
+            return c.video
+        return None if replacement_kind == "missing" else replacement
+
+    async def send(**kwargs):
+        text = kwargs["message"].extract_plain_text()
+        if pause_at == "menu_send" and f"《{c.video.title}》" in text:
+            started.set()
+            await release.wait()
+        return {"message_id": 42}
+
+    c.manager.get_video_detail.side_effect = detail
+    c.api.side_effect = send
+    tasks = [asyncio.create_task(c.handler(c.bot, c.event(c.video.bvid)))]
+    try:
+        await asyncio.wait_for(started.wait(), timeout=2)
+        tasks.append(asyncio.create_task(c.handler(c.bot, c.event(replacement.bvid))))
+        await asyncio.sleep(0)
+        release.set()
+        await asyncio.wait_for(asyncio.gather(*tasks), timeout=5)
+    finally:
+        release.set()
+        await asyncio.gather(*tasks, return_exceptions=True)
+    pending = c.plugin.pending_video(c.plugin.selection_key(c.bot, c.event("")))
+    assert pending is (replacement if replacement_kind == "multi" else None)
+
+
+@pytest.mark.asyncio
+async def test_another_user_and_non_numeric_message_keep_selection(page_client):
+    c = page_client
+    await c.handler(c.bot, c.event(c.video.bvid))
+    other = c.event("2")
+    if isinstance(other, (GroupMessageEvent, PrivateMessageEvent)):
+        other.user_id = 789
+    elif isinstance(other, GroupAtMessageCreateEvent):
+        other.author.member_openid = "other"
+    else:
+        other.author.user_openid = "other"
+    c.api.reset_mock()
+    await c.handler(c.bot, other)
+    await c.handler(c.bot, c.event("P2"))
+    c.api.assert_not_awaited()
+    c.download.assert_not_awaited()
+    await c.handler(c.bot, c.event("2"))
+    assert c.download.await_args.kwargs["cid"] == 200
+
+
+@pytest.mark.asyncio
+async def test_single_page_link_clears_previous_menu(page_client):
+    c = page_client
+    await c.handler(c.bot, c.event(c.video.bvid))
+    c.video.pages = c.video.pages[:1]
+    await c.handler(c.bot, c.event(c.video.bvid))
+    c.download.assert_awaited_once()
+    assert c.download.await_args.kwargs["cid"] == 100
+    c.api.reset_mock()
+    await c.handler(c.bot, c.event("1"))
+    c.api.assert_not_awaited()
+
+
+def test_page_selection_is_scoped_and_bounded(page_client, monkeypatch):
+    c = page_client
+    key = c.plugin.selection_key(c.bot, c.event(""))
+    c.plugin.remember_video(key, c.video)
+    assert c.plugin.pending_video(key) is c.video
+    for index, value in enumerate(
+        ("other-adapter", "other-bot", "other-group", "other-user")
+    ):
+        other = list(key)
+        other[index] = value
+        assert c.plugin.pending_video(tuple(other)) is None
+    other = list(key)
+    other[2] = "group" if key[2] is None else None
+    assert c.plugin.pending_video(tuple(other)) is None
+    monkeypatch.setattr(c.selections, "_MAX_PENDING", 2)
+    c.plugin.remember_video(("a", "b", None, "1"), c.video)
+    c.plugin.remember_video(("a", "b", None, "2"), c.video)
+    assert c.plugin.pending_video(key) is None
