@@ -8,6 +8,7 @@ B 站链接自动解析插件
 from __future__ import annotations
 
 import asyncio
+import re
 import shutil
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -15,7 +16,7 @@ from pathlib import Path
 from nonebot import get_driver, on_message
 from nonebot.adapters import Bot, Event
 from nonebot.adapters.onebot.v11.exception import ActionFailed
-from nonebot.adapters.onebot.v11.message import Message
+from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
@@ -51,10 +52,18 @@ from utils.screenshot import get_dynamic_screenshot
 
 from .config import Config, get_config, reload_config
 from .message_text import collect_message_text
+from .page_selection import (
+    SelectionKey,
+    forget_video,
+    pending_video,
+    remember_video,
+    selection_key,
+)
 from .sender import (
     build_dynamic_link_message,
     build_live_link_message,
     build_video_link_message,
+    build_video_page_menu,
 )
 from .video_send import all_sends_ok, send_batches, send_video_with_cover_fallback
 
@@ -82,6 +91,7 @@ class _ResolvedReply:
     video: VideoInfo | None = None
     video_path: Path | None = None
     templates: LinkMessageTemplates | None = None
+    page_menu: bool = False
 
 
 async def _fetch_dynamic_screenshot(
@@ -135,12 +145,41 @@ async def _maybe_download_video(
         return None
 
 
+async def _video_reply(
+    video: VideoInfo,
+    config: Config,
+    scope: LinkParserScopePolicy,
+) -> _ResolvedReply:
+    video_path = None
+    if scope.send_video_enabled:
+        shared_media_configured = (
+            get_config_service().get_snapshot().link_parser_shared_media_dir
+        )
+        video_path = await _maybe_download_video(
+            video,
+            enabled=True,
+            cookie=config.bilibili_cookie or None,
+            output_dir=ensure_shared_media_dir(shared_media_configured),
+        )
+    return _ResolvedReply(
+        video=video,
+        video_path=video_path,
+        templates=config.message_templates,
+        message=(
+            build_video_link_message(video, config.message_templates)
+            if video_path is None
+            else None
+        ),
+    )
+
+
 async def _resolve_reply(
     config: Config,
     message_text: str,
     scope: LinkParserScopePolicy,
     *,
     enable_dynamic_screenshot: bool,
+    pending_key: SelectionKey | None = None,
 ) -> _ResolvedReply:
     cookie = config.bilibili_cookie or None
     if not cookie:
@@ -155,41 +194,33 @@ async def _resolve_reply(
         return _ResolvedReply()
 
     fetcher = DynamicFetcher(session, cookie)
-    shared_media_configured = (
-        get_config_service().get_snapshot().link_parser_shared_media_dir
-    )
-
     for ref in refs:
         try:
             if ref.kind == "video":
                 if not scope.video_enabled:
                     continue
+                if pending_key is not None:
+                    forget_video(pending_key)
                 video = await video_api_manager.get_video_detail(
                     bvid=ref.bvid, aid=ref.aid
                 )
                 if video:
-                    # 仅真正下载视频时才碰共享目录，避免非强制 chmod 影响 QQ tmp。
-                    video_path = (
-                        await _maybe_download_video(
-                            video,
-                            enabled=True,
-                            cookie=cookie,
-                            output_dir=ensure_shared_media_dir(shared_media_configured),
-                        )
-                        if scope.send_video_enabled
-                        else None
-                    )
-                    if video_path is not None:
+                    if ref.page is None and len(video.pages) > 1:
                         return _ResolvedReply(
                             video=video,
-                            video_path=video_path,
-                            templates=config.message_templates,
+                            message=build_video_page_menu(video),
+                            page_menu=True,
                         )
-                    return _ResolvedReply(
-                        message=build_video_link_message(
-                            video, config.message_templates
-                        )
-                    )
+                    if ref.page is not None:
+                        try:
+                            video = video.select_page(ref.page)
+                        except ValueError as exc:
+                            return _ResolvedReply(
+                                video=video,
+                                message=Message(MessageSegment.text(str(exc))),
+                                page_menu=len(video.pages) > 1,
+                            )
+                    return await _video_reply(video, config, scope)
             elif ref.kind == "dynamic" and ref.dynamic_id:
                 if not scope.dynamic_enabled:
                     continue
@@ -303,6 +334,11 @@ async def _handle_link_message(bot: Bot, event: Event) -> None:
         logger.debug("B 站链接解析：未提取到文本/链接 user={}", user_id)
         return
 
+    if re.fullmatch(r"[0-9]+", message_text) and (
+        not scope.video_enabled or pending_video(selection_key(bot, event)) is None
+    ):
+        return
+
     logger.info(
         "B 站链接解析：收到消息 user={} text={!r}",
         user_id,
@@ -352,13 +388,32 @@ async def _resolve_and_reply(
             enable_dynamic_screenshot = False
     resolved = _ResolvedReply()
     user_id = user_id_of(event)
+    key = selection_key(bot, event)
     try:
-        resolved = await _resolve_reply(
-            config,
-            message_text,
-            scope,
-            enable_dynamic_screenshot=enable_dynamic_screenshot,
-        )
+        if re.fullmatch(r"[0-9]+", message_text):
+            video = pending_video(key) if scope.video_enabled else None
+            if video is None:
+                return
+            page = int(message_text) if len(message_text) <= 9 else 0
+            try:
+                video = video.select_page(page)
+            except ValueError as exc:
+                resolved = _ResolvedReply(
+                    message=Message(MessageSegment.text(str(exc)))
+                )
+            else:
+                forget_video(key)
+                if scope.send_video_enabled:
+                    await video_api_manager.init(config.bilibili_cookie or None)
+                resolved = await _video_reply(video, config, scope)
+        else:
+            resolved = await _resolve_reply(
+                config,
+                message_text,
+                scope,
+                enable_dynamic_screenshot=enable_dynamic_screenshot,
+                pending_key=key,
+            )
         templates = resolved.templates or config.message_templates
         if resolved.video is not None and resolved.video_path is not None:
             if _ENCODE_SEND_SEM.locked():
@@ -383,6 +438,9 @@ async def _resolve_and_reply(
                 send_results,
             )
             return
+
+        if resolved.page_menu and resolved.video is not None:
+            remember_video(key, resolved.video)
 
         reply_scope = (
             f"group={group_id_of(event)}" if is_group_event(event) else "private"

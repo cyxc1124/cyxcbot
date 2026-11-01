@@ -33,6 +33,52 @@ def test_video_ref_from_bv_in_text() -> None:
     assert ref == BilibiliRef(kind="video", bvid="BV1GJ411x7h7")
 
 
+@pytest.mark.parametrize("identifier", ["BV1xx411c7mD", "av170001"])
+@pytest.mark.parametrize(
+    ("query", "page"),
+    [
+        ("?p=2", 2),
+        ("/?from=share&amp;p=3", 3),
+        ("?p=1。", 1),
+        ("?p=0", 0),
+        ("?p=-1", 0),
+        ("?p=abc", 0),
+        ("?p=", 0),
+        ("?p=1&p=2", 0),
+        ("?p=" + "9" * 5000, 0),
+    ],
+)
+def test_video_ref_preserves_page(identifier, query, page):
+    ref = _video_ref_from_url(f"https://www.bilibili.com/video/{identifier}{query}")
+    assert ref is not None
+    assert ref.page == page
+
+
+@pytest.mark.asyncio
+async def test_extract_pages_without_implicit_first_page():
+    refs = await extract_bilibili_refs(
+        "https://www.bilibili.com/video/BV1xx411c7mD?p=2 "
+        "https://www.bilibili.com/video/BV1xx411c7mD?p=3 "
+        "https://www.bilibili.com/video/BV1xx411c7mD?p=2",
+        MagicMock(),
+    )
+    assert refs == [
+        BilibiliRef(kind="video", bvid="BV1xx411c7mD", page=2),
+        BilibiliRef(kind="video", bvid="BV1xx411c7mD", page=3),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_short_link_preserves_redirect_page(monkeypatch):
+    async def resolve(_session, url, *, cookie=None):
+        assert url == "https://b23.tv/abc?share=1"
+        return "https://www.bilibili.com/video/BV1xx411c7mD?p=2"
+
+    monkeypatch.setattr("utils.bilibili_api.link_parser.resolve_short_url", resolve)
+    refs = await extract_bilibili_refs("https://b23.tv/abc?share=1", MagicMock())
+    assert refs == [BilibiliRef(kind="video", bvid="BV1xx411c7mD", page=2)]
+
+
 def test_live_room_id_from_path() -> None:
     assert _live_room_id_from_url("https://live.bilibili.com/21919321") == 21919321
     assert _live_room_id_from_url("https://live.bilibili.com/blanc/12345") == 12345

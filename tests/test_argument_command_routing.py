@@ -3,12 +3,18 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import nonebot
 import pytest
 from nonebot.adapters.onebot.v11 import Bot, Message, MessageSegment
 from nonebot.exception import FinishedException
 from test_live_monitor_command_handlers import _command_snapshot, _scoped_event
 
 from shared.config.command_aliases import normalize_command_aliases, validation_error
+
+
+@pytest.fixture(autouse=True)
+def _fixed_command_start(monkeypatch):
+    monkeypatch.setattr(nonebot.get_driver().config, "command_start", {"/"})
 
 
 def _actor():

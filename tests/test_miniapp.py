@@ -5,6 +5,10 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
+from utils.bilibili_api.link_parser import extract_bilibili_refs
+
 _ROOT = Path(__file__).resolve().parents[1]
 _MINIAPP_PATH = _ROOT / "plugins" / "bilibili_link_parser" / "miniapp.py"
 _spec = importlib.util.spec_from_file_location(
@@ -58,6 +62,24 @@ def test_extract_bilibili_miniapp_urls_from_share_card() -> None:
     }
     urls = extract_bilibili_miniapp_urls(payload)
     assert urls == ["https://www.bilibili.com/video/BV1GJ411x7h7"]
+
+
+@pytest.mark.asyncio
+async def test_share_card_keeps_selected_page():
+    urls = extract_bilibili_miniapp_urls(
+        {
+            "app": "com.tencent.miniapp_01",
+            "meta": {
+                "detail_1": {
+                    "appid": "1109937557",
+                    "title": "哔哩哔哩",
+                    "qqdocurl": "https://www.bilibili.com/video/BV1GJ411x7h7?p=2",
+                }
+            },
+        }
+    )
+    refs = await extract_bilibili_refs("\n".join(urls), None)
+    assert len(refs) == 1 and refs[0].page == 2
 
 
 def test_is_bilibili_host() -> None:

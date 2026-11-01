@@ -19,6 +19,8 @@
 
 数字 QQ 号 / 群号走 OneBot，openid 走官方 QQ Bot。官方 Bot 的主动投递以平台权限和实际回执为准；Rust 功能与群专属头衔仅支持 OneBot。接入方式见 [初始化与机器人接入](docs/docs/configuration/web-admin-setup.md)。
 
+B 站多 P 视频未指定分 P 时，会先展示 `P1 开场`、`P2 正式内容` 这样的目录；原用户在同一会话内于 5 分钟内回复 `1`、`2` 等数字即可选择。带 `p` 参数的链接直接解析对应分 P，单 P 视频直接解析；是否发送视频文件沿用会话配置。官方 QQ 群选择时仍需 @ 机器人，详见 [B 站链接解析](docs/docs/plugins/link-parser.md)。
+
 ---
 
 ## 项目由来
@@ -185,6 +187,8 @@ node ../scripts/secure_npm.cjs run build
 ```
 
 完整检查入口见 [测试文档](docs/docs/development/testing.md)。GitHub 是主仓库：功能分支通过 PR 合入 `develop`，发版通过 `develop` → `main` PR；GitLab 仅同步发行 tag。详细流程见 [维护者发布流程](deploy/README.md#维护者发布流程)。
+
+命令触发相关测试应显式隔离 `COMMAND_START` 和额外前缀等配置，并在测试结束后恢复，避免本地 `.env` 影响结果。
 
 ---
 
