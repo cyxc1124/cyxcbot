@@ -37,7 +37,7 @@ ENV GIT_TAG=${GIT_TAG} \
 RUN node ../scripts/secure_npm.cjs run build
 
 # Python 运行时镜像
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
