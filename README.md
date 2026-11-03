@@ -14,7 +14,7 @@
 | [X 推文监控](docs/docs/plugins/x-monitor.md) | 博主订阅、媒体推送与代理配置，需配置 Bearer Token |
 | 链接解析 | [B 站](docs/docs/plugins/link-parser.md)、[抖音](docs/docs/plugins/douyin-link-parser.md)、[X](docs/docs/plugins/x-link-parser.md) 分享链接解析，按会话设置策略 |
 | 命令与会话管理 | 最新动态 / 视频查询、动态图片提取、状态查询、群聊与私聊守卫、自定义消息模板 |
-| [AI 图片检测](docs/docs/plugins/ai-image-detector.md) | OneBot 引用一张图片回复 `ai吗？`，本地校验 C2PA；配置 OpenAI 密钥后同时检测其 C2PA 与 SynthID 信号 |
+| [AI 图片检测](docs/docs/plugins/ai-image-detector.md) | OneBot 引用一张图片回复 `ai吗？`，机器人引用原图消息返回结果；本地校验 C2PA，配置 OpenAI 密钥后同时检测其 C2PA 与 SynthID 信号 |
 | Rust 群功能 | [RCON 远控](docs/docs/plugins/rust-rcon.md)、[签到 / 积分 / 商城](docs/docs/plugins/rust-player.md) |
 | Web Admin | 订阅、账号、权限、模板、运行日志和连接状态统一管理 |
 

@@ -63,17 +63,23 @@ async def test_quote_detects_in_group_and_private_without_transcoding(detector, 
     detector.remote.assert_awaited_once_with(
         b"original-image", "image/png", "test-only-key"
     )
-    assert "检出水印" in detector.send.await_args.args[2].extract_plain_text()
+    reply = detector.send.await_args.args[2]
+    assert reply[0] == MessageSegment.reply(event.reply.message_id)
+    assert event.reply.message_id != event.message_id
+    assert "检出水印" in reply.extract_plain_text()
 
 
 @pytest.mark.parametrize(
     "quoted", [None, "文字", MessageSegment.image("a") + MessageSegment.image("b")]
 )
 async def test_missing_or_ambiguous_picture_does_not_download(detector, quoted):
-    await plugin.handle_ai_image(detector.bot, image_event(quoted=quoted))
+    event = image_event(quoted=quoted)
+    await plugin.handle_ai_image(detector.bot, event)
     detector.fetch.assert_not_awaited()
     detector.remote.assert_not_awaited()
     assert "只包含一张图片" in detector.send.await_args.args[2].extract_plain_text()
+    target_id = event.reply.message_id if event.reply else event.message_id
+    assert detector.send.await_args.args[2][0] == MessageSegment.reply(target_id)
 
 
 async def test_onebot_resolves_quote_before_command_rule(detector):
@@ -86,6 +92,7 @@ async def test_onebot_resolves_quote_before_command_rule(detector):
     assert plugin.is_ai_image_command(event)
     await plugin.handle_ai_image(detector.bot, event)
     detector.fetch.assert_awaited_once()
+    assert detector.send.await_args.args[2][0] == MessageSegment.reply(1)
 
 
 async def test_no_api_key_keeps_local_result_and_skips_upload(detector):
@@ -113,6 +120,7 @@ async def test_remote_failure_keeps_local_ai_declaration(detector, monkeypatch):
     assert "含 AI 生成/编辑声明" in text
     assert "请求受限" in text
     assert "未检出水印" not in text
+    assert detector.send.await_args.args[2][0] == MessageSegment.reply(1)
 
 
 async def test_busy_request_never_starts_another_download(detector):
@@ -123,6 +131,7 @@ async def test_busy_request_never_starts_another_download(detector):
         )
     detector.fetch.assert_not_awaited()
     assert "稍后再试" in detector.send.await_args.args[2].extract_plain_text()
+    assert detector.send.await_args.args[2][0] == MessageSegment.reply(1)
 
 
 async def test_native_failure_releases_lock_and_returns_safe_message(detector):
@@ -133,6 +142,7 @@ async def test_native_failure_releases_lock_and_returns_safe_message(detector):
     )
     assert not plugin._detection_lock.locked()
     assert "sensitive" not in str(detector.send.await_args.args[2])
+    assert detector.send.await_args.args[2][0] == MessageSegment.reply(1)
 
 
 async def test_get_image_url_fallback_never_reads_local_file(detector):

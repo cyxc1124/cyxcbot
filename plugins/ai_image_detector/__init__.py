@@ -4,7 +4,7 @@ import asyncio
 
 import aiohttp
 from nonebot import on_message
-from nonebot.adapters.onebot.v11 import Bot, Message, MessageEvent, MessageSegment
+from nonebot.adapters.onebot.v11 import Bot, MessageEvent, MessageSegment
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 from nonebot.rule import Rule
@@ -70,9 +70,12 @@ async def detect_quoted_image(bot: Bot, event: MessageEvent) -> str:
 async def handle_ai_image(bot: Bot, event: MessageEvent) -> None:
     if not is_ai_image_command(event):
         return
+    reply = MessageSegment.reply(
+        event.reply.message_id if event.reply else event.message_id
+    )
     if _detection_lock.locked():
         await send_event_message(
-            bot, event, Message(MessageSegment.text("图片检测正在进行，请稍后再试。"))
+            bot, event, reply + MessageSegment.text("图片检测正在进行，请稍后再试。")
         )
         return
     async with _detection_lock:
@@ -88,4 +91,4 @@ async def handle_ai_image(bot: Bot, event: MessageEvent) -> None:
                 "AI 图片检测失败"
             )
             text = "图片检测失败，本次无法判断，请稍后重试。"
-        await send_event_message(bot, event, Message(MessageSegment.text(text)))
+        await send_event_message(bot, event, reply + MessageSegment.text(text))
