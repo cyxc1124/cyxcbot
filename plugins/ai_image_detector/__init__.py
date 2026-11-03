@@ -55,12 +55,13 @@ async def detect_quoted_image(bot: Bot, event: MessageEvent) -> str:
     data = await download_image(url)
     media_type = await asyncio.to_thread(image_media_type, data)
     local = await asyncio.to_thread(inspect_c2pa, data)
-    key = get_config_service().get_snapshot().ai_image_openai_api_key
+    snapshot = get_config_service().get_snapshot()
+    key = snapshot.ai_image_openai_api_key
     remote = None
     remote_error = ""
     if key:
         try:
-            remote = await check_openai(data, media_type, key)
+            remote = await check_openai(data, media_type, key, proxy=snapshot.x_proxy)
         except ImageDetectionError as exc:
             remote_error = str(exc)
     return build_report(local, remote, remote_error)

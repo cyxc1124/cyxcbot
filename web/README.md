@@ -79,7 +79,7 @@ TLS 代理应保留浏览器原始 Host。若代理改写 Host，请设置启动
 | `/x/settings` | X 监控参数 |
 | `/bilibili/account` | B 站账号（扫码登录 / Cookie） |
 | `/douyin/account` | 抖音账号 |
-| `/x/account` | X 账号与代理 |
+| `/x/account` | X 账号与出站代理（代理同时供 OpenAI 图片检测使用） |
 | `/system/permissions` | 全局权限（超级用户、状态查询额外授权） |
 | `/system/connections` | 官方 QQ Bot 接入与 OneBot 连接说明 |
 | `/system/commands` | 通用命令触发词、开关与前缀 |
