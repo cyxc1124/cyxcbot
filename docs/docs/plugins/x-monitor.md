@@ -4,6 +4,8 @@ sidebar_position: 5.5
 
 # X 推文监控
 
+X 的出站代理配置同时供 OpenAI 图片 AI 检测使用，修改后对后续请求立即生效；见 [AI 图片检测](./ai-image-detector)。
+
 监控 X (Twitter) 博主新推文，并向配置的群/好友推送。对应插件：`x_monitor`。
 
 :::info 配置方式

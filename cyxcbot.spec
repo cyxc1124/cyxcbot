@@ -3,7 +3,11 @@
 
 import importlib.util
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import (
+    collect_data_files,
+    collect_dynamic_libs,
+    collect_submodules,
+)
 
 block_cipher = None
 
@@ -70,6 +74,7 @@ _collect_packages = (
     "aiohttp",
     "loguru",
     "jose",
+    "c2pa",
 )
 
 hiddenimports = [
@@ -104,6 +109,7 @@ hiddenimports = [
     "propcache",
     "attrs",
     "sniffio",
+    "socksio",
     "websockets",
     "click",
     "watchfiles",
@@ -161,7 +167,7 @@ for package in _data_packages:
 a = Analysis(
     ["bot.py"],
     pathex=[],
-    binaries=[],
+    binaries=collect_dynamic_libs("c2pa"),
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=["hooks"],

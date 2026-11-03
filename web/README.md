@@ -79,11 +79,11 @@ TLS 代理应保留浏览器原始 Host。若代理改写 Host，请设置启动
 | `/x/settings` | X 监控参数 |
 | `/bilibili/account` | B 站账号（扫码登录 / Cookie） |
 | `/douyin/account` | 抖音账号 |
-| `/x/account` | X 账号与代理 |
+| `/x/account` | X 账号与出站代理（代理同时供 OpenAI 图片检测使用） |
 | `/system/permissions` | 全局权限（超级用户、状态查询额外授权） |
 | `/system/connections` | 官方 QQ Bot 接入与 OneBot 连接说明 |
 | `/system/commands` | 通用命令触发词、开关与前缀 |
-| `/system/advanced` | 链接解析共享媒体目录 |
+| `/system/advanced` | AI 图片检测 OpenAI 密钥（加密保存、只读配置状态）、链接解析共享媒体目录 |
 | `/bilibili/parser`、`/x/parser`、`/douyin/parser` | 对应平台的群组 / 好友解析策略 |
 | `/rust/remote/servers`、`groups`、`friends`、`commands`、`custom` | Rust 远控与权限下的服务器、会话权限、命令 |
 | `/rust/players/accounts`、`/rust/players/shop` | Rust 玩家积分与绑定、积分商城 |

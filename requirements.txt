@@ -25,7 +25,7 @@ cryptography==48.0.1
 certifi==2026.10.19
 aiohttp==3.14.5
 aiohttp-socks==0.12.0
-httpx==0.28.1
+httpx[socks]==0.28.1
 
 # 抖音 a_bogus 签名（SM3）
 gmssl==3.2.2
@@ -36,6 +36,8 @@ playwright==1.64.1
 playwright-stealth==2.0.3
 brotli==1.2.1
 Pillow==13.0.0
+# 0.38.0 同时提供 Linux、macOS 和 Windows 原生包。
+c2pa-python==0.38.0
 material-color-utilities==0.2.6
 qrcode==8.2
 

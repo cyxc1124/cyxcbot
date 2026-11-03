@@ -125,6 +125,7 @@ SETTING_KEYS = {
     "x_monitor_interval": ("120", int),
     "x_monitor_use_stagger": ("true", bool),
     "x_api_bearer_encrypted": ("", str),
+    "ai_image_openai_api_key_encrypted": ("", str),
     "x_proxy_enabled": ("false", bool),
     "x_proxy_scheme": ("http", str),
     "x_proxy_host": ("", str),
@@ -265,6 +266,14 @@ class ConfigService:
             except ValueError as exc:
                 logger.error("X API Bearer Token 解密失败: {}", exc)
 
+        ai_image_key_encrypted = settings.get("ai_image_openai_api_key_encrypted", "")
+        ai_image_key = ""
+        if ai_image_key_encrypted:
+            try:
+                ai_image_key = decrypt_value(ai_image_key_encrypted)
+            except ValueError:
+                logger.error("AI 图片检测 OpenAI API Key 解密失败")
+
         official_qq_secret_encrypted = settings.get(
             "official_qq_app_secret_encrypted", ""
         )
@@ -391,6 +400,8 @@ class ConfigService:
             x_message_templates=x_templates_from_settings(settings),
             x_api_bearer=x_api_bearer,
             x_api_bearer_set=bool(x_api_bearer_encrypted),
+            ai_image_openai_api_key=ai_image_key,
+            ai_image_openai_api_key_set=bool(ai_image_key_encrypted),
             x_proxy=x_proxy,
             official_qq_app_id=str(settings.get("official_qq_app_id", "") or ""),
             official_qq_app_secret=official_qq_app_secret,
@@ -1146,6 +1157,10 @@ class ConfigService:
             "x_api_bearer": {
                 "configured": snap.x_api_bearer_set,
                 "preview": x_bearer_masked or None,
+            },
+            "ai_image_openai_api_key": {
+                "configured": snap.ai_image_openai_api_key_set,
+                "preview": None,
             },
             "x_proxy": {
                 "enabled": xp.enabled,
