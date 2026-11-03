@@ -22,7 +22,8 @@ from plugins.ai_image_detector import image
         "https://gchat.qpic.cn:8080/a.png",
         "https://gchat.qpic.cn:bad/a.png",
         "https://evil.test/#https://gchat.qpic.cn/",
-        "https://multimedia.nt.qq.com.cn/a",
+        "https://multimedia.nt.qq.com.cn.evil.test/a",
+        "https://evilmultimedia.nt.qq.com.cn/a",
     ],
 )
 def test_reject_non_cdn_addresses(url):
@@ -30,10 +31,15 @@ def test_reject_non_cdn_addresses(url):
         image.qq_image_url(url)
 
 
-def test_upgrade_qq_cdn_https_without_losing_download_signature():
+@pytest.mark.parametrize(
+    "host", ["gchat.qpic.cn", "multimedia.nt.qq.com", "multimedia.nt.qq.com.cn"]
+)
+def test_upgrade_qq_cdn_https_without_losing_download_signature(host):
     assert (
-        image.qq_image_url("http://gchat.qpic.cn/a?key=test#fragment")
-        == "https://gchat.qpic.cn/a?key=test"
+        image.qq_image_url(
+            f"http://{host}/download?appid=1407&fileid=test&rkey=test#fragment"
+        )
+        == f"https://{host}/download?appid=1407&fileid=test&rkey=test"
     )
 
 
@@ -51,17 +57,20 @@ def response(monkeypatch):
     return SimpleNamespace(value=response, session=session, factory=factory)
 
 
-async def test_download_keeps_original_bytes_and_refuses_redirects(response):
+@pytest.mark.parametrize(
+    "host", ["gchat.qpic.cn", "multimedia.nt.qq.com", "multimedia.nt.qq.com.cn"]
+)
+async def test_download_keeps_original_bytes_and_refuses_redirects(response, host):
     async def chunks(size):
         yield b"original"
         yield b" metadata"
 
     response.value.content.iter_chunked.side_effect = chunks
-    assert await image.download_image("https://gchat.qpic.cn/a") == b"original metadata"
+    assert await image.download_image(f"https://{host}/a") == b"original metadata"
     assert response.session.get.call_args.kwargs["allow_redirects"] is False
     response.value.status = 302
     with pytest.raises(image.ImageDetectionError, match="下载失败"):
-        await image.download_image("https://gchat.qpic.cn/a")
+        await image.download_image(f"https://{host}/a")
 
 
 async def test_stream_limit_works_without_content_length(response, monkeypatch):

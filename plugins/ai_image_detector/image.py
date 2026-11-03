@@ -23,7 +23,10 @@ def qq_image_url(url: str) -> str:
     try:
         parsed = urlsplit(url)
         host = (parsed.hostname or "").lower()
-        allowed = host.endswith(".qpic.cn") or host == "multimedia.nt.qq.com"
+        allowed = host.endswith(".qpic.cn") or host in {
+            "multimedia.nt.qq.com",
+            "multimedia.nt.qq.com.cn",
+        }
         if (
             parsed.scheme not in {"http", "https"}
             or not allowed
