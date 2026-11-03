@@ -88,6 +88,13 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
     if body.x_api_bearer is not None:
         bearer = body.x_api_bearer.strip()
         updates["x_api_bearer_encrypted"] = encrypt_value(bearer) if bearer else ""
+    if body.ai_image_openai_api_key is not None:
+        key = body.ai_image_openai_api_key.strip()
+        if any(ord(char) < 33 or ord(char) > 126 for char in key):
+            raise HTTPException(
+                status_code=400, detail="OpenAI API Key 不得含空白或非 ASCII 字符"
+            )
+        updates["ai_image_openai_api_key_encrypted"] = encrypt_value(key) if key else ""
     if body.x_proxy_enabled is not None:
         updates["x_proxy_enabled"] = str(body.x_proxy_enabled).lower()
     if body.x_proxy_scheme is not None:
