@@ -94,6 +94,9 @@ class SettingsResponse(BaseModel):
     bilibili_cookie: CookieStatusResponse
     douyin_cookie: CookieStatusResponse
     x_api_bearer: CookieStatusResponse
+    ai_image_openai_api_key: CookieStatusResponse = Field(
+        default_factory=lambda: CookieStatusResponse(configured=False)
+    )
     x_proxy: XProxySettingsResponse
     official_qq: OfficialQQSettingsResponse = Field(
         default_factory=lambda: OfficialQQSettingsResponse(
@@ -149,6 +152,9 @@ class SettingsUpdateRequest(BaseModel):
     x_monitor_use_stagger: Optional[bool] = None
     x_template_push: Optional[str] = Field(default=None, max_length=500)
     x_api_bearer: Optional[str] = None
+    ai_image_openai_api_key: Optional[str] = Field(
+        default=None, max_length=512, repr=False
+    )
     x_proxy_enabled: Optional[bool] = None
     x_proxy_scheme: Optional[str] = Field(default=None, max_length=16)
     x_proxy_host: Optional[str] = Field(default=None, max_length=255)

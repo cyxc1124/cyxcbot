@@ -145,6 +145,8 @@ class AppConfigSnapshot:
     x_message_templates: XMessageTemplates = field(default_factory=XMessageTemplates)
     x_api_bearer: str = ""
     x_api_bearer_set: bool = False
+    ai_image_openai_api_key: str = field(default="", repr=False)
+    ai_image_openai_api_key_set: bool = False
     x_proxy: ProxyConfig = field(default_factory=ProxyConfig)
     official_qq_app_id: str = ""
     official_qq_app_secret: str = ""

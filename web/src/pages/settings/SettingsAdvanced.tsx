@@ -5,20 +5,49 @@ import { useSettingsForm } from './SettingsContext'
 export function SettingsAdvancedPage() {
   const { settings, formDisabled, saving, savePartial } = useSettingsForm()
   const [directory, setDirectory] = useState(settings?.link_parser_shared_media_dir ?? '')
+  const [openaiApiKey, setOpenaiApiKey] = useState('')
   const [syncedSettings, setSyncedSettings] = useState(settings)
 
   if (settings !== syncedSettings) {
     setSyncedSettings(settings)
+    setOpenaiApiKey('')
     if (settings) setDirectory(settings.link_parser_shared_media_dir ?? '')
   }
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
-    void savePartial({ link_parser_shared_media_dir: directory.trim() })
+    void savePartial({
+      link_parser_shared_media_dir: directory.trim(),
+      ...(openaiApiKey.trim() ? { ai_image_openai_api_key: openaiApiKey.trim() } : {}),
+    })
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="card space-y-4">
+        <div>
+          <h3 className="font-semibold text-foreground">AI 图片检测</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            OneBot 群聊或私聊中引用一张图片回复「ai吗？」。本地检查 C2PA；配置密钥后，
+            原图还会上传 OpenAI，自动检查其支持的 C2PA 和 SynthID 信号。
+            未检出不能证明图片由人类创作。接口费用以 OpenAI 实际计费为准。
+          </p>
+        </div>
+        <div>
+          <label className="label" htmlFor="ai_image_openai_api_key">OpenAI API Key</label>
+          <input id="ai_image_openai_api_key" type="password" autoComplete="new-password"
+            className="input font-mono text-sm" value={openaiApiKey}
+            placeholder={settings?.ai_image_openai_api_key?.configured ? '已配置，留空保留原密钥' : '未配置，仅进行本地 C2PA 检查'}
+            disabled={formDisabled || saving} onChange={(event) => setOpenaiApiKey(event.target.value)} />
+          <p className="mt-2 text-xs text-muted-foreground">密钥加密保存，读取设置时不会返回密钥。</p>
+        </div>
+        {settings?.ai_image_openai_api_key?.configured && (
+          <button type="button" className="btn-secondary" disabled={formDisabled || saving}
+            onClick={() => { void savePartial({ ai_image_openai_api_key: '' }) }}>
+            清除检测密钥
+          </button>
+        )}
+      </div>
       <div className="card space-y-4">
         <div>
           <h3 className="font-semibold text-foreground">链接解析共享媒体目录</h3>

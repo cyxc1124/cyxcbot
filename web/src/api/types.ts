@@ -85,6 +85,7 @@ export interface Settings {
   bilibili_cookie: CookieStatus
   douyin_cookie: CookieStatus
   x_api_bearer: CookieStatus
+  ai_image_openai_api_key?: CookieStatus
   x_proxy: XProxySettings
   official_qq: OfficialQQSettings
   status_check_allowed_qq: string[]
@@ -108,6 +109,7 @@ export type SettingsUpdate = Partial<
     | 'bilibili_cookie'
     | 'douyin_cookie'
     | 'x_api_bearer'
+    | 'ai_image_openai_api_key'
     | 'x_proxy'
     | 'official_qq'
     | 'command_prefixes'
@@ -116,6 +118,7 @@ export type SettingsUpdate = Partial<
   >
 > & {
   x_api_bearer?: string
+  ai_image_openai_api_key?: string
   x_proxy_enabled?: boolean
   x_proxy_scheme?: string
   x_proxy_host?: string

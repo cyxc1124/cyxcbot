@@ -617,6 +617,45 @@ async def test_shielded_shared_task_not_cancelled_by_waiter() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ai_image_key_is_encrypted_write_only_and_clearable(
+    db_context, monkeypatch
+):
+    from fastapi import HTTPException
+
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.settings import SettingsUpdateRequest
+
+    _, factory, ConfigService, *_, SystemSetting = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    await service.load()
+    key = "sk-test-only-never-a-real-key"
+    response = await settings_api.update_settings(
+        SettingsUpdateRequest(ai_image_openai_api_key=key), None
+    )
+    assert response.ai_image_openai_api_key.configured
+    assert response.ai_image_openai_api_key.preview is None
+    assert key not in response.model_dump_json()
+    assert key not in repr(service.get_snapshot())
+    assert service.get_snapshot().ai_image_openai_api_key == key
+    async with factory() as session:
+        row = await session.get(SystemSetting, "ai_image_openai_api_key_encrypted")
+        assert row.value and row.value != key
+    await settings_api.update_settings(SettingsUpdateRequest(log_level="DEBUG"), None)
+    assert service.get_snapshot().ai_image_openai_api_key == key
+    with pytest.raises(HTTPException):
+        await settings_api.update_settings(
+            SettingsUpdateRequest(ai_image_openai_api_key="bad\nkey"), None
+        )
+    cleared = await settings_api.update_settings(
+        SettingsUpdateRequest(ai_image_openai_api_key=""), None
+    )
+    assert not cleared.ai_image_openai_api_key.configured
+    assert not service.get_snapshot().ai_image_openai_api_key
+
+
+@pytest.mark.asyncio
 async def test_official_settings_permissions_and_friend_cache_round_trip(
     db_context, monkeypatch
 ):

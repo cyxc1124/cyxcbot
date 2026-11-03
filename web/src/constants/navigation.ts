@@ -83,7 +83,7 @@ export const navigationSections: NavigationSection[] = [
       { to: '/system/connections', label: '机器人接入', icon: 'settings', description: '官方 QQ Bot 凭证、接入方式与 OneBot 连接说明' },
       { to: '/system/permissions', label: '权限', title: '权限管理', icon: 'settings', description: '配置超级用户与状态查询的额外授权' },
       { to: '/system/commands', label: '命令', icon: 'command', description: '通用命令触发词、开关与习惯性前缀' },
-      { to: '/system/advanced', label: '高级配置', icon: 'settings', description: '链接解析共享媒体目录' },
+      { to: '/system/advanced', label: '高级配置', icon: 'settings', description: 'AI 图片检测与链接解析共享媒体目录' },
       { to: '/about', label: '关于', icon: 'info' },
     ] }],
   },
