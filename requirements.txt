@@ -36,7 +36,8 @@ playwright==1.64.1
 playwright-stealth==2.0.3
 brotli==1.2.1
 Pillow==13.0.0
-c2pa-python==0.38.2
+# 0.38.0 同时提供 Linux、macOS 和 Windows 原生包。
+c2pa-python==0.38.0
 material-color-utilities==0.2.6
 qrcode==8.2
 
