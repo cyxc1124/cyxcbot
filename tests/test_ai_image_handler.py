@@ -12,6 +12,7 @@ from nonebot.adapters.onebot.v11.bot import _check_reply
 import plugins.ai_image_detector as plugin
 from plugins.ai_image_detector.c2pa_check import C2PAResult
 from plugins.ai_image_detector.image import ImageDetectionError
+from shared.config.proxy import ProxyConfig
 
 
 @pytest.fixture
@@ -29,7 +30,9 @@ def detector(monkeypatch):
     monkeypatch.setattr(plugin, "inspect_c2pa", lambda data: C2PAResult("absent"))
     monkeypatch.setattr(plugin, "send_event_message", send)
     monkeypatch.setattr(plugin, "check_openai", remote)
-    snapshot = SimpleNamespace(ai_image_openai_api_key="test-only-key")
+    snapshot = SimpleNamespace(
+        ai_image_openai_api_key="test-only-key", x_proxy=ProxyConfig()
+    )
     monkeypatch.setattr(
         plugin,
         "get_config_service",
@@ -61,7 +64,7 @@ async def test_quote_detects_in_group_and_private_without_transcoding(detector, 
     await plugin.handle_ai_image(detector.bot, event)
     detector.fetch.assert_awaited_once_with("https://gchat.qpic.cn/original")
     detector.remote.assert_awaited_once_with(
-        b"original-image", "image/png", "test-only-key"
+        b"original-image", "image/png", "test-only-key", proxy=detector.snapshot.x_proxy
     )
     reply = detector.send.await_args.args[2]
     assert reply[0] == MessageSegment.reply(event.reply.message_id)

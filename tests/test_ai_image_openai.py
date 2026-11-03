@@ -10,6 +10,7 @@ from plugins.ai_image_detector import openai_check
 from plugins.ai_image_detector.c2pa_check import C2PAResult
 from plugins.ai_image_detector.image import ImageDetectionError
 from plugins.ai_image_detector.report import build_report
+from shared.config.proxy import ProxyConfig
 
 PAYLOAD = {
     "object": "content_provenance_check",
@@ -26,7 +27,24 @@ PAYLOAD = {
 }
 
 
-async def test_api_multipart_upload_preserves_bytes_and_only_calls_once(monkeypatch):
+@pytest.mark.parametrize(
+    "proxy,expected_url",
+    [
+        (None, None),
+        (ProxyConfig(enabled=False, host="proxy.test", port=7890), None),
+        (
+            ProxyConfig(enabled=True, host="proxy.test", port=7890),
+            "http://proxy.test:7890",
+        ),
+        (
+            ProxyConfig(enabled=True, scheme="socks5", host="proxy.test", port=1080),
+            "socks5://proxy.test:1080",
+        ),
+    ],
+)
+async def test_api_multipart_upload_preserves_bytes_and_only_calls_once(
+    monkeypatch, proxy, expected_url
+):
     calls = []
 
     def handle(request):
@@ -39,9 +57,15 @@ async def test_api_multipart_upload_preserves_bytes_and_only_calls_once(monkeypa
         return httpx.Response(200, json=PAYLOAD)
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
-    monkeypatch.setattr(openai_check.httpx, "AsyncClient", lambda **kwargs: client)
+
+    def client_factory(**kwargs):
+        assert kwargs["proxy"] == expected_url
+        assert kwargs["follow_redirects"] is False
+        return client
+
+    monkeypatch.setattr(openai_check.httpx, "AsyncClient", client_factory)
     result = await openai_check.check_openai(
-        b"original-image-with-metadata", "image/png", "test-only-key"
+        b"original-image-with-metadata", "image/png", "test-only-key", proxy=proxy
     )
     assert result["synthid"]["outcome"] == "detected"
     assert len(calls) == 1

@@ -214,14 +214,14 @@ export function SettingsXAccountPage() {
       <div className="card space-y-4">
         <h3 className="font-semibold text-foreground">出站代理</h3>
         <p className="text-sm text-muted-foreground">
-          访问 X API 时使用的 HTTP/HTTPS/SOCKS5 代理。国内网络通常需要启用。
+          X API 与 OpenAI 图片检测共用的 HTTP/HTTPS/SOCKS5 出站代理。国内网络通常需要启用。
         </p>
 
         <div className="flex items-center gap-4 rounded-lg border border-border bg-muted/30 px-3 py-3">
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-foreground">启用代理</div>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              关闭时即使填写了主机/端口也不会走代理（直连 X API）
+              关闭时忽略此处的代理地址；OpenAI 检测仍会遵循运行环境的代理设置
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">

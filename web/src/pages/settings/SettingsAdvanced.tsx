@@ -40,6 +40,9 @@ export function SettingsAdvancedPage() {
             placeholder={settings?.ai_image_openai_api_key?.configured ? '已配置，留空保留原密钥' : '未配置，仅进行本地 C2PA 检查'}
             disabled={formDisabled || saving} onChange={(event) => setOpenaiApiKey(event.target.value)} />
           <p className="mt-2 text-xs text-muted-foreground">密钥加密保存，读取设置时不会返回密钥。</p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            OpenAI 检测沿用 <Link to="/x/account" className="text-primary hover:underline">X 账号与代理</Link> 中的出站代理；关闭代理时沿用运行环境的网络设置。
+          </p>
         </div>
         {settings?.ai_image_openai_api_key?.configured && (
           <button type="button" className="btn-secondary" disabled={formDisabled || saving}

@@ -2,6 +2,8 @@
 
 import httpx
 
+from shared.config.proxy import ProxyConfig
+
 from .image import ImageDetectionError
 
 _ENDPOINT = "https://api.openai.com/v1/content_provenance_checks"
@@ -42,7 +44,9 @@ def parse_result(payload: object) -> dict[str, dict]:
     return results
 
 
-async def check_openai(data: bytes, media_type: str, api_key: str) -> dict[str, dict]:
+async def check_openai(
+    data: bytes, media_type: str, api_key: str, *, proxy: ProxyConfig | None = None
+) -> dict[str, dict]:
     extension = {
         "image/png": "png",
         "image/jpeg": "jpg",
@@ -50,7 +54,11 @@ async def check_openai(data: bytes, media_type: str, api_key: str) -> dict[str, 
         "image/gif": "gif",
     }[media_type]
     try:
-        async with httpx.AsyncClient(timeout=45, follow_redirects=False) as client:
+        async with httpx.AsyncClient(
+            timeout=45,
+            follow_redirects=False,
+            proxy=proxy.to_url() if proxy else None,
+        ) as client:
             response = await client.post(
                 _ENDPOINT,
                 headers={"Authorization": f"Bearer {api_key}"},

@@ -109,6 +109,7 @@ hiddenimports = [
     "propcache",
     "attrs",
     "sniffio",
+    "socksio",
     "websockets",
     "click",
     "watchfiles",
