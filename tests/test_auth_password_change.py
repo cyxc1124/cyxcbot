@@ -40,9 +40,6 @@ async def auth_client(tmp_path, monkeypatch, request):
     from shared.db.base import Model
 
     login_limiter.__init__()
-    importlib.reload(deps)
-    importlib.reload(auth)
-    importlib.reload(setup)
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'auth.db'}")
     async with engine.begin() as conn:
         await conn.run_sync(Model.metadata.create_all)
