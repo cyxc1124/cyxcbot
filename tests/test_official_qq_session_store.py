@@ -104,6 +104,36 @@ async def test_blank_openid_skips_database(monkeypatch):
     database.assert_not_called()
 
 
+async def test_repeated_events_skip_database_until_refresh_interval(monkeypatch):
+    upsert = AsyncMock()
+    monkeypatch.setattr(sessions, "upsert_session", upsert)
+    clock = [1000.0]
+    monkeypatch.setattr(sessions.time, "monotonic", lambda: clock[0])
+
+    await sessions._upsert_if_stale("g1", "group", "群A")
+    await sessions._upsert_if_stale("g1", "group", "群A")
+    await sessions._upsert_if_stale("g1", "group", "")
+    assert upsert.await_count == 1
+
+    # 名称变化或类型变化必须落库。
+    await sessions._upsert_if_stale("g1", "group", "群B")
+    assert upsert.await_count == 2
+
+    clock[0] += sessions._REFRESH_INTERVAL_SECONDS + 1
+    await sessions._upsert_if_stale("g1", "group", "群B")
+    assert upsert.await_count == 3
+
+
+async def test_delete_clears_throttle_so_readd_is_recorded(session_db):
+    await sessions._upsert_if_stale("g2", "group", "群")
+    await sessions.delete_session("g2")
+    await sessions._upsert_if_stale("g2", "group", "群")
+    _, factory, model = session_db
+    async with factory() as session:
+        rows = (await session.scalars(select(model))).all()
+    assert [row.openid for row in rows] == ["g2"]
+
+
 @pytest.mark.parametrize("scope", ["group", "c2c"])
 async def test_first_message_survives_guard_and_cache_preprocessors(
     scope, session_db, monkeypatch

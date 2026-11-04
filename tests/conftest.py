@@ -73,3 +73,12 @@ def tls_policy_state(monkeypatch: pytest.MonkeyPatch) -> None:
         (connector, "_SSL_CONTEXT_VERIFIED"),
     ):
         monkeypatch.setattr(module, name, getattr(module, name))
+
+
+@pytest.fixture(autouse=True)
+def _reset_official_session_throttle():
+    from shared.adapter import sessions
+
+    sessions._recent_upserts.clear()
+    yield
+    sessions._recent_upserts.clear()

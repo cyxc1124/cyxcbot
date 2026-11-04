@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING, Any, Literal
 
 from nonebot.message import event_preprocessor
@@ -22,6 +23,11 @@ if TYPE_CHECKING:
     from shared.db.models import OfficialQQSession
 
 SessionKind = Literal["group", "c2c"]
+
+# 同一会话的重复消息只需偶尔刷新 last_seen；每条入站消息都 upsert 会白白争 SQLite 写锁。
+_REFRESH_INTERVAL_SECONDS = 600.0
+_MAX_REMEMBERED = 4096
+_recent_upserts: dict[str, tuple[SessionKind, str, float]] = {}
 
 
 def _fallback_name(kind: SessionKind, openid: str) -> str:
@@ -89,10 +95,36 @@ async def upsert_session(openid: str, kind: SessionKind, name: str = "") -> None
             await session.execute(statement)
 
 
+def _recently_recorded(openid: str, kind: SessionKind, name: str) -> bool:
+    last = _recent_upserts.get(openid.strip())
+    if last is None:
+        return False
+    last_kind, last_name, at = last
+    if last_kind != kind or (name and name != last_name):
+        return False
+    return time.monotonic() - at < _REFRESH_INTERVAL_SECONDS
+
+
+async def _upsert_if_stale(openid: str, kind: SessionKind, name: str) -> None:
+    oid = openid.strip()
+    if _recently_recorded(oid, kind, name):
+        return
+    await upsert_session(oid, kind, name)
+    if len(_recent_upserts) >= _MAX_REMEMBERED:
+        _recent_upserts.clear()
+    previous = _recent_upserts.get(oid)
+    _recent_upserts[oid] = (
+        kind,
+        name or (previous[1] if previous else ""),
+        time.monotonic(),
+    )
+
+
 async def delete_session(openid: str) -> None:
     oid = str(openid).strip()
     if not oid:
         return
+    _recent_upserts.pop(oid, None)
     model = _session_model()
     async with _orm_session() as session:
         async with session.begin():
@@ -140,13 +172,13 @@ async def _remember_official_session(event: Any) -> None:
         openid = group_id_of(event)
         if openid:
             label = _event_display_name(event, "group")
-            await upsert_session(openid, "group", label)
+            await _upsert_if_stale(openid, "group", label)
         return
     if name in {"FriendAddEvent"} or is_official_c2c_event(event):
         openid = user_id_of(event)
         if openid:
             label = _event_display_name(event, "c2c")
-            await upsert_session(openid, "c2c", label)
+            await _upsert_if_stale(openid, "c2c", label)
 
 
 @event_preprocessor
