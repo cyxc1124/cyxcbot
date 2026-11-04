@@ -229,6 +229,65 @@ async def test_navigate_dynamic_page_passes_is_article() -> None:
     shot._is_opus_page_ready.assert_awaited_with(page, is_article=True)
 
 
+@pytest.mark.asyncio
+async def test_navigate_dynamic_page_caps_network_idle_wait() -> None:
+    """networkidle 只是尽力而为：超时短且超时后仍应继续截图。"""
+    from utils.screenshot.screenshot import (
+        _NETWORK_IDLE_TIMEOUT_MS,
+        DynamicScreenshot,
+    )
+
+    page = AsyncMock()
+    page.url = "https://www.bilibili.com/opus/1234567890"
+    page.goto = AsyncMock(return_value=MagicMock(status=200))
+
+    async def wait_for_load_state(state, timeout=None):
+        if state == "networkidle":
+            raise TimeoutError("networkidle")
+
+    page.wait_for_load_state = AsyncMock(side_effect=wait_for_load_state)
+    page.wait_for_timeout = AsyncMock()
+
+    card = MagicMock()
+    shot = DynamicScreenshot()
+    shot._wait_for_dynamic_content = AsyncMock(return_value=True)
+    shot._is_opus_page_ready = AsyncMock(return_value=True)
+    shot._find_dynamic_card = AsyncMock(return_value=card)
+    shot._is_login_interstitial = AsyncMock(return_value=False)
+
+    result_card, _ = await shot._navigate_dynamic_page(page, 1234567890)
+
+    assert result_card is card
+    assert _NETWORK_IDLE_TIMEOUT_MS <= 3000
+    page.wait_for_load_state.assert_any_await(
+        "networkidle", timeout=_NETWORK_IDLE_TIMEOUT_MS
+    )
+
+
+@pytest.mark.asyncio
+async def test_page_load_failure_returns_error_without_stack_trace() -> None:
+    """页面加载类失败不再打堆栈（原先同一次失败会打多份）。"""
+    from utils.screenshot.screenshot import DynamicScreenshot, ScreenshotLoadError
+
+    page = MagicMock(close=AsyncMock(), set_viewport_size=AsyncMock())
+    shot = DynamicScreenshot()
+    shot.browser_context = MagicMock(new_page=AsyncMock(return_value=page))
+    shot._navigate_dynamic_page = AsyncMock(
+        side_effect=ScreenshotLoadError("动态页面加载失败: 命中登录墙")
+    )
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "utils.screenshot.screenshot.Stealth",
+            lambda: SimpleNamespace(apply_stealth_async=AsyncMock()),
+        )
+        image, error, url = await shot.get_dynamic_screenshot(1234567890)
+
+    assert image is None and url is None
+    assert error is not None and "命中登录墙" in error
+    page.close.assert_awaited()
+
+
 def test_is_dynamic_not_found_url() -> None:
     """不存在动态跳转链：opus 302→t.bilibili.com/0→www.bilibili.com/404（issue #119）。"""
     from utils.screenshot.screenshot import _is_dynamic_not_found_url
