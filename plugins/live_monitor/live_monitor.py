@@ -416,8 +416,7 @@ class LiveMonitor:
 
         remove_poll_job()
 
-        # 关闭API管理器
-        await api_manager.close()
+        # api_manager 与 B 站链接解析共用，不在此关闭；进程退出时由插件 shutdown 关闭。
 
         await close_card_image_downloader()
 

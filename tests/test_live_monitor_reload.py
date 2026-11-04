@@ -1342,3 +1342,28 @@ async def test_stop_danmaku_clients_tolerates_concurrent_registration(
     await monitor._stop_danmaku_clients()
 
     assert monitor._danmaku_clients == {}
+
+
+@pytest.mark.asyncio
+async def test_stop_monitoring_keeps_shared_api_manager_open(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    """api_manager 与 B 站链接解析共用，监控停止（如 Bot 断线）不能关掉它。"""
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+    monitor.is_running = True
+
+    with (
+        patch("plugins.live_monitor.live_monitor.remove_poll_job"),
+        patch(
+            "plugins.live_monitor.live_monitor.close_card_image_downloader",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.close",
+            new_callable=AsyncMock,
+        ) as shared_close,
+    ):
+        await monitor.stop_monitoring()
+
+    shared_close.assert_not_awaited()
