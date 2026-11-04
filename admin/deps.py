@@ -55,7 +55,6 @@ async def get_current_user(
                     detail="Password changed, please log in again",
                 )
             # Detach scalars before session closes
-            await session.refresh(user)
             session.expunge(user)
     request.state.user = user
     return user
