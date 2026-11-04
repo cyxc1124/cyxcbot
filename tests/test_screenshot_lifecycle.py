@@ -172,3 +172,27 @@ async def test_close_during_initialization_waits_and_releases_resources(runtime)
 
     assert shot.browser_context is None
     _assert_closed(runtime)
+
+
+async def test_crashed_browser_is_rebuilt_on_next_screenshot(runtime, monkeypatch):
+    replacement = _runtime()
+    runtime.factory.side_effect = [runtime.manager, replacement.manager]
+    runtime.browser.is_connected = Mock(return_value=True)
+    replacement.browser.is_connected = Mock(return_value=True)
+    shot = ss.DynamicScreenshot()
+    monkeypatch.setattr(ss, "dynamic_screenshot", shot)
+    capture = AsyncMock(return_value=(b"img", None, None))
+    monkeypatch.setattr(shot, "get_dynamic_screenshot", capture)
+
+    assert await shot.init_browser()
+    assert shot.browser_alive
+    runtime.browser.is_connected.return_value = False  # Chromium 被 OOM 杀掉
+    runtime.context.close.side_effect = RuntimeError("Target closed")
+    assert not shot.browser_alive
+
+    assert await ss.get_dynamic_screenshot(1) == (b"img", None, None)
+
+    assert shot.browser_context is replacement.context
+    assert shot.browser_alive
+    capture.assert_awaited_once()
+    await shot.close_browser()
