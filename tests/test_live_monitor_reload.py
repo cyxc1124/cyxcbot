@@ -1367,3 +1367,23 @@ async def test_stop_monitoring_keeps_shared_api_manager_open(
         await monitor.stop_monitoring()
 
     shared_close.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_init_room_states_tolerates_rooms_added_during_startup(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+    seen: list[str] = []
+
+    async def initialize(room_id: str) -> bool:
+        seen.append(room_id)
+        # 启动期间配置热重载新增房间。
+        monitor.room_states["222"] = LiveRoomState(room_id=222)
+        return True
+
+    with patch.object(monitor, "_initialize_room", side_effect=initialize):
+        await monitor._init_room_states()
+
+    assert seen == ["111"]

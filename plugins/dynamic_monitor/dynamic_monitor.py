@@ -132,10 +132,8 @@ class DynamicMonitor(StaggeredPollingMixin, DeliveryGuardMixin):
         self.initialized_uids.pop(uid, None)
         self.pinned_dynamic_ids.pop(uid, None)
         self._delivery_locks.pop(uid, None)
-        pending_targets = getattr(self, "_pending_targets", None)
-        if pending_targets is not None:
-            for key in [key for key in pending_targets if key[0] == uid]:
-                pending_targets.pop(key, None)
+        for key in [key for key in self._pending_targets if key[0] == uid]:
+            self._pending_targets.pop(key, None)
 
     async def _init_new_uids(self, uids: List[str]) -> None:
         results = await run_with_concurrency(uids, self._check_user_dynamic)
@@ -666,7 +664,7 @@ class DynamicMonitor(StaggeredPollingMixin, DeliveryGuardMixin):
             return False
 
         pending_key = (uid, dynamic.id, is_pinned)
-        pending_targets = self.__dict__.setdefault("_pending_targets", {})
+        pending_targets = self._pending_targets
         pending = pending_targets.get(pending_key)
         if pending is None:
             if not self.config.dynamic_monitor_mapping.get(

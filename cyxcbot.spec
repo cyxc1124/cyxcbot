@@ -73,7 +73,7 @@ _collect_packages = (
     "apscheduler",
     "aiohttp",
     "loguru",
-    "jose",
+    "jwt",
     "c2pa",
 )
 
