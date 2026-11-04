@@ -54,6 +54,13 @@ def web_secret_key(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def _reset_official_session_throttle() -> None:
+    from shared.adapter import sessions
+
+    sessions._recent_upserts.clear()
+
+
 @pytest.fixture
 def tls_policy_state(monkeypatch: pytest.MonkeyPatch) -> None:
     """Restore process-wide client defaults after startup/policy tests."""
