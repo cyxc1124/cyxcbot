@@ -6,16 +6,20 @@ import asyncio
 
 import pytest
 
-from shared.monitor.base import DeliveryGuardMixin, PollingMonitorMixin
+from shared.monitor.base import (
+    DeliveryGuardMixin,
+    PollingMonitorMixin,
+    StaggeredPollingMixin,
+)
 from shared.monitor.check_cycle import CheckCycleLogger
 
 
-class _Poller(PollingMonitorMixin):
+class _Poller(StaggeredPollingMixin):
     _monitor_label = "测试监控"
 
-    def __init__(self, ids: list[str], failing: set[str] = frozenset()):
+    def __init__(self, ids: list[str], failing: set[str] | None = None):
         self.ids = ids
-        self.failing = failing
+        self.failing = failing or set()
         self.checked: list[str] = []
         self.is_running = True
         self.last_check_at = None
@@ -115,3 +119,8 @@ async def test_drain_waits_for_spawned_delivery_tasks():
     await guard._drain_pending_deliveries()
     assert done == [1]
     assert not guard._delivery_tasks
+
+
+def test_stagger_is_opt_in():
+    assert not hasattr(PollingMonitorMixin, "_check_next_target")
+    assert hasattr(StaggeredPollingMixin, "_check_next_target")

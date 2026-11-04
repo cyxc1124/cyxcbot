@@ -20,7 +20,7 @@ from shared.config.service import get_config_service
 from shared.config.shared_media import chmod_shared_media_file, ensure_shared_media_dir
 from shared.db.models import XTarget
 from shared.monitor.background_task import spawn_background_task
-from shared.monitor.base import DeliveryGuardMixin, PollingMonitorMixin
+from shared.monitor.base import DeliveryGuardMixin, StaggeredPollingMixin
 from shared.monitor.check_cycle import CheckCycleLogger
 from shared.monitor.concurrency import run_with_concurrency
 from shared.monitor.poll_schedule import compute_dynamic_poll_schedule
@@ -77,7 +77,7 @@ def _ensure_config_reload_registered() -> None:
         _config_reload_registered = True
 
 
-class XMonitor(PollingMonitorMixin, DeliveryGuardMixin):
+class XMonitor(StaggeredPollingMixin, DeliveryGuardMixin):
     """X 博主推文监控核心类。"""
 
     _monitor_label = "X 监控"
@@ -116,7 +116,8 @@ class XMonitor(PollingMonitorMixin, DeliveryGuardMixin):
     def _is_active_username(self, username: str) -> bool:
         return username in self.config.x_monitor_mapping
 
-    _is_active_target = _is_active_username
+    def _is_active_target(self, target_id: str) -> bool:
+        return self._is_active_username(target_id)
 
     def _target_ids(self) -> List[str]:
         return self._username_list()

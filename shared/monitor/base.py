@@ -17,15 +17,14 @@ class PollingMonitorMixin:
     """分散 / 批量 / 手动检查的公共实现。
 
     子类需设置 ``_monitor_label``，并实现 ``_target_ids`` 与 ``_check_target``
-    （拉取失败返回 False）；``__init__`` 中需创建 ``is_running``、``last_check_at``、
-    ``_stagger_index`` 与 ``_cycle_logger``。
+    （拉取失败返回 False）；``__init__`` 中需创建 ``is_running``、``last_check_at`` 与
+    ``_cycle_logger``。
     """
 
     _monitor_label = ""
 
     is_running: bool
     last_check_at: Optional[str]
-    _stagger_index: int
     _cycle_logger: CheckCycleLogger
 
     def _target_ids(self) -> List[str]:
@@ -36,37 +35,6 @@ class PollingMonitorMixin:
 
     def _touch_last_check_at(self) -> None:
         self.last_check_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-    async def _check_next_target(self) -> None:
-        """分散检查：每次 tick 只检查下一个目标，由 APScheduler 调用。"""
-        if not self.is_running:
-            logger.debug("监控已停止，跳过本次检查")
-            return
-
-        target_ids = self._target_ids()
-        if not target_ids:
-            return
-
-        if self._stagger_index >= len(target_ids):
-            self._stagger_index = 0
-
-        target_id = target_ids[self._stagger_index]
-        self._stagger_index = (self._stagger_index + 1) % len(target_ids)
-        cycle_completed = self._stagger_index == 0
-
-        try:
-            ok = await self._check_target(target_id)
-            if ok is False:
-                self._cycle_logger.record_failure(target_id)
-            else:
-                self._cycle_logger.record_success()
-                self._touch_last_check_at()
-        except Exception as e:
-            self._cycle_logger.record_error(target_id, e)
-
-        if cycle_completed:
-            self._cycle_logger.emit_summary()
-            self._touch_last_check_at()
 
     async def _check_all_targets(self) -> None:
         """批量检查全部目标，由 APScheduler 调用。"""
@@ -125,6 +93,46 @@ class PollingMonitorMixin:
             logger.opt(exception=True).error("{}检查出错", self._monitor_label)
 
         return {"checked": checked, "failed": failed}
+
+
+class StaggeredPollingMixin(PollingMonitorMixin):
+    """在批量检查之外支持分散检查（每次 tick 只查一个目标）。
+
+    ``__init__`` 中还需创建 ``_stagger_index``。
+    """
+
+    _stagger_index: int
+
+    async def _check_next_target(self) -> None:
+        """分散检查：每次 tick 只检查下一个目标，由 APScheduler 调用。"""
+        if not self.is_running:
+            logger.debug("监控已停止，跳过本次检查")
+            return
+
+        target_ids = self._target_ids()
+        if not target_ids:
+            return
+
+        if self._stagger_index >= len(target_ids):
+            self._stagger_index = 0
+
+        target_id = target_ids[self._stagger_index]
+        self._stagger_index = (self._stagger_index + 1) % len(target_ids)
+        cycle_completed = self._stagger_index == 0
+
+        try:
+            ok = await self._check_target(target_id)
+            if ok is False:
+                self._cycle_logger.record_failure(target_id)
+            else:
+                self._cycle_logger.record_success()
+                self._touch_last_check_at()
+        except Exception as e:
+            self._cycle_logger.record_error(target_id, e)
+
+        if cycle_completed:
+            self._cycle_logger.emit_summary()
+            self._touch_last_check_at()
 
 
 class DeliveryGuardMixin:

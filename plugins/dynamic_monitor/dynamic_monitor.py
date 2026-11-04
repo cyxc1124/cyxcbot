@@ -15,7 +15,7 @@ from nonebot.log import logger
 from shared.adapter.qq_errors import is_terminal_qq_error_text
 from shared.config.service import get_config_service
 from shared.monitor.background_task import spawn_background_task
-from shared.monitor.base import DeliveryGuardMixin, PollingMonitorMixin
+from shared.monitor.base import DeliveryGuardMixin, StaggeredPollingMixin
 from shared.monitor.check_cycle import CheckCycleLogger
 from shared.monitor.concurrency import run_with_concurrency
 from shared.monitor.poll_schedule import compute_dynamic_poll_schedule
@@ -77,7 +77,7 @@ def _ensure_config_reload_registered() -> None:
         _config_reload_registered = True
 
 
-class DynamicMonitor(PollingMonitorMixin, DeliveryGuardMixin):
+class DynamicMonitor(StaggeredPollingMixin, DeliveryGuardMixin):
     """UP主动态监控核心类"""
 
     _monitor_label = "动态监控"
@@ -116,7 +116,8 @@ class DynamicMonitor(PollingMonitorMixin, DeliveryGuardMixin):
     def _is_active_uid(self, uid: str) -> bool:
         return uid in self.config.dynamic_monitor_mapping
 
-    _is_active_target = _is_active_uid
+    def _is_active_target(self, target_id: str) -> bool:
+        return self._is_active_uid(target_id)
 
     def _target_ids(self) -> List[str]:
         return self._uid_list()
