@@ -177,7 +177,7 @@ database:
   url: "postgresql+psycopg://user:password@postgres:5432/cyxcbot"
 ```
 
-`database.url` 由 ConfigMap 注入，勿将含真实密码的 values 文件提交 Git。仅修改 URL 不会迁移已有 SQLite 数据。确认不需要保留本地日志、缓存等文件后才关闭 PVC（`persistence.enabled: false`）；关闭后 `/app/data` 使用 `emptyDir`，Pod 删除后数据丢失。
+`database.url` 由 ConfigMap 注入，勿将含真实密码的 values 文件提交 Git。仅修改 URL 不会迁移已有 SQLite 数据。确认不需要保留本地日志、缓存等文件后才关闭 PVC（`persistence.enabled: false`）；关闭后 `/app/data` 使用 `emptyDir`，Pod 删除后数据丢失。待投递通知快照里的大块截图/卡片图保存在 `data/pending_media/`，数据库只存引用；关闭 PVC 后 Pod 重建时，尚未投递完成的通知会丢失这些图片，降级为仅文字推送。
 
 ## 版本历史
 
