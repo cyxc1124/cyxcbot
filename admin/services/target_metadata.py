@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Optional
 
 import aiohttp
@@ -201,10 +202,35 @@ async def resolve_x_target_name(
     return None, None
 
 
+# 列表页每次打开都会触发补全；X API 按量计费，同一用户名在冷却期内只查一次
+# （无论成功或失败），避免 Bearer 配错 / 用户名不存在时反复请求。
+_X_PROFILE_RETRY_SECONDS = 600
+_x_profile_attempts: dict[str, float] = {}
+
+
+def _claim_x_profile_lookups(items: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    """Drop items looked up within the cooldown and mark the rest as attempted."""
+    now = time.monotonic()
+    for key in [
+        key
+        for key, at in _x_profile_attempts.items()
+        if now - at >= _X_PROFILE_RETRY_SECONDS
+    ]:
+        del _x_profile_attempts[key]
+    claimed: list[tuple[int, str]] = []
+    for target_id, username in items:
+        if username in _x_profile_attempts:
+            continue
+        _x_profile_attempts[username] = now
+        claimed.append((target_id, username))
+    return claimed
+
+
 async def resolve_missing_x_target_names(
     items: list[tuple[int, str]],
 ) -> None:
     """Background: resolve and persist missing X target display names / user_ids."""
+    items = _claim_x_profile_lookups(items)
     if not items:
         return
     resolved: list[tuple[int, str, str, str | None]] = []

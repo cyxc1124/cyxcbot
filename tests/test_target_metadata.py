@@ -578,3 +578,23 @@ def test_parse_x_username_rejects_invalid_handles():
         targets_api._parse_x_username("user name")
     with pytest.raises(HTTPException):
         targets_api._parse_x_username("a" * 16)
+
+
+@pytest.mark.asyncio
+async def test_resolve_missing_x_names_backs_off_after_failure():
+    tm._x_profile_attempts.clear()
+    lookup = AsyncMock(return_value=None)
+    with patch.object(tm, "resolve_x_user", lookup):
+        await tm.resolve_missing_x_target_names([(1, "alice"), (2, "bob")])
+        # 失败后列表再次打开：冷却期内不再请求 X API。
+        await tm.resolve_missing_x_target_names([(1, "alice")])
+        await tm.resolve_missing_x_target_names([(3, "carol"), (1, "alice")])
+    assert [c.args[0] for c in lookup.await_args_list] == ["alice", "bob", "carol"]
+
+    # 冷却期过后允许重试。
+    for key in tm._x_profile_attempts:
+        tm._x_profile_attempts[key] -= tm._X_PROFILE_RETRY_SECONDS
+    with patch.object(tm, "resolve_x_user", lookup):
+        await tm.resolve_missing_x_target_names([(1, "alice")])
+    assert lookup.await_count == 4
+    tm._x_profile_attempts.clear()
