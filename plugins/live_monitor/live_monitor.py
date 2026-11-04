@@ -9,14 +9,15 @@ B站直播监控核心模块
 """
 
 import asyncio
-from datetime import datetime, timezone
-from typing import Dict, List, Optional, Set
+from datetime import datetime
+from typing import Dict, Optional, Set
 
 import aiohttp
 from nonebot.log import logger
 
 from shared.config.service import get_config_service
 from shared.monitor.background_task import spawn_background_task
+from shared.monitor.base import PollingMonitorMixin
 from shared.monitor.check_cycle import CheckCycleLogger
 from shared.monitor.concurrency import run_with_concurrency
 from shared.monitor.poll_schedule import (
@@ -73,13 +74,15 @@ def _ensure_config_reload_registered() -> None:
         _config_reload_registered = True
 
 
-class LiveMonitor:
+class LiveMonitor(PollingMonitorMixin):
     """B站直播监控核心类
 
     双重监控机制：
     1. WebSocket 弹幕客户端：实时监听开播/关播信号（秒级响应）
     2. API 轮询：定时检查状态（备用，防止 WebSocket 漏消息）
     """
+
+    _monitor_label = "直播监控"
 
     def __init__(self, config: Config):
         self.config = config
@@ -114,11 +117,14 @@ class LiveMonitor:
         self.last_check_at: Optional[str] = None
         self.checks_total = 0
 
-    def _touch_last_check_at(self) -> None:
-        self.last_check_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-
     def _configured_room_ids(self) -> list[str]:
         return list(self.config.live_monitor_mapping.keys())
+
+    def _target_ids(self) -> list[str]:
+        return self._configured_room_ids()
+
+    async def _check_target(self, target_id: str) -> bool:
+        return await self._check_room_status(target_id)
 
     def _is_active_room(self, room_id: str) -> bool:
         return room_id in self.config.live_monitor_mapping
@@ -259,7 +265,7 @@ class LiveMonitor:
                 old_interval != self.config.monitor_interval
                 or old_ws != self.config.use_websocket
             ):
-                register_poll_job(self._check_all_rooms, poll_interval)
+                register_poll_job(self._check_all_targets, poll_interval)
                 logger.info("直播监控轮询间隔已更新为 {}秒", poll_interval)
 
             ws_toggled = old_ws != self.config.use_websocket
@@ -397,7 +403,7 @@ class LiveMonitor:
             poll_interval = self._scheduled_poll_interval_seconds()
             logger.info("直播监控已启动：仅 API 轮询模式（间隔 {}秒）", poll_interval)
 
-        register_poll_job(self._check_all_rooms, poll_interval)
+        register_poll_job(self._check_all_targets, poll_interval)
 
     async def stop_monitoring(self):
         """停止监控"""
@@ -736,25 +742,6 @@ class LiveMonitor:
         """初始化所有房间的状态（首次启动时）"""
         await run_with_concurrency(list(self.room_states), self._initialize_room)
 
-    async def _check_all_rooms(self):
-        """检查所有房间的直播状态"""
-        if not self.is_running:
-            logger.debug("监控已停止，跳过本次检查")
-            return
-
-        room_ids = self._configured_room_ids()
-        results = await run_with_concurrency(room_ids, self._check_room_status)
-        for room_id, ok in zip(room_ids, results):
-            if isinstance(ok, BaseException):
-                self._cycle_logger.record_error(room_id, ok)
-            elif ok is False:
-                self._cycle_logger.record_failure(room_id)
-            else:
-                self._cycle_logger.record_success()
-
-        self._cycle_logger.emit_summary()
-        self._touch_last_check_at()
-
     async def _check_room_status(self, room_id: str) -> bool:
         """检查单个房间的直播状态，拉取失败返回 False。"""
         if not self._is_active_room(room_id):
@@ -912,39 +899,6 @@ class LiveMonitor:
             self._persist_state(room_id),
             name_args=(room_id,),
         )
-
-    async def run_manual_check(
-        self, room_ids: Optional[List[str]] = None
-    ) -> Dict[str, List[str]]:
-        """检查指定或全部直播间的状态（手动触发时使用）。"""
-        if not self.is_running:
-            logger.debug("监控已停止，跳过本次检查")
-            return {"checked": [], "failed": []}
-
-        rid_list = room_ids if room_ids is not None else self._configured_room_ids()
-        cycle = CheckCycleLogger("直播监控（手动）")
-        checked: List[str] = []
-        failed: List[str] = []
-
-        try:
-            results = await run_with_concurrency(rid_list, self._check_room_status)
-            for room_id, ok in zip(rid_list, results):
-                if isinstance(ok, BaseException):
-                    cycle.record_error(room_id, ok)
-                    failed.append(room_id)
-                elif ok is False:
-                    cycle.record_failure(room_id)
-                    failed.append(room_id)
-                else:
-                    cycle.record_success()
-                    checked.append(room_id)
-
-            cycle.emit_summary(log_success_at_info=True)
-            self._touch_last_check_at()
-        except Exception:
-            logger.opt(exception=True).error("直播监控检查出错")
-
-        return {"checked": checked, "failed": failed}
 
     async def check_room_now(self, room_id: str) -> Optional[Dict]:
         """立即检查指定房间的状态（用于手动触发）"""

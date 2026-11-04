@@ -31,7 +31,7 @@
 plugins/dynamic_monitor/
 ├── __init__.py          # 插件入口、生命周期、查询命令
 ├── config.py            # 从 ConfigService 加载配置
-├── dynamic_monitor.py   # 轮询监控核心逻辑
+├── dynamic_monitor.py   # 轮询监控核心逻辑（轮询/generation/投递任务骨架见 shared/monitor/base.py）
 ├── dynamic_extract.py   # 动态图片提取
 ├── sender.py            # 消息构建与发送
 └── README.md

@@ -12,7 +12,7 @@
 plugins/x_monitor/
 ├── __init__.py        # 插件入口、生命周期（无群命令）
 ├── config.py          # 从 ConfigService 加载配置
-├── x_monitor.py       # 轮询监控核心
+├── x_monitor.py       # 轮询监控核心（轮询/generation/投递任务骨架见 shared/monitor/base.py）
 ├── check_logic.py     # 新推文收集 / 首次基准
 ├── state_store.py     # 游标持久化
 ├── poll_scheduler.py  # APScheduler 任务

@@ -86,6 +86,7 @@
 | 任务 | 位置 |
 |------|------|
 | 新增/改监控逻辑 | `plugins/<name>/` |
+| 监控公共骨架（分散/批量/手动检查、generation 防过期、后台投递任务） | `shared/monitor/base.py`（动态/直播/X 共用，改一处即可） |
 | 共享 DB 模型 | `shared/db/models.py` + 新 migration |
 | 运行时配置读写 | `shared/config/service.py` |
 | 消息模板默认值 | `shared/config/message_templates.py` |

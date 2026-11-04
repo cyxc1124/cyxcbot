@@ -31,7 +31,7 @@ plugins/live_monitor/
 ├── __init__.py        # 插件入口、命令处理
 ├── config.py          # 从 ConfigService 加载配置
 ├── models.py          # 监控状态模型
-├── live_monitor.py    # 监控核心逻辑
+├── live_monitor.py    # 监控核心逻辑（批量/手动检查骨架见 shared/monitor/base.py）
 ├── danmaku_client.py  # WebSocket 弹幕客户端
 ├── card_generator.py  # 开播/下播卡片
 ├── sender.py          # 通知发送
