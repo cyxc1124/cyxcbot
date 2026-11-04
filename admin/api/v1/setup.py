@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, Request
 from nonebot_plugin_orm import get_session
 from sqlalchemy import func, select
@@ -37,7 +39,7 @@ async def setup(body: SetupRequest, request: Request):
         async with session.begin():
             await claim_initial_setup(session)
 
-            password_hash = hash_password(body.password)
+            password_hash = await asyncio.to_thread(hash_password, body.password)
             user = User(
                 username=body.username,
                 password_hash=password_hash,

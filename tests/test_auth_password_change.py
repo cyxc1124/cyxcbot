@@ -37,6 +37,9 @@ async def auth_client(tmp_path, monkeypatch, request):
     from admin.api.v1 import auth, setup
     from shared.db.base import Model
 
+    from admin.auth.login_limiter import login_limiter
+
+    login_limiter.__init__()
     importlib.reload(deps)
     importlib.reload(auth)
     importlib.reload(setup)
@@ -503,3 +506,56 @@ async def test_browser_cookie_cors_disallows_credentialed_preflights(auth_client
         )
     assert response.status_code == 200
     assert "access-control-allow-credentials" not in response.headers
+
+
+async def test_login_limits_repeated_failures_and_resets_on_success(auth_client):
+    from admin.auth import login_limiter as limiter_module
+
+    client, _ = auth_client
+    client.headers.pop("Authorization")
+    limiter_module.login_limiter.__init__()
+    wrong = {"username": "admin", "password": "wrong-password"}
+    for _ in range(limiter_module.MAX_FAILURES_PER_USERNAME - 1):
+        assert (await client.post("auth/login", json=wrong)).status_code == 401
+    ok = await client.post(
+        "auth/login", json={"username": "admin", "password": OLD_PASSWORD}
+    )
+    assert ok.status_code == 200  # 成功登录清空该用户名的失败计数
+
+    for _ in range(limiter_module.MAX_FAILURES_PER_USERNAME):
+        assert (await client.post("auth/login", json=wrong)).status_code == 401
+    blocked = await client.post("auth/login", json=wrong)
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) > 0
+    # 锁定期间即使密码正确也不放行，防止暴破者继续试探。
+    correct = {"username": "admin", "password": OLD_PASSWORD}
+    assert (await client.post("auth/login", json=correct)).status_code == 429
+    limiter_module.login_limiter.__init__()
+
+
+async def test_login_unknown_user_is_counted_like_wrong_password(auth_client):
+    from admin.auth import login_limiter as limiter_module
+
+    client, _ = auth_client
+    client.headers.pop("Authorization")
+    limiter_module.login_limiter.__init__()
+    body = {"username": "ghost-user", "password": "whatever-password"}
+    for _ in range(limiter_module.MAX_FAILURES_PER_USERNAME):
+        response = await client.post("auth/login", json=body)
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid credentials"
+    assert (await client.post("auth/login", json=body)).status_code == 429
+    limiter_module.login_limiter.__init__()
+
+
+def test_login_limiter_window_expires(monkeypatch):
+    from admin.auth import login_limiter as limiter_module
+
+    now = [1000.0]
+    monkeypatch.setattr(limiter_module.time, "monotonic", lambda: now[0])
+    limiter = limiter_module.LoginLimiter()
+    for _ in range(limiter_module.MAX_FAILURES_PER_IP):
+        limiter.record_failure("1.2.3.4", "a")
+    assert limiter.retry_after("1.2.3.4", "other") > 0
+    now[0] += limiter_module.WINDOW_SECONDS + 1
+    assert limiter.retry_after("1.2.3.4", "other") == 0
