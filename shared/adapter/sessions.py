@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING, Any, Literal
 
 from nonebot.message import event_preprocessor
@@ -22,6 +23,11 @@ if TYPE_CHECKING:
     from shared.db.models import OfficialQQSession
 
 SessionKind = Literal["group", "c2c"]
+
+# 同一会话在窗口内且 (类型, 名称) 未变时不重复写库；守卫与缓存预处理器会各调一次，
+# 群里每条消息也不必都落库。last_seen 因此最多滞后一个窗口。
+_UPSERT_INTERVAL_SECONDS = 600.0
+_recent_upserts: dict[str, tuple[SessionKind, str, float]] = {}
 
 
 def _fallback_name(kind: SessionKind, openid: str) -> str:
@@ -93,6 +99,7 @@ async def delete_session(openid: str) -> None:
     oid = str(openid).strip()
     if not oid:
         return
+    _recent_upserts.pop(oid, None)
     model = _session_model()
     async with _orm_session() as session:
         async with session.begin():
@@ -109,6 +116,26 @@ async def list_sessions(kind: SessionKind | None = None) -> list[OfficialQQSessi
             stmt = stmt.where(model.kind == kind)
         rows = (await session.scalars(stmt)).all()
         return list(rows)
+
+
+async def _upsert_if_stale(openid: str, kind: SessionKind, name: str) -> None:
+    openid = str(openid).strip()
+    now = time.monotonic()
+    last = _recent_upserts.get(openid)
+    if (
+        last is not None
+        and last[0] == kind
+        and last[1] == name
+        and now - last[2] < _UPSERT_INTERVAL_SECONDS
+    ):
+        return
+    # 先占位再写库，并发的第二次调用直接跳过；写失败则释放，下一条消息重试。
+    _recent_upserts[openid] = (kind, name, now)
+    try:
+        await upsert_session(openid, kind, name)
+    except BaseException:
+        _recent_upserts.pop(openid, None)
+        raise
 
 
 def _event_type_name(event: Any) -> str:
@@ -140,13 +167,13 @@ async def _remember_official_session(event: Any) -> None:
         openid = group_id_of(event)
         if openid:
             label = _event_display_name(event, "group")
-            await upsert_session(openid, "group", label)
+            await _upsert_if_stale(openid, "group", label)
         return
     if name in {"FriendAddEvent"} or is_official_c2c_event(event):
         openid = user_id_of(event)
         if openid:
             label = _event_display_name(event, "c2c")
-            await upsert_session(openid, "c2c", label)
+            await _upsert_if_stale(openid, "c2c", label)
 
 
 @event_preprocessor
