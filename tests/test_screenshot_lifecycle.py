@@ -196,3 +196,38 @@ async def test_crashed_browser_is_rebuilt_on_next_screenshot(runtime, monkeypatc
     assert shot.browser_alive
     capture.assert_awaited_once()
     await shot.close_browser()
+
+
+async def test_close_waits_for_inflight_screenshot_and_blocks_new_ones(
+    runtime, monkeypatch
+):
+    """动态监控停止/改 Cookie 时关闭共享浏览器，不能打断链接解析正在进行的截图。"""
+    shot = ss.DynamicScreenshot()
+    monkeypatch.setattr(ss, "dynamic_screenshot", shot)
+    monkeypatch.setattr(ss, "_screenshot_semaphore", asyncio.Semaphore(2))
+    runtime.browser.is_connected = Mock(return_value=True)
+    assert await shot.init_browser()
+
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def capture(*_args, **_kwargs):
+        started.set()
+        await release.wait()
+        return b"img", None, None
+
+    monkeypatch.setattr(shot, "get_dynamic_screenshot", capture)
+    inflight = asyncio.create_task(ss.get_dynamic_screenshot(1))
+    await started.wait()
+
+    closing = asyncio.create_task(ss.close_screenshot_service())
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert not closing.done()
+    assert shot.browser_context is not None  # 截图还在跑，浏览器不能被关
+
+    release.set()
+    assert await inflight == (b"img", None, None)
+    await closing
+    assert shot.browser_context is None
+    # 名额已归还，后续截图不会被卡住
+    assert ss._screenshot_semaphore._value == 2

@@ -609,6 +609,8 @@ dynamic_screenshot = DynamicScreenshot()
 _SCREENSHOT_CONCURRENCY = 2
 _screenshot_semaphore = asyncio.Semaphore(_SCREENSHOT_CONCURRENCY)
 _init_lock = asyncio.Lock()
+# 串行化「占满全部名额」的关闭流程，避免两个关闭方各占一部分名额互相等待。
+_close_lock = asyncio.Lock()
 
 
 async def get_dynamic_screenshot(
@@ -629,17 +631,17 @@ async def get_dynamic_screenshot(
     global dynamic_screenshot
     logger.debug("请求获取动态 {} 截图{}", dynamic_id, "（专栏）" if is_article else "")
 
-    # 浏览器未初始化或已崩溃时（重新）初始化；加锁双重检查，避免并发重复启动浏览器
-    if not dynamic_screenshot.browser_alive:
-        async with _init_lock:
-            if not dynamic_screenshot.browser_alive:
-                logger.info("为动态 {} 初始化浏览器", dynamic_id)
-                success = await dynamic_screenshot.init_browser()
-                if not success:
-                    logger.error("浏览器初始化失败")
-                    return None, "浏览器初始化失败", None
-
+    # 先占名额再检查浏览器：close_screenshot_service 占满名额时等它关完，随后在此懒重建，
+    # 不会在检查通过后被关闭打断。加锁双重检查，避免并发重复启动浏览器。
     async with _screenshot_semaphore:
+        if not dynamic_screenshot.browser_alive:
+            async with _init_lock:
+                if not dynamic_screenshot.browser_alive:
+                    logger.info("为动态 {} 初始化浏览器", dynamic_id)
+                    success = await dynamic_screenshot.init_browser()
+                    if not success:
+                        logger.error("浏览器初始化失败")
+                        return None, "浏览器初始化失败", None
         screenshot, error, page_url = await dynamic_screenshot.get_dynamic_screenshot(
             dynamic_id, is_article=is_article
         )
@@ -657,6 +659,15 @@ async def init_screenshot_service():
 
 
 async def close_screenshot_service():
-    """关闭截图服务"""
+    """关闭截图服务；浏览器由动态监控与链接解析共用，先等进行中的截图完成。"""
     global dynamic_screenshot
-    await dynamic_screenshot.close_browser()
+    async with _close_lock:
+        acquired = 0
+        try:
+            for _ in range(_SCREENSHOT_CONCURRENCY):
+                await _screenshot_semaphore.acquire()
+                acquired += 1
+            await dynamic_screenshot.close_browser()
+        finally:
+            for _ in range(acquired):
+                _screenshot_semaphore.release()
