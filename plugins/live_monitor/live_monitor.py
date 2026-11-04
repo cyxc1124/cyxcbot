@@ -414,13 +414,8 @@ class LiveMonitor:
             if self._danmaku_clients.get(room_id) is client:
                 await self._handle_preparing_signal(room_id, round_status)
 
-        async def on_room_change(data: dict):
-            if self._danmaku_clients.get(room_id) is client:
-                await self._handle_room_change(room_id, data)
-
         client.on_live = on_live
         client.on_preparing = on_preparing
-        client.on_room_change = on_room_change
 
         start_epoch = self._danmaku_client_epoch.get(room_id, 0) + 1
         self._danmaku_client_epoch[room_id] = start_epoch
@@ -440,7 +435,7 @@ class LiveMonitor:
 
     async def _stop_danmaku_clients(self):
         """停止所有弹幕客户端"""
-        for room_id, client in self._danmaku_clients.items():
+        for room_id, client in list(self._danmaku_clients.items()):
             try:
                 await client.stop()
                 logger.debug("房间 {} 弹幕客户端已停止", room_id)
@@ -601,19 +596,6 @@ class LiveMonitor:
             )
         elif not room_info:
             await self._delivery.retry_prepared(room_id, state)
-
-    async def _handle_room_change(self, room_id: str, data: dict):
-        """处理房间信息变更"""
-        if not self._is_active_room(room_id):
-            return
-
-        state = self.room_states.get(room_id)
-        if not state or not state.room_info:
-            return
-
-        # 更新标题等信息
-        if "title" in data:
-            logger.debug("房间 {} 标题变更: {}", room_id, data["title"])
 
     async def _initialize_room(self, room_id: str) -> bool:
         """记录房间当前直播状态作为基准，不触发推送"""

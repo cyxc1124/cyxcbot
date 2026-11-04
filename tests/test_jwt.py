@@ -28,3 +28,16 @@ def test_password_change_changes_token_fingerprint() -> None:
 
 def test_decode_invalid_token_returns_none() -> None:
     assert decode_access_token("invalid.token.value") is None
+
+
+def test_jwt_algorithm_is_limited_to_hmac(monkeypatch) -> None:
+    import pytest
+
+    from admin.config import get_jwt_algorithm
+
+    monkeypatch.setenv("JWT_ALGORITHM", "hs512")
+    assert get_jwt_algorithm() == "HS512"
+    for value in ("none", "RS256"):
+        monkeypatch.setenv("JWT_ALGORITHM", value)
+        with pytest.raises(ValueError):
+            get_jwt_algorithm()

@@ -7,11 +7,11 @@ import importlib
 import sys
 
 import bcrypt
+import jwt
 import nonebot
 import pytest
 from fastapi import FastAPI, HTTPException, Request
 from httpx import ASGITransport, AsyncClient
-from jose import jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 

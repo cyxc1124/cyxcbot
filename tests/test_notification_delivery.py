@@ -183,6 +183,8 @@ async def test_official_monitor_targets_route_alongside_onebot(
         else x_monitor_module.XMonitor
     )
     monitor = object.__new__(cls)
+    if kind == "dynamic":
+        monitor._pending_targets = {}
     groups = ["official-group"]
     monitor.config = SimpleNamespace(
         **{
@@ -598,6 +600,7 @@ async def test_dynamic_official_partial_retry_keeps_snapshot_and_resumes_parts(
     from shared.adapter.qq_errors import LoggedQQApiError
 
     monitor = object.__new__(dynamic_monitor_module.DynamicMonitor)
+    monitor._pending_targets = {}
     monitor.config = SimpleNamespace(
         dynamic_monitor_mapping={"111": ["group-openid"] if scope == "group" else []},
         dynamic_monitor_user_mapping={
