@@ -6,6 +6,7 @@ X (Twitter) 监控核心模块
 from __future__ import annotations
 
 import asyncio
+import time
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,7 +24,10 @@ from shared.monitor.background_task import spawn_background_task
 from shared.monitor.check_cycle import CheckCycleLogger
 from shared.monitor.concurrency import run_with_concurrency
 from shared.monitor.poll_schedule import compute_dynamic_poll_schedule
-from shared.notify.delivery import empty_delivery_result
+from shared.notify.delivery import (
+    PENDING_DELIVERY_MAX_AGE_SECONDS,
+    empty_delivery_result,
+)
 from utils.x_api import TweetItem, XApiClient, XUser, create_session
 from utils.x_api.download import cleanup_media_files, materialize_tweet_media
 from utils.x_api.models import TweetMediaItem, tweet_id_as_int
@@ -97,6 +101,8 @@ class XMonitor:
         self._pending_tweet_delivery: Dict[
             str, tuple[str, str, List[tuple[str, int]], List[tuple[str, int]]]
         ] = {}
+        # username -> (tweet_id, 首次投递失败时间)。仅内存：重启会重新计时。
+        self._failing_since: Dict[str, tuple[str, float]] = {}
         self._state_store = XMonitorStateStore()
 
     def _touch_last_check_at(self) -> None:
@@ -123,6 +129,38 @@ class XMonitor:
         self._user_ids.pop(username, None)
         self._delivery_locks.pop(username, None)
         self._pending_tweet_delivery.pop(username, None)
+        self._failing_since.pop(username, None)
+
+    def _failure_expired(self, username: str, tweet_id: str) -> bool:
+        """同一条推文持续失败超过上限；首次调用开始计时。"""
+        seen = self._failing_since.get(username)
+        if seen is None or seen[0] != tweet_id:
+            seen = (tweet_id, time.time())
+            self._failing_since[username] = seen
+        return time.time() - seen[1] > PENDING_DELIVERY_MAX_AGE_SECONDS
+
+    async def _give_up_tweet(
+        self,
+        username: str,
+        tweet: TweetItem,
+        reason: str,
+        check_generation: Optional[int],
+    ) -> bool:
+        """放弃持续失败的推文并推进游标，避免阻塞该博主后续推文。"""
+        logger.warning(
+            "X 推文持续投递失败，放弃重试以推进游标: username={} tweet_id={} reason={}",
+            username,
+            tweet.id,
+            reason,
+        )
+        self._pending_tweet_delivery.pop(username, None)
+        self._failing_since.pop(username, None)
+        if tweet_id_as_int(tweet.id) > tweet_id_as_int(
+            self.last_tweet_ids.get(username, "0")
+        ):
+            self.last_tweet_ids[username] = tweet.id
+        await self._persist_state(username, check_generation=check_generation)
+        return True
 
     def _spawn_delivery_task(self, coro, *, name: str = "X 投递") -> None:
         spawn_background_task(name, coro, tasks=self._delivery_tasks)
@@ -568,6 +606,7 @@ class XMonitor:
                     )
                     break
                 delivered_ids.append(tweet.id)
+                self._failing_since.pop(username, None)
 
             if delivered_ids:
                 self.new_tweets_total += len(delivered_ids)
@@ -615,6 +654,10 @@ class XMonitor:
                     if item.url and item.file_path is None
                 ]
                 if missing:
+                    if self._failure_expired(username, tweet.id):
+                        return await self._give_up_tweet(
+                            username, tweet, "媒体下载不完整", check_generation
+                        )
                     logger.warning(
                         "X 推文媒体未全部下载 username={} tweet_id={} missing={}/{}，保留待重试",
                         username,
@@ -864,6 +907,19 @@ class XMonitor:
                     len(user_ids),
                 )
                 return True
+
+            if self._failure_expired(username, tweet.id):
+                return await self._give_up_tweet(
+                    username,
+                    tweet,
+                    "目标持续发送失败: "
+                    + ",".join(
+                        f"{target.target_type}:{target.target_id}"
+                        for target in delivery.targets
+                        if not target.success
+                    ),
+                    check_generation,
+                )
 
             retrying = {("group", tid) for tid, _ in failed_groups} | {
                 ("user", tid) for tid, _ in failed_users

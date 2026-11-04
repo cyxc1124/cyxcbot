@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -80,6 +81,9 @@ def empty_delivery_result() -> DeliveryResult:
 
 DeliveryProgressCallback = Callable[[str, str, int], Awaitable[None]]
 
+# 目标持续投递失败超过该时长后放弃，否则失效的群/好友会让游标永远停在同一条通知上。
+PENDING_DELIVERY_MAX_AGE_SECONDS = 6 * 3600
+
 
 @dataclass
 class PendingDelivery:
@@ -89,6 +93,10 @@ class PendingDelivery:
     at_all: bool = False
     group_starts: dict[str, int] = field(default_factory=dict)
     user_starts: dict[str, int] = field(default_factory=dict)
+    created_at: float = field(default_factory=time.time)
+
+    def expired(self, now: float | None = None) -> bool:
+        return (now or time.time()) - self.created_at > PENDING_DELIVERY_MAX_AGE_SECONDS
 
     def to_data(self) -> dict:
         return {
@@ -100,6 +108,7 @@ class PendingDelivery:
             "at_all": self.at_all,
             "group_starts": self.group_starts,
             "user_starts": self.user_starts,
+            "created_at": self.created_at,
         }
 
     @classmethod
@@ -111,4 +120,6 @@ class PendingDelivery:
             at_all=data["at_all"],
             group_starts=data["group_starts"],
             user_starts=data["user_starts"],
+            # 旧状态没有时间戳：从加载时开始计时。
+            created_at=data.get("created_at", time.time()),
         )
