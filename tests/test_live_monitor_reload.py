@@ -266,7 +266,7 @@ async def test_check_all_rooms_only_polls_configured_targets(
     monitor._check_room_status = fake_check  # type: ignore[method-assign]
     monitor._cycle_logger.emit_summary = lambda: None  # type: ignore[method-assign]
 
-    await monitor._check_all_rooms()
+    await monitor._check_all_targets()
 
     assert checked == ["222"]
 

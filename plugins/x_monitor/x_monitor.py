@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
@@ -21,6 +20,7 @@ from shared.config.service import get_config_service
 from shared.config.shared_media import chmod_shared_media_file, ensure_shared_media_dir
 from shared.db.models import XTarget
 from shared.monitor.background_task import spawn_background_task
+from shared.monitor.base import DeliveryGuardMixin, PollingMonitorMixin
 from shared.monitor.check_cycle import CheckCycleLogger
 from shared.monitor.concurrency import run_with_concurrency
 from shared.monitor.poll_schedule import compute_dynamic_poll_schedule
@@ -77,8 +77,11 @@ def _ensure_config_reload_registered() -> None:
         _config_reload_registered = True
 
 
-class XMonitor:
+class XMonitor(PollingMonitorMixin, DeliveryGuardMixin):
     """X 博主推文监控核心类。"""
+
+    _monitor_label = "X 监控"
+    _delivery_task_name = "X 投递"
 
     def __init__(self, config: Config):
         self.config = config
@@ -107,22 +110,19 @@ class XMonitor:
         self._failing_since: Dict[str, tuple[str, float]] = {}
         self._state_store = XMonitorStateStore()
 
-    def _touch_last_check_at(self) -> None:
-        self.last_check_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-
     def _username_list(self) -> List[str]:
         return list(self.config.x_monitor_mapping.keys())
 
     def _is_active_username(self, username: str) -> bool:
         return username in self.config.x_monitor_mapping
 
-    def _bump_check_generation(self, username: str) -> None:
-        self._check_generation[username] = self._check_generation.get(username, 0) + 1
+    _is_active_target = _is_active_username
 
-    def _check_still_valid(self, username: str, check_generation: int) -> bool:
-        return self._is_active_username(username) and (
-            self._check_generation.get(username, 0) == check_generation
-        )
+    def _target_ids(self) -> List[str]:
+        return self._username_list()
+
+    async def _check_target(self, target_id: str) -> bool:
+        return await self._check_user_tweets(target_id)
 
     def _remove_username(self, username: str) -> None:
         self._bump_check_generation(username)
@@ -164,9 +164,6 @@ class XMonitor:
         await self._persist_state(username, check_generation=check_generation)
         return True
 
-    def _spawn_delivery_task(self, coro, *, name: str = "X 投递") -> None:
-        spawn_background_task(name, coro, tasks=self._delivery_tasks)
-
     async def _init_new_usernames(self, usernames: List[str]) -> None:
         results = await run_with_concurrency(usernames, self._check_user_tweets)
         for username, result in zip(usernames, results):
@@ -186,11 +183,6 @@ class XMonitor:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def _drain_pending_deliveries(self) -> None:
-        while self._delivery_tasks:
-            tasks = list(self._delivery_tasks)
-            await asyncio.gather(*tasks, return_exceptions=True)
-
     async def _delete_persisted_state(self, username: str) -> None:
         await self._state_store.delete(username)
 
@@ -208,8 +200,8 @@ class XMonitor:
             use_stagger_poll=self.config.use_stagger_poll,
             username_count=len(usernames),
             monitor_interval=self.config.monitor_interval,
-            stagger_callback=self._check_next_user,
-            batch_callback=self._check_all_users,
+            stagger_callback=self._check_next_target,
+            batch_callback=self._check_all_targets,
             schedule=schedule,
         )
 
@@ -386,93 +378,6 @@ class XMonitor:
         await self._drain_pending_deliveries()
         await self._cleanup_resources()
         logger.info("X 监控已完全停止")
-
-    async def _check_next_user(self):
-        if not self.is_running:
-            logger.debug("监控已停止，跳过本次检查")
-            return
-
-        usernames = self._username_list()
-        if not usernames:
-            return
-
-        if self._stagger_index >= len(usernames):
-            self._stagger_index = 0
-
-        username = usernames[self._stagger_index]
-        self._stagger_index = (self._stagger_index + 1) % len(usernames)
-        cycle_completed = self._stagger_index == 0
-
-        try:
-            ok = await self._check_user_tweets(username)
-            if ok is False:
-                self._cycle_logger.record_failure(username)
-            else:
-                self._cycle_logger.record_success()
-                self._touch_last_check_at()
-        except Exception as e:
-            self._cycle_logger.record_error(username, e)
-
-        if cycle_completed:
-            self._cycle_logger.emit_summary()
-            self._touch_last_check_at()
-
-    async def _check_all_users(self):
-        if not self.is_running:
-            logger.debug("监控已停止，跳过本次检查")
-            return
-
-        usernames = self._username_list()
-        if not usernames:
-            return
-
-        try:
-            results = await run_with_concurrency(usernames, self._check_user_tweets)
-            for username, ok in zip(usernames, results):
-                if isinstance(ok, BaseException):
-                    self._cycle_logger.record_error(username, ok)
-                elif ok is False:
-                    self._cycle_logger.record_failure(username)
-                else:
-                    self._cycle_logger.record_success()
-
-            self._cycle_logger.emit_summary()
-            self._touch_last_check_at()
-        except Exception:
-            logger.opt(exception=True).error("X 监控检查出错")
-
-    async def run_manual_check(
-        self, usernames: Optional[List[str]] = None
-    ) -> Dict[str, List[str]]:
-        """检查指定或全部 X 博主的推文（手动触发时使用）。"""
-        if not self.is_running:
-            logger.debug("监控已停止，跳过本次检查")
-            return {"checked": [], "failed": []}
-
-        username_list = usernames if usernames is not None else self._username_list()
-        cycle = CheckCycleLogger("X 监控（手动）")
-        checked: List[str] = []
-        failed: List[str] = []
-
-        try:
-            results = await run_with_concurrency(username_list, self._check_user_tweets)
-            for username, ok in zip(username_list, results):
-                if isinstance(ok, BaseException):
-                    cycle.record_error(username, ok)
-                    failed.append(username)
-                elif ok is False:
-                    cycle.record_failure(username)
-                    failed.append(username)
-                else:
-                    cycle.record_success()
-                    checked.append(username)
-
-            cycle.emit_summary(log_success_at_info=True)
-            self._touch_last_check_at()
-        except Exception:
-            logger.opt(exception=True).error("X 监控检查出错")
-
-        return {"checked": checked, "failed": failed}
 
     async def _persist_user_profile(self, username: str, user: XUser) -> None:
         """Write resolved X user id / display name back to XTarget."""

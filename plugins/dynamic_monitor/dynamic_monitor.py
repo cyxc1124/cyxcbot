@@ -5,7 +5,6 @@ UP主动态监控核心模块
 
 import asyncio
 from collections import defaultdict
-from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Dict, List, Optional, Set
 
@@ -16,6 +15,7 @@ from nonebot.log import logger
 from shared.adapter.qq_errors import is_terminal_qq_error_text
 from shared.config.service import get_config_service
 from shared.monitor.background_task import spawn_background_task
+from shared.monitor.base import DeliveryGuardMixin, PollingMonitorMixin
 from shared.monitor.check_cycle import CheckCycleLogger
 from shared.monitor.concurrency import run_with_concurrency
 from shared.monitor.poll_schedule import compute_dynamic_poll_schedule
@@ -77,8 +77,11 @@ def _ensure_config_reload_registered() -> None:
         _config_reload_registered = True
 
 
-class DynamicMonitor:
+class DynamicMonitor(PollingMonitorMixin, DeliveryGuardMixin):
     """UP主动态监控核心类"""
+
+    _monitor_label = "动态监控"
+    _delivery_task_name = "动态投递"
 
     def __init__(self, config: Config):
         self.config = config
@@ -107,23 +110,19 @@ class DynamicMonitor:
         # uid, dynamic_id, is_pinned -> 尚未成功的群/好友。重试不再发给已成功目标。
         self._pending_targets: Dict[tuple[str, int | str, bool], PendingDelivery] = {}
 
-    def _touch_last_check_at(self) -> None:
-        self.last_check_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-
     def _uid_list(self) -> List[str]:
         return list(self.config.dynamic_monitor_mapping.keys())
 
     def _is_active_uid(self, uid: str) -> bool:
         return uid in self.config.dynamic_monitor_mapping
 
-    def _bump_check_generation(self, uid: str) -> None:
-        self._check_generation[uid] = self._check_generation.get(uid, 0) + 1
+    _is_active_target = _is_active_uid
 
-    def _check_still_valid(self, uid: str, check_generation: int) -> bool:
-        """fetch 后的异步阶段是否仍对应当前 generation（停用/重启用后应视为过期）。"""
-        return self._is_active_uid(uid) and (
-            self._check_generation.get(uid, 0) == check_generation
-        )
+    def _target_ids(self) -> List[str]:
+        return self._uid_list()
+
+    async def _check_target(self, target_id: str) -> bool:
+        return await self._check_user_dynamic(target_id)
 
     def _remove_uid(self, uid: str) -> None:
         """从运行时状态中移除不再配置的 UP 主。"""
@@ -136,9 +135,6 @@ class DynamicMonitor:
         if pending_targets is not None:
             for key in [key for key in pending_targets if key[0] == uid]:
                 pending_targets.pop(key, None)
-
-    def _spawn_delivery_task(self, coro, *, name: str = "动态投递") -> None:
-        spawn_background_task(name, coro, tasks=self._delivery_tasks)
 
     async def _init_new_uids(self, uids: List[str]) -> None:
         results = await run_with_concurrency(uids, self._check_user_dynamic)
@@ -156,12 +152,6 @@ class DynamicMonitor:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-
-    async def _drain_pending_deliveries(self) -> None:
-        """等待所有后台投递任务完成。"""
-        while self._delivery_tasks:
-            tasks = list(self._delivery_tasks)
-            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _delete_persisted_state(self, uid: str) -> None:
         """清除 DB 中已停用/移除目标的持久化状态。"""
@@ -181,8 +171,8 @@ class DynamicMonitor:
             use_stagger_poll=self.config.use_stagger_poll,
             uid_count=len(uid_list),
             monitor_interval=self.config.monitor_interval,
-            stagger_callback=self._check_next_dynamic,
-            batch_callback=self._check_all_dynamics,
+            stagger_callback=self._check_next_target,
+            batch_callback=self._check_all_targets,
             schedule=schedule,
         )
 
@@ -381,95 +371,6 @@ class DynamicMonitor:
         # 清理资源
         await self._cleanup_resources()
         logger.info("UP主动态监控已完全停止")
-
-    async def _check_next_dynamic(self):
-        """分散检查下一个 UP 主的动态 - 由 APScheduler 定时调用"""
-        if not self.is_running:
-            logger.debug("监控已停止，跳过本次检查")
-            return
-
-        uid_list = self._uid_list()
-        if not uid_list:
-            return
-
-        if self._stagger_index >= len(uid_list):
-            self._stagger_index = 0
-
-        uid = uid_list[self._stagger_index]
-        self._stagger_index = (self._stagger_index + 1) % len(uid_list)
-        cycle_completed = self._stagger_index == 0
-
-        try:
-            ok = await self._check_user_dynamic(uid)
-            if ok is False:
-                self._cycle_logger.record_failure(uid)
-            else:
-                self._cycle_logger.record_success()
-                self._touch_last_check_at()
-        except Exception as e:
-            self._cycle_logger.record_error(uid, e)
-
-        if cycle_completed:
-            self._cycle_logger.emit_summary()
-            self._touch_last_check_at()
-
-    async def _check_all_dynamics(self):
-        """批量检查全部 UP 主的动态 - 由 APScheduler 定时调用"""
-        if not self.is_running:
-            logger.debug("监控已停止，跳过本次检查")
-            return
-
-        uid_list = self._uid_list()
-        if not uid_list:
-            return
-
-        try:
-            results = await run_with_concurrency(uid_list, self._check_user_dynamic)
-            for uid, ok in zip(uid_list, results):
-                if isinstance(ok, BaseException):
-                    self._cycle_logger.record_error(uid, ok)
-                elif ok is False:
-                    self._cycle_logger.record_failure(uid)
-                else:
-                    self._cycle_logger.record_success()
-
-            self._cycle_logger.emit_summary()
-            self._touch_last_check_at()
-        except Exception:
-            logger.opt(exception=True).error("动态监控检查出错")
-
-    async def run_manual_check(
-        self, uids: Optional[List[str]] = None
-    ) -> Dict[str, List[str]]:
-        """检查指定或全部 UP 主的动态（手动触发时使用）。"""
-        if not self.is_running:
-            logger.debug("监控已停止，跳过本次检查")
-            return {"checked": [], "failed": []}
-
-        uid_list = uids if uids is not None else self._uid_list()
-        cycle = CheckCycleLogger("动态监控（手动）")
-        checked: List[str] = []
-        failed: List[str] = []
-
-        try:
-            results = await run_with_concurrency(uid_list, self._check_user_dynamic)
-            for uid, ok in zip(uid_list, results):
-                if isinstance(ok, BaseException):
-                    cycle.record_error(uid, ok)
-                    failed.append(uid)
-                elif ok is False:
-                    cycle.record_failure(uid)
-                    failed.append(uid)
-                else:
-                    cycle.record_success()
-                    checked.append(uid)
-
-            cycle.emit_summary(log_success_at_info=True)
-            self._touch_last_check_at()
-        except Exception:
-            logger.opt(exception=True).error("动态监控检查出错")
-
-        return {"checked": checked, "failed": failed}
 
     async def _check_user_dynamic(self, uid: str) -> bool:
         """检查单个UP主的动态，成功返回 True，拉取失败返回 False。"""
