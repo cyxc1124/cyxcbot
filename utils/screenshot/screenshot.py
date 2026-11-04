@@ -652,22 +652,25 @@ async def get_dynamic_screenshot(
     return screenshot, error, page_url
 
 
-async def init_screenshot_service():
-    """初始化截图服务"""
-    global dynamic_screenshot
-    await dynamic_screenshot.init_browser()
-
-
-async def close_screenshot_service():
-    """关闭截图服务；浏览器由动态监控与链接解析共用，先等进行中的截图完成。"""
-    global dynamic_screenshot
+async def _with_all_slots(action) -> None:
+    """占满全部截图名额后执行 action，等进行中的截图完成，期间新截图排队。"""
     async with _close_lock:
         acquired = 0
         try:
             for _ in range(_SCREENSHOT_CONCURRENCY):
                 await _screenshot_semaphore.acquire()
                 acquired += 1
-            await dynamic_screenshot.close_browser()
+            await action()
         finally:
             for _ in range(acquired):
                 _screenshot_semaphore.release()
+
+
+async def init_screenshot_service():
+    """（重新）初始化截图服务；浏览器由动态监控与链接解析共用，先等进行中的截图完成。"""
+    await _with_all_slots(lambda: dynamic_screenshot.init_browser())
+
+
+async def close_screenshot_service():
+    """关闭截图服务；同 init_screenshot_service，先等进行中的截图完成。"""
+    await _with_all_slots(lambda: dynamic_screenshot.close_browser())
