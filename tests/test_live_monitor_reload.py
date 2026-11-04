@@ -104,6 +104,7 @@ def _import_live_monitor_modules():
     models_mod = _load_module("plugins.live_monitor.models", "models.py")
     config_mod = _load_module("plugins.live_monitor.config", "config.py")
     monitor_mod = _load_module("plugins.live_monitor.live_monitor", "live_monitor.py")
+    monitor_mod.LIVE_DANMAKU_CLIENT_START_GAP_SECONDS = 0
     return config_mod.Config, monitor_mod.LiveMonitor, models_mod.LiveRoomState
 
 
@@ -204,6 +205,7 @@ async def test_reload_config_removes_deleted_room_state_and_websocket(
         ),
     ):
         await monitor.reload_config()
+        await monitor.drain_reload_tasks()
 
     assert "111" not in monitor.room_states
     assert "111" not in monitor.initialized_rooms
@@ -241,6 +243,7 @@ async def test_reload_config_deletes_persisted_state_for_removed_room(
         ) as delete_state,
     ):
         await monitor.reload_config()
+        await monitor.drain_reload_tasks()
 
     delete_state.assert_awaited_once_with("111")
 
@@ -320,6 +323,7 @@ async def test_reload_config_restarts_websocket_clients_when_cookie_changes(
         ) as start_client,
     ):
         await monitor.reload_config()
+        await monitor.drain_reload_tasks()
 
     old_client_111.stop.assert_awaited_once()
     old_client_222.stop.assert_awaited_once()
@@ -361,6 +365,7 @@ async def test_reload_config_keeps_websocket_clients_when_cookie_unchanged(
         ) as restart_client,
     ):
         await monitor.reload_config()
+        await monitor.drain_reload_tasks()
 
     existing_client.stop.assert_not_awaited()
     restart_client.assert_not_awaited()
@@ -403,6 +408,7 @@ async def test_reload_config_continues_cookie_reload_when_one_room_fails(
         ) as restart_client,
     ):
         await monitor.reload_config()
+        await monitor.drain_reload_tasks()
 
     assert restart_client.await_count == 2
     restart_client.assert_any_await("111")
@@ -452,6 +458,7 @@ async def test_reload_config_cookie_reload_before_new_room_start(
         ),
     ):
         await monitor.reload_config()
+        await monitor.drain_reload_tasks()
 
     assert call_order == [("restart", "111"), ("start", "333")]
 
@@ -497,6 +504,7 @@ async def test_reload_config_cookie_reload_continues_when_new_room_start_fails(
         ) as start_client,
     ):
         await monitor.reload_config()
+        await monitor.drain_reload_tasks()
 
     restart_client.assert_awaited_once_with("111")
     start_client.assert_awaited_once_with("333")
@@ -534,6 +542,7 @@ async def test_reload_config_continues_when_one_room_removal_fails(
         ) as remove_room,
     ):
         await monitor.reload_config()
+        await monitor.drain_reload_tasks()
 
     assert remove_room.await_count == 1
     assert "222" in monitor.room_states
@@ -835,6 +844,7 @@ async def test_reenabled_room_reset_after_stale_inflight_check_repollutes_memory
         ),
     ):
         await monitor.reload_config()
+        await monitor.drain_reload_tasks()
 
     # 模拟停用后过期检查把 initialized=true 的旧基准写回内存（DB 已被拦截）
     monitor.room_states["111"] = LiveRoomState(room_id=111)
@@ -867,6 +877,7 @@ async def test_reenabled_room_reset_after_stale_inflight_check_repollutes_memory
         ),
     ):
         await monitor.reload_config()
+        await monitor.drain_reload_tasks()
 
     assert monitor.initialized_rooms["111"] is False
     assert monitor.room_states["111"].previous_status == LiveStatus.PREPARING
@@ -1141,6 +1152,7 @@ async def test_reload_config_starts_websocket_for_rooms_without_active_client(
         ) as restart_client,
     ):
         await monitor.reload_config()
+        await monitor.drain_reload_tasks()
 
     restart_client.assert_awaited_once_with("111")
 
@@ -1177,6 +1189,7 @@ async def test_reload_config_restarts_websocket_clients_on_logout(
         ) as start_client,
     ):
         await monitor.reload_config()
+        await monitor.drain_reload_tasks()
 
     old_client.stop.assert_awaited_once()
     start_client.assert_awaited_once_with("111")
@@ -1190,3 +1203,142 @@ def test_plugins_package_available_after_live_monitor_tests() -> None:
 
     spec = importlib.util.find_spec("plugins.video_monitor")
     assert spec is not None
+
+
+@pytest.mark.asyncio
+async def test_reload_config_does_not_block_on_new_room_init_and_connect(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    """新增房间的基准初始化与弹幕连接在后台跑，保存配置的请求不应等它。"""
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+    release = asyncio.Event()
+
+    async def slow_init(room_id: str) -> bool:
+        await release.wait()
+        return True
+
+    new_config = Config(
+        live_monitor_mapping={"111": ["group1"], "222": ["group1"]},
+        use_websocket=True,
+    )
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.Config.from_service",
+            return_value=new_config,
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.init",
+            new_callable=AsyncMock,
+        ),
+        patch.object(monitor, "_initialize_room", side_effect=slow_init),
+        patch.object(
+            monitor, "_start_single_danmaku_client", new_callable=AsyncMock
+        ) as start_client,
+    ):
+        await asyncio.wait_for(monitor.reload_config(), timeout=1)
+        start_client.assert_not_awaited()
+        release.set()
+        await monitor.drain_reload_tasks()
+
+    start_client.assert_awaited_once_with("222")
+
+
+@pytest.mark.asyncio
+async def test_stop_monitoring_cancels_pending_reload_tasks(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+    started = asyncio.Event()
+
+    async def hang(room_id: str) -> bool:
+        started.set()
+        await asyncio.Event().wait()
+        return True
+
+    new_config = Config(
+        live_monitor_mapping={"111": ["group1"], "222": ["group1"]},
+        use_websocket=True,
+    )
+    with (
+        patch(
+            "plugins.live_monitor.live_monitor.Config.from_service",
+            return_value=new_config,
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.init",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "plugins.live_monitor.live_monitor.api_manager.close",
+            new_callable=AsyncMock,
+        ),
+        patch("plugins.live_monitor.live_monitor.remove_poll_job"),
+        patch(
+            "plugins.live_monitor.live_monitor.close_card_image_downloader",
+            new_callable=AsyncMock,
+        ),
+        patch.object(monitor, "_initialize_room", side_effect=hang),
+    ):
+        await monitor.reload_config()
+        await asyncio.wait_for(started.wait(), timeout=1)
+        await asyncio.wait_for(monitor.stop_monitoring(), timeout=1)
+
+    assert not monitor._reload_tasks
+
+
+@pytest.mark.asyncio
+async def test_start_danmaku_clients_stops_when_websocket_disabled_midway(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    """后台启动批次进行中关闭 WebSocket，后续房间不应再被连接。"""
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111", "222"])
+
+    async def disable_after_first(room_id: str) -> None:
+        monitor.config.use_websocket = False
+
+    with patch.object(
+        monitor, "_start_single_danmaku_client", side_effect=disable_after_first
+    ) as start_client:
+        await monitor._start_danmaku_clients()
+
+    start_client.assert_awaited_once_with("111")
+
+
+@pytest.mark.asyncio
+async def test_start_danmaku_clients_skips_room_removed_midway(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111", "222"])
+
+    async def remove_second(room_id: str) -> None:
+        monitor.config.live_monitor_mapping.pop("222", None)
+
+    with patch.object(
+        monitor, "_start_single_danmaku_client", side_effect=remove_second
+    ) as start_client:
+        await monitor._start_danmaku_clients()
+
+    start_client.assert_awaited_once_with("111")
+
+
+@pytest.mark.asyncio
+async def test_stop_danmaku_clients_tolerates_concurrent_registration(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+    first = AsyncMock()
+
+    async def register_other_during_stop() -> None:
+        monitor._danmaku_clients["222"] = AsyncMock()
+
+    first.stop.side_effect = register_other_during_stop
+    monitor._danmaku_clients["111"] = first
+
+    await monitor._stop_danmaku_clients()
+
+    assert monitor._danmaku_clients == {}

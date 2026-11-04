@@ -777,6 +777,7 @@ async def test_reenabled_uid_reset_after_stale_inflight_check_repollutes_memory(
         ) as check_user,
     ):
         await monitor.reload_config()
+        await monitor.drain_reload_tasks()
 
     assert monitor.last_dynamic_ids["111"] == 0
     assert monitor.initialized_uids["111"] is False
@@ -1097,3 +1098,66 @@ async def test_image_mode_reload_switches_browser_lifecycle(dynamic_monitor_modu
         await monitor.reload_config()
         init.assert_awaited_once()
         close.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reload_config_does_not_block_on_new_uid_initial_check(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """新增 UID 的首次检查在后台跑，保存配置的请求不应等它。"""
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    release = asyncio.Event()
+
+    async def slow_check(uid: str) -> bool:
+        await release.wait()
+        return True
+
+    new_config = Config(dynamic_monitor_mapping={"111": ["1001"], "222": ["1001"]})
+    with (
+        patch(
+            "plugins.dynamic_monitor.dynamic_monitor.Config.from_service",
+            return_value=new_config,
+        ),
+        patch.object(monitor, "_delete_persisted_state", new_callable=AsyncMock),
+        patch.object(
+            monitor, "_check_user_dynamic", side_effect=slow_check
+        ) as check_user,
+    ):
+        await asyncio.wait_for(monitor.reload_config(), timeout=1)
+        assert monitor._reload_tasks
+        release.set()
+        await monitor.drain_reload_tasks()
+
+    check_user.assert_called_once_with("222")
+    assert not monitor._reload_tasks
+
+
+@pytest.mark.asyncio
+async def test_stop_monitoring_cancels_pending_reload_tasks(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    started = asyncio.Event()
+
+    async def hang(uid: str) -> bool:
+        started.set()
+        await asyncio.Event().wait()
+        return True
+
+    new_config = Config(dynamic_monitor_mapping={"111": ["1001"], "222": ["1001"]})
+    with (
+        patch(
+            "plugins.dynamic_monitor.dynamic_monitor.Config.from_service",
+            return_value=new_config,
+        ),
+        patch.object(monitor, "_delete_persisted_state", new_callable=AsyncMock),
+        patch.object(monitor, "_check_user_dynamic", side_effect=hang),
+        patch("plugins.dynamic_monitor.dynamic_monitor.remove_poll_job"),
+    ):
+        await monitor.reload_config()
+        await asyncio.wait_for(started.wait(), timeout=1)
+        await asyncio.wait_for(monitor.stop_monitoring(), timeout=1)
+
+    assert not monitor._reload_tasks

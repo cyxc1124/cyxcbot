@@ -99,6 +99,8 @@ class DynamicMonitor:
         # 后台投递：避免截图等慢操作阻塞 APScheduler 轮询任务
         self._delivery_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._delivery_tasks: Set[asyncio.Task] = set()
+        # 热重载新增目标的首次基准检查：放后台，避免拖住保存配置的请求
+        self._reload_tasks: Set[asyncio.Task] = set()
         self._screenshot_semaphore = asyncio.Semaphore(_SCREENSHOT_CONCURRENCY)
         self._screenshot_queue_semaphore = asyncio.Semaphore(_SCREENSHOT_QUEUE_MAX)
         self._state_store = DynamicMonitorStateStore()
@@ -137,6 +139,23 @@ class DynamicMonitor:
 
     def _spawn_delivery_task(self, coro, *, name: str = "动态投递") -> None:
         spawn_background_task(name, coro, tasks=self._delivery_tasks)
+
+    async def _init_new_uids(self, uids: List[str]) -> None:
+        results = await run_with_concurrency(uids, self._check_user_dynamic)
+        for uid, result in zip(uids, results):
+            if isinstance(result, BaseException):
+                logger.opt(exception=result).error("初始化UP主 {} 动态监控失败", uid)
+
+    async def drain_reload_tasks(self) -> None:
+        """等待热重载触发的后台初始化完成。"""
+        while self._reload_tasks:
+            await asyncio.gather(*list(self._reload_tasks), return_exceptions=True)
+
+    async def _cancel_reload_tasks(self) -> None:
+        tasks = list(self._reload_tasks)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _drain_pending_deliveries(self) -> None:
         """等待所有后台投递任务完成。"""
@@ -276,12 +295,12 @@ class DynamicMonitor:
                 if uid not in new_uids:
                     new_uids.append(uid)
 
-        if self.is_running:
-            for uid in new_uids:
-                try:
-                    await self._check_user_dynamic(uid)
-                except Exception:
-                    logger.opt(exception=True).error("初始化UP主 {} 动态监控失败", uid)
+        if self.is_running and new_uids:
+            spawn_background_task(
+                "动态监控初始化新目标",
+                self._init_new_uids(new_uids),
+                tasks=self._reload_tasks,
+            )
 
         if self.is_running and (
             old_interval != self.config.monitor_interval
@@ -354,6 +373,7 @@ class DynamicMonitor:
         self.is_running = False
 
         remove_poll_job()
+        await self._cancel_reload_tasks()
 
         # 等待后台投递完成后再关闭 session/截图服务，避免慢投递被中断后游标不前进
         await self._drain_pending_deliveries()
