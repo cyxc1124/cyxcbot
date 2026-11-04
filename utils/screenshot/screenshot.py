@@ -281,13 +281,26 @@ class DynamicScreenshot:
         async with self._lifecycle_lock:
             try:
                 self.browser_context = None
-                await self._browser_resources.aclose()
+                try:
+                    await self._browser_resources.aclose()
+                except Exception:
+                    # 浏览器崩溃后旧资源可能无法正常关闭，不应阻止重建。
+                    logger.opt(exception=True).warning("释放旧浏览器资源时出错")
                 self.browser_context, self._browser_resources = await _init_browser()
                 logger.info("浏览器初始化成功")
                 return True
             except Exception:
                 logger.opt(exception=True).error("浏览器初始化失败")
                 return False
+
+    @property
+    def browser_alive(self) -> bool:
+        """浏览器进程仍可用；被 OOM 杀掉后 browser_context 非空但已失效。"""
+        context = self.browser_context
+        if context is None:
+            return False
+        browser = getattr(context, "browser", None)
+        return browser is None or browser.is_connected()
 
     async def close_browser(self):
         """关闭浏览器"""
@@ -613,10 +626,10 @@ async def get_dynamic_screenshot(
     global dynamic_screenshot
     logger.debug("请求获取动态 {} 截图{}", dynamic_id, "（专栏）" if is_article else "")
 
-    # 如果浏览器未初始化，尝试初始化（加锁做双重检查，避免并发重复启动浏览器）
-    if not dynamic_screenshot.browser_context:
+    # 浏览器未初始化或已崩溃时（重新）初始化；加锁双重检查，避免并发重复启动浏览器
+    if not dynamic_screenshot.browser_alive:
         async with _init_lock:
-            if not dynamic_screenshot.browser_context:
+            if not dynamic_screenshot.browser_alive:
                 logger.info("为动态 {} 初始化浏览器", dynamic_id)
                 success = await dynamic_screenshot.init_browser()
                 if not success:
