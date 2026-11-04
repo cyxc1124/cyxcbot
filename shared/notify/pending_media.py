@@ -21,6 +21,8 @@ PENDING_MEDIA_DIR = Path("data") / "pending_media"
 _BASE64_PREFIX = "base64://"
 _REF_PREFIX = "pending-media://"
 _REF_RE = re.compile(r"^[0-9a-f]{64}$")
+# 清理时也认崩溃残留的 ``<sha256>.tmp``（写入与 os.replace 之间进程退出）。
+_PRUNABLE_RE = re.compile(r"^[0-9a-f]{64}(\.tmp)?$")
 # 小于该长度的内联内容留在 JSON 里，不值得落盘。
 _MIN_EXTERNAL_CHARS = 4096
 # 需大于 PENDING_DELIVERY_MAX_AGE_SECONDS（6h），且每次持久化都会刷新 mtime。
@@ -38,10 +40,13 @@ def _prune_if_due(now: float) -> None:
     if now - _last_prune < _PRUNE_INTERVAL_SECONDS:
         return
     _last_prune = now
+    # 全新部署时目录还没创建，没有可清理的东西，不算错误。
+    if not PENDING_MEDIA_DIR.is_dir():
+        return
     try:
         for path in PENDING_MEDIA_DIR.iterdir():
             if (
-                _REF_RE.match(path.name)
+                _PRUNABLE_RE.match(path.name)
                 and now - path.stat().st_mtime > _PRUNE_AGE_SECONDS
             ):
                 path.unlink(missing_ok=True)

@@ -90,3 +90,36 @@ def test_old_files_are_pruned_and_live_ones_kept(media_dir):
     names = {path.name for path in media_dir.iterdir()}
     assert old_file.name not in names
     assert len(names) == 1
+
+
+def test_missing_directory_is_not_an_error(media_dir, monkeypatch):
+    warnings = []
+    monkeypatch.setattr(
+        pending_media.logger, "opt", lambda **_: pytest.fail("不应打印异常堆栈")
+    )
+    monkeypatch.setattr(
+        pending_media.logger, "warning", lambda *a, **k: warnings.append(a)
+    )
+    # 纯文字消息 + 目录尚未创建：首次持久化也会走清理。
+    PendingDelivery(Message("text only"), ["1"], []).to_data()
+    assert warnings == []
+    assert not media_dir.exists()
+
+
+def test_stale_crash_leftover_tmp_is_pruned_but_fresh_one_is_kept(media_dir):
+    media_dir.mkdir()
+    stale_tmp = media_dir / ("a" * 64 + ".tmp")
+    fresh_tmp = media_dir / ("b" * 64 + ".tmp")
+    unrelated = media_dir / "notes.txt"
+    for path in (stale_tmp, fresh_tmp, unrelated):
+        path.write_bytes(b"x")
+    stale = time.time() - pending_media._PRUNE_AGE_SECONDS - 60
+    for path in (stale_tmp, unrelated):
+        os.utime(path, (stale, stale))
+
+    _pending(os.urandom(20_000)).to_data()
+
+    names = {path.name for path in media_dir.iterdir()}
+    assert stale_tmp.name not in names
+    assert fresh_tmp.name in names
+    assert unrelated.name in names  # 只清理自己生成的文件
