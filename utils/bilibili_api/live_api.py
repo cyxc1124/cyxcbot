@@ -106,9 +106,12 @@ class LiveApi:
                 user_info = UserInfo.from_api_data(page_data)
                 return room_info, user_info
             except Exception:
-                room_info = await self.get_room_info(room_id)
-                user_info = await self.get_user_info(room_id) if room_info else None
-                return room_info, user_info
+                # getInfoByRoom 与 HTML 均已失败，不再重复请求；仅 get_info 是新接口，不含主播信息。
+                try:
+                    data = await self._get_room_info_via_get_info(room_id)
+                    return RoomInfo.from_api_data(data), None
+                except Exception:
+                    return None, None
 
     async def _get_info_by_room(self, room_id: int) -> dict:
         """调用 getInfoByRoom 接口获取房间完整信息"""
@@ -137,21 +140,25 @@ class LiveApi:
             return data["room_info"]
         except Exception:
             # 备用：使用 get_info
-            url = "https://api.live.bilibili.com/room/v1/Room/get_info"
-            params = {"room_id": room_id}
-            headers = self._get_headers(room_id)
+            return await self._get_room_info_via_get_info(room_id)
 
-            async with self.session.get(
-                url, params=params, headers=headers, timeout=10
-            ) as response:
-                if response.status != 200:
-                    raise Exception(f"HTTP {response.status}")
+    async def _get_room_info_via_get_info(self, room_id: int) -> dict:
+        """调用 Room/get_info 接口（仅房间信息，不含主播）。"""
+        url = "https://api.live.bilibili.com/room/v1/Room/get_info"
+        params = {"room_id": room_id}
+        headers = self._get_headers(room_id)
 
-                data = await response.json()
-                if data.get("code") != 0:
-                    raise Exception(f"API错误: {data.get('message', '未知错误')}")
+        async with self.session.get(
+            url, params=params, headers=headers, timeout=10
+        ) as response:
+            if response.status != 200:
+                raise Exception(f"HTTP {response.status}")
 
-                return data["data"]
+            data = await response.json()
+            if data.get("code") != 0:
+                raise Exception(f"API错误: {data.get('message', '未知错误')}")
+
+            return data["data"]
 
     async def _get_room_page_data_via_html(self, room_id: int) -> dict:
         """通过 HTML 页面解析获取直播间完整数据（备用方案）。"""
