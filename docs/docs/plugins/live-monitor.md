@@ -27,6 +27,8 @@ sidebar_position: 1
 - `LIVE` → 开播（秒级响应）
 - `PREPARING` → 关播（秒级响应）
 
+断线后会在每次重连前重新获取弹幕 token，连续失败时按 3 → 10 → 20 → 40 → 60 秒退避（上限 60 秒）。
+
 ### 2. API 轮询（备用）
 
 定时调用 `getInfoByRoom` 接口：

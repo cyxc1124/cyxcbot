@@ -155,6 +155,37 @@ async def test_reconnect_retries_in_same_task_without_spawning_duplicates(
 
 
 @pytest.mark.asyncio
+async def test_reconnect_refreshes_danmu_info_and_backs_off(
+    danmaku_client_module: Any,
+) -> None:
+    client = _make_client(danmaku_client_module)
+    order: list[str] = []
+    attempts = 0
+
+    async def refresh() -> None:
+        order.append("refresh")
+
+    async def flaky_connect() -> None:
+        nonlocal attempts
+        attempts += 1
+        order.append("connect")
+        if attempts < 6:
+            raise ConnectionError("down")
+
+    sleep = AsyncMock()
+    with (
+        patch.object(client, "_update_danmu_info", side_effect=refresh),
+        patch.object(client, "_connect", side_effect=flaky_connect),
+        patch("asyncio.sleep", sleep),
+    ):
+        client.schedule_reconnect()
+        await client._reconnect_task
+
+    assert order == ["refresh", "connect"] * 6
+    assert [call.args[0] for call in sleep.await_args_list] == [3, 10, 20, 40, 60, 60]
+
+
+@pytest.mark.asyncio
 async def test_stop_cancels_in_flight_reconnect_task(
     danmaku_client_module: Any,
 ) -> None:
