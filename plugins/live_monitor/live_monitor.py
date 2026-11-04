@@ -657,7 +657,7 @@ class LiveMonitor:
 
     async def _init_room_states(self):
         """初始化所有房间的状态（首次启动时）"""
-        for room_id in self.room_states.keys():
+        for room_id in list(self.room_states):
             await self._initialize_room(room_id)
             await asyncio.sleep(0.5)
 

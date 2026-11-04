@@ -41,3 +41,36 @@ def test_jwt_algorithm_is_limited_to_hmac(monkeypatch) -> None:
         monkeypatch.setenv("JWT_ALGORITHM", value)
         with pytest.raises(ValueError):
             get_jwt_algorithm()
+
+
+async def test_web_admin_refuses_to_start_with_invalid_jwt_algorithm(
+    monkeypatch,
+) -> None:
+    import importlib.util
+    import sys
+    from pathlib import Path
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    import nonebot
+
+    driver = MagicMock()
+    driver.on_startup = driver.on_shutdown = lambda func: func
+    monkeypatch.setattr(nonebot, "get_driver", lambda: driver)
+    spec = importlib.util.spec_from_file_location(
+        "test_admin_startup", Path(__file__).resolve().parents[1] / "admin/startup.py"
+    )
+    startup = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(startup)
+
+    monkeypatch.setenv("WEB_ADMIN_ENABLED", "true")
+    monkeypatch.setenv("WEB_SECRET_KEY", "x" * 40)
+    monkeypatch.setenv("JWT_ALGORITHM", "RS256")
+    create_app = MagicMock()
+    monkeypatch.setitem(
+        sys.modules, "admin.app", SimpleNamespace(create_app=create_app)
+    )
+
+    await startup.start_web_admin_server()
+
+    create_app.assert_not_called()

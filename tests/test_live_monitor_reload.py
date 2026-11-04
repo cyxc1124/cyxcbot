@@ -1190,3 +1190,46 @@ def test_plugins_package_available_after_live_monitor_tests() -> None:
 
     spec = importlib.util.find_spec("plugins.video_monitor")
     assert spec is not None
+
+
+@pytest.mark.asyncio
+async def test_init_room_states_tolerates_rooms_added_during_startup(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+    seen: list[str] = []
+
+    async def initialize(room_id: str) -> bool:
+        seen.append(room_id)
+        # 启动期间配置热重载新增房间。
+        monitor.room_states["222"] = LiveRoomState(room_id=222)
+        return True
+
+    with (
+        patch.object(monitor, "_initialize_room", side_effect=initialize),
+        patch("plugins.live_monitor.live_monitor.asyncio.sleep", AsyncMock()),
+    ):
+        await monitor._init_room_states()
+
+    assert seen == ["111"]
+
+
+@pytest.mark.asyncio
+async def test_stop_danmaku_clients_tolerates_registry_changes_while_stopping(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111", "222"])
+    first, second = AsyncMock(), AsyncMock()
+
+    async def stop_and_register() -> None:
+        monitor._danmaku_clients["333"] = AsyncMock()
+
+    first.stop.side_effect = stop_and_register
+    monitor._danmaku_clients.update({"111": first, "222": second})
+
+    await monitor._stop_danmaku_clients()
+
+    second.stop.assert_awaited_once()
+    assert monitor._danmaku_clients == {}
