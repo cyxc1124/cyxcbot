@@ -28,8 +28,12 @@ class LoginLimiter:
             return bucket[key]
         return hits
 
-    def retry_after(self, ip: str, username: str) -> int:
-        """已被限制时返回需等待的秒数，否则 0。"""
+    def reserve(self, ip: str, username: str) -> tuple[int, float]:
+        """同步占用一次尝试名额，返回 (需等待秒数, 占用时间戳)。
+
+        检查与占用之间没有 await，并发请求不会同时越过上限；占用的名额按失败计，
+        登录成功后由 release_success 退还。已被限制时不占用，等待秒数大于 0。
+        """
         now = time.monotonic()
         wait = 0.0
         for bucket, key, limit in (
@@ -41,16 +45,24 @@ class LoginLimiter:
             hits = self._prune(bucket, key, now)
             if len(hits) >= limit:
                 wait = max(wait, WINDOW_SECONDS - (now - hits[0]))
-        return int(wait) + 1 if wait > 0 else 0
-
-    def record_failure(self, ip: str, username: str) -> None:
-        now = time.monotonic()
+        if wait > 0:
+            return int(wait) + 1, now
         for bucket, key in ((self._ip, ip), (self._user, username)):
             if len(bucket) >= _MAX_KEYS and key not in bucket:
                 bucket.pop(next(iter(bucket)))
             bucket[key].append(now)
+        return 0, now
 
-    def record_success(self, username: str) -> None:
+    def release_success(self, ip: str, username: str, stamp: float) -> None:
+        """登录成功：退还来源地址的名额，并清空该用户名的计数。"""
+        hits = self._ip.get(ip)
+        if hits is not None:
+            try:
+                hits.remove(stamp)
+            except ValueError:
+                pass
+            if not hits:
+                del self._ip[ip]
         self._user.pop(username, None)
 
 

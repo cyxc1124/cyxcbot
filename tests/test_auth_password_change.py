@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import sys
 
@@ -35,9 +36,8 @@ async def auth_client(tmp_path, monkeypatch, request):
     ensure_real_db_modules()
     from admin import deps
     from admin.api.v1 import auth, setup
-    from shared.db.base import Model
-
     from admin.auth.login_limiter import login_limiter
+    from shared.db.base import Model
 
     login_limiter.__init__()
     importlib.reload(deps)
@@ -554,8 +554,25 @@ def test_login_limiter_window_expires(monkeypatch):
     now = [1000.0]
     monkeypatch.setattr(limiter_module.time, "monotonic", lambda: now[0])
     limiter = limiter_module.LoginLimiter()
-    for _ in range(limiter_module.MAX_FAILURES_PER_IP):
-        limiter.record_failure("1.2.3.4", "a")
-    assert limiter.retry_after("1.2.3.4", "other") > 0
+    for index in range(limiter_module.MAX_FAILURES_PER_IP):
+        assert limiter.reserve("1.2.3.4", f"user{index}")[0] == 0
+    assert limiter.reserve("1.2.3.4", "other")[0] > 0
     now[0] += limiter_module.WINDOW_SECONDS + 1
-    assert limiter.retry_after("1.2.3.4", "other") == 0
+    assert limiter.reserve("1.2.3.4", "other")[0] == 0
+
+
+async def test_login_limit_counts_concurrent_attempts(auth_client):
+    from admin.auth import login_limiter as limiter_module
+
+    client, _ = auth_client
+    client.headers.pop("Authorization")
+    limiter_module.login_limiter.__init__()
+    wrong = {"username": "admin", "password": "wrong-password"}
+    burst = limiter_module.MAX_FAILURES_PER_USERNAME * 3
+    responses = await asyncio.gather(
+        *(client.post("auth/login", json=wrong) for _ in range(burst))
+    )
+    statuses = [response.status_code for response in responses]
+    assert statuses.count(401) == limiter_module.MAX_FAILURES_PER_USERNAME
+    assert statuses.count(429) == burst - limiter_module.MAX_FAILURES_PER_USERNAME
+    limiter_module.login_limiter.__init__()

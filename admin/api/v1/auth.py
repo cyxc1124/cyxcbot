@@ -41,7 +41,7 @@ router = APIRouter(
 async def login(body: LoginRequest, request: Request):
     # 反向代理后 client.host 是代理地址；按用户名的限制仍然有效。
     ip = request.client.host if request.client else ""
-    retry_after = login_limiter.retry_after(ip, body.username)
+    retry_after, stamp = login_limiter.reserve(ip, body.username)
     if retry_after:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -63,11 +63,10 @@ async def login(body: LoginRequest, request: Request):
     # bcrypt 约 0.2s，放到线程里避免阻塞事件循环（机器人消息处理与监控共用）。
     password_ok = await asyncio.to_thread(verify_password, body.password, password_hash)
     if not user_id or not password_ok:
-        login_limiter.record_failure(ip, body.username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
-    login_limiter.record_success(body.username)
+    login_limiter.release_success(ip, body.username, stamp)
 
     token = create_access_token(
         username, {"uid": user_id, "is_admin": is_admin}, password_hash=password_hash
