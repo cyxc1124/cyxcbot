@@ -1,5 +1,7 @@
 export const DYNAMIC_MIN_TICK_INTERVAL_SECONDS = 3
-export const LIVE_BATCH_REQUEST_GAP_SECONDS = 0.3
+// 批量轮询并发数与单请求耗时假设，需与 shared/monitor 保持一致。
+export const BATCH_CONCURRENCY = 3
+export const BATCH_ASSUMED_REQUEST_SECONDS = 1
 export const LIVE_WEBSOCKET_BACKUP_MIN_INTERVAL_SECONDS = 300
 
 export interface MonitorPollSchedule {
@@ -8,7 +10,7 @@ export interface MonitorPollSchedule {
   configured_interval_seconds: number
   min_tick_interval_seconds?: number | null
   poll_interval_seconds?: number | null
-  batch_gap_seconds?: number | null
+  batch_concurrency?: number | null
   use_websocket?: boolean | null
   tick_interval_seconds: number
   per_target_cycle_seconds: number
@@ -98,12 +100,12 @@ export function computeDynamicBatchPollSchedule(
   }
 
   const avgRps = targetCount / pollInterval
-  const peakRps = 1
+  const peakRps = Math.min(targetCount, BATCH_CONCURRENCY) / BATCH_ASSUMED_REQUEST_SECONDS
 
   let warning: string | null = null
   if (targetCount >= 5) {
     warning =
-      `批量模式下每 ${pollInterval} 秒会依次检查全部 ${targetCount} 个 UP 主。` +
+      `批量模式下每 ${pollInterval} 秒会同时检查最多 ${BATCH_CONCURRENCY} 个，共 ${targetCount} 个 UP 主。` +
       `订阅较多时建议启用分散检查以降低 API 峰值压力。`
   }
 
@@ -125,7 +127,7 @@ export function computeLivePollSchedule(
   targetCount: number,
   configuredIntervalSeconds: number,
   useWebsocket: boolean,
-  batchGapSeconds = LIVE_BATCH_REQUEST_GAP_SECONDS,
+  batchConcurrency = BATCH_CONCURRENCY,
 ): MonitorPollSchedule {
   const pollInterval = useWebsocket
     ? Math.max(LIVE_WEBSOCKET_BACKUP_MIN_INTERVAL_SECONDS, configuredIntervalSeconds * 5)
@@ -138,7 +140,7 @@ export function computeLivePollSchedule(
       target_count: 0,
       configured_interval_seconds: configuredIntervalSeconds,
       poll_interval_seconds: pollInterval,
-      batch_gap_seconds: batchGapSeconds,
+      batch_concurrency: batchConcurrency,
       use_websocket: useWebsocket,
       tick_interval_seconds: 0,
       per_target_cycle_seconds: 0,
@@ -149,8 +151,8 @@ export function computeLivePollSchedule(
     }
   }
 
-  const burstDuration = batchGapSeconds * Math.max(0, targetCount - 1)
-  const peakRps = 1 / batchGapSeconds
+  const burstDuration = Math.ceil(targetCount / batchConcurrency) * BATCH_ASSUMED_REQUEST_SECONDS
+  const peakRps = Math.min(targetCount, batchConcurrency) / BATCH_ASSUMED_REQUEST_SECONDS
   const avgRps = targetCount / pollInterval
 
   let warning: string | null = null
@@ -169,9 +171,9 @@ export function computeLivePollSchedule(
     target_count: targetCount,
     configured_interval_seconds: configuredIntervalSeconds,
     poll_interval_seconds: pollInterval,
-    batch_gap_seconds: batchGapSeconds,
+    batch_concurrency: batchConcurrency,
     use_websocket: useWebsocket,
-    tick_interval_seconds: round(batchGapSeconds),
+    tick_interval_seconds: round(BATCH_ASSUMED_REQUEST_SECONDS),
     per_target_cycle_seconds: round(pollInterval),
     requests_per_second_avg: round(avgRps),
     requests_per_second_peak: round(peakRps),

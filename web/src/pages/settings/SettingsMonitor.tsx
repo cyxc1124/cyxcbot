@@ -110,7 +110,7 @@ export function SettingsBilibiliMonitorPage() {
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
               {settings?.dynamic_monitor_use_stagger ?? true
                 ? '期望每个 UP 主约每 N 秒检查一次，分散检查的单次间隔不低于 3 秒。'
-                : '每 N 秒依次检查全部 UP 主；订阅较多时可能短时集中请求 API。'}
+                : '每 N 秒检查全部 UP 主（最多同时检查 3 个）；订阅较多时可能短时集中请求 API。'}
             </p>
           </div>
         </div>
@@ -219,7 +219,7 @@ export function SettingsXMonitorPage() {
           <p className="mt-1 text-xs text-muted-foreground">
             {settings?.x_monitor_use_stagger ?? true
               ? '期望每个博主约每 N 秒检查一次；目标较多时会自动分散请求，且单次间隔不低于 3 秒。'
-              : '每 N 秒依次检查全部博主；订阅较多时可能短时集中请求 API。'}
+              : '每 N 秒检查全部博主（最多同时检查 3 个）；订阅较多时可能短时集中请求 API。'}
           </p>
         </div>
         {xSchedule ? (
