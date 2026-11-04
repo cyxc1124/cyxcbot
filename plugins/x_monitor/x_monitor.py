@@ -97,6 +97,8 @@ class XMonitor:
         self.new_tweets_total = 0
         self._delivery_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._delivery_tasks: Set[asyncio.Task] = set()
+        # 热重载新增目标的首次基准检查：放后台，避免拖住保存配置的请求
+        self._reload_tasks: Set[asyncio.Task] = set()
         # username -> (tweet_id, failed_groups, failed_users)；部分失败时只重试失败目标
         self._pending_tweet_delivery: Dict[
             str, tuple[str, str, List[tuple[str, int]], List[tuple[str, int]]]
@@ -164,6 +166,25 @@ class XMonitor:
 
     def _spawn_delivery_task(self, coro, *, name: str = "X 投递") -> None:
         spawn_background_task(name, coro, tasks=self._delivery_tasks)
+
+    async def _init_new_usernames(self, usernames: List[str]) -> None:
+        results = await run_with_concurrency(usernames, self._check_user_tweets)
+        for username, result in zip(usernames, results):
+            if isinstance(result, BaseException):
+                logger.opt(exception=result).error(
+                    "初始化 X 博主 {} 监控失败", username
+                )
+
+    async def drain_reload_tasks(self) -> None:
+        """等待热重载触发的后台初始化完成。"""
+        while self._reload_tasks:
+            await asyncio.gather(*list(self._reload_tasks), return_exceptions=True)
+
+    async def _cancel_reload_tasks(self) -> None:
+        tasks = list(self._reload_tasks)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _drain_pending_deliveries(self) -> None:
         while self._delivery_tasks:
@@ -307,14 +328,12 @@ class XMonitor:
                 if username not in new_usernames:
                     new_usernames.append(username)
 
-        if self.is_running:
-            for username in new_usernames:
-                try:
-                    await self._check_user_tweets(username)
-                except Exception:
-                    logger.opt(exception=True).error(
-                        "初始化 X 博主 {} 监控失败", username
-                    )
+        if self.is_running and new_usernames:
+            spawn_background_task(
+                "X 监控初始化新目标",
+                self._init_new_usernames(new_usernames),
+                tasks=self._reload_tasks,
+            )
 
         if self.is_running and (
             old_interval != self.config.monitor_interval
@@ -363,6 +382,7 @@ class XMonitor:
         logger.info("正在停止 X 监控...")
         self.is_running = False
         remove_poll_job()
+        await self._cancel_reload_tasks()
         await self._drain_pending_deliveries()
         await self._cleanup_resources()
         logger.info("X 监控已完全停止")
