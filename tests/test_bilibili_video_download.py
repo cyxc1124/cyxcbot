@@ -350,3 +350,49 @@ async def test_download_video_only_dash_skips_audio(tmp_path, monkeypatch):
     assert path.exists()
     assert downloaded == ["https://video"]
     assert merged["audio"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("has_ffmpeg", [True, False], ids=["dash", "durl"])
+async def test_cdn_downloads_never_send_login_cookie(tmp_path, monkeypatch, has_ffmpeg):
+    """CDN 备用地址可能是第三方 PCDN；登录 Cookie 只能发给 playurl。"""
+    from utils.bilibili_api import video_download
+
+    play = {
+        "dash": {
+            "video": [{"id": 32, "codecid": 7, "baseUrl": "https://pcdn/v"}],
+            "audio": [{"id": 30280, "baseUrl": "https://pcdn/a"}],
+        }
+    }
+    if not has_ffmpeg:
+        play["durl"] = [{"url": "https://pcdn/whole"}]
+    fetch = AsyncMock(return_value=play)
+    monkeypatch.setattr(video_download, "fetch_playurl", fetch)
+    monkeypatch.setattr(
+        video_download.shutil, "which", lambda _: "ffmpeg" if has_ffmpeg else None
+    )
+    cdn_headers: list[dict[str, str]] = []
+
+    async def fake_download_file(_url, dest, _session, *, headers, **_kwargs):
+        cdn_headers.append(headers)
+        dest.write_bytes(b"x")
+        return True
+
+    async def fake_merge(_audio, _video, output):
+        output.write_bytes(b"mp4")
+
+    monkeypatch.setattr(video_download, "download_file", fake_download_file)
+    monkeypatch.setattr(video_download, "_merge_av", fake_merge)
+
+    await download_bilibili_video(
+        AsyncMock(),
+        bvid="BV1xx411c7mD",
+        cid=1,
+        cookie="SESSDATA=secret",
+        output_dir=tmp_path,
+    )
+
+    assert cdn_headers
+    assert all("Cookie" not in headers for headers in cdn_headers)
+    assert all(headers["Referer"] == video_download.REFERER for headers in cdn_headers)
+    assert fetch.await_args.kwargs["cookie"] == "SESSDATA=secret"
