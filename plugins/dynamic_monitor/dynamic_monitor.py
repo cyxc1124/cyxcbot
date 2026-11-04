@@ -876,6 +876,18 @@ class DynamicMonitor:
             pending.groups, pending.users = [], []
             await self._persist_state(uid, check_generation=check_generation)
             return True
+        if pending.expired():
+            logger.warning(
+                "动态通知持续投递失败，放弃重试以推进游标: uid={} dynamic_id={} "
+                "failed={}",
+                uid,
+                dynamic.id,
+                [f"group:{gid}" for gid in failed_groups]
+                + [f"user:{user_id}" for user_id in failed_users],
+            )
+            pending.groups, pending.users = [], []
+            await self._persist_state(uid, check_generation=check_generation)
+            return True
         pending.groups = failed_groups
         pending.users = failed_users
         await self._persist_state(uid, check_generation=check_generation)

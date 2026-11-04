@@ -230,6 +230,52 @@ async def test_terminal_rejection_only_retries_transient_failed_targets(
     assert not monitor._pending_targets
 
 
+@pytest.mark.asyncio
+async def test_persistently_failing_target_is_dropped_after_max_age(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """失效目标超过重试上限后放弃，游标推进，不再阻塞后续动态。"""
+    from shared.notify.delivery import (
+        PENDING_DELIVERY_MAX_AGE_SECONDS,
+        DeliveryResult,
+        TargetDelivery,
+    )
+
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    dynamic = SimpleNamespace(id=200, uid="111", get_type_description=lambda: "text")
+    monitor._resolve_author_name = AsyncMock(return_value="author")
+    monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
+    monitor._persist_state = AsyncMock()
+    monitor.sender = SimpleNamespace(
+        build_dynamic_message=MagicMock(return_value="msg"),
+        send_message=AsyncMock(
+            return_value=DeliveryResult(
+                targets=[TargetDelivery("group", "1001", False, "kicked")]
+            )
+        ),
+    )
+
+    assert await monitor._send_dynamic_notification("111", dynamic) is False
+    pending = monitor._pending_targets[("111", 200, False)]
+    assert pending.groups == ["1001"]
+
+    pending.created_at -= PENDING_DELIVERY_MAX_AGE_SECONDS + 1
+    assert await monitor._send_dynamic_notification("111", dynamic) is True
+    assert (pending.groups, pending.users) == ([], [])
+
+
+def test_pending_delivery_created_at_round_trips_and_defaults_for_old_state() -> None:
+    from shared.notify.delivery import PendingDelivery
+
+    pending = PendingDelivery(message=[], groups=["1"], users=[], created_at=123.0)
+    data = pending.to_data()
+    assert PendingDelivery.from_data(data).created_at == 123.0
+
+    del data["created_at"]
+    assert not PendingDelivery.from_data(data).expired()
+
+
 def _make_monitor(
     Config: Any,
     DynamicMonitor: Any,
