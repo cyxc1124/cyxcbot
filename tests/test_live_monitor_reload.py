@@ -1286,3 +1286,59 @@ async def test_stop_monitoring_cancels_pending_reload_tasks(
         await asyncio.wait_for(monitor.stop_monitoring(), timeout=1)
 
     assert not monitor._reload_tasks
+
+
+@pytest.mark.asyncio
+async def test_start_danmaku_clients_stops_when_websocket_disabled_midway(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    """后台启动批次进行中关闭 WebSocket，后续房间不应再被连接。"""
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111", "222"])
+
+    async def disable_after_first(room_id: str) -> None:
+        monitor.config.use_websocket = False
+
+    with patch.object(
+        monitor, "_start_single_danmaku_client", side_effect=disable_after_first
+    ) as start_client:
+        await monitor._start_danmaku_clients()
+
+    start_client.assert_awaited_once_with("111")
+
+
+@pytest.mark.asyncio
+async def test_start_danmaku_clients_skips_room_removed_midway(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111", "222"])
+
+    async def remove_second(room_id: str) -> None:
+        monitor.config.live_monitor_mapping.pop("222", None)
+
+    with patch.object(
+        monitor, "_start_single_danmaku_client", side_effect=remove_second
+    ) as start_client:
+        await monitor._start_danmaku_clients()
+
+    start_client.assert_awaited_once_with("111")
+
+
+@pytest.mark.asyncio
+async def test_stop_danmaku_clients_tolerates_concurrent_registration(
+    live_monitor_modules: tuple[Any, Any, Any],
+) -> None:
+    Config, LiveMonitor, LiveRoomState = live_monitor_modules
+    monitor = _make_monitor(Config, LiveMonitor, LiveRoomState, ["111"])
+    first = AsyncMock()
+
+    async def register_other_during_stop() -> None:
+        monitor._danmaku_clients["222"] = AsyncMock()
+
+    first.stop.side_effect = register_other_during_stop
+    monitor._danmaku_clients["111"] = first
+
+    await monitor._stop_danmaku_clients()
+
+    assert monitor._danmaku_clients == {}

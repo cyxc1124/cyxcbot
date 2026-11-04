@@ -304,6 +304,14 @@ class LiveMonitor:
             "开启" if self.config.use_websocket else "关闭",
         )
 
+    def _should_connect_danmaku(self, room_id: str) -> bool:
+        """后台连接前复查：监控仍运行、WebSocket 仍开启、房间仍启用。"""
+        return (
+            self.is_running
+            and self.config.use_websocket
+            and self._is_active_room(room_id)
+        )
+
     async def _apply_reload_changes(
         self,
         new_room_ids: list[str],
@@ -315,15 +323,8 @@ class LiveMonitor:
         if new_room_ids:
             await run_with_concurrency(new_room_ids, self._initialize_room)
 
-        def should_connect(room_id: str) -> bool:
-            return (
-                self.is_running
-                and self.config.use_websocket
-                and self._is_active_room(room_id)
-            )
-
         for room_id in restart_room_ids:
-            if not should_connect(room_id):
+            if not self._should_connect_danmaku(room_id):
                 continue
             try:
                 await self._restart_single_danmaku_client(room_id)
@@ -340,7 +341,7 @@ class LiveMonitor:
 
         connect_ids = self._configured_room_ids() if start_all else new_room_ids
         for room_id in connect_ids:
-            if not should_connect(room_id):
+            if not self._should_connect_danmaku(room_id):
                 continue
             try:
                 await self._start_single_danmaku_client(room_id)
@@ -425,6 +426,8 @@ class LiveMonitor:
     async def _start_danmaku_clients(self):
         """启动所有房间的弹幕客户端"""
         for room_id in self._configured_room_ids():
+            if not self._should_connect_danmaku(room_id):
+                continue
             try:
                 await self._start_single_danmaku_client(room_id)
             except Exception:
@@ -497,7 +500,7 @@ class LiveMonitor:
 
     async def _stop_danmaku_clients(self):
         """停止所有弹幕客户端"""
-        for room_id, client in self._danmaku_clients.items():
+        for room_id, client in list(self._danmaku_clients.items()):
             try:
                 await client.stop()
                 logger.debug("房间 {} 弹幕客户端已停止", room_id)
