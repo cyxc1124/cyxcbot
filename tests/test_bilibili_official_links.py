@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import inspect
 import sys
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import nonebot
 import pytest
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from nonebot.adapters.onebot.v11 import Bot as OneBotBot
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, PrivateMessageEvent
 from nonebot.adapters.onebot.v11 import Message as OneBotMessage
@@ -609,6 +611,170 @@ async def test_expired_or_missing_selection_ignores_numbers(page_client, monkeyp
     await c.handler(c.bot, c.event("2"))
     c.api.assert_not_awaited()
     c.download.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("queue", "send_video"), [("pipeline", True), ("session", True), ("session", False)]
+)
+async def test_timely_choice_survives_queued_expiry_and_cleanup(
+    page_client, monkeypatch, queue, send_video
+):
+    c = page_client
+    if not send_video:
+        for policies in (
+            c.snapshot.link_parser_group_policies,
+            c.snapshot.link_parser_user_policies,
+        ):
+            for key, policy in policies.items():
+                policies[key] = replace(policy, send_video_enabled=False)
+    now = {"value": 100}
+    monkeypatch.setattr(c.selections, "monotonic", lambda: now["value"])
+    await c.handler(c.bot, c.event(c.video.bvid))
+    key = c.plugin.selection_key(c.bot, c.event(""))
+    if queue == "pipeline":
+        blocker = asyncio.Semaphore(0)
+        monkeypatch.setattr(c.plugin, "_PIPELINE_SEM", blocker)
+    else:
+        blocker = c.plugin.selection_lock(key)
+        await blocker.acquire()
+    c.api.reset_mock()
+    now["value"] = 399
+    task = asyncio.create_task(c.handler(c.bot, c.event("2")))
+    try:
+        await asyncio.sleep(0)
+        assert not task.done()
+        assert key not in c.selections._pending
+        now["value"] = 401
+        await c.plugin._cleanup_page_selections()
+    finally:
+        blocker.release()
+        await task
+    if send_video:
+        c.download.assert_awaited_once()
+        assert c.download.await_args.kwargs["cid"] == 200
+    else:
+        c.download.assert_not_awaited()
+    caption = c.api.await_args.kwargs["message"].extract_plain_text()
+    assert "P2 正式内容" in caption and "?p=2" in caption
+
+
+@pytest.mark.asyncio
+async def test_queued_choice_does_not_consume_new_menu(page_client):
+    c = page_client
+    await c.handler(c.bot, c.event(c.video.bvid))
+    key = c.plugin.selection_key(c.bot, c.event(""))
+    lock = c.plugin.selection_lock(key)
+    await lock.acquire()
+    task = asyncio.create_task(c.handler(c.bot, c.event("2")))
+    try:
+        await asyncio.sleep(0)
+        replacement = replace(c.video, bvid="BV1GJ411x7h7", title="新视频")
+        c.plugin.remember_video(key, replacement)
+    finally:
+        lock.release()
+        await task
+    assert c.download.await_args.kwargs["bvid"] == c.video.bvid
+    assert c.plugin.pending_video(key) is replacement
+
+
+@pytest.mark.asyncio
+async def test_invalid_choice_keeps_original_deadline(page_client, monkeypatch):
+    c = page_client
+    now = {"value": 100}
+    monkeypatch.setattr(c.selections, "monotonic", lambda: now["value"])
+    await c.handler(c.bot, c.event(c.video.bvid))
+    key = c.plugin.selection_key(c.bot, c.event(""))
+    now["value"] = 399
+    await c.handler(c.bot, c.event("99"))
+    assert c.selections._pending[key][0] == 400
+    now["value"] = 400
+    c.api.reset_mock()
+    await c.handler(c.bot, c.event("2"))
+    c.api.assert_not_awaited()
+    c.download.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_scheduler_and_shutdown_clear_pending(pipeline, monkeypatch):
+    plugin, _, manager = pipeline
+    selections = sys.modules[f"{plugin.__name__}.page_selection"]
+    scheduler = AsyncIOScheduler()
+    scheduler.start(paused=True)
+    monkeypatch.setattr(plugin, "scheduler", scheduler)
+    monkeypatch.setattr(plugin, "_register_config_reload", lambda: None)
+    now = {"value": 100}
+    monkeypatch.setattr(selections, "monotonic", lambda: now["value"])
+    expired, fresh = ("QQ", "app", None, "old"), ("QQ", "app", None, "new")
+    try:
+        await plugin._link_parser_startup()
+        await plugin._link_parser_startup()
+        jobs = scheduler.get_jobs()
+        assert len(jobs) == 1
+        assert jobs[0].trigger.interval.total_seconds() == 30
+        assert inspect.iscoroutinefunction(jobs[0].func)
+        plugin.remember_video(expired, manager.get_video_detail.return_value)
+        now["value"] = 200
+        plugin.remember_video(fresh, manager.get_video_detail.return_value)
+        now["value"] = 400
+        assert expired in selections._pending
+        scheduler.modify_job(
+            jobs[0].id,
+            next_run_time=datetime.now(timezone.utc) - timedelta(seconds=2),
+        )
+        scheduler.resume()
+        async with asyncio.timeout(5):
+            while expired in selections._pending:
+                await asyncio.sleep(0)
+        assert expired not in selections._pending and fresh in selections._pending
+        await plugin._link_parser_shutdown()
+        await plugin._link_parser_shutdown()
+        assert scheduler.get_jobs() == []
+        assert selections._pending == {}
+    finally:
+        scheduler.shutdown(wait=False)
+
+
+@pytest.mark.asyncio
+async def test_restart_drops_pending_choice(page_client, monkeypatch):
+    c = page_client
+    await c.handler(c.bot, c.event(c.video.bvid))
+    key = c.plugin.selection_key(c.bot, c.event(""))
+    spec = importlib.util.spec_from_file_location(
+        "restarted_page_selection", c.selections.__file__
+    )
+    restarted = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(restarted)
+    assert restarted.pending_video(key) is None
+    monkeypatch.setattr(c.plugin, "pending_video", restarted.pending_video)
+    c.api.reset_mock()
+    await c.handler(c.bot, c.event("2"))
+    c.api.assert_not_awaited()
+    c.download.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["group", "c2c"])
+async def test_exhausted_reply_budget_keeps_pending_choice(
+    scope, pipeline, monkeypatch
+):
+    plugin, _, manager = pipeline
+    bot = QQBot(MagicMock(), "app", _bot_info("app", "secret", False))
+    event = _event(scope, "1")
+    event._reply_seq = 5 if scope == "group" else 4
+    key = plugin.selection_key(bot, event)
+    video = manager.get_video_detail.return_value
+    plugin.remember_video(key, video)
+    api = AsyncMock()
+    monkeypatch.setattr(
+        bot, "send_to_group" if scope == "group" else "send_to_c2c", api
+    )
+    await (
+        plugin.handle_group_link if scope == "group" else plugin.handle_private_link
+    )(bot, event)
+    assert plugin.pending_video(key) is video
+    manager.init.assert_not_awaited()
+    api.assert_not_awaited()
 
 
 @pytest.mark.asyncio
