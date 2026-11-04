@@ -176,6 +176,7 @@ _MEASURE_ELEMENT_JS = """(el) => {
 }"""
 
 MAX_DYNAMIC_SCREENSHOT_HEIGHT = 20000
+_NETWORK_IDLE_TIMEOUT_MS = 2500
 
 
 def _parse_cookie_string(cookie_str: str) -> list:
@@ -438,10 +439,14 @@ class DynamicScreenshot:
                 card = await self._find_dynamic_card(page)
                 if card and not await self._is_login_interstitial(page):
                     logger.info("动态 {} 页面已加载: {}", dynamic_id, current_url)
+                    # 尽力而为：B 站页面常有持续请求，networkidle 多数会超时；
+                    # 图片加载由 _LOAD_LAZY_IMAGES_JS 单独等待，这里不必久等。
                     try:
-                        await page.wait_for_load_state("networkidle", timeout=8000)
+                        await page.wait_for_load_state(
+                            "networkidle", timeout=_NETWORK_IDLE_TIMEOUT_MS
+                        )
                     except Exception as e:
-                        logger.warning("等待网络空闲超时: {}", e)
+                        logger.debug("等待网络空闲超时，继续截图: {}", e)
                     await page.wait_for_timeout(500)
                     return card, page.url
 
@@ -519,20 +524,14 @@ class DynamicScreenshot:
         """加载动态/opus 页面并定位截图区域。"""
         logger.info("开始截图动态 {}{}", dynamic_id, "（专栏）" if is_article else "")
 
-        try:
-            await page.set_viewport_size({"width": 1920, "height": 1080})
-            page.set_default_timeout(30000)
+        # 异常由 get_dynamic_screenshot 统一记录一次，避免同一次失败重复打堆栈。
+        await page.set_viewport_size({"width": 1920, "height": 1080})
+        page.set_default_timeout(30000)
 
-            card, page_url = await self._navigate_dynamic_page(
-                page, dynamic_id, is_article=is_article
-            )
-            return page, card, page_url
-
-        except Notfound:
-            raise
-        except Exception:
-            logger.opt(exception=True).error("动态{}截图处理失败", dynamic_id)
-            raise
+        card, page_url = await self._navigate_dynamic_page(
+            page, dynamic_id, is_article=is_article
+        )
+        return page, card, page_url
 
     async def get_dynamic_screenshot(
         self,
@@ -577,8 +576,12 @@ class DynamicScreenshot:
             except Notfound:
                 # 动态确实不存在，交给外层做干净的 WARNING 处理，不当作截图异常
                 raise
+            except ScreenshotLoadError as load_error:
+                # 页面加载/渲染的瞬时失败，无需堆栈；调用方会再记录一条 warning。
+                logger.debug("动态 {} 页面加载失败: {}", dynamic_id, load_error)
+                return None, f"截图失败: {load_error}", None
             except Exception as full_screenshot_error:
-                logger.opt(exception=True).error("PC端截图失败")
+                logger.opt(exception=True).error("动态{}截图失败", dynamic_id)
                 return None, f"截图失败: {str(full_screenshot_error)}", None
 
         except Notfound:
