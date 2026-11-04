@@ -9,14 +9,15 @@ B站直播监控核心模块
 """
 
 import asyncio
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from datetime import datetime
+from typing import Dict, Optional, Set
 
 import aiohttp
 from nonebot.log import logger
 
 from shared.config.service import get_config_service
 from shared.monitor.background_task import spawn_background_task
+from shared.monitor.base import PollingMonitorMixin
 from shared.monitor.check_cycle import CheckCycleLogger
 from shared.monitor.concurrency import run_with_concurrency
 from shared.monitor.poll_schedule import (
@@ -73,13 +74,15 @@ def _ensure_config_reload_registered() -> None:
         _config_reload_registered = True
 
 
-class LiveMonitor:
+class LiveMonitor(PollingMonitorMixin):
     """B站直播监控核心类
 
     双重监控机制：
     1. WebSocket 弹幕客户端：实时监听开播/关播信号（秒级响应）
     2. API 轮询：定时检查状态（备用，防止 WebSocket 漏消息）
     """
+
+    _monitor_label = "直播监控"
 
     def __init__(self, config: Config):
         self.config = config
@@ -92,6 +95,8 @@ class LiveMonitor:
         self._danmaku_clients: Dict[str, DanmakuClient] = {}
         # 每次注册客户端时递增，用于忽略过期的 in-flight start 失败
         self._danmaku_client_epoch: Dict[str, int] = {}
+        # 热重载/启动时的房间初始化与弹幕连接：放后台，避免拖住保存配置的请求
+        self._reload_tasks: Set[asyncio.Task] = set()
         # aiohttp session for WebSocket
         self._ws_session: Optional[aiohttp.ClientSession] = None
         # 通知发送器
@@ -112,11 +117,14 @@ class LiveMonitor:
         self.last_check_at: Optional[str] = None
         self.checks_total = 0
 
-    def _touch_last_check_at(self) -> None:
-        self.last_check_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-
     def _configured_room_ids(self) -> list[str]:
         return list(self.config.live_monitor_mapping.keys())
+
+    def _target_ids(self) -> list[str]:
+        return self._configured_room_ids()
+
+    async def _check_target(self, target_id: str) -> bool:
+        return await self._check_room_status(target_id)
 
     def _is_active_room(self, room_id: str) -> bool:
         return room_id in self.config.live_monitor_mapping
@@ -252,51 +260,44 @@ class LiveMonitor:
                 self.initialized_rooms[room_id] = False
 
         if self.is_running:
-            for room_id in new_room_ids:
-                await self._initialize_room(room_id)
-
             poll_interval = self._scheduled_poll_interval_seconds()
             if (
                 old_interval != self.config.monitor_interval
                 or old_ws != self.config.use_websocket
             ):
-                register_poll_job(self._check_all_rooms, poll_interval)
+                register_poll_job(self._check_all_targets, poll_interval)
                 logger.info("直播监控轮询间隔已更新为 {}秒", poll_interval)
 
-            if old_ws != self.config.use_websocket:
-                if self.config.use_websocket:
-                    await self._start_danmaku_clients()
-                else:
-                    await self._stop_danmaku_clients()
-            elif self.config.use_websocket:
-                if old_cookie != self.config.bilibili_cookie:
-                    existing_room_ids = [
-                        room_id
-                        for room_id in self._configured_room_ids()
-                        if room_id not in new_room_ids
-                    ]
-                    for room_id in existing_room_ids:
-                        try:
-                            await self._restart_single_danmaku_client(room_id)
-                        except Exception:
-                            logger.opt(exception=True).error(
-                                "房间 {} Cookie 热更新 WebSocket 客户端失败", room_id
-                            )
-                        # 避免同时连接过多
-                        await asyncio.sleep(LIVE_DANMAKU_CLIENT_START_GAP_SECONDS)
-                    if existing_room_ids:
-                        logger.info(
-                            "直播监控 Cookie 已变更，已更新 {} 个 WebSocket 客户端",
-                            len(existing_room_ids),
-                        )
+            ws_toggled = old_ws != self.config.use_websocket
+            if ws_toggled and not self.config.use_websocket:
+                await self._stop_danmaku_clients()
 
-                for room_id in new_room_ids:
-                    try:
-                        await self._start_single_danmaku_client(room_id)
-                    except Exception:
-                        logger.opt(exception=True).error(
-                            "房间 {} 弹幕客户端启动失败", room_id
-                        )
+            restart_room_ids: list[str] = []
+            if (
+                not ws_toggled
+                and self.config.use_websocket
+                and old_cookie != self.config.bilibili_cookie
+            ):
+                restart_room_ids = [
+                    room_id
+                    for room_id in self._configured_room_ids()
+                    if room_id not in new_room_ids
+                ]
+
+            if (
+                new_room_ids
+                or restart_room_ids
+                or (ws_toggled and self.config.use_websocket)
+            ):
+                spawn_background_task(
+                    "直播监控热重载应用",
+                    self._apply_reload_changes(
+                        new_room_ids,
+                        restart_room_ids,
+                        start_all=ws_toggled,
+                    ),
+                    tasks=self._reload_tasks,
+                )
 
         self._sender.include_room_info = self.config.include_room_info
         self._sender.templates = self.config.message_templates
@@ -308,6 +309,62 @@ class LiveMonitor:
             poll_interval,
             "开启" if self.config.use_websocket else "关闭",
         )
+
+    def _should_connect_danmaku(self, room_id: str) -> bool:
+        """后台连接前复查：监控仍运行、WebSocket 仍开启、房间仍启用。"""
+        return (
+            self.is_running
+            and self.config.use_websocket
+            and self._is_active_room(room_id)
+        )
+
+    async def _apply_reload_changes(
+        self,
+        new_room_ids: list[str],
+        restart_room_ids: list[str],
+        *,
+        start_all: bool,
+    ) -> None:
+        """后台：先给新房间建基准，再按需重建/启动弹幕客户端（逐个间隔，避免同时连接过多）。"""
+        if new_room_ids:
+            await run_with_concurrency(new_room_ids, self._initialize_room)
+
+        for room_id in restart_room_ids:
+            if not self._should_connect_danmaku(room_id):
+                continue
+            try:
+                await self._restart_single_danmaku_client(room_id)
+            except Exception:
+                logger.opt(exception=True).error(
+                    "房间 {} Cookie 热更新 WebSocket 客户端失败", room_id
+                )
+            await asyncio.sleep(LIVE_DANMAKU_CLIENT_START_GAP_SECONDS)
+        if restart_room_ids:
+            logger.info(
+                "直播监控 Cookie 已变更，已更新 {} 个 WebSocket 客户端",
+                len(restart_room_ids),
+            )
+
+        connect_ids = self._configured_room_ids() if start_all else new_room_ids
+        for room_id in connect_ids:
+            if not self._should_connect_danmaku(room_id):
+                continue
+            try:
+                await self._start_single_danmaku_client(room_id)
+            except Exception:
+                logger.opt(exception=True).error("房间 {} 弹幕客户端启动失败", room_id)
+            await asyncio.sleep(LIVE_DANMAKU_CLIENT_START_GAP_SECONDS)
+
+    async def drain_reload_tasks(self) -> None:
+        """等待热重载触发的后台任务完成。"""
+        while self._reload_tasks:
+            await asyncio.gather(*list(self._reload_tasks), return_exceptions=True)
+
+    async def _cancel_reload_tasks(self) -> None:
+        tasks = list(self._reload_tasks)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     async def start_monitoring(self):
         """启动监控"""
@@ -328,7 +385,12 @@ class LiveMonitor:
         if self.config.use_websocket:
             # 启动 WebSocket 弹幕客户端（主要监控方式）
             logger.info("正在启动 WebSocket 实时监控...")
-            await self._start_danmaku_clients()
+            # 逐房间间隔连接较慢，放后台以免拖住启动（保存配置）请求
+            spawn_background_task(
+                "直播监控弹幕客户端启动",
+                self._start_danmaku_clients(),
+                tasks=self._reload_tasks,
+            )
 
             # API 轮询作为备用，间隔较长
             poll_interval = self._scheduled_poll_interval_seconds()
@@ -341,12 +403,14 @@ class LiveMonitor:
             poll_interval = self._scheduled_poll_interval_seconds()
             logger.info("直播监控已启动：仅 API 轮询模式（间隔 {}秒）", poll_interval)
 
-        register_poll_job(self._check_all_rooms, poll_interval)
+        register_poll_job(self._check_all_targets, poll_interval)
 
     async def stop_monitoring(self):
         """停止监控"""
         logger.info("正在停止直播监控...")
         self.is_running = False
+
+        await self._cancel_reload_tasks()
 
         # 停止所有 WebSocket 客户端
         await self._stop_danmaku_clients()
@@ -358,8 +422,7 @@ class LiveMonitor:
 
         remove_poll_job()
 
-        # 关闭API管理器
-        await api_manager.close()
+        # api_manager 与 B 站链接解析共用，不在此关闭；进程退出时由插件 shutdown 关闭。
 
         await close_card_image_downloader()
 
@@ -368,6 +431,8 @@ class LiveMonitor:
     async def _start_danmaku_clients(self):
         """启动所有房间的弹幕客户端"""
         for room_id in self._configured_room_ids():
+            if not self._should_connect_danmaku(room_id):
+                continue
             try:
                 await self._start_single_danmaku_client(room_id)
             except Exception:
@@ -380,7 +445,7 @@ class LiveMonitor:
         old_client = self._danmaku_clients.pop(room_id, None)
         try:
             await self._start_single_danmaku_client(room_id)
-        except Exception:
+        except BaseException:
             if old_client is not None:
                 self._danmaku_clients[room_id] = old_client
             raise
@@ -657,28 +722,7 @@ class LiveMonitor:
 
     async def _init_room_states(self):
         """初始化所有房间的状态（首次启动时）"""
-        for room_id in list(self.room_states):
-            await self._initialize_room(room_id)
-            await asyncio.sleep(0.5)
-
-    async def _check_all_rooms(self):
-        """检查所有房间的直播状态"""
-        if not self.is_running:
-            logger.debug("监控已停止，跳过本次检查")
-            return
-
-        room_ids = self._configured_room_ids()
-        results = await run_with_concurrency(room_ids, self._check_room_status)
-        for room_id, ok in zip(room_ids, results):
-            if isinstance(ok, BaseException):
-                self._cycle_logger.record_error(room_id, ok)
-            elif ok is False:
-                self._cycle_logger.record_failure(room_id)
-            else:
-                self._cycle_logger.record_success()
-
-        self._cycle_logger.emit_summary()
-        self._touch_last_check_at()
+        await run_with_concurrency(list(self.room_states), self._initialize_room)
 
     async def _check_room_status(self, room_id: str) -> bool:
         """检查单个房间的直播状态，拉取失败返回 False。"""
@@ -837,39 +881,6 @@ class LiveMonitor:
             self._persist_state(room_id),
             name_args=(room_id,),
         )
-
-    async def run_manual_check(
-        self, room_ids: Optional[List[str]] = None
-    ) -> Dict[str, List[str]]:
-        """检查指定或全部直播间的状态（手动触发时使用）。"""
-        if not self.is_running:
-            logger.debug("监控已停止，跳过本次检查")
-            return {"checked": [], "failed": []}
-
-        rid_list = room_ids if room_ids is not None else self._configured_room_ids()
-        cycle = CheckCycleLogger("直播监控（手动）")
-        checked: List[str] = []
-        failed: List[str] = []
-
-        try:
-            results = await run_with_concurrency(rid_list, self._check_room_status)
-            for room_id, ok in zip(rid_list, results):
-                if isinstance(ok, BaseException):
-                    cycle.record_error(room_id, ok)
-                    failed.append(room_id)
-                elif ok is False:
-                    cycle.record_failure(room_id)
-                    failed.append(room_id)
-                else:
-                    cycle.record_success()
-                    checked.append(room_id)
-
-            cycle.emit_summary(log_success_at_info=True)
-            self._touch_last_check_at()
-        except Exception:
-            logger.opt(exception=True).error("直播监控检查出错")
-
-        return {"checked": checked, "failed": failed}
 
     async def check_room_now(self, room_id: str) -> Optional[Dict]:
         """立即检查指定房间的状态（用于手动触发）"""

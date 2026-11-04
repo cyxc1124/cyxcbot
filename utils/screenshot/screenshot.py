@@ -176,6 +176,7 @@ _MEASURE_ELEMENT_JS = """(el) => {
 }"""
 
 MAX_DYNAMIC_SCREENSHOT_HEIGHT = 20000
+_NETWORK_IDLE_TIMEOUT_MS = 2500
 
 
 def _parse_cookie_string(cookie_str: str) -> list:
@@ -438,10 +439,14 @@ class DynamicScreenshot:
                 card = await self._find_dynamic_card(page)
                 if card and not await self._is_login_interstitial(page):
                     logger.info("动态 {} 页面已加载: {}", dynamic_id, current_url)
+                    # 尽力而为：B 站页面常有持续请求，networkidle 多数会超时；
+                    # 图片加载由 _LOAD_LAZY_IMAGES_JS 单独等待，这里不必久等。
                     try:
-                        await page.wait_for_load_state("networkidle", timeout=8000)
+                        await page.wait_for_load_state(
+                            "networkidle", timeout=_NETWORK_IDLE_TIMEOUT_MS
+                        )
                     except Exception as e:
-                        logger.warning("等待网络空闲超时: {}", e)
+                        logger.debug("等待网络空闲超时，继续截图: {}", e)
                     await page.wait_for_timeout(500)
                     return card, page.url
 
@@ -519,20 +524,14 @@ class DynamicScreenshot:
         """加载动态/opus 页面并定位截图区域。"""
         logger.info("开始截图动态 {}{}", dynamic_id, "（专栏）" if is_article else "")
 
-        try:
-            await page.set_viewport_size({"width": 1920, "height": 1080})
-            page.set_default_timeout(30000)
+        # 异常由 get_dynamic_screenshot 统一记录一次，避免同一次失败重复打堆栈。
+        await page.set_viewport_size({"width": 1920, "height": 1080})
+        page.set_default_timeout(30000)
 
-            card, page_url = await self._navigate_dynamic_page(
-                page, dynamic_id, is_article=is_article
-            )
-            return page, card, page_url
-
-        except Notfound:
-            raise
-        except Exception:
-            logger.opt(exception=True).error("动态{}截图处理失败", dynamic_id)
-            raise
+        card, page_url = await self._navigate_dynamic_page(
+            page, dynamic_id, is_article=is_article
+        )
+        return page, card, page_url
 
     async def get_dynamic_screenshot(
         self,
@@ -577,8 +576,12 @@ class DynamicScreenshot:
             except Notfound:
                 # 动态确实不存在，交给外层做干净的 WARNING 处理，不当作截图异常
                 raise
+            except ScreenshotLoadError as load_error:
+                # 页面加载/渲染的瞬时失败，无需堆栈；调用方会再记录一条 warning。
+                logger.debug("动态 {} 页面加载失败: {}", dynamic_id, load_error)
+                return None, f"截图失败: {load_error}", None
             except Exception as full_screenshot_error:
-                logger.opt(exception=True).error("PC端截图失败")
+                logger.opt(exception=True).error("动态{}截图失败", dynamic_id)
                 return None, f"截图失败: {str(full_screenshot_error)}", None
 
         except Notfound:
@@ -606,6 +609,8 @@ dynamic_screenshot = DynamicScreenshot()
 _SCREENSHOT_CONCURRENCY = 2
 _screenshot_semaphore = asyncio.Semaphore(_SCREENSHOT_CONCURRENCY)
 _init_lock = asyncio.Lock()
+# 串行化「占满全部名额」的关闭流程，避免两个关闭方各占一部分名额互相等待。
+_close_lock = asyncio.Lock()
 
 
 async def get_dynamic_screenshot(
@@ -626,17 +631,17 @@ async def get_dynamic_screenshot(
     global dynamic_screenshot
     logger.debug("请求获取动态 {} 截图{}", dynamic_id, "（专栏）" if is_article else "")
 
-    # 浏览器未初始化或已崩溃时（重新）初始化；加锁双重检查，避免并发重复启动浏览器
-    if not dynamic_screenshot.browser_alive:
-        async with _init_lock:
-            if not dynamic_screenshot.browser_alive:
-                logger.info("为动态 {} 初始化浏览器", dynamic_id)
-                success = await dynamic_screenshot.init_browser()
-                if not success:
-                    logger.error("浏览器初始化失败")
-                    return None, "浏览器初始化失败", None
-
+    # 先占名额再检查浏览器：close_screenshot_service 占满名额时等它关完，随后在此懒重建，
+    # 不会在检查通过后被关闭打断。加锁双重检查，避免并发重复启动浏览器。
     async with _screenshot_semaphore:
+        if not dynamic_screenshot.browser_alive:
+            async with _init_lock:
+                if not dynamic_screenshot.browser_alive:
+                    logger.info("为动态 {} 初始化浏览器", dynamic_id)
+                    success = await dynamic_screenshot.init_browser()
+                    if not success:
+                        logger.error("浏览器初始化失败")
+                        return None, "浏览器初始化失败", None
         screenshot, error, page_url = await dynamic_screenshot.get_dynamic_screenshot(
             dynamic_id, is_article=is_article
         )
@@ -647,13 +652,25 @@ async def get_dynamic_screenshot(
     return screenshot, error, page_url
 
 
+async def _with_all_slots(action) -> None:
+    """占满全部截图名额后执行 action，等进行中的截图完成，期间新截图排队。"""
+    async with _close_lock:
+        acquired = 0
+        try:
+            for _ in range(_SCREENSHOT_CONCURRENCY):
+                await _screenshot_semaphore.acquire()
+                acquired += 1
+            await action()
+        finally:
+            for _ in range(acquired):
+                _screenshot_semaphore.release()
+
+
 async def init_screenshot_service():
-    """初始化截图服务"""
-    global dynamic_screenshot
-    await dynamic_screenshot.init_browser()
+    """（重新）初始化截图服务；浏览器由动态监控与链接解析共用，先等进行中的截图完成。"""
+    await _with_all_slots(lambda: dynamic_screenshot.init_browser())
 
 
 async def close_screenshot_service():
-    """关闭截图服务"""
-    global dynamic_screenshot
-    await dynamic_screenshot.close_browser()
+    """关闭截图服务；同 init_screenshot_service，先等进行中的截图完成。"""
+    await _with_all_slots(lambda: dynamic_screenshot.close_browser())

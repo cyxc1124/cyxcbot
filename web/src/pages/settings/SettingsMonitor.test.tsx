@@ -81,7 +81,7 @@ describe('monitor card choices', () => {
   it('describes the actual polling strategy when staggered checks are disabled', () => {
     const { page } = setup('card', false)
     const html = renderToStaticMarkup(page)
-    expect(html).toContain('每 N 秒依次检查全部 UP 主')
+    expect(html).toContain('每 N 秒检查全部 UP 主（最多同时检查 3 个）')
     expect(html).not.toContain('分散检查的单次间隔不低于 3 秒')
   })
 })

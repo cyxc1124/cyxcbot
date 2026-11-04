@@ -22,6 +22,8 @@
 
 支持 OneBot 数字 QQ 目标与官方 QQ Bot 的官方群/C2C OpenID。开播/下播消息快照、失败目标与官方分段进度持久化到数据库，重启后继续未完成投递；首次订阅只记录基线，不补发当前场次。官方主动能力以平台权限和回执为准，`@全体` 使用文字提示。确定性平台拒绝结束对应目标，临时错误保留重试；未收到回执的网络超时无法保证严格去重。
 
+消息快照中的大块截图/卡片图保存在 `data/pending_media/`（按内容哈希去重，超过 12 小时自动清理），数据库只存引用；请随 `data/` 一起持久化。未持久化时，重启或 Pod 重建后尚未投递的通知会丢失这些图片，降级为仅文字推送。
+
 ## 文件结构
 
 ```
@@ -29,7 +31,7 @@ plugins/live_monitor/
 ├── __init__.py        # 插件入口、命令处理
 ├── config.py          # 从 ConfigService 加载配置
 ├── models.py          # 监控状态模型
-├── live_monitor.py    # 监控核心逻辑
+├── live_monitor.py    # 监控核心逻辑（批量/手动检查骨架见 shared/monitor/base.py）
 ├── danmaku_client.py  # WebSocket 弹幕客户端
 ├── card_generator.py  # 开播/下播卡片
 ├── sender.py          # 通知发送

@@ -9,6 +9,8 @@ from typing import List, Optional
 
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
+from shared.notify.pending_media import externalize_segments, inline_segments
+
 
 class DeliveryCancelledError(RuntimeError):
     """监控投递目标在发送前已失效。"""
@@ -100,9 +102,12 @@ class PendingDelivery:
 
     def to_data(self) -> dict:
         return {
-            "message": [
-                {"type": segment.type, "data": segment.data} for segment in self.message
-            ],
+            "message": externalize_segments(
+                [
+                    {"type": segment.type, "data": segment.data}
+                    for segment in self.message
+                ]
+            ),
             "groups": self.groups,
             "users": self.users,
             "at_all": self.at_all,
@@ -114,7 +119,10 @@ class PendingDelivery:
     @classmethod
     def from_data(cls, data: dict) -> "PendingDelivery":
         return cls(
-            message=Message(MessageSegment(**segment) for segment in data["message"]),
+            message=Message(
+                MessageSegment(**segment)
+                for segment in inline_segments(data["message"])
+            ),
             groups=data["groups"],
             users=data["users"],
             at_all=data["at_all"],
