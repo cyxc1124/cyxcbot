@@ -23,9 +23,9 @@ function SettingsLayoutContent() {
       <Outlet />
       <ConfirmDialog
         open={showLogoutConfirm}
-        title="退出 B 站登录"
-        message="确定退出 B 站登录？登录状态将被清除，相关监控功能可能受到影响。"
-        confirmLabel="退出登录"
+        title="移除全部 B 站账号"
+        message="确定移除全部 B 站账号？所有已保存的登录凭据将被清除，相关监控功能可能受到影响。"
+        confirmLabel="移除全部"
         loading={loggingOut}
         onCancel={() => { if (!loggingOut) setShowLogoutConfirm(false) }}
         onConfirm={() => void handleLogout()}

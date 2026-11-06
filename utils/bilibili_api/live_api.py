@@ -9,6 +9,8 @@ from typing import Optional, Tuple
 
 import aiohttp
 
+from shared.bilibili.accounts import bilibili_account_pool
+
 from .live_models import LiveStatus, RoomInfo, UserInfo
 
 # API 基础配置
@@ -40,8 +42,9 @@ class LiveApi:
             "Referer": f"https://live.bilibili.com/{room_id}",
             "User-Agent": self._user_agent,
         }
-        if self.cookie:
-            headers["Cookie"] = self.cookie
+        cookie = bilibili_account_pool.select_cookie(self.cookie)
+        if cookie:
+            headers["Cookie"] = cookie
         return headers
 
     async def get_room_info(self, room_id: int) -> Optional[RoomInfo]:
@@ -219,7 +222,7 @@ class LiveApiManager:
     async def init(self, cookie: Optional[str] = None):
         """初始化API管理器"""
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
+            self._session = aiohttp.ClientSession(cookie_jar=aiohttp.DummyCookieJar())
         if self._api is None:
             self._api = LiveApi(self._session, cookie)
         else:

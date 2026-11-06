@@ -97,7 +97,7 @@ def build_extract_reply_message(
 
 
 async def _fetch_dynamic_images(dynamic_id: str, cookie: str | None) -> list[str]:
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(cookie_jar=aiohttp.DummyCookieJar()) as session:
         fetcher = DynamicFetcher(session, cookie)
         dynamic = await fetcher.fetch_dynamic_detail(dynamic_id, cookie=cookie)
         if not dynamic:

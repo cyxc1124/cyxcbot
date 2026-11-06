@@ -26,7 +26,7 @@ export const navigationSections: NavigationSection[] = [
       { to: '/bilibili/parser', label: '链接解析', icon: 'globe' },
       { to: '/bilibili/templates', label: '消息模板', icon: 'messages' },
       { to: '/bilibili/settings', label: '订阅参数', icon: 'settings', description: '动态与直播检查间隔、监控方式和图片模式' },
-      { to: '/bilibili/account', label: '账号', icon: 'user', description: '扫码登录与 B 站 Cookie 管理' },
+      { to: '/bilibili/account', label: '账号', icon: 'user', description: '多账号扫码登录、验证与请求轮换' },
     ] }],
   },
   {

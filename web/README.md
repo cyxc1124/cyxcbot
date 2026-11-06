@@ -77,7 +77,7 @@ TLS 代理应保留浏览器原始 Host。若代理改写 Host，请设置启动
 | `/douyin/templates` | 抖音消息模板 |
 | `/bilibili/settings` | B 站监控参数（间隔、WebSocket、截图等） |
 | `/x/settings` | X 监控参数 |
-| `/bilibili/account` | B 站账号（扫码登录 / Cookie） |
+| `/bilibili/account` | B 站多账号（扫码添加 / 更新、逐个验证、移除 / 清空） |
 | `/douyin/account` | 抖音账号 |
 | `/x/account` | X 账号与出站代理（代理同时供 OpenAI 图片检测使用） |
 | `/system/permissions` | 全局权限（超级用户、状态查询额外授权） |
@@ -91,3 +91,7 @@ TLS 代理应保留浏览器原始 Host。若代理改写 Host，请设置启动
 | `/about` | 版本与构建信息 |
 
 旧版页面路径不再保留专用重定向。群组、好友页支持 `?tab=status` 等标签直达；平台解析页支持 `?scope=friends`，刷新和浏览器前进后退会保留所选视角。
+
+## B 站多账号
+
+B 站账号页支持连续扫码添加不同 UID，同 UID 重登更新凭据；已登录时仍可获取二维码添加账号。账号列表只返回 UID 与昵称，提供逐个验证、移除及清空的确认操作，变更后自动刷新。HTTP 查询按账号轮换；截图与弹幕连接固定使用列表首账号。失效或受限账号需重新扫码或移除，不自动隔离或切换重试；轮换不能保证避免风控。旧版单账号保留，详见 [账号配置](../docs/docs/configuration/web-admin-setup.md#4-配置-b-站账号)。

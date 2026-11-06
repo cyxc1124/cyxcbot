@@ -552,6 +552,11 @@ export interface BilibiliConnectionStatus {
   uid: string | null
 }
 
+export interface BilibiliAccount {
+  uid: string
+  username: string | null
+}
+
 export interface QqBotInfo {
   qq: string
   nickname: string | null

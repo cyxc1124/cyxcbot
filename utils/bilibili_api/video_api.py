@@ -11,6 +11,8 @@ from typing import List, Optional
 import aiohttp
 from nonebot.log import logger
 
+from shared.bilibili.accounts import bilibili_account_pool
+
 from . import wbi
 from .video_models import VideoInfo
 
@@ -30,14 +32,14 @@ class VideoApi:
         self.session = session
         self.cookie = cookie
 
-    def _get_headers(self, uid: int) -> dict:
+    def _get_headers(self, uid: int, cookie: str) -> dict:
         """获取请求头"""
         headers = {
             **BASE_HEADERS,
             "Referer": f"https://space.bilibili.com/{uid}/video",
         }
-        if self.cookie:
-            headers["Cookie"] = self.cookie
+        if cookie:
+            headers["Cookie"] = cookie
         return headers
 
     def _generate_dm_img_list(self) -> str:
@@ -106,7 +108,8 @@ class VideoApi:
             }
 
             # 使用 WBI 签名
-            signed_query = await wbi.sign_params(self.session, params, self.cookie)
+            cookie = bilibili_account_pool.select_cookie(self.cookie)
+            signed_query = await wbi.sign_params(self.session, params, cookie)
 
             if signed_query:
                 url = f"{api_url}?{signed_query}"
@@ -116,7 +119,7 @@ class VideoApi:
 
                 url = f"{api_url}?{urlencode(params)}"
 
-            headers = self._get_headers(uid)
+            headers = self._get_headers(uid, cookie)
 
             logger.debug("请求UP主 {} 视频列表: {}...", uid, url[:100])
 
@@ -195,8 +198,9 @@ class VideoApi:
             **BASE_HEADERS,
             "Referer": "https://www.bilibili.com/",
         }
-        if self.cookie:
-            headers["Cookie"] = self.cookie
+        cookie = bilibili_account_pool.select_cookie(self.cookie)
+        if cookie:
+            headers["Cookie"] = cookie
 
         try:
             async with self.session.get(
@@ -238,7 +242,7 @@ class VideoApiManager:
     async def init(self, cookie: Optional[str] = None):
         """初始化API管理器"""
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
+            self._session = aiohttp.ClientSession(cookie_jar=aiohttp.DummyCookieJar())
         if self._api is None:
             self._api = VideoApi(self._session, cookie)
         else:
