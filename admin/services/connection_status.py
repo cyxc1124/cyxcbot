@@ -42,9 +42,20 @@ def bilibili_status_message(status: Dict[str, Any]) -> str:
 
 async def get_bilibili_connection_status() -> Dict[str, Any]:
     snap = get_config_service().get_snapshot()
-    configured = snap.bilibili_cookie_set
+    result = await check_bilibili_cookie(snap.bilibili_cookie)
+    if result["logged_in"]:
+        return result
+    for account in snap.bilibili_accounts[1:]:
+        checked = await check_bilibili_cookie(account.cookie)
+        if checked["logged_in"]:
+            return checked
+    return result
 
-    if not configured or not snap.bilibili_cookie:
+
+async def check_bilibili_cookie(cookie: str) -> Dict[str, Any]:
+    """Verify exactly this account without advancing HTTP rotation."""
+
+    if not cookie:
         return {
             "status": "not_configured",
             "configured": False,
@@ -54,13 +65,13 @@ async def get_bilibili_connection_status() -> Dict[str, Any]:
         }
 
     try:
-        headers = {**_NAV_HEADERS, "Cookie": snap.bilibili_cookie}
+        headers = {**_NAV_HEADERS, "Cookie": cookie}
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 _NAV_URL, headers=headers, timeout=aiohttp.ClientTimeout(total=10)
             ) as resp:
                 if resp.status != 200:
-                    logger.warning(f"Bilibili nav check failed: HTTP {resp.status}")
+                    logger.warning("Bilibili nav check failed: HTTP {}", resp.status)
                     return {
                         "status": "verify_failed",
                         "configured": True,
@@ -98,8 +109,8 @@ async def get_bilibili_connection_status() -> Dict[str, Any]:
             "username": username,
             "uid": str(mid) if mid is not None else None,
         }
-    except Exception as exc:
-        logger.warning(f"Bilibili login check failed: {exc}")
+    except Exception:
+        logger.warning("Bilibili login check failed")
         return {
             "status": "verify_failed",
             "configured": True,

@@ -1,5 +1,7 @@
 # B 站直播监控
 
+直播信息 HTTP 查询（含 HTML 回退）共用 B 站多账号轮换；弹幕 WebSocket 长连接使用首账号。在 Web Admin → **B 站 → 账号** 中扫码添加、验证或移除；轮换不能保证避免风控。详见 [账号配置](../../docs/docs/configuration/web-admin-setup.md#4-配置-b-站账号)。
+
 主动监控直播间开播/下播并推送通知，采用 WebSocket 弹幕 + API 轮询双重机制。
 
 > **2.0 配置**：在 Web Admin → **B 站 → 直播订阅** 与 **B 站 → 订阅参数** 中管理房间映射、轮询间隔、WebSocket 开关等，不再使用 `LIVE_MONITOR_*` 环境变量。B 站账号在 **B 站 → 账号** 中配置。

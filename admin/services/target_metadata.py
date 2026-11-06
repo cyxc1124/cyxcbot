@@ -52,7 +52,9 @@ async def resolve_up_name(
     try:
         if session is not None:
             return await _resolve_up_name_with_session(session, uid)
-        async with aiohttp.ClientSession() as own_session:
+        async with aiohttp.ClientSession(
+            cookie_jar=aiohttp.DummyCookieJar()
+        ) as own_session:
             return await _resolve_up_name_with_session(own_session, uid)
     except Exception as exc:
         logger.warning("解析 UP 主 {} 昵称失败: {}", uid, exc)
@@ -69,7 +71,9 @@ async def resolve_live_streamer_name(
     try:
         if session is not None:
             return await _resolve_live_streamer_name_with_session(session, room_id)
-        async with aiohttp.ClientSession() as own_session:
+        async with aiohttp.ClientSession(
+            cookie_jar=aiohttp.DummyCookieJar()
+        ) as own_session:
             return await _resolve_live_streamer_name_with_session(own_session, room_id)
     except Exception as exc:
         logger.warning("解析直播间 {} 主播昵称失败: {}", room_id, exc)
@@ -102,7 +106,9 @@ async def resolve_missing_dynamic_target_names(
         return
     resolved: list[tuple[int, str, str]] = []
     try:
-        async with aiohttp.ClientSession() as http_session:
+        async with aiohttp.ClientSession(
+            cookie_jar=aiohttp.DummyCookieJar()
+        ) as http_session:
             for target_id, uid in items:
                 name = await _resolve_up_name_with_session(http_session, uid)
                 if name:
@@ -130,7 +136,9 @@ async def resolve_missing_live_target_names(
         return
     resolved: list[tuple[int, str, str]] = []
     try:
-        async with aiohttp.ClientSession() as http_session:
+        async with aiohttp.ClientSession(
+            cookie_jar=aiohttp.DummyCookieJar()
+        ) as http_session:
             for target_id, room_id in items:
                 name = await _resolve_live_streamer_name_with_session(
                     http_session, room_id

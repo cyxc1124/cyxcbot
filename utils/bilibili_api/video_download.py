@@ -12,6 +12,7 @@ from typing import Any, Optional
 import aiohttp
 from nonebot.log import logger
 
+from shared.bilibili.accounts import bilibili_account_pool
 from utils.douyin_api.download import download_file
 
 from . import wbi
@@ -137,6 +138,7 @@ async def fetch_playurl(
         "qn": qn,
         "bvid": bvid,
     }
+    cookie = bilibili_account_pool.select_cookie(cookie)
     signed = await wbi.sign_params(session, params, cookie)
     if not signed:
         raise BilibiliVideoDownloadError("WBI 签名失败，无法获取播放地址")

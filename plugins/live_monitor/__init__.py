@@ -127,7 +127,9 @@ async def handle_live_status(bot: Bot, event: Event):
             from utils.bilibili_api import LiveApi
 
             cookie = Config.from_service().bilibili_cookie
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(
+                cookie_jar=aiohttp.DummyCookieJar()
+            ) as session:
                 temp_api = LiveApi(session, cookie)
                 room_info, user_info = await temp_api.get_room_and_user_info(
                     int(room_id)

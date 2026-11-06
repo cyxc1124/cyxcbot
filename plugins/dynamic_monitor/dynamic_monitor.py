@@ -177,7 +177,7 @@ class DynamicMonitor(StaggeredPollingMixin, DeliveryGuardMixin):
 
     async def init_resources(self):
         """初始化资源"""
-        self.session = aiohttp.ClientSession()
+        self.session = aiohttp.ClientSession(cookie_jar=aiohttp.DummyCookieJar())
         self.fetcher = DynamicFetcher(self.session, self.config.bilibili_cookie)
         self.sender = DynamicSender(templates=self.config.message_templates)
 

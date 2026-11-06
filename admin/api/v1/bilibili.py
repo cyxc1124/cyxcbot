@@ -6,15 +6,18 @@ from fastapi import APIRouter, HTTPException, status
 
 from admin.deps import AdminUser, RequireSetup
 from admin.schemas.bilibili import (
+    BilibiliAccountResponse,
     LogoutResponse,
     QrcodeLoginResponse,
     QrcodePollRequest,
     QrcodeStartResponse,
 )
+from admin.schemas.connections import BilibiliConnectionStatus
 from admin.services.connection_status import (
     bilibili_status_message,
-    get_bilibili_connection_status,
+    check_bilibili_cookie,
 )
+from shared.bilibili.accounts import BilibiliAccount
 from shared.bilibili.qrcode_login import (
     BilibiliQrcodeError,
     cookie_info_to_header,
@@ -22,7 +25,6 @@ from shared.bilibili.qrcode_login import (
     poll_tv_qrcode_login,
 )
 from shared.config.service import get_config_service
-from shared.security.crypto import encrypt_value
 
 router = APIRouter(
     prefix="/bilibili",
@@ -59,17 +61,22 @@ async def poll_qrcode_login(body: QrcodePollRequest, _: AdminUser):
             status_code=status.HTTP_400_BAD_REQUEST, detail=detail
         ) from exc
 
-    svc = get_config_service()
-    await svc.set_settings({"bilibili_cookie_encrypted": encrypt_value(cookie_header)})
-    await svc.reload()
-
-    conn = await get_bilibili_connection_status()
+    conn = await check_bilibili_cookie(cookie_header)
 
     if not conn.get("logged_in"):
         return QrcodeLoginResponse(
             success=False,
-            message=bilibili_status_message(conn) or "Cookie 已保存，但登录验证未通过",
+            message=bilibili_status_message(conn) or "登录验证未通过，未保存账号",
         )
+
+    uid = conn.get("uid")
+    if not uid or not uid.isdigit():
+        raise HTTPException(
+            status_code=502, detail="登录响应未包含有效 UID，未保存账号"
+        )
+    await get_config_service().upsert_bilibili_account(
+        BilibiliAccount(uid=uid, cookie=cookie_header, username=conn.get("username"))
+    )
 
     return QrcodeLoginResponse(
         success=True,
@@ -81,12 +88,37 @@ async def poll_qrcode_login(body: QrcodePollRequest, _: AdminUser):
 
 @router.post("/logout", response_model=LogoutResponse)
 async def logout_bilibili(_: AdminUser):
-    svc = get_config_service()
-    snap = svc.get_snapshot()
-    if not snap.bilibili_cookie_set:
-        return LogoutResponse(success=True, message="当前未登录 B 站")
+    await get_config_service().remove_bilibili_account()
+    return LogoutResponse(success=True, message="已移除全部 B 站账号")
 
-    await svc.set_settings({"bilibili_cookie_encrypted": ""})
-    await svc.reload()
 
-    return LogoutResponse(success=True, message="已退出 B 站登录")
+@router.get("/accounts", response_model=list[BilibiliAccountResponse])
+async def list_bilibili_accounts(_: AdminUser):
+    return [
+        BilibiliAccountResponse(uid=row.uid, username=row.username)
+        for row in get_config_service().get_snapshot().bilibili_accounts
+    ]
+
+
+@router.post("/accounts/{uid}/test", response_model=BilibiliConnectionStatus)
+async def test_bilibili_account(uid: str, _: AdminUser):
+    account = next(
+        (
+            row
+            for row in get_config_service().get_snapshot().bilibili_accounts
+            if row.uid == uid
+        ),
+        None,
+    )
+    if account is None:
+        raise HTTPException(status_code=404, detail="B 站账号不存在")
+    return await check_bilibili_cookie(account.cookie)
+
+
+@router.delete("/accounts/{uid}", response_model=LogoutResponse)
+async def remove_bilibili_account(uid: str, _: AdminUser):
+    try:
+        await get_config_service().remove_bilibili_account(uid)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="B 站账号不存在") from exc
+    return LogoutResponse(success=True, message="已移除 B 站账号")

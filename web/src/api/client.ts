@@ -1,5 +1,7 @@
 import type {
   AboutInfo,
+  BilibiliAccount,
+  BilibiliConnectionStatus,
   BotConnectionsStatus,
   ChangePasswordRequest,
   BilibiliLogoutResult,
@@ -288,6 +290,15 @@ export async function pollBilibiliQrcodeLogin(
 
 export const logoutBilibili = () =>
   request<BilibiliLogoutResult>('/bilibili/logout', { method: 'POST' })
+
+export const getBilibiliAccounts = () =>
+  request<BilibiliAccount[]>('/bilibili/accounts')
+
+export const testBilibiliAccount = (uid: string) =>
+  request<BilibiliConnectionStatus>(`/bilibili/accounts/${encodeURIComponent(uid)}/test`, { method: 'POST' })
+
+export const removeBilibiliAccount = (uid: string) =>
+  request<BilibiliLogoutResult>(`/bilibili/accounts/${encodeURIComponent(uid)}`, { method: 'DELETE' })
 
 // Dynamic Targets
 export const getDynamicTargets = () =>
