@@ -33,7 +33,7 @@ $rng.Dispose()
 .\scripts\build-windows.ps1 -Version "dev"
 ```
 
-CI 对 `main` / `develop` 推送与 PR 构建校验，产物保存在 Actions；`v*` tag 构建后还会上传到 GitHub Release。流程见仓库 [`.github/workflows/build-windows.yml`](https://github.com/cyxc1124/cyxcbot/blob/main/.github/workflows/build-windows.yml)。
+CI 对 `main` / `develop` 推送与 PR 构建校验，产物保存在 Actions（PR 构建保留 1 天，其余 3 天）；`v*` tag 构建后还会上传到 GitHub Release 长期保存。流程见仓库 [`.github/workflows/build-windows.yml`](https://github.com/cyxc1124/cyxcbot/blob/main/.github/workflows/build-windows.yml)。
 
 ## 注意事项
 
