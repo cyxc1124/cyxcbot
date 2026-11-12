@@ -93,6 +93,13 @@ if (Test-Path -LiteralPath $chromiumSrc) {
     # Playwright uses winldd on Windows when it periodically re-validates browser DLL dependencies.
     Get-ChildItem -LiteralPath (Split-Path $chromiumSrc) -Directory -Filter "winldd-*" |
         Copy-Item -Recurse -Force -Destination $playwrightDst
+
+    $chromeDir = Join-Path $playwrightDst (Split-Path $chromiumSrc -Leaf) "chrome-win64"
+    # Headless automation never runs Chrome's installer, system services or PWA helpers.
+    foreach ($helper in "setup.exe", "elevation_service.exe", "elevated_tracing_service.exe",
+        "notification_helper.exe", "chrome_pwa_launcher.exe", "chrome_proxy.exe") {
+        Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $chromeDir $helper)
+    }
 } else {
     throw "Playwright browsers not found at $chromiumSrc"
 }
@@ -116,11 +123,14 @@ $buildInfo = @(
 ) -join "`n"
 $buildInfo | Out-File -FilePath (Join-Path $distDir "build-info.env") -Encoding utf8NoBOM
 
-# Create zip archive
+# Create zip archive (SmallestSize is ~3% smaller than Compress-Archive's default level)
 $zipName = "cyxcbot-windows-$Version.zip"
 if (Test-Path $zipName) { Remove-Item -Force $zipName }
 Write-Host "Creating archive: $zipName"
-Compress-Archive -Path $distDir -DestinationPath $zipName
+# .NET resolves relative paths against the process directory, not the PowerShell location.
+[System.IO.Compression.ZipFile]::CreateFromDirectory(
+    (Resolve-Path -LiteralPath $distDir).ProviderPath, (Join-Path $PWD.ProviderPath $zipName),
+    [System.IO.Compression.CompressionLevel]::SmallestSize, $true)
 
 Write-Host "=========================================="
 Write-Host "Build complete: $zipName"

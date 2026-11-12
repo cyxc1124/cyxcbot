@@ -13,6 +13,11 @@ foreach ($browserDir in @("chromium-1", "chromium_headless_shell-1", "ffmpeg-1",
     New-Item -ItemType Directory -Path (Join-Path $global:CyxcBuildTestBrowserRoot $browserDir) -Force | Out-Null
 }
 'custom-browser' | Set-Content (Join-Path $global:CyxcBuildTestBrowserRoot "chromium-1/browser-marker.txt")
+$chromeDir = Join-Path $global:CyxcBuildTestBrowserRoot "chromium-1/chrome-win64"
+New-Item -ItemType Directory -Path (Join-Path $chromeDir "locales") -Force | Out-Null
+foreach ($file in @("chrome.exe", "setup.exe", "chrome_proxy.exe", "locales/de.pak")) {
+    'binary' | Set-Content (Join-Path $chromeDir $file)
+}
 '# isolated test configuration' | Set-Content (Join-Path $workspace "env.example")
 '{"packages":{"":{},"node_modules/react":{"version":"19.3.1"},"node_modules/tailwindcss":{"version":"4.3.3"}}}' |
     Set-Content (Join-Path $workspace "web/package-lock.json")
@@ -69,7 +74,18 @@ try {
                 if ($packagedBrowsers -ne "chromium-1,winldd-1") {
                     throw "Build packaged unused Playwright downloads: $packagedBrowsers"
                 }
+                $packagedChrome = (Get-ChildItem -Recurse -File "dist/cyxcbot/ms-playwright/chromium-1/chrome-win64" | Sort-Object Name).Name -join ","
+                if ($packagedChrome -ne "chrome.exe,de.pak") {
+                    throw "Unexpected trimmed Chromium files: $packagedChrome"
+                }
+                if (-not (Test-Path (Join-Path $chromeDir "setup.exe"))) { throw "Build trimmed the shared Playwright cache" }
                 if (-not (Test-Path "cyxcbot-windows-test.zip")) { throw "Build did not create the isolated test archive" }
+                $archived = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path "cyxcbot-windows-test.zip").ProviderPath)
+                try {
+                    if (-not ($archived.Entries.FullName -contains "cyxcbot/ms-playwright/chromium-1/chrome-win64/chrome.exe")) {
+                        throw "Archive does not keep the cyxcbot/ root layout"
+                    }
+                } finally { $archived.Dispose() }
             } else {
                 try {
                     & $buildScript -Version "test"
