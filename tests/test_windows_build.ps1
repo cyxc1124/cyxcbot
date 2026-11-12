@@ -9,8 +9,10 @@ $env:GIT_COMMIT = "test-commit"
 New-Item -ItemType Directory -Path (Join-Path $env:LOCALAPPDATA "ms-playwright") -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $workspace "dist/cyxcbot") -Force | Out-Null
 $global:CyxcBuildTestBrowserRoot = Join-Path $workspace "自定义 Playwright browsers"
-New-Item -ItemType Directory -Path $global:CyxcBuildTestBrowserRoot -Force | Out-Null
-'custom-browser' | Set-Content (Join-Path $global:CyxcBuildTestBrowserRoot "browser-marker.txt")
+foreach ($browserDir in @("chromium-1", "chromium_headless_shell-1", "ffmpeg-1", "winldd-1")) {
+    New-Item -ItemType Directory -Path (Join-Path $global:CyxcBuildTestBrowserRoot $browserDir) -Force | Out-Null
+}
+'custom-browser' | Set-Content (Join-Path $global:CyxcBuildTestBrowserRoot "chromium-1/browser-marker.txt")
 '# isolated test configuration' | Set-Content (Join-Path $workspace "env.example")
 '{"packages":{"":{},"node_modules/react":{"version":"19.3.1"},"node_modules/tailwindcss":{"version":"4.3.3"}}}' |
     Set-Content (Join-Path $workspace "web/package-lock.json")
@@ -34,14 +36,14 @@ try {
             if (($global:CyxcBuildTestFailure -eq "requirements" -and $command -eq "scripts/secure_pip.py install -r requirements.txt") -or
                 ($global:CyxcBuildTestFailure -eq "tools" -and $command -eq "scripts/secure_pip.py install pyinstaller>=6.0 tzdata") -or
                 ($global:CyxcBuildTestFailure -eq "tls" -and $command -like "-m pytest -q tests/test_aiohttp_tls.py*") -or
-                ($global:CyxcBuildTestFailure -eq "playwright" -and $command -eq "scripts/playwright_install.py install chromium") -or
+                ($global:CyxcBuildTestFailure -eq "playwright" -and $command -eq "scripts/playwright_install.py install --no-shell chromium") -or
                 ($global:CyxcBuildTestFailure -eq "browser" -and $command -like "-m pytest -q tests/test_browser_security.py*") -or
                 ($global:CyxcBuildTestFailure -eq "pyinstaller" -and $command -eq "-m PyInstaller --noconfirm cyxcbot.spec") -or
                 ($global:CyxcBuildTestFailure -eq "browser_path" -and $command -like "-X utf8 -c *") -or
                 ($global:CyxcBuildTestFailure -eq "artifact" -and $command -like "scripts/check_tls_artifacts.py*")) {
                 $global:LASTEXITCODE = 1
             }
-            if ($command -like "-X utf8 -c *") { Write-Output $global:CyxcBuildTestBrowserRoot }
+            if ($command -like "-X utf8 -c *") { Write-Output (Join-Path $global:CyxcBuildTestBrowserRoot "chromium-1") }
         }
 
         Push-Location $workspace
@@ -60,8 +62,12 @@ try {
             }
             if ($failure -eq "none") {
                 & $buildScript -Version "test"
-                if ((Get-Content "dist/cyxcbot/ms-playwright/browser-marker.txt") -ne "custom-browser") {
+                if ((Get-Content "dist/cyxcbot/ms-playwright/chromium-1/browser-marker.txt") -ne "custom-browser") {
                     throw "Build packaged a stale default browser instead of the resolved custom location"
+                }
+                $packagedBrowsers = (Get-ChildItem "dist/cyxcbot/ms-playwright" | Sort-Object Name).Name -join ","
+                if ($packagedBrowsers -ne "chromium-1,winldd-1") {
+                    throw "Build packaged unused Playwright downloads: $packagedBrowsers"
                 }
                 if (-not (Test-Path "cyxcbot-windows-test.zip")) { throw "Build did not create the isolated test archive" }
             } else {

@@ -77,7 +77,7 @@ Playwright 的 Node 驱动及浏览器下载使用同一 certifi CA 包，并强
 
 requirements 和 npm 生命周期脚本属于可信构建输入，需按代码审查；不得在 requirements 中加入 `--trusted-host` 等跳过证书校验的选项。
 
-上述安装信任保证覆盖当前 requirements 与 lockfile 中的包索引 / registry 下载，不涵盖原生 Git 等 VCS 工具或另行安装的数据库驱动自身的 TLS。新增这类依赖或驱动时须单独审查其 CA 配置，不能假定 `PIP_CERT` 或 Node 预加载会作用于原生进程。Windows 打包按 Playwright 实际解析出的 Chromium 目录复制浏览器，支持自定义 `PLAYWRIGHT_BROWSERS_PATH`，不再固定复制系统默认缓存。
+上述安装信任保证覆盖当前 requirements 与 lockfile 中的包索引 / registry 下载，不涵盖原生 Git 等 VCS 工具或另行安装的数据库驱动自身的 TLS。新增这类依赖或驱动时须单独审查其 CA 配置，不能假定 `PIP_CERT` 或 Node 预加载会作用于原生进程。Windows 打包按 Playwright 实际解析出的 Chromium 目录复制浏览器，支持自定义 `PLAYWRIGHT_BROWSERS_PATH`，不再固定复制系统默认缓存；只安装并打包运行时使用的完整 Chromium 和 Playwright 依赖校验用的 winldd，不含未使用的 headless shell、ffmpeg 及缓存中的其他浏览器。
 
 事件证书样本及来源记录在仓库 `tests/fixtures/ca_incident/README.md`，来自 [事件披露站点](https://emudhra.we-have-a-problem.com/)。浏览器证书数据库目前使用 Chromium schema v1；升级 Playwright / Chromium 时须执行 `tests/test_browser_security.py` 和 `scripts/check_tls_artifacts.py`。
 

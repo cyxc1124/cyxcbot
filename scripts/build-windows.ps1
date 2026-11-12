@@ -49,7 +49,8 @@ if ($LASTEXITCODE -ne 0) { throw "TLS trust regression checks failed" }
 
 # Playwright browser (bundled into dist after PyInstaller)
 Write-Host "Installing Playwright Chromium..."
-python scripts/playwright_install.py install chromium
+# Runtime always launches channel="chromium" (full build); the headless shell is never used.
+python scripts/playwright_install.py install --no-shell chromium
 if ($LASTEXITCODE -ne 0) { throw "Playwright install failed" }
 python -m pytest -q tests/test_browser_security.py tests/test_screenshot_lifecycle.py tests/test_douyin_qrcode_login.py tests/test_dynamic_timestamps.py
 if ($LASTEXITCODE -ne 0) { throw "Browser TLS regression checks failed" }
@@ -71,7 +72,7 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
 
 $distDir = Join-Path "dist" "cyxcbot"
 
-# Bundle Playwright browsers next to the executable
+# Bundle only the runtime Chromium next to the executable (no headless shell, ffmpeg or unrelated cached browsers)
 $browserPathScript = @'
 from pathlib import Path
 from playwright.sync_api import sync_playwright
@@ -79,17 +80,21 @@ from shared.security.playwright import configure_playwright_tls
 
 configure_playwright_tls()
 with sync_playwright() as playwright:
-    print(Path(playwright.chromium.executable_path).parents[2])
+    print(Path(playwright.chromium.executable_path).parents[1])
 '@
-$playwrightSrc = python -X utf8 -c $browserPathScript
+$chromiumSrc = python -X utf8 -c $browserPathScript
 if ($LASTEXITCODE -ne 0) { throw "Playwright browser location lookup failed" }
 $playwrightDst = Join-Path $distDir "ms-playwright"
-if (Test-Path $playwrightSrc) {
-    Write-Host "Copying Playwright browsers..."
+if (Test-Path -LiteralPath $chromiumSrc) {
+    Write-Host "Copying Playwright Chromium..."
     if (Test-Path $playwrightDst) { Remove-Item -Recurse -Force $playwrightDst }
-    Copy-Item -Recurse -Force $playwrightSrc $playwrightDst
+    New-Item -ItemType Directory -Path $playwrightDst | Out-Null
+    Copy-Item -Recurse -Force -LiteralPath $chromiumSrc -Destination $playwrightDst
+    # Playwright uses winldd on Windows when it periodically re-validates browser DLL dependencies.
+    Get-ChildItem -LiteralPath (Split-Path $chromiumSrc) -Directory -Filter "winldd-*" |
+        Copy-Item -Recurse -Force -Destination $playwrightDst
 } else {
-    throw "Playwright browsers not found at $playwrightSrc"
+    throw "Playwright browsers not found at $chromiumSrc"
 }
 
 python scripts/check_tls_artifacts.py $distDir
