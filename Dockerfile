@@ -36,6 +36,32 @@ ENV GIT_TAG=${GIT_TAG} \
     BUILD_TIME=${BUILD_TIME}
 RUN node ../scripts/secure_npm.cjs run build
 
+# Python 依赖构建阶段：material-color-utilities 没有 cp314 的 Linux wheel，需要编译器；
+# 编译工具只留在本阶段，运行时镜像只复制安装结果
+FROM python:3.14-slim AS py-builder
+
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ARG ALL_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG no_proxy
+ARG all_proxy
+
+WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt .
+COPY scripts/secure_pip.py scripts/secure_pip.py
+COPY shared/__init__.py shared/__init__.py
+COPY shared/security/__init__.py shared/security/__init__.py
+COPY shared/security/ca.py shared/security/ca.py
+COPY shared/security/distrusted_roots.json shared/security/distrusted_roots.json
+COPY shared/security/distrusted_keys.json shared/security/distrusted_keys.json
+RUN python scripts/secure_pip.py install --no-cache-dir --prefix=/install -r requirements.txt
+
 # Python 运行时镜像
 FROM python:3.14-slim
 
@@ -84,15 +110,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # 安装系统依赖
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential \
-        libpq-dev \
+        # PostgreSQL 客户端运行库（自建镜像安装纯 Python 的 psycopg 时使用）
+        libpq5 \
         vim \
         curl \
         procps \
         net-tools \
         iputils-ping \
         telnet \
-        gcc \
         # Playwright 所需的系统依赖
         libnss3 \
         libatk-bridge2.0-0 \
@@ -121,28 +146,23 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制依赖文件
-COPY requirements.txt .
-COPY scripts/secure_pip.py scripts/secure_pip.py
-COPY shared/__init__.py shared/__init__.py
-COPY shared/security/__init__.py shared/security/__init__.py
-COPY shared/security/ca.py shared/security/ca.py
-COPY shared/security/distrusted_roots.json shared/security/distrusted_roots.json
-COPY shared/security/distrusted_keys.json shared/security/distrusted_keys.json
-
-# 安装 Python 依赖
-RUN python scripts/secure_pip.py install --no-cache-dir -r requirements.txt
+# Python 依赖（在 py-builder 阶段安装）
+COPY --from=py-builder /install /usr/local
 
 # 复制启动脚本
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# 安装 Playwright Chromium 浏览器
+# 安装 Playwright Chromium 浏览器（运行时固定用完整 Chromium，不装未使用的 headless shell）
 COPY scripts/playwright_install.py scripts/playwright_install.py
+COPY shared/__init__.py shared/__init__.py
+COPY shared/security/__init__.py shared/security/__init__.py
 COPY shared/security/playwright.py shared/security/playwright.py
 COPY shared/security/node_ca.cjs shared/security/node_ca.cjs
 COPY shared/security/node_ca_policy.cjs shared/security/node_ca_policy.cjs
-RUN python scripts/playwright_install.py install chromium
+COPY shared/security/distrusted_roots.json shared/security/distrusted_roots.json
+COPY shared/security/distrusted_keys.json shared/security/distrusted_keys.json
+RUN python scripts/playwright_install.py install --no-shell chromium
 
 # 复制 Web Admin 前端构建产物（web/dist 不入库，须在镜像构建时生成）
 COPY --from=web-builder /app/web/dist ./web/dist

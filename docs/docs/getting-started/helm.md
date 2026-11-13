@@ -61,7 +61,7 @@ values.yaml
 
 ### PostgreSQL（可选）
 
-默认依赖仅包含 SQLite 驱动；改用 PostgreSQL 前需在自定义镜像中安装与 URL 匹配的驱动（下例为 `psycopg`），仅修改 URL 不会安装驱动。
+默认依赖仅包含 SQLite 驱动；改用 PostgreSQL 前需在自定义镜像中安装与 URL 匹配的驱动（下例为 `psycopg`），仅修改 URL 不会安装驱动。镜像自带 PostgreSQL 客户端运行库 `libpq5`，但不含编译工具，需要编译的驱动须在自定义镜像中自行安装构建依赖。
 
 ```yaml
 database:
