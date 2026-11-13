@@ -70,7 +70,7 @@ jobs:
         run: python scripts/secure_pip.py install -r requirements.txt
 
       - name: Install browser for TLS regression
-        run: python scripts/playwright_install.py install --with-deps chromium
+        run: python scripts/playwright_install.py install --with-deps --no-shell chromium
 
       - name: Lint
         run: ruff check .
