@@ -38,7 +38,7 @@ RUN node ../scripts/secure_npm.cjs run build
 
 # Python 依赖构建阶段：material-color-utilities 没有 cp314 的 Linux wheel，需要编译器；
 # 编译工具只留在本阶段，运行时镜像只复制安装结果
-FROM python:3.14-slim AS py-builder
+FROM python:3.15-slim AS py-builder
 
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
@@ -63,7 +63,7 @@ COPY shared/security/distrusted_keys.json shared/security/distrusted_keys.json
 RUN python scripts/secure_pip.py install --no-cache-dir --prefix=/install -r requirements.txt
 
 # Python 运行时镜像
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
