@@ -170,7 +170,7 @@ helm install cyxcbot ./deploy/helm -f my-values.yaml
 
 ## PostgreSQL（可选）
 
-默认依赖和镜像只安装 SQLite 数据库驱动；镜像中的 `libpq-dev` 不等于 Python PostgreSQL 驱动。使用外部 PostgreSQL 时，需先在自建镜像中通过 `scripts/secure_pip.py` 安装与连接串匹配的驱动（下例为 `psycopg`），并验证迁移和启动，再设置 `database.url`：
+默认依赖和镜像只安装 SQLite 数据库驱动；镜像自带 PostgreSQL 客户端运行库 `libpq5`，但不含 Python PostgreSQL 驱动和编译工具。使用外部 PostgreSQL 时，需先在自建镜像中通过 `scripts/secure_pip.py` 安装与连接串匹配的驱动（下例为 `psycopg`；需要编译的驱动还须自行安装 `build-essential`、`libpq-dev` 等构建依赖），并验证迁移和启动，再设置 `database.url`：
 
 ```yaml
 database:

@@ -33,10 +33,10 @@ $rng.Dispose()
 .\scripts\build-windows.ps1 -Version "dev"
 ```
 
-CI 对 `main` / `develop` 推送与 PR 构建校验，产物保存在 Actions；`v*` tag 构建后还会上传到 GitHub Release。流程见仓库 [`.github/workflows/build-windows.yml`](https://github.com/cyxc1124/cyxcbot/blob/main/.github/workflows/build-windows.yml)。
+CI 对 `main` / `develop` 推送与 PR 构建校验，产物保存在 Actions（PR 构建保留 1 天，其余 3 天）；`v*` tag 构建后还会上传到 GitHub Release 长期保存。流程见仓库 [`.github/workflows/build-windows.yml`](https://github.com/cyxc1124/cyxcbot/blob/main/.github/workflows/build-windows.yml)。
 
 ## 注意事项
 
-- 动态截图功能依赖 Playwright Chromium，Windows 包已内置
+- 动态截图功能依赖 Playwright Chromium，Windows 包已内置运行时使用的完整 Chromium（不含未使用的 headless shell 与 ffmpeg）
 - 数据文件默认保存在程序目录下的 `data/` 文件夹
 - 跨主机接入时按需放行 8080（OneBot / 官方 QQ Webhook）与 8081（Web Admin）端口；官方回调还需公网 HTTPS 转发
