@@ -56,12 +56,15 @@ git push gitlab refs/tags/v2.11.8:refs/tags/v2.11.8
 
 `v*` tag 会触发 GitHub 推送 GHCR 镜像与 Windows 包（GitHub Release），以及 GitLab 推送 Registry 镜像。两端 tag 应指向同一个 annotated tag 对象；若已有同名 tag 指向不同对象，停止并询问，不强推覆盖。
 
-发版变更必须同步两份 Helm chart 的 `appVersion` / `image.tag`，与发行 tag 使用同一版本号：
+GitHub Release 创建后补中文手写说明，下方接自动生成的 PR 列表（可删改条目）；模板、可写和不可写内容见 [AGENTS.md「Release 文案」](../AGENTS.md#release-文案)。
 
-| Chart | 路径（相对仓库根目录） | 镜像 repository |
-|-------|------------------------|-----------------|
-| 仓内公开默认 | `deploy/helm` | 保持 GHCR 默认值 |
-| 仓外现网 | `../helm-chart/cyxcbot-chart` | `registry.gitlab.cyxc.club/cyxc1124/cyxcbot` |
+发版变更必须同步两份 Helm chart 的 `appVersion` / `image.tag` 与 Compose 默认镜像 tag，与发行 tag 使用同一版本号：
+
+| 位置 | 路径（相对仓库根目录） | 镜像 repository |
+|------|------------------------|-----------------|
+| 仓内公开默认 chart | `deploy/helm` | 保持 GHCR 默认值 |
+| 仓外现网 chart | `../helm-chart/cyxcbot-chart` | `registry.gitlab.cyxc.club/cyxc1124/cyxcbot` |
+| Compose | `deploy/compose/docker-compose.yml` | 保持 GHCR 默认值 |
 
 现网镜像 repository 与 Kaniko 推送的 GitLab Registry 一致，不要改成 GHCR 或 Harbor。模板改动先改仓内 `deploy/helm`，再同步到现网；现网 overlay 含拉取密钥，不要把密钥拷回本仓。
 

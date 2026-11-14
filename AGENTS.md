@@ -72,7 +72,57 @@
 - **GitHub 是主仓库**。功能分支通过 **GitHub PR** 合入 `develop`，不得直接推 `develop` 或 `main`；PR 合并后再清理对应功能分支。
 - **GitLab 暂时仅同步发行 tag**：不再同步 `develop`、`main` 或功能分支，不在 GitLab 创建功能修复 MR。`origin` 的默认推送仅指向 GitHub；发行 tag 通过 `gitlab` 远端显式同步，禁止用 `origin` 双 push URL 顺带推送代码分支。
 - 发版在 GitHub 通过 `develop` → `main` 的 PR，合并后才在 `main` 打 annotated tag，并将同一个 tag 分别推送到 `origin` 和 `gitlab`；只改 CI 不打发行 tag。
-- 涉及合并、发行 tag 同步、发版或 Helm 变更时阅读 [维护者发布流程](deploy/README.md#维护者发布流程)，保留双端 tag 发布、仓内与仓外 chart 版本同步及现网镜像约定；不得把现网拉取密钥拷回本仓。
+- 涉及合并、发行 tag 同步、发版或 Helm 变更时阅读 [维护者发布流程](deploy/README.md#维护者发布流程)，保留双端 tag 发布、仓内与仓外 chart 及 Compose 默认镜像的版本同步、现网镜像约定；不得把现网拉取密钥拷回本仓。
+
+### Release 文案
+
+`v*` tag 推送后，`build-windows.yml` 自动创建 GitHub Release，正文是 GitHub 生成的 PR 列表。每个发行版都要补中文手写说明：手写说明放在上方，自动 PR 列表接在后面；标题保持 `vX.Y.Z`。
+
+手写说明模板（`新增`、`变更`、`修复` 没有内容就删掉；`升级`、`制品` 必须保留）：
+
+```markdown
+<一句话概述：本版解决什么，哪些用户需要升级>
+
+## 新增
+- <用户能感知的新功能，附入口或用法>
+
+## 变更
+- <行为、配置、依赖或运行环境要求的变化>
+
+## 修复
+- <问题现象和影响范围>
+
+## 升级
+- 数据库迁移：无 / 有（启动时自动 upgrade）
+- 需手动处理：无 / <破坏性变更及处理方法，如重新登录、移除参数>
+- Helm chart `<chart 版本>`，appVersion `X.Y.Z`；Compose 默认镜像 `vX.Y.Z`
+
+## 制品
+- GHCR：`ghcr.io/cyxc1124/cyxcbot:vX.Y.Z`
+- GitLab Registry：`registry.gitlab.cyxc.club/cyxc1124/cyxcbot:vX.Y.Z`
+- Windows：本页附件 `cyxcbot-windows-vX.Y.Z.zip`
+```
+
+CI 自动选择的对比起点可能不是上一个版本（如 v2.11.6 从 v2.11.4 开始）。编辑时按版本号取上一个 tag 重新生成 PR 列表，整理后连同手写说明整体替换正文。列表可以删改：删掉发版合并、准备发版、重复或不属于本版的条目，含义不清的标题可以改写（同样遵守下方规则）；保留各条的 PR 链接和末尾的 `Full Changelog`。
+
+```bash
+prev=$(git tag -l 'v*' --sort=-v:refname | grep -A1 -Fx vX.Y.Z | sed -n 2p)
+gh api repos/cyxc1124/cyxcbot/releases/generate-notes \
+  -f tag_name=vX.Y.Z -f previous_tag_name="$prev" --jq .body > /tmp/auto.md
+# 整理 /tmp/auto.md；/tmp/notes.md 为手写说明
+{ cat /tmp/notes.md; printf '\n\n'; cat /tmp/auto.md; } > /tmp/release.md
+gh release edit vX.Y.Z --notes-file /tmp/release.md
+```
+
+**可以写**：用户和部署者能感知的功能、行为和修复；升级须知，包括迁移、破坏性变更、配置项，以及 Python、Node 等运行要求；安全修复的影响范围、修复版本和处理建议；QQ 平台等外部限制；公开制品地址和公开文档链接。版本号、数值和界面路径须与该 tag 的代码一致。
+
+**不能写**：
+
+- 密钥、Token、Cookie、拉取凭证、数据库地址，以及非公开的主机名和 IP。
+- 现网部署情况：仓外 chart 的路径或内容、副本与升级策略、现网是否已升级、内部执行记录。
+- 外部读者无法访问或看不懂的内容：私有仓库、内部 issue 或聊天，以及“仓内/仓外”“本轮”“同步 GitLab 修复”等内部用语。
+- 对用户无影响的测试、CI 结果、lint、格式化和重构细节（自动 PR 列表里可以保留）。
+- 漏洞利用细节、对后续版本的承诺、占位符（如 `<short-sha>`、TODO）和重复章节。
 
 ## 日志规范（NoneBot / loguru）
 
