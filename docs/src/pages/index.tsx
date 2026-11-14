@@ -15,11 +15,11 @@ function HomepageHeader() {
       <div className={clsx('container', styles.heroInner)}>
         <div className={styles.logoWrap}>
           <img
-            src={`${siteConfig.baseUrl}img/favicon.svg`}
+            src={`${siteConfig.baseUrl}img/brand-avatar.png`}
             alt=""
             className={styles.logo}
-            width={72}
-            height={69}
+            width={88}
+            height={88}
           />
         </div>
         <Heading as="h1" className={styles.heroTitle}>

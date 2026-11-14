@@ -6,7 +6,7 @@ sidebar_position: 1
 
 Web Admin 是机器草的浏览器管理界面，基于 React + TypeScript + Tailwind CSS 构建，对接后端 `/api/v1` API。
 
-侧栏按 B 站 / X / 抖音 / 会话 / 游戏 / 系统分组。每个平台集中自己的账号、订阅参数、解析与模板；系统只保留跨平台通用设置。游戏 → Rust 管理内部按远控与权限、玩家与积分分层。页面细节见 [页面说明](./pages)。
+侧栏按概览 / B 站 / X / 抖音 / 会话 / 游戏 / 运行日志 / 系统分组。每个平台集中自己的账号、订阅参数、解析与模板；系统只保留跨平台通用设置。游戏 → Rust 管理内部按远控与权限、玩家与积分分层。页面细节见 [页面说明](./pages)。
 
 ## 访问地址
 
@@ -21,7 +21,11 @@ Web Admin 是机器草的浏览器管理界面，基于 React + TypeScript + Tai
 
 ## 认证
 
-使用 JWT 认证。`WEB_SECRET_KEY` 用于签名 Token 和加密 Cookie；Web Admin 启动前必须设置（≥32 字符随机串）。未设置时机器人进程仍可运行，但面板不会监听。详见 [环境变量](../configuration/env-vars)。
+使用 JWT 认证。浏览器登录后，凭据保存在 HttpOnly Cookie 中，并拒绝跨站请求；脚本等 API 客户端仍可使用 `Authorization: Bearer`。
+
+`WEB_SECRET_KEY` 用于签名登录凭据，并加密数据库中的 Cookie、Token 等敏感配置；Web Admin 启动前必须设置（≥32 字符随机串）。未设置时机器人进程仍可运行，但面板不会监听。详见 [环境变量](../configuration/env-vars)。
+
+登录失败次数有限制，超出后需等待窗口过期，规则见 [初始化与机器人接入](../configuration/web-admin-setup)。
 
 首次访问通过 `/setup` 创建管理员；之后通过 `/login` 登录。
 

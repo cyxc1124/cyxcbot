@@ -1,4 +1,5 @@
 ---
+description: 仓库目录结构与主要模块说明。
 sidebar_position: 1
 ---
 

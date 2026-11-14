@@ -1,4 +1,5 @@
 ---
+description: 选择部署方式，按统一流程完成初始化与机器人接入。
 sidebar_position: 1
 ---
 

@@ -1,4 +1,5 @@
 ---
+description: 自动识别群聊和私聊中的 B 站链接并回复解析结果，支持多 P 视频选择与发送视频。
 sidebar_position: 4
 ---
 

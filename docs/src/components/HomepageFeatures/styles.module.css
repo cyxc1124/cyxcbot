@@ -10,7 +10,7 @@
 .featureCard {
   height: 100%;
   padding: 1.75rem 1.5rem;
-  border: 1px solid var(--cyx-border, rgb(218, 217, 212));
+  border: 1px solid var(--cyx-border);
   border-radius: 0.875rem;
   background: var(--ifm-background-surface-color);
   box-shadow: var(--ifm-global-shadow-lw);
@@ -80,7 +80,7 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 1rem 1.25rem;
-  border: 1px solid var(--cyx-border, rgb(218, 217, 212));
+  border: 1px solid var(--cyx-border);
   border-radius: 0.75rem;
   background: var(--ifm-background-surface-color);
   color: inherit;

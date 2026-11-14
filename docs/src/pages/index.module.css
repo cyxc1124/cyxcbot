@@ -4,27 +4,26 @@
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(ellipse 70% 55% at 50% -5%, rgba(201, 100, 66, 0.18) 0%, transparent 65%),
-    radial-gradient(ellipse 45% 35% at 85% 90%, rgba(233, 230, 220, 0.8) 0%, transparent 60%),
-    linear-gradient(180deg, rgb(250, 249, 245) 0%, rgb(245, 244, 238) 100%);
-  color: rgb(61, 57, 41);
+    radial-gradient(
+      ellipse 60% 55% at 50% -10%,
+      color-mix(in srgb, var(--ifm-color-primary) 16%, transparent) 0%,
+      transparent 70%
+    ),
+    var(--cyx-surface);
+  border-bottom: 1px solid var(--cyx-border);
 }
 
 .heroBanner::before {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: radial-gradient(rgba(61, 57, 41, 0.04) 1px, transparent 1px);
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--ifm-font-color-base) 8%, transparent) 1px,
+    transparent 1px
+  );
   background-size: 24px 24px;
+  mask-image: linear-gradient(to bottom, #000 0%, transparent 85%);
   pointer-events: none;
-}
-
-[data-theme='dark'] .heroBanner {
-  background:
-    radial-gradient(ellipse 70% 55% at 50% -5%, rgba(217, 119, 87, 0.22) 0%, transparent 65%),
-    radial-gradient(ellipse 45% 35% at 85% 90%, rgba(62, 62, 56, 0.5) 0%, transparent 60%),
-    linear-gradient(180deg, rgb(31, 30, 29) 0%, rgb(38, 38, 36) 100%);
-  color: rgb(195, 192, 182);
 }
 
 .heroInner {
@@ -39,13 +38,12 @@
 }
 
 .logo {
-  width: 4.5rem;
-  height: 4.5rem;
-  filter: drop-shadow(0 8px 20px rgba(201, 100, 66, 0.35));
-}
-
-[data-theme='dark'] .logo {
-  filter: drop-shadow(0 8px 20px rgba(217, 119, 87, 0.4));
+  width: 5.5rem;
+  height: 5.5rem;
+  border-radius: 1.5rem;
+  border: 1px solid var(--cyx-border);
+  background: var(--ifm-background-surface-color);
+  box-shadow: var(--ifm-global-shadow-md);
 }
 
 .heroTitle {
@@ -53,23 +51,16 @@
   font-weight: 700;
   letter-spacing: -0.04em;
   margin-bottom: 0.75rem;
-  color: rgb(20, 20, 19);
-}
-
-[data-theme='dark'] .heroTitle {
-  color: rgb(250, 249, 245);
+  color: var(--ifm-heading-color);
 }
 
 .heroSubtitle {
   font-size: 1.125rem;
-  color: rgb(131, 130, 125);
-  max-width: 36rem;
+  color: var(--ifm-font-color-secondary);
+  max-width: 40rem;
   margin: 0 auto 2rem;
   line-height: 1.7;
-}
-
-[data-theme='dark'] .heroSubtitle {
-  color: rgb(183, 181, 169);
+  text-wrap: balance;
 }
 
 .buttons {
@@ -82,38 +73,28 @@
 
 .btnPrimary {
   composes: button button--lg from global;
-  background: rgb(201, 100, 66);
-  color: #fff;
+  background: var(--ifm-color-primary);
+  color: var(--cyx-primary-contrast);
   border: none;
   border-radius: 0.625rem;
   font-weight: 600;
   padding: 0.75rem 1.75rem;
-  box-shadow: 0 4px 16px rgba(201, 100, 66, 0.35);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--ifm-color-primary) 30%, transparent);
   transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
 }
 
 .btnPrimary:hover {
-  background: rgb(181, 90, 59);
-  color: #fff;
+  background: var(--ifm-color-primary-dark);
+  color: var(--cyx-primary-contrast);
   transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(201, 100, 66, 0.45);
-}
-
-[data-theme='dark'] .btnPrimary {
-  background: rgb(217, 119, 87);
-  box-shadow: 0 4px 16px rgba(217, 119, 87, 0.35);
-}
-
-[data-theme='dark'] .btnPrimary:hover {
-  background: rgb(201, 109, 79);
-  box-shadow: 0 6px 20px rgba(217, 119, 87, 0.45);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--ifm-color-primary) 40%, transparent);
 }
 
 .btnGhost {
   composes: button button--lg from global;
-  background: rgb(255, 255, 255);
-  color: rgb(61, 57, 41);
-  border: 1px solid rgb(218, 217, 212);
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  border: 1px solid var(--cyx-border);
   border-radius: 0.625rem;
   font-weight: 600;
   padding: 0.75rem 1.75rem;
@@ -121,21 +102,9 @@
 }
 
 .btnGhost:hover {
-  background: rgb(233, 230, 220);
-  color: rgb(40, 38, 27);
-  border-color: rgb(201, 100, 66);
-}
-
-[data-theme='dark'] .btnGhost {
-  background: rgba(255, 255, 255, 0.04);
-  color: rgb(195, 192, 182);
-  border-color: rgb(62, 62, 56);
-}
-
-[data-theme='dark'] .btnGhost:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgb(245, 244, 238);
-  border-color: rgb(217, 119, 87);
+  background: var(--cyx-muted);
+  color: var(--ifm-font-color-base);
+  border-color: var(--ifm-color-primary);
 }
 
 @media screen and (max-width: 996px) {

@@ -1,4 +1,5 @@
 ---
+description: 自动识别群聊和私聊中的抖音分享链接，回传无水印视频、图集或 Live 图。
 sidebar_position: 5
 ---
 
