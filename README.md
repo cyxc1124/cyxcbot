@@ -1,208 +1,139 @@
-# 机器草
+<p align="center">
+  <img src="web/public/brand-avatar.png" alt="机器草" width="120" />
+</p>
 
-基于 [NoneBot2](https://nonebot.dev/) 的 QQ 机器人，支持 **OneBot V11 与官方 QQ Bot（群聊 / C2C）**，提供 B 站动态与直播监控、X 推文监控，以及 B 站 / 抖音 / X 链接解析。内置 Web Admin 管理面板，业务配置在浏览器中完成，环境变量只保留启动级项。
+<h1 align="center">机器草 cyxcbot</h1>
 
-📖 [**完整文档**](https://cyxc1124.github.io/cyxcbot/) · [快速开始](https://cyxc1124.github.io/cyxcbot/docs/getting-started/quick-start) · [Web Admin](https://cyxc1124.github.io/cyxcbot/docs/web-admin/overview) · [Windows 下载](https://github.com/cyxc1124/cyxcbot/releases)
+<p align="center">
+  基于 <a href="https://nonebot.dev/">NoneBot2</a> 的 QQ 机器人：B 站动态与直播推送、X 推文监控、多平台链接解析，自带 Web 管理面板。
+</p>
 
-文档源码与本地预览见 [docs/README.md](docs/README.md)。
+<p align="center">
+  <a href="https://github.com/cyxc1124/cyxcbot/releases"><img src="https://img.shields.io/github/v/release/cyxc1124/cyxcbot" alt="GitHub release" /></a>
+  <a href="https://github.com/cyxc1124/cyxcbot/actions/workflows/build-and-push.yml"><img src="https://github.com/cyxc1124/cyxcbot/actions/workflows/build-and-push.yml/badge.svg?branch=main" alt="Build" /></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.14-3776AB?logo=python&amp;logoColor=white" alt="Python" /></a>
+  <a href="#协议支持"><img src="https://img.shields.io/badge/QQ-OneBot%20V11%20%7C%20%E5%AE%98%E6%96%B9%20Bot-12B7F5" alt="QQ" /></a>
+  <a href="https://cyxc1124.github.io/cyxcbot/"><img src="https://img.shields.io/badge/docs-online-2ea44f" alt="Docs" /></a>
+</p>
 
-## 功能概览
+<p align="center">
+  <a href="https://cyxc1124.github.io/cyxcbot/">文档</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="https://github.com/cyxc1124/cyxcbot/releases/latest">下载</a> ·
+  <a href="https://github.com/cyxc1124/cyxcbot/releases">更新日志</a>
+</p>
 
-| 功能 | 说明 |
-|------|------|
-| [B 站动态](docs/docs/plugins/dynamic-monitor.md) / [直播监控](docs/docs/plugins/live-monitor.md) | 动态、置顶变化、新投稿与开播 / 下播通知，支持群聊和私聊目标 |
-| [X 推文监控](docs/docs/plugins/x-monitor.md) | 博主订阅、媒体推送与代理配置，需配置 Bearer Token |
-| 链接解析 | [B 站](docs/docs/plugins/link-parser.md)、[抖音](docs/docs/plugins/douyin-link-parser.md)、[X](docs/docs/plugins/x-link-parser.md) 分享链接解析，按会话设置策略 |
-| 命令与会话管理 | 最新动态 / 视频查询、动态图片提取、状态查询、群聊与私聊守卫、自定义消息模板 |
-| [AI 图片检测](docs/docs/plugins/ai-image-detector.md) | v3.2.0 起提供；OneBot（含 QQNT 图片）引用一张图片回复 `ai吗？`，机器人引用原图消息返回结果；本地校验 C2PA，配置 OpenAI 密钥后同时检测其 C2PA 与 SynthID 信号，出站代理与 X API 共用 |
-| Rust 群功能 | [RCON 远控](docs/docs/plugins/rust-rcon.md)、[签到 / 积分 / 商城](docs/docs/plugins/rust-player.md) |
-| Web Admin | 订阅、账号、权限、模板、运行日志和连接状态统一管理 |
+## 功能
 
-数字 QQ 号 / 群号走 OneBot，openid 走官方 QQ Bot。官方 Bot 的主动投递以平台权限和实际回执为准；Rust 功能与群专属头衔仅支持 OneBot。接入方式见 [初始化与机器人接入](docs/docs/configuration/web-admin-setup.md)。
+- **B 站动态与直播推送**：新动态、置顶变化、新投稿和开播 / 下播通知，可推送到群聊或私聊；支持多账号扫码登录，查询请求轮换使用。见 [动态监控](docs/docs/plugins/dynamic-monitor.md)、[直播监控](docs/docs/plugins/live-monitor.md)、[账号配置](docs/docs/configuration/web-admin-setup.md#4-配置-b-站账号)。
+- **X 推文监控**：订阅博主，推送正文和媒体；需要 X API Bearer Token，可配置出站代理。见 [X 推文监控](docs/docs/plugins/x-monitor.md)。
+- **链接解析**：[B 站](docs/docs/plugins/link-parser.md)（多 P 视频回复数字选择分 P，可直接发送视频）、[抖音](docs/docs/plugins/douyin-link-parser.md)（视频、图集、Live 图）、[X](docs/docs/plugins/x-link-parser.md) 推文，按会话设置策略。
+- **AI 图片检测**：引用一张图片回复 `ai吗？`，本地校验 C2PA 凭证；配置 OpenAI API Key 后还会检查其支持的 C2PA 与 SynthID 信号。见 [AI 图片检测](docs/docs/plugins/ai-image-detector.md)。
+- **命令与会话管理**：最新动态与[最新视频](docs/docs/plugins/video-monitor.md)查询、动态图片提取、[状态查询](docs/docs/plugins/status-check.md)、[群聊](docs/docs/plugins/group-guard.md) / [私聊](docs/docs/plugins/private-guard.md)白名单，以及自定义触发词和消息模板。
+- **Rust 服务器与群管理**：[RCON 远控](docs/docs/plugins/rust-rcon.md)、[签到积分与积分商城](docs/docs/plugins/rust-player.md)、[群专属头衔](docs/docs/plugins/group-special-title.md)。
+- **Web Admin**：在浏览器中管理订阅、账号、权限、模板、运行日志和连接状态；业务配置存入数据库，保存后热更新。见 [Web Admin](docs/docs/web-admin/overview.md)。
 
-B 站账号支持在 **B 站 → 账号** 中连续扫码添加多个账号，HTTP 查询共用轮换池；同一 UID 重新扫码更新凭据，旧版单账号自动保留。可逐个验证、移除或清空账号，Cookie 加密存储。截图与弹幕长连接使用列表首账号；轮换不能保证避免风控，仍需合理设置监控间隔。详见 [账号配置](docs/docs/configuration/web-admin-setup.md#4-配置-b-站账号)。
+## 协议支持
 
-B 站多 P 视频未指定分 P 时，会先展示 `P1 开场`、`P2 正式内容` 这样的目录；原用户在同一会话内于 5 分钟内回复 `1`、`2` 等数字即可选择，连续分享视频链接时按顺序处理，以后一个视频为准。带 `p` 参数的链接直接解析对应分 P，单 P 视频直接解析；是否发送视频文件沿用会话配置。官方 QQ 群选择时仍需 @ 机器人，详见 [B 站链接解析](docs/docs/plugins/link-parser.md)。
+OneBot V11 与官方 QQ Bot 可以同时在线：数字 QQ 号 / 群号走 OneBot，官方群聊和私聊（openid）走官方 Bot。
 
-有效数字在接收时即绑定所选分 P，后续排队不会使其过期。后台每 30 秒清理过期待选记录；记录和未完成的内存请求不跨进程保存，重启后需要重新发送视频链接选择。
-
----
-
-## 项目由来
-
-机器草最初只是给我自己看的主播 **嘉穗Miho** 做的 QQ 群消息推送工具——把 B 站开播、动态更新及时推到群里，方便粉丝第一时间知道。
-
-后来 **Dreadload** 说他用的机器人不好用了，我就给他安利了机器草。为了让更多人也能方便地用起来，从 **2.0.0** 起做了一次大改版：
-
-| | 1.x（2.0.0 之前） | 2.0.0 及以后 |
+| | OneBot V11 | 官方 QQ Bot |
 |---|---|---|
-| 部署方式 | 仅容器（Docker） | 容器 + **Windows 可执行包** |
-| 业务配置 | 大量依赖环境变量（监控映射、Cookie、权限等） | **Web Admin + 数据库**，环境变量只保留启动级项 |
-| 管理界面 | 无 | React 管理面板（监控、群组、模板、日志等） |
-
-如果你还在用 `DYNAMIC_MONITOR_*`、`LIVE_MONITOR_*`、`STATUS_CHECK_*`、`SUPERUSERS` 等旧环境变量，启动时会有弃用提示——请改到 Web Admin 里配置。
-
----
-
-## 技术栈
-
-- **机器人**：NoneBot2 + OneBot V11 / 官方 QQ 适配器
-- **后端 API**：FastAPI + SQLAlchemy + Alembic（默认 SQLite；使用 PostgreSQL 需另装匹配驱动并配置连接串）
-- **前端**：React + TypeScript + Tailwind CSS + Vite
-- **截图**：Playwright + Chromium
-- **打包**：Docker / PyInstaller（Windows）
-
----
+| 接入方式 | 协议端（如 NapCat）反向 WebSocket | Webhook（公网 HTTPS） |
+| 命令与链接解析 | ✅ | ✅ |
+| 动态 / 直播 / X 推送 | ✅ | ✅（以平台权限和实际回执为准） |
+| Rust、群专属头衔、AI 图片检测 | ✅ | — |
 
 ## 快速开始
 
-### 方式一：Docker（推荐用于服务器 / NAS）
+以 Docker Compose 为例，使用 GHCR 预构建镜像：
 
 ```bash
-# 首次部署：准备启动配置，在 .env 中填写唯一随机 WEB_SECRET_KEY（至少 32 字符）
-cp env.example .env
-# 可用 openssl rand -hex 32 生成密钥；将输出填入 .env，升级时保留原值
+git clone https://github.com/cyxc1124/cyxcbot.git
+cd cyxcbot/deploy/compose
 
-# 构建镜像（仓库根目录）
-docker build -t cyxcbot .
+# 仅首次部署时生成密钥。之后升级保留原值，更换会导致已加密的凭证无法解密
+echo "WEB_SECRET_KEY=$(openssl rand -hex 32)" > .env
 
-# 运行（按需挂载数据目录与 .env）
-docker run -d \
-  --name cyxcbot \
-  -p 8080:8080 \
-  -p 8081:8081 \
-  -v ./data:/app/data \
-  --env-file .env \
-  cyxcbot
+docker compose up -d
 ```
 
-镜像由 GitHub Actions 自动构建并推送，详见 [`.github/workflows/build-and-push.yml`](.github/workflows/build-and-push.yml)。
+启动后：
 
-使用预构建镜像可按 [Docker Compose](deploy/compose/README.md) 部署；Kubernetes 见 [Helm](deploy/helm/README.md)。
+1. 打开 `http://<主机>:8081`，在 `/setup` 创建管理员。未初始化时任何人都能抢先创建，请尽快完成。
+2. 接入 QQ，二选一或同时使用：
+   - **OneBot**：在协议端配置反向 WebSocket `ws://<主机>:8080/onebot/v11/ws`。
+   - **官方 QQ Bot**：在「系统 → 机器人接入」保存凭证，将公网 HTTPS 的 `/qq/webhook` 转发到 **8080** 端口（不是 8081）。
+3. 在「B 站 → 账号」扫码登录并添加订阅；在「会话 → 群组 / 好友」中启用需要响应命令和链接解析的会话。
 
-首次启动后访问 `http://<主机>:8081`，尽快完成 `/setup` 初始化管理员账户，再配置机器人接入与订阅。OneBot 协议端反向 WebSocket 连接 `ws://<主机>:8080/onebot/v11/ws`；官方 Bot 在「系统 → 机器人接入」保存凭证，默认使用 Webhook，公网 HTTPS `/qq/webhook` 转发到 **8080**。
+详细步骤见 [快速开始](docs/docs/getting-started/quick-start.md) 和 [Web Admin 初始化与机器人接入](docs/docs/configuration/web-admin-setup.md)。
 
-### 方式二：Windows 可执行包
+### 其他部署方式
 
-自 **2.0.0** 起提供 Windows 打包。[Release 页](https://github.com/cyxc1124/cyxcbot/releases)下载 `cyxcbot-windows-<version>.zip`，解压后：
+| 方式 | 适用场景 | 文档 |
+|------|----------|------|
+| Docker Compose | 单机 / NAS，使用预构建镜像 | [Docker Compose](docs/docs/getting-started/docker-compose.md) |
+| Docker | 从源码构建镜像 | [Docker 部署](docs/docs/getting-started/docker.md) |
+| Helm | Kubernetes | [Helm 部署](docs/docs/getting-started/helm.md) |
+| Windows 可执行包 | Windows 桌面，无需安装 Python | [Windows 部署](docs/docs/getting-started/windows.md) |
+| 源码运行 | 开发与调试 | [本地开发](#本地开发) |
 
-1. 复制 `env.example` 为 `.env`，设置 `WEB_SECRET_KEY`（≥32 字符随机串）
-2. 运行 `cyxcbot.exe`
-3. 浏览器打开 `http://localhost:8081` 完成初始化
+Windows 包在 [Releases](https://github.com/cyxc1124/cyxcbot/releases) 下载 `cyxcbot-windows-<版本>.zip`：解压后将 `env.example` 复制为 `.env` 并填写 `WEB_SECRET_KEY`，运行 `cyxcbot.exe`，再打开 `http://localhost:8081`。
 
-包内包含 Python 运行时、管理面板与 Chromium；密钥生成和接入步骤见 [Windows 部署](docs/docs/getting-started/windows.md)。
+## 配置
 
-本地自行打包：
+订阅、账号、权限、模板等业务配置都在 Web Admin 中管理；环境变量只保留启动级配置：
 
-```powershell
-.\scripts\build-windows.ps1 -Version "dev"
-```
+| 变量 | 说明 |
+|------|------|
+| `HOST`、`PORT` | 机器人监听地址和端口，供 OneBot 与官方 Webhook 使用（`env.example`：`0.0.0.0`、`8080`） |
+| `COMMAND_START`、`COMMAND_SEP` | 命令前缀与分隔符（`env.example`：`["/"]`、`["."]`） |
+| `WEB_HOST`、`WEB_PORT` | Web Admin 监听地址和端口（默认 `0.0.0.0`、`8081`） |
+| `WEB_ADMIN_ENABLED` | 设为 `false` 可禁用 Web Admin |
+| `WEB_SECRET_KEY` | 登录签名与敏感配置加密密钥；使用 Web Admin 时必填，至少 32 个字符 |
+| `WEB_PUBLIC_ORIGIN` | 反向代理改写 Host 时，填写浏览器访问的源，如 `https://bot.example.com` |
+| `SQLALCHEMY_DATABASE_URL` | 数据库连接串（`env.example`：SQLite `data/cyxcbot.db`）；使用 PostgreSQL 需另装匹配的驱动 |
+| `LOG_LEVEL` | 日志级别（默认 `INFO`） |
 
-CI 流程见 [`.github/workflows/build-windows.yml`](.github/workflows/build-windows.yml)。
+完整列表见 [`env.example`](env.example) 和 [环境变量](docs/docs/configuration/env-vars.md)。升级前备份数据库和 `.env`，并保留原有 `WEB_SECRET_KEY`。从 1.x 升级见 [2.0 迁移说明](docs/docs/configuration/migration-2.0.md)。
 
-### 方式三：本地开发
+## 本地开发
 
-本地开发请使用 **Python 3.14** 与仓库根目录下的 `.venv/`，不要使用系统全局 `python3`。
+技术栈：NoneBot2（OneBot V11 / 官方 QQ 适配器）、FastAPI、SQLAlchemy + Alembic、React + TypeScript + Tailwind CSS + Vite、Playwright（Chromium）。
 
-前端开发与 Windows 本地打包统一使用 Node.js **26 LTS（26.13.0+，26.x）**，安装和构建命令通过下方包装器过滤 CA 信任库。使用 nvm 时，在仓库根目录运行 `nvm install`、`nvm use`，版本见 `.nvmrc`。Playwright 保留官方随包的 Node，由 Playwright 依赖版本管理。
+需要 **Python 3.14** 和 **Node.js 26 LTS**（26.13.0+，使用 nvm 时在仓库根目录运行 `nvm use`）。依赖请通过仓库的包装脚本安装，它们使用过滤后的 CA 信任库。
 
 ```bash
-# 1. 创建虚拟环境
 python3.14 -m venv .venv
-
-# 2. 安装依赖
 ./.venv/bin/python scripts/secure_pip.py install -r requirements.txt
+./.venv/bin/python scripts/playwright_install.py install chromium   # 截图与抖音扫码需要
 
-# 3. Playwright 浏览器（截图 / 抖音扫码需要，安装一次即可）
-./.venv/bin/python scripts/playwright_install.py install chromium
-
-# 4. 配置环境
-cp env.example .env
-# 生成并写入 WEB_SECRET_KEY（≥32 字符；未设置时机器人可启动，但 Web Admin 不会监听）
+cp env.example .env   # 填写 WEB_SECRET_KEY，可用下一行命令生成
 ./.venv/bin/python -c "import secrets; print(secrets.token_urlsafe(48))"
-
-# 5. 启动机器人（请用 venv，不要用系统 python3）
 ./.venv/bin/python bot.py
 
-# 6. 另开终端启动前端开发服务器（可选）
+# 另开终端启动前端开发服务器（http://localhost:5173，API 代理到 8081）
 cd web && node ../scripts/secure_npm.cjs ci && node ../scripts/secure_npm.cjs run dev
 ```
 
-Windows（PowerShell）创建 venv：`py -3.14 -m venv .venv`，激活：`.\.venv\Scripts\Activate.ps1`。
+- Windows 下创建虚拟环境：`py -3.14 -m venv .venv`。
+- 要在 8081 直接使用管理页面，需要先构建 `web/dist`；开发时也可以只用 Vite 开发服务器。
+- `bot.py` 启动时会连接数据库并执行迁移，请使用单独的开发数据库。
+- 检查与测试见 [测试](docs/docs/development/testing.md)，目录说明见 [项目结构](docs/docs/development/project-structure.md)，文档站本地预览见 [docs/README.md](docs/README.md)。
 
-- 机器人服务（OneBot / 官方 QQ Webhook）：`http://localhost:8080`
-- Web Admin API：`http://localhost:8081`
-- 前端开发服务器：`http://localhost:5173`（Vite 代理 API 到 8081）
+## 参与贡献
 
-源码运行需先构建 `web/dist` 才能在 8081 使用管理页面，也可直接使用 Vite 开发服务器。`bot.py` 启动会连接数据库并执行迁移，本地开发请使用隔离数据库与测试会话。
+欢迎提交 Issue 和 Pull Request。功能分支通过 PR 合入 `develop`，提交信息使用 `<type>: <中文说明>` 格式，如 `fix(auth): 修复会话过期判断`。维护者发版流程见 [deploy/README.md](deploy/README.md#维护者发布流程)。
 
-更细的说明见文档站 [本地开发](https://cyxc1124.github.io/cyxcbot/docs/getting-started/local-dev)。
+## 项目由来
 
----
-
-## 环境变量
-
-2.0 之后，**只有启动级配置**仍通过环境变量；业务配置全部在 Web Admin / 数据库中管理。
-
-| 类别 | 变量 | 说明 |
-|------|------|------|
-| 机器人 | `HOST`、`PORT` | OneBot / 官方 QQ Webhook 监听地址与端口（默认 `0.0.0.0:8080`） |
-| Web Admin | `WEB_HOST`、`WEB_PORT`、`WEB_ADMIN_ENABLED` | API 监听（默认 `8081`）；`false` 可禁用面板 |
-| 安全 | `WEB_SECRET_KEY` | JWT / Cookie 加密密钥（Web Admin 启动时必填，≥32 字符） |
-| 反向代理 | `WEB_PUBLIC_ORIGIN` | 代理改写 Host 时设置浏览器访问源（如 `https://bot.example.com`，不含路径） |
-| 数据库 | `SQLALCHEMY_DATABASE_URL` | 默认 SQLite `sqlite+aiosqlite:///data/cyxcbot.db` |
-| 日志 | `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` 等 |
-
-完整示例见 [`env.example`](env.example)；明细见 [环境变量](https://cyxc1124.github.io/cyxcbot/docs/configuration/env-vars)。升级前备份数据库与 `.env`，保留原有 `WEB_SECRET_KEY`，否则已加密的凭证无法正常解密。
-
----
-
-## 项目结构
-
-```
-cyxcbot/
-├── bot.py                 # 机器人主入口
-├── admin/                 # Web Admin API（FastAPI）
-├── shared/                # 共享 DB、配置、监控公共逻辑
-├── plugins/               # NoneBot 插件
-├── web/                   # 管理面板前端
-├── docs/                  # 文档站（Docusaurus）
-├── utils/                 # B 站 / 抖音 / X API、截图等工具
-├── scripts/               # 依赖安装、浏览器安装与 Windows 打包工具
-├── deploy/                # Docker Compose / Helm 与发布说明
-├── Dockerfile
-├── env.example
-└── requirements.txt
-```
-
----
-
-## 开发与测试
-
-```bash
-# Python：按改动选择相关文件与测试，格式化只覆盖修改文件
-./.venv/bin/ruff check <相关文件>
-./.venv/bin/ruff format <修改文件>
-./.venv/bin/pytest tests/<相关测试文件>
-
-# 前端（web/）：省略测试文件名可跑完整 Vitest
-cd web
-node ../scripts/secure_npm.cjs test -- <相关测试文件>
-node ../scripts/secure_npm.cjs run build
-```
-
-完整检查入口见 [测试文档](docs/docs/development/testing.md)。GitHub 是主仓库：功能分支通过 PR 合入 `develop`，发版通过 `develop` → `main` PR；GitLab 仅同步发行 tag。详细流程见 [维护者发布流程](deploy/README.md#维护者发布流程)。
-
-命令触发相关测试应显式隔离 `COMMAND_START` 和额外前缀等配置，并在测试结束后恢复，避免本地 `.env` 影响结果。
-
----
+机器草最初只是给我自己看的主播 **嘉穗Miho** 做的 QQ 群推送工具，把 B 站开播和动态更新及时推到群里，方便粉丝第一时间知道。后来 **Dreadload** 说他用的机器人不好用了，我就给他安利了机器草。为了让更多人用起来，从 2.0.0 起做了一次大改版：增加 Windows 可执行包和 Web 管理面板，业务配置从环境变量迁到数据库。完整经过见 [项目介绍](docs/docs/intro.md)。
 
 ## 致谢
 
 - **[嘉穗Miho](https://space.bilibili.com/3493119318297082)** — 机器草最初为她和粉丝群而生
 - **Dreadload** — 2.0 改版的直接契机；感谢他的反馈与试用
 - **[NoneBot2](https://github.com/nonebot/nonebot2)** — 机器人开发框架
-- **[Cursor](https://cursor.com/)** — 本项目大量功能与重构在 Cursor AI 辅助下完成
 
 ### 参考项目
 
