@@ -90,7 +90,7 @@ slug: /intro
 - **截图**：Playwright + Chromium
 - **打包**：Docker / PyInstaller（Windows）
 
-源码开发使用 **Python 3.14** 与 **Node.js 26.13.0+（26.x）**。依赖安装、浏览器安装与构建命令见 [本地开发](./getting-started/local-dev)，升级前备份数据库与原有 `WEB_SECRET_KEY`。
+源码开发使用 **Python 3.15** 与 **Node.js 26.13.0+（26.x）**。依赖安装、浏览器安装与构建命令见 [本地开发](./getting-started/local-dev)，升级前备份数据库与原有 `WEB_SECRET_KEY`。
 
 ## 致谢
 

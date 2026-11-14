@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/cyxc1124/cyxcbot/releases"><img src="https://img.shields.io/github/v/release/cyxc1124/cyxcbot" alt="GitHub release" /></a>
   <a href="https://github.com/cyxc1124/cyxcbot/actions/workflows/build-and-push.yml"><img src="https://github.com/cyxc1124/cyxcbot/actions/workflows/build-and-push.yml/badge.svg?branch=main" alt="Build" /></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.14-3776AB?logo=python&amp;logoColor=white" alt="Python" /></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.15-3776AB?logo=python&amp;logoColor=white" alt="Python" /></a>
   <a href="#协议支持"><img src="https://img.shields.io/badge/QQ-OneBot%20V11%20%7C%20%E5%AE%98%E6%96%B9%20Bot-12B7F5" alt="QQ" /></a>
   <a href="https://cyxc1124.github.io/cyxcbot/"><img src="https://img.shields.io/badge/docs-online-2ea44f" alt="Docs" /></a>
 </p>
@@ -101,10 +101,10 @@ Windows 包在 [Releases](https://github.com/cyxc1124/cyxcbot/releases) 下载 `
 
 技术栈：NoneBot2（OneBot V11 / 官方 QQ 适配器）、FastAPI、SQLAlchemy + Alembic、React + TypeScript + Tailwind CSS + Vite、Playwright（Chromium）。
 
-需要 **Python 3.14** 和 **Node.js 26 LTS**（26.13.0+，使用 nvm 时在仓库根目录运行 `nvm use`）。依赖请通过仓库的包装脚本安装，它们使用过滤后的 CA 信任库。
+需要 **Python 3.15** 和 **Node.js 26 LTS**（26.13.0+，使用 nvm 时在仓库根目录运行 `nvm use`）。依赖请通过仓库的包装脚本安装，它们使用过滤后的 CA 信任库。
 
 ```bash
-python3.14 -m venv .venv
+python3.15 -m venv .venv
 ./.venv/bin/python scripts/secure_pip.py install -r requirements.txt
 ./.venv/bin/python scripts/playwright_install.py install chromium   # 截图与抖音扫码需要
 
@@ -116,7 +116,7 @@ cp env.example .env   # 填写 WEB_SECRET_KEY，可用下一行命令生成
 cd web && node ../scripts/secure_npm.cjs ci && node ../scripts/secure_npm.cjs run dev
 ```
 
-- Windows 下创建虚拟环境：`py -3.14 -m venv .venv`。
+- Windows 下创建虚拟环境：`py -3.15 -m venv .venv`。
 - 要在 8081 直接使用管理页面，需要先构建 `web/dist`；开发时也可以只用 Vite 开发服务器。
 - `bot.py` 启动时会连接数据库并执行迁移，请使用单独的开发数据库。
 - 检查与测试见 [测试](docs/docs/development/testing.md)，目录说明见 [项目结构](docs/docs/development/project-structure.md)，文档站本地预览见 [docs/README.md](docs/README.md)。

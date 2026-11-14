@@ -12,7 +12,7 @@ on:
     branches: [develop, main]
 
 env:
-  PYTHON_VERSION: '3.14'
+  PYTHON_VERSION: '3.15'
   PYTHONUNBUFFERED: '1'
   PYTEST_ADDOPTS: '-x -vv -o faulthandler_timeout=60'
 

@@ -27,7 +27,7 @@ $rng.Dispose()
 
 ## 本地自行打包
 
-需 Python **3.14**、Node.js **26 LTS（26.13.0+，26.x）**。先按 [本地开发](./local-dev) 创建并激活虚拟环境，再在仓库根目录运行：
+需 Python **3.15**、Node.js **26 LTS（26.13.0+，26.x）**。先按 [本地开发](./local-dev) 创建并激活虚拟环境，再在仓库根目录运行：
 
 ```powershell
 .\scripts\build-windows.ps1 -Version "dev"

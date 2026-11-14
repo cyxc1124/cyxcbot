@@ -36,7 +36,7 @@ ENV GIT_TAG=${GIT_TAG} \
     BUILD_TIME=${BUILD_TIME}
 RUN node ../scripts/secure_npm.cjs run build
 
-# Python 依赖构建阶段：material-color-utilities 没有 cp314 的 Linux wheel，需要编译器；
+# Python 依赖构建阶段：material-color-utilities 没有 cp315 的 Linux wheel，需要编译器；
 # 编译工具只留在本阶段，运行时镜像只复制安装结果
 FROM python:3.15-slim AS py-builder
 
