@@ -4,12 +4,12 @@ sidebar_position: 5.5
 
 # X 推文监控
 
-X 的出站代理配置同时供 OpenAI 图片 AI 检测使用，修改后对后续请求立即生效；见 [AI 图片检测](./ai-image-detector)。
-
 监控 X (Twitter) 博主新推文，并向配置的群/好友推送。对应插件：`x_monitor`。
 
 :::info 配置方式
 Bearer Token、代理、博主映射与检查间隔均在 **Web Admin** 中配置（侧栏 **X → 推文订阅**，以及 **X → 账号与代理 / 订阅参数**），不使用环境变量。
+
+X 的出站代理同时供 OpenAI 图片 AI 检测使用，修改后对后续请求立即生效；见 [AI 图片检测](./ai-image-detector)。
 :::
 
 ## 功能特点

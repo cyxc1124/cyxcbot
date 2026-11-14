@@ -1,4 +1,5 @@
 ---
+description: 自动识别群聊和私聊中的 X（Twitter）链接，经 X API 拉取推文并以文字、图片和视频回传。
 sidebar_position: 5.6
 ---
 

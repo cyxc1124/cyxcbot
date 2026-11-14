@@ -1,5 +1,6 @@
 ---
-sidebar_position: 11
+description: 群成员通过命令自助设置 QQ 专属头衔，仅支持 OneBot 群聊。
+sidebar_position: 12
 ---
 
 # 群头衔设置
