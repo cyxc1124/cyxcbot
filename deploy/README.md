@@ -68,4 +68,4 @@ GitHub Release 创建后补中文手写说明，下方接自动生成的 PR 列�
 
 现网镜像 repository 与 Kaniko 推送的 GitLab Registry 一致，不要改成 GHCR 或 Harbor。模板改动先改仓内 `deploy/helm`，再同步到现网；现网 overlay 含拉取密钥，不要把密钥拷回本仓。
 
-GitLab CI 拉取 Docker Hub 基础镜像走 Harbor 代理，例如 `harbor.cyxc.club/dockerhub/library/python:3.14`、`harbor.cyxc.club/dockerhub/martizih/kaniko:v1.28.3-debug`。
+GitLab CI 拉取 Docker Hub 基础镜像走 Harbor 代理，例如 `harbor.cyxc.club/dockerhub/library/python:3.15`、`harbor.cyxc.club/dockerhub/martizih/kaniko:v1.28.3-debug`。
