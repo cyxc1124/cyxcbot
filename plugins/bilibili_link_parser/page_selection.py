@@ -26,10 +26,14 @@ def selection_key(bot, event) -> SelectionKey:
     )
 
 
-def pending_video(key: SelectionKey) -> VideoInfo | None:
+def cleanup_expired_videos() -> None:
     now = monotonic()
     for expired in [key for key, (deadline, _) in _pending.items() if deadline <= now]:
         _pending.pop(expired)
+
+
+def pending_video(key: SelectionKey) -> VideoInfo | None:
+    cleanup_expired_videos()
     record = _pending.get(key)
     return record[1] if record else None
 
@@ -48,3 +52,7 @@ def remember_video(key: SelectionKey, video: VideoInfo) -> None:
 
 def forget_video(key: SelectionKey) -> None:
     _pending.pop(key, None)
+
+
+def clear_pending_videos() -> None:
+    _pending.clear()

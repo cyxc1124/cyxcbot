@@ -77,7 +77,7 @@ Playwright 的 Node 驱动及浏览器下载使用同一 certifi CA 包，并强
 
 requirements 和 npm 生命周期脚本属于可信构建输入，需按代码审查；不得在 requirements 中加入 `--trusted-host` 等跳过证书校验的选项。
 
-上述安装信任保证覆盖当前 requirements 与 lockfile 中的包索引 / registry 下载，不涵盖原生 Git 等 VCS 工具或另行安装的数据库驱动自身的 TLS。新增这类依赖或驱动时须单独审查其 CA 配置，不能假定 `PIP_CERT` 或 Node 预加载会作用于原生进程。Windows 打包按 Playwright 实际解析出的 Chromium 目录复制浏览器，支持自定义 `PLAYWRIGHT_BROWSERS_PATH`，不再固定复制系统默认缓存。
+上述安装信任保证覆盖当前 requirements 与 lockfile 中的包索引 / registry 下载，不涵盖原生 Git 等 VCS 工具或另行安装的数据库驱动自身的 TLS。新增这类依赖或驱动时须单独审查其 CA 配置，不能假定 `PIP_CERT` 或 Node 预加载会作用于原生进程。Windows 打包按 Playwright 实际解析出的 Chromium 目录复制浏览器，支持自定义 `PLAYWRIGHT_BROWSERS_PATH`，不再固定复制系统默认缓存；只安装并打包运行时使用的完整 Chromium 和 Playwright 依赖校验用的 winldd，不含未使用的 headless shell、ffmpeg 及缓存中的其他浏览器，并去掉 Chromium 自带、自动化用不到的安装器、系统服务与 PWA 辅助程序。
 
 事件证书样本及来源记录在仓库 `tests/fixtures/ca_incident/README.md`，来自 [事件披露站点](https://emudhra.we-have-a-problem.com/)。浏览器证书数据库目前使用 Chromium schema v1；升级 Playwright / Chromium 时须执行 `tests/test_browser_security.py` 和 `scripts/check_tls_artifacts.py`。
 
@@ -85,7 +85,7 @@ requirements 和 npm 生命周期脚本属于可信构建输入，需按代码�
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `JWT_ALGORITHM` | `HS256` | JWT 算法 |
+| `JWT_ALGORITHM` | `HS256` | JWT 算法，仅支持 `HS256`、`HS384`、`HS512`（不区分大小写）。Web Admin 启动时校验，其他值会使面板不启动并在日志中提示原因，机器人本身照常运行 |
 | `JWT_EXPIRE_MINUTES` | `1440` | Token 过期时间（分钟），最少 15 分钟；无法解析为整数时回退为默认值 |
 
 ## 业务配置不在环境变量中
@@ -103,4 +103,4 @@ requirements 和 npm 生命周期脚本属于可信构建输入，需按代码�
 - `SUPERUSERS`（改到 Web Admin → 系统 → 权限）
 - `NOTIFY_GROUPS`（改到各监控页面的目标群/好友映射）
 
-详见 [1.x 迁移指南](./migration-2.0)。
+详见 [从 1.x 迁移到 2.0](./migration-2.0)。

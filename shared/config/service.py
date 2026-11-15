@@ -11,6 +11,12 @@ from nonebot_plugin_orm import get_session
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
+from shared.bilibili.accounts import (
+    BilibiliAccount,
+    bilibili_account_pool,
+    encrypt_accounts,
+    load_accounts,
+)
 from shared.config.command_aliases import (
     DEFAULT_EXTRA_PREFIXES,
     command_prefixes,
@@ -76,7 +82,7 @@ from shared.db.models import (
     XTarget,
 )
 from shared.logging.levels import default_log_levels, normalize_log_level
-from shared.security.crypto import decrypt_value
+from shared.security.crypto import decrypt_value, encrypt_value
 
 ReloadCallback = Callable[[AppConfigSnapshot], Awaitable[None]]
 UnregisterReloadCallback: TypeAlias = Callable[[], None]
@@ -93,6 +99,7 @@ SETTING_KEYS = {
     "live_monitor_include_info": ("true", bool),
     "live_monitor_use_websocket": ("true", bool),
     "bilibili_cookie_encrypted": ("", str),
+    "bilibili_accounts_encrypted": ("", str),
     "douyin_cookie_encrypted": ("", str),
     "message_group_restrict": ("true", bool),
     "message_enabled_group_ids": ("[]", "json_list"),
@@ -157,6 +164,7 @@ class ConfigService:
         self._reload_lock = asyncio.Lock()
         self._reload_task: asyncio.Task[AppConfigSnapshot] | None = None
         self._reload_pending = False
+        self._bilibili_accounts_lock = asyncio.Lock()
 
     @classmethod
     def get_instance(cls) -> "ConfigService":
@@ -243,12 +251,13 @@ class ConfigService:
                 await self._prune_x_monitor_states(session, set(x_mapping))
 
         cookie_encrypted = settings.get("bilibili_cookie_encrypted", "")
-        cookie = ""
-        if cookie_encrypted:
-            try:
-                cookie = decrypt_value(cookie_encrypted)
-            except ValueError as exc:
-                logger.error("B 站 Cookie 解密失败: {}", exc)
+        accounts_encrypted = settings.get("bilibili_accounts_encrypted", "")
+        try:
+            bilibili_accounts = load_accounts(accounts_encrypted, cookie_encrypted)
+        except ValueError:
+            logger.error("B 站账号配置读取失败，请检查加密密钥或重新登录")
+            bilibili_accounts = ()
+        cookie = bilibili_accounts[0].cookie if bilibili_accounts else ""
 
         douyin_cookie_encrypted = settings.get("douyin_cookie_encrypted", "")
         douyin_cookie = ""
@@ -328,7 +337,8 @@ class ConfigService:
             douyin_link_message_templates=douyin_link_templates_from_settings(settings),
             x_link_message_templates=x_link_templates_from_settings(settings),
             bilibili_cookie=cookie,
-            bilibili_cookie_set=bool(cookie_encrypted),
+            bilibili_cookie_set=bool(bilibili_accounts),
+            bilibili_accounts=bilibili_accounts,
             douyin_cookie=douyin_cookie,
             douyin_cookie_set=bool(douyin_cookie_encrypted),
             message_group_restrict=settings.get("message_group_restrict", True),
@@ -409,6 +419,7 @@ class ConfigService:
             official_qq_is_sandbox=settings.get("official_qq_is_sandbox", False),
             official_qq_use_websocket=settings.get("official_qq_use_websocket", False),
         )
+        bilibili_account_pool.configure(bilibili_accounts)
         apply_nonebot_superusers(self._snapshot.nonebot_superusers)
         warn_rust_rcon_command_alias_conflicts(
             self._snapshot.command_aliases, self._snapshot.rust_rcon_bindings
@@ -465,6 +476,46 @@ class ConfigService:
                         row.value = value
                     else:
                         session.add(SystemSetting(key=key, value=value))
+
+    async def _read_bilibili_accounts(self) -> tuple[BilibiliAccount, ...]:
+        return load_accounts(
+            await self.get_setting("bilibili_accounts_encrypted") or "",
+            await self.get_setting("bilibili_cookie_encrypted") or "",
+        )
+
+    async def _save_bilibili_accounts(
+        self, accounts: tuple[BilibiliAccount, ...]
+    ) -> None:
+        await self.set_settings(
+            {
+                "bilibili_accounts_encrypted": encrypt_accounts(accounts),
+                # 保留首账号供旧版本、截图与弹幕长连接使用。
+                "bilibili_cookie_encrypted": encrypt_value(accounts[0].cookie)
+                if accounts
+                else "",
+            }
+        )
+
+    async def upsert_bilibili_account(self, account: BilibiliAccount) -> None:
+        async with self._bilibili_accounts_lock:
+            accounts = await self._read_bilibili_accounts()
+            updated = tuple(
+                account if row.uid == account.uid else row for row in accounts
+            )
+            if not any(row.uid == account.uid for row in accounts):
+                updated += (account,)
+            await self._save_bilibili_accounts(updated)
+        await self.reload()
+
+    async def remove_bilibili_account(self, uid: str | None = None) -> None:
+        async with self._bilibili_accounts_lock:
+            accounts = await self._read_bilibili_accounts() if uid is not None else ()
+            if uid is not None and not any(row.uid == uid for row in accounts):
+                raise KeyError(uid)
+            await self._save_bilibili_accounts(
+                tuple(row for row in accounts if row.uid != uid)
+            )
+        await self.reload()
 
     async def _load_settings(self, session) -> dict:
         result: dict = {}

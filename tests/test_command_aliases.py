@@ -572,3 +572,31 @@ def test_quoted_extract_head_conflicts_with_whole_argument_alias(other_command):
     assert parse_extract_dynamic_id("/采图", config, prefixes=frozenset({"/"})) == ""
     assert match_command_arg("/采图", other_command, config) == ""
     assert validation_error(config, extra_prefixes=["/"]) is not None
+
+
+@pytest.mark.asyncio
+async def test_command_aliases_for_event_computed_once_per_event(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    calls = 0
+
+    async def fake_scope(snapshot, bot, event):
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0)
+        return {"marker": calls}
+
+    monkeypatch.setattr(command_aliases_module, "_scope_command_aliases", fake_scope)
+    snap, bot, event = object(), object(), SimpleNamespace()
+    first, second = await asyncio.gather(
+        command_aliases_module.command_aliases_for_event(snap, bot, event),
+        command_aliases_module.command_aliases_for_event(snap, bot, event),
+    )
+    assert first is second and calls == 1
+
+    # 热重载换了 snapshot 或换了 bot，必须重算；新事件也不共享。
+    await command_aliases_module.command_aliases_for_event(object(), bot, event)
+    await command_aliases_module.command_aliases_for_event(snap, object(), event)
+    await command_aliases_module.command_aliases_for_event(snap, bot, SimpleNamespace())
+    assert calls == 4

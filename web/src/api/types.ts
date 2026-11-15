@@ -479,7 +479,7 @@ export interface MonitorPollSchedule {
   configured_interval_seconds: number
   min_tick_interval_seconds?: number | null
   poll_interval_seconds?: number | null
-  batch_gap_seconds?: number | null
+  batch_concurrency?: number | null
   use_websocket?: boolean | null
   tick_interval_seconds: number
   per_target_cycle_seconds: number
@@ -550,6 +550,11 @@ export interface BilibiliConnectionStatus {
   logged_in: boolean
   username: string | null
   uid: string | null
+}
+
+export interface BilibiliAccount {
+  uid: string
+  username: string | null
 }
 
 export interface QqBotInfo {

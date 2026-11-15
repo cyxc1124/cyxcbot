@@ -13,7 +13,7 @@ class MonitorPollSchedule(BaseModel):
     configured_interval_seconds: int
     min_tick_interval_seconds: Optional[float] = None
     poll_interval_seconds: Optional[int] = None
-    batch_gap_seconds: Optional[float] = None
+    batch_concurrency: Optional[int] = None
     use_websocket: Optional[bool] = None
     tick_interval_seconds: float
     per_target_cycle_seconds: float

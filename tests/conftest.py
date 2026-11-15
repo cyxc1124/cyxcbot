@@ -54,6 +54,23 @@ def web_secret_key(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_bilibili_account_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    from itertools import count
+
+    from shared.bilibili.accounts import bilibili_account_pool
+
+    monkeypatch.setattr(bilibili_account_pool, "_accounts", None)
+    monkeypatch.setattr(bilibili_account_pool, "_next", count())
+
+
+@pytest.fixture(autouse=True)
+def _reset_official_session_throttle() -> None:
+    from shared.adapter import sessions
+
+    sessions._recent_upserts.clear()
+
+
 @pytest.fixture
 def tls_policy_state(monkeypatch: pytest.MonkeyPatch) -> None:
     """Restore process-wide client defaults after startup/policy tests."""

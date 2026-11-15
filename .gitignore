@@ -221,4 +221,7 @@ desktop.ini
 *.png
 *.gif
 *.bmp
-*.ico 
+*.ico
+
+# 文档站品牌头像需要随仓库提交
+!docs/static/img/brand-avatar.png

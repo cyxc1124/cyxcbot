@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List
 
+from shared.bilibili.accounts import BilibiliAccount
 from shared.config.command_aliases import DEFAULT_EXTRA_PREFIXES, CommandAliasEntry
 from shared.config.douyin_link_parser_policy import (
     DouyinLinkParserGroupPolicyRecord,
@@ -77,6 +78,7 @@ class AppConfigSnapshot:
     )
     bilibili_cookie: str = ""
     bilibili_cookie_set: bool = False
+    bilibili_accounts: tuple[BilibiliAccount, ...] = ()
     douyin_cookie: str = ""
     douyin_cookie_set: bool = False
     message_group_restrict: bool = True

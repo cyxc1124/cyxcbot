@@ -1,12 +1,16 @@
 # UP 主动态监控
 
+动态列表、详情和 UP 主资料 HTTP 查询共用 B 站多账号轮换；截图浏览器使用首账号。在 Web Admin → **B 站 → 账号** 中扫码添加、验证或移除；轮换不能保证避免风控。详见 [账号配置](../../docs/docs/configuration/web-admin-setup.md#4-配置-b-站账号)。
+
 监控 B 站 UP 主动态更新，向配置的群/好友推送通知；支持主动查询与动态图片提取。
 
 > **2.0 配置**：在 Web Admin → **B 站 → 动态订阅** 与 **B 站 → 订阅参数** 中管理 UP 主映射、间隔、截图开关等，不再使用 `DYNAMIC_MONITOR_*` 环境变量。
 >
 > 完整文档：[动态监控](https://cyxc1124.github.io/cyxcbot/docs/plugins/dynamic-monitor)
 
-支持 OneBot 数字 QQ 目标与官方 QQ Bot 的官方群/C2C OpenID。消息快照、待重试目标与官方分段进度持久化到数据库，重启后继续未完成投递；确定性平台拒绝结束对应目标，临时错误保留重试。官方主动能力以平台权限和回执为准，`@全体` 使用文字提示；网络超时但未收到回执时无法保证严格去重。
+支持 OneBot 数字 QQ 目标与官方 QQ Bot 的官方群/C2C OpenID。消息快照、待重试目标与官方分段进度持久化到数据库，重启后继续未完成投递；确定性平台拒绝结束对应目标，临时错误保留重试，持续失败超过 6 小时（如机器人已被移出群、好友已删除）的目标会被放弃并推进游标，不再阻塞后续动态。官方主动能力以平台权限和回执为准，`@全体` 使用文字提示；网络超时但未收到回执时无法保证严格去重。
+
+消息快照中的大块截图/卡片图保存在 `data/pending_media/`（按内容哈希去重，超过 12 小时自动清理），数据库只存引用；请随 `data/` 一起持久化。未持久化时，重启或 Pod 重建后尚未投递的通知会丢失这些图片，降级为仅文字推送。
 
 ## 命令
 
@@ -29,7 +33,7 @@
 plugins/dynamic_monitor/
 ├── __init__.py          # 插件入口、生命周期、查询命令
 ├── config.py            # 从 ConfigService 加载配置
-├── dynamic_monitor.py   # 轮询监控核心逻辑
+├── dynamic_monitor.py   # 轮询监控核心逻辑（轮询/generation/投递任务骨架见 shared/monitor/base.py）
 ├── dynamic_extract.py   # 动态图片提取
 ├── sender.py            # 消息构建与发送
 └── README.md

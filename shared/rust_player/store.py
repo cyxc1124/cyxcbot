@@ -63,8 +63,7 @@ def needs_rcon_online_check(state: TodayCheckInState, *, bonus_eligible: bool) -
     return state.online_bonus_earned == 0
 
 
-async def _detach_binding(session, row: RustSteamBinding) -> RustSteamBinding:
-    await session.refresh(row)
+def _detach_binding(session, row: RustSteamBinding) -> RustSteamBinding:
     session.expunge(row)
     return row
 
@@ -75,7 +74,7 @@ async def get_steam_binding(user_id: str) -> RustSteamBinding | None:
             row = await session.get(RustSteamBinding, str(user_id).strip())
             if row is None:
                 return None
-            return await _detach_binding(session, row)
+            return _detach_binding(session, row)
 
 
 async def get_steam_binding_by_steam_id(steam_id: str) -> RustSteamBinding | None:
@@ -86,7 +85,7 @@ async def get_steam_binding_by_steam_id(steam_id: str) -> RustSteamBinding | Non
             )
             if row is None:
                 return None
-            return await _detach_binding(session, row)
+            return _detach_binding(session, row)
 
 
 async def _ensure_steam_binding_available(session, user_id: str, steam_id: str) -> None:

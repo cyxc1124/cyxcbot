@@ -315,6 +315,49 @@ async def test_session_cache_survives_sibling_preprocessor_cancel() -> None:
 
 
 @pytest.mark.asyncio
+async def test_repeated_session_events_write_once_until_changed() -> None:
+    event = SimpleNamespace(author=SimpleNamespace(user_openid="u-openid"), id="msg")
+    with patch.object(sessions, "upsert_session", new=AsyncMock()) as upsert:
+        # 守卫与缓存预处理器并行各调一次，随后同一会话的后续消息也不再写库。
+        await asyncio.gather(
+            sessions.remember_official_session(event),
+            sessions.remember_official_session(event),
+        )
+        await sessions.remember_official_session(event)
+        assert upsert.await_count == 1
+
+        event.author.username = "新昵称"
+        await sessions.remember_official_session(event)
+        assert upsert.await_count == 2
+
+        later = sessions.time.monotonic() + sessions._UPSERT_INTERVAL_SECONDS + 1
+        with patch.object(sessions.time, "monotonic", return_value=later):
+            await sessions.remember_official_session(event)
+        assert upsert.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_failed_or_deleted_session_is_written_again() -> None:
+    event = SimpleNamespace(author=SimpleNamespace(user_openid="u-openid"), id="msg")
+    upsert = AsyncMock(side_effect=[RuntimeError("db down"), None, None])
+    db = MagicMock()
+    db.__aenter__.return_value = db
+    db.begin.return_value.__aenter__.return_value = None
+    db.get = AsyncMock(return_value=None)
+    with (
+        patch.object(sessions, "upsert_session", upsert),
+        patch.object(sessions, "_orm_session", return_value=db),
+        patch.object(sessions, "_session_model"),
+    ):
+        with pytest.raises(RuntimeError):
+            await sessions.remember_official_session(event)
+        await sessions.remember_official_session(event)
+        await sessions.delete_session("u-openid")
+        await sessions.remember_official_session(event)
+    assert upsert.await_count == 3
+
+
+@pytest.mark.asyncio
 async def test_friend_notice_openid_updates_session_cache():
     data = {
         "id": "event-test",

@@ -113,6 +113,11 @@ class Frame:
             raise ValueError(f"未知操作类型: {op}")
 
 
+# 重连退避（秒）：首次 3s，失败后 10 → 20 → 40 → 60 封顶。
+RECONNECT_BASE_DELAY = 3
+RECONNECT_FAILURE_DELAY = 10
+RECONNECT_MAX_DELAY = 60
+
 # 默认弹幕服务器信息
 DEFAULT_DANMU_INFO: Dict[str, Any] = {
     "token": "",
@@ -616,6 +621,7 @@ class DanmakuClient:
         if not self._running:
             return
 
+        delay = RECONNECT_BASE_DELAY
         try:
             while self._running:
                 logger.debug("房间 {} 正在重新连接...", self.room_id)
@@ -626,17 +632,21 @@ class DanmakuClient:
                     with suppress(Exception):
                         await self._ws.close()
 
-                await asyncio.sleep(3)
+                await asyncio.sleep(delay)
                 if not self._running:
                     break
 
                 try:
+                    # token 有时效；沿用 start() 时取到的旧 token 会让认证永久失败。
+                    await self._update_danmu_info()
                     await self._connect()
                     logger.debug("房间 {} 重新连接成功", self.room_id)
                     break
                 except Exception as e:
                     logger.warning("房间 {} 重新连接失败: {}", self.room_id, e)
-                    await asyncio.sleep(10)
+                    delay = min(
+                        max(delay * 2, RECONNECT_FAILURE_DELAY), RECONNECT_MAX_DELAY
+                    )
         finally:
             if self._reconnect_task is asyncio.current_task():
                 self._reconnect_task = None

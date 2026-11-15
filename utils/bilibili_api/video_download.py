@@ -12,6 +12,7 @@ from typing import Any, Optional
 import aiohttp
 from nonebot.log import logger
 
+from shared.bilibili.accounts import bilibili_account_pool
 from utils.douyin_api.download import download_file
 
 from . import wbi
@@ -137,6 +138,7 @@ async def fetch_playurl(
         "qn": qn,
         "bvid": bvid,
     }
+    cookie = bilibili_account_pool.select_cookie(cookie)
     signed = await wbi.sign_params(session, params, cookie)
     if not signed:
         raise BilibiliVideoDownloadError("WBI 签名失败，无法获取播放地址")
@@ -170,16 +172,14 @@ async def _download_cdn(
     urls: list[str],
     dest: Path,
     *,
-    cookie: Optional[str],
     max_bytes: int,
     label: str,
 ) -> None:
+    # CDN 地址已带签名；备用地址常是第三方 PCDN，不能带登录 Cookie。
     headers = {
         "User-Agent": USER_AGENT,
         "Referer": REFERER,
     }
-    if cookie:
-        headers["Cookie"] = cookie
 
     last_err: Exception | None = None
     for i, url in enumerate(urls):
@@ -257,7 +257,6 @@ async def _try_durl(
     play: dict[str, Any],
     dest: Path,
     *,
-    cookie: Optional[str],
     max_bytes: int,
 ) -> Path | None:
     durl = play.get("durl") or []
@@ -270,7 +269,6 @@ async def _try_durl(
         session,
         [url],
         dest,
-        cookie=cookie,
         max_bytes=max_bytes,
         label="整段流",
     )
@@ -361,9 +359,7 @@ async def _download_bilibili_video_into(
     except BilibiliVideoDownloadError as dash_err:
         # DASH 不可用时尝试 durl 整段（无需 ffmpeg）；超限必须上抛，不能吞成 dash 错误
         try:
-            durl_path = await _try_durl(
-                session, play, final, cookie=cookie, max_bytes=max_bytes
-            )
+            durl_path = await _try_durl(session, play, final, max_bytes=max_bytes)
             if durl_path is not None:
                 return _reject_if_too_large(durl_path, max_bytes)
         except BilibiliVideoDownloadError as durl_err:
@@ -373,9 +369,7 @@ async def _download_bilibili_video_into(
 
     if not shutil.which("ffmpeg"):
         try:
-            durl_path = await _try_durl(
-                session, play, final, cookie=cookie, max_bytes=max_bytes
-            )
+            durl_path = await _try_durl(session, play, final, max_bytes=max_bytes)
             if durl_path is not None:
                 return _reject_if_too_large(durl_path, max_bytes)
         except BilibiliVideoDownloadError as durl_err:
@@ -390,7 +384,6 @@ async def _download_bilibili_video_into(
             session,
             _stream_urls(video_stream),
             tmp_video,
-            cookie=cookie,
             max_bytes=max_bytes,
             label="视频轨",
         )
@@ -402,7 +395,6 @@ async def _download_bilibili_video_into(
                 session,
                 _stream_urls(audio_stream),
                 tmp_audio,
-                cookie=cookie,
                 max_bytes=max_bytes,
                 label="音频轨",
             )

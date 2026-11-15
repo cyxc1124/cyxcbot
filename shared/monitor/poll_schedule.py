@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Optional
 
+from shared.monitor.concurrency import DEFAULT_BATCH_CONCURRENCY
+
 DYNAMIC_MIN_TICK_INTERVAL_SECONDS = 3.0
-LIVE_BATCH_REQUEST_GAP_SECONDS = 0.3
+# 批量轮询由 run_with_concurrency 并发执行；估算峰值时假定单个请求约耗时 1 秒。
+BATCH_ASSUMED_REQUEST_SECONDS = 1.0
 LIVE_WEBSOCKET_BACKUP_MIN_INTERVAL_SECONDS = 300
 LIVE_DANMAKU_CLIENT_START_GAP_SECONDS = 1.0
 LIVE_POLL_MISFIRE_GRACE_TIME_SECONDS = 60
@@ -89,7 +93,7 @@ def _compute_dynamic_batch_poll_schedule(
     target_count: int,
     configured_interval_seconds: int,
 ) -> dict[str, Any]:
-    """Batch mode: check all UPs sequentially every configured interval."""
+    """Batch mode: check all UPs every configured interval, a few at a time."""
     poll_interval = configured_interval_seconds
 
     if target_count <= 0:
@@ -107,12 +111,14 @@ def _compute_dynamic_batch_poll_schedule(
         }
 
     avg_rps = target_count / poll_interval
-    peak_rps = 1.0
+    in_flight = min(target_count, DEFAULT_BATCH_CONCURRENCY)
+    peak_rps = in_flight / BATCH_ASSUMED_REQUEST_SECONDS
 
     warning: Optional[str] = None
     if target_count >= 5:
         warning = (
-            f"批量模式下每 {poll_interval} 秒会依次检查全部 {target_count} 个 UP 主。"
+            f"批量模式下每 {poll_interval} 秒会同时检查最多 {DEFAULT_BATCH_CONCURRENCY} 个，"
+            f"共 {target_count} 个 UP 主。"
             f"订阅较多时建议启用分散检查以降低 API 峰值压力。"
         )
 
@@ -149,7 +155,7 @@ def compute_live_poll_schedule(
     configured_interval_seconds: int,
     *,
     use_websocket: bool,
-    batch_gap_seconds: float = LIVE_BATCH_REQUEST_GAP_SECONDS,
+    batch_concurrency: int = DEFAULT_BATCH_CONCURRENCY,
 ) -> dict[str, Any]:
     """Live monitor: WebSocket primary; API batch poll as backup or sole mode."""
     if use_websocket:
@@ -168,7 +174,7 @@ def compute_live_poll_schedule(
             "target_count": 0,
             "configured_interval_seconds": configured_interval_seconds,
             "poll_interval_seconds": poll_interval,
-            "batch_gap_seconds": batch_gap_seconds,
+            "batch_concurrency": batch_concurrency,
             "use_websocket": use_websocket,
             "tick_interval_seconds": 0.0,
             "per_target_cycle_seconds": 0.0,
@@ -178,8 +184,11 @@ def compute_live_poll_schedule(
             "warning": None,
         }
 
-    burst_duration = batch_gap_seconds * max(0, target_count - 1)
-    peak_rps = 1.0 / batch_gap_seconds
+    in_flight = min(target_count, batch_concurrency)
+    burst_duration = math.ceil(target_count / batch_concurrency) * (
+        BATCH_ASSUMED_REQUEST_SECONDS
+    )
+    peak_rps = in_flight / BATCH_ASSUMED_REQUEST_SECONDS
     avg_rps = target_count / poll_interval
     per_target_cycle = poll_interval
 
@@ -200,9 +209,9 @@ def compute_live_poll_schedule(
         "target_count": target_count,
         "configured_interval_seconds": configured_interval_seconds,
         "poll_interval_seconds": poll_interval,
-        "batch_gap_seconds": batch_gap_seconds,
+        "batch_concurrency": batch_concurrency,
         "use_websocket": use_websocket,
-        "tick_interval_seconds": _round(batch_gap_seconds),
+        "tick_interval_seconds": _round(BATCH_ASSUMED_REQUEST_SECONDS),
         "per_target_cycle_seconds": _round(per_target_cycle),
         "requests_per_second_avg": _round(avg_rps),
         "requests_per_second_peak": _round(peak_rps),

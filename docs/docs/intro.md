@@ -21,7 +21,7 @@ slug: /intro
 | 业务配置 | 大量依赖环境变量 | **Web Admin + 数据库** |
 | 管理界面 | 无 | React 管理面板 |
 
-如果你还在用 `DYNAMIC_MONITOR_*`、`LIVE_MONITOR_*`、`STATUS_CHECK_*`、`SUPERUSERS` 等旧环境变量，启动时会有弃用提示——请改到 Web Admin 里配置。详见 [1.x 迁移指南](./configuration/migration-2.0)。
+如果你还在用 `DYNAMIC_MONITOR_*`、`LIVE_MONITOR_*`、`STATUS_CHECK_*`、`SUPERUSERS` 等旧环境变量，启动时会有弃用提示——请改到 Web Admin 里配置。详见 [从 1.x 迁移到 2.0](./configuration/migration-2.0)。
 
 ## 功能概览
 
@@ -30,6 +30,7 @@ slug: /intro
 - **直播监控**（`live_monitor`）：WebSocket 弹幕 + API 轮询双重机制，推送开播/下播通知
 - **动态监控**（`dynamic_monitor`）：轮询 UP 主动态、置顶变更与新投稿，可选卡片或 Playwright 网页截图
 - **视频查询**（`video_monitor`）：在已配置映射的群中响应 `最新视频` / `最新投稿` 命令；新投稿自动推送由动态监控负责
+- **多账号登录**：在「B 站 → 账号」连续扫码添加多个账号，HTTP 查询轮换使用，见 [账号配置](./configuration/web-admin-setup#4-配置-b-站账号)
 
 ### X 监控
 
@@ -40,7 +41,8 @@ slug: /intro
 
 - **B 站链接解析**（`bilibili_link_parser`）：群内/好友 B 站链接自动解析（视频、直播、动态等）
 - **抖音链接解析**（`douyin_link_parser`）：群内/好友抖音分享链接解析，回传无水印视频 / 图集 / Live 图（默认关闭，需在面板按会话开启）
-- **动态图片提取**：`#提取` / `#获取` 命令，按动态 ID 拉取图片
+- **动态图片提取**：`#提取` / `#获取` 命令，按动态 ID 或引用机器人发出的动态消息拉取图片
+- **AI 图片检测**（`ai_image_detector`）：引用一张图片回复 `ai吗？`，本地校验 C2PA 凭证；配置 OpenAI API Key 后还会检查其支持的 C2PA 与 SynthID 信号（仅 OneBot）
 - **主动查询**：群内发送 `最新动态` / `置顶动态` / `最新视频` 等命令
 - **消息模板**：按平台（B 站 / X / 抖音）自定义推送与链接解析文案
 
@@ -88,13 +90,14 @@ slug: /intro
 - **截图**：Playwright + Chromium
 - **打包**：Docker / PyInstaller（Windows）
 
-源码开发使用 **Python 3.14** 与 **Node.js 26.13.0+（26.x）**。依赖安装、浏览器安装与构建命令见 [本地开发](./getting-started/local-dev)，升级前备份数据库与原有 `WEB_SECRET_KEY`。
+源码开发使用 **Python 3.15** 与 **Node.js 26.13.0+（26.x）**。依赖安装、浏览器安装与构建命令见 [本地开发](./getting-started/local-dev)，升级前备份数据库与原有 `WEB_SECRET_KEY`。
 
 ## 致谢
 
 - **[嘉穗Miho](https://space.bilibili.com/3493119318297082)** — 机器草最初为她和粉丝群而生
-- **Dreadload** — 2.0 改版的直接契机
+- **Dreadload** — 2.0 改版的直接契机；感谢他的反馈与试用
 - **[NoneBot2](https://github.com/nonebot/nonebot2)** — 机器人开发框架
+- **[Cursor](https://cursor.com/)** — 本项目大量功能与重构在 Cursor AI 辅助下完成
 
 ### 参考项目
 

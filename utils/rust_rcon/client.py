@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
+from contextlib import suppress
 from typing import Any, Final
 from urllib.parse import quote, urlunparse
 
@@ -23,6 +24,8 @@ RCON_CONNECTION_FAILED: Final = "RCON 连接失败，请检查服务器地址与
 RCON_TIMEOUT: Final = "RCON 连接或响应超时"
 RCON_CLOSED: Final = "RCON 连接意外关闭"
 RCON_WEBSOCKET_ERROR: Final = "RCON WebSocket 错误"
+# Rust WebRCON 常不回应关闭握手，aiohttp 默认会等 10 秒。
+WS_CLOSE_TIMEOUT_SECONDS: Final = 0.5
 
 
 class RconError(Exception):
@@ -95,17 +98,6 @@ def summarize_rcon_command_for_log(command: str) -> str:
     return f"{parts[0]} <{len(parts[1])} chars>"
 
 
-def _abort_websocket(ws: aiohttp.ClientWebSocketResponse) -> None:
-    """Drop the WebSocket without waiting for Rust's slow close handshake."""
-    if ws.closed:
-        return
-    writer = ws._writer
-    if writer is not None:
-        # ponytail: WebRCON servers often stall WS close for ~10s; abort avoids
-        # blocking callers on ``async with ws_connect`` __aexit__.
-        writer.transport.abort()
-
-
 async def _exchange_rcon_command(
     url: str,
     command: str,
@@ -127,7 +119,10 @@ async def _exchange_rcon_command(
     try:
         try:
             ws = await asyncio.wait_for(
-                session.ws_connect(url),
+                session.ws_connect(
+                    url,
+                    timeout=aiohttp.ClientWSTimeout(ws_close=WS_CLOSE_TIMEOUT_SECONDS),
+                ),
                 timeout=_remaining(),
             )
         except asyncio.TimeoutError as exc:
@@ -157,9 +152,12 @@ async def _exchange_rcon_command(
             if msg.type == aiohttp.WSMsgType.ERROR:
                 raise RconError(RCON_WEBSOCKET_ERROR)
     finally:
-        if ws is not None:
-            _abort_websocket(ws)
-        await session.close()
+        try:
+            if ws is not None:
+                with suppress(Exception):
+                    await ws.close()
+        finally:
+            await session.close()
 
 
 async def execute_rcon_command(

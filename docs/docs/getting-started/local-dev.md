@@ -4,7 +4,7 @@ sidebar_position: 6
 
 # 本地开发
 
-本地开发请使用 **Python 3.14** 与仓库根目录下的 `.venv/`，不要使用系统全局 `python3`。
+本地开发请使用 **Python 3.15** 与仓库根目录下的 `.venv/`，不要使用系统全局 `python3`。
 
 ## 环境准备
 
@@ -12,7 +12,7 @@ sidebar_position: 6
 
 ```bash
 # 1. 创建虚拟环境
-python3.14 -m venv .venv
+python3.15 -m venv .venv
 
 # 2. 安装依赖
 ./.venv/bin/python scripts/secure_pip.py install -r requirements.txt
@@ -36,7 +36,7 @@ cp env.example .env
 
 数据库默认使用 SQLite（见 `env.example`）。开发与验证请使用独立的数据库和测试目标；`bot.py` 启动时会自动执行迁移并加载数据库内的监控配置。
 
-Windows（PowerShell）创建 venv：`py -3.14 -m venv .venv`，激活：`.\.venv\Scripts\Activate.ps1`。
+Windows（PowerShell）创建 venv：`py -3.15 -m venv .venv`，激活：`.\.venv\Scripts\Activate.ps1`。
 
 Windows 下将后续命令中的 `./.venv/bin/python` 替换为 `.\.venv\Scripts\python.exe`。
 

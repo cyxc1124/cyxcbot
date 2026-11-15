@@ -20,6 +20,7 @@ from shared.config.command_aliases import (
 from shared.config.service import get_config_service
 from shared.notify.message_template import safe_text_message
 from shared.onebot.lifecycle import stop_monitor_if_no_bots
+from utils.bilibili_api import api_manager
 
 from . import live_monitor as live_monitor_mod
 from .config import Config
@@ -78,6 +79,7 @@ async def _():
     logger.info("应用关闭，确保直播监控完全停止...")
     try:
         await stop_live_monitor()
+        await api_manager.close()
         logger.info("直播监控已在应用关闭时完全停止")
     except Exception as e:
         logger.error(f"应用关闭时直播监控停止失败: {e}")
@@ -125,7 +127,9 @@ async def handle_live_status(bot: Bot, event: Event):
             from utils.bilibili_api import LiveApi
 
             cookie = Config.from_service().bilibili_cookie
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(
+                cookie_jar=aiohttp.DummyCookieJar()
+            ) as session:
                 temp_api = LiveApi(session, cookie)
                 room_info, user_info = await temp_api.get_room_and_user_info(
                     int(room_id)

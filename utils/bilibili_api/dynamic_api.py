@@ -12,6 +12,8 @@ from urllib.parse import urlencode
 import aiohttp
 from nonebot.log import logger
 
+from shared.bilibili.accounts import bilibili_account_pool
+
 from .dynamic_models import DynamicItem
 
 _USER_NAME_CACHE_TTL_SECONDS = 15 * 60
@@ -43,7 +45,9 @@ class DynamicFetcher:
         referer: Optional[str] = None,
     ) -> dict[str, str]:
         headers = self.headers.copy()
-        effective_cookie = self._effective_cookie(cookie)
+        effective_cookie = bilibili_account_pool.select_cookie(
+            self._effective_cookie(cookie)
+        )
         if effective_cookie:
             headers["Cookie"] = effective_cookie
         if referer:
@@ -98,7 +102,7 @@ class DynamicFetcher:
                 cookie=cookie,
                 referer=f"https://space.bilibili.com/{uid}/dynamic",
             )
-            if self._effective_cookie(cookie):
+            if request_headers.get("Cookie"):
                 logger.debug("使用 Cookie 进行 B 站动态列表请求: uid={}", uid)
 
             async with self.session.get(
@@ -200,7 +204,7 @@ class DynamicFetcher:
             cookie=cookie,
             referer=f"https://t.bilibili.com/{dynamic_id}",
         )
-        if self._effective_cookie(cookie):
+        if request_headers.get("Cookie"):
             logger.debug("使用 Cookie 进行 B 站动态详情请求: id={}", dynamic_id)
         else:
             logger.warning(
@@ -543,7 +547,8 @@ class DynamicFetcher:
             }
 
             # 使用公共 WBI 模块签名
-            signed_query = await wbi.sign_params(self.session, params, self.cookie)
+            cookie = bilibili_account_pool.select_cookie(self.cookie)
+            signed_query = await wbi.sign_params(self.session, params, cookie)
 
             if signed_query:
                 url = f"{user_info_url}?{signed_query}"
@@ -560,8 +565,8 @@ class DynamicFetcher:
                 "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             }
 
-            if self.cookie:
-                user_headers["Cookie"] = self.cookie
+            if cookie:
+                user_headers["Cookie"] = cookie
 
             logger.debug("获取UP主 {} 信息，请求URL: {}...", uid, url[:80])
 

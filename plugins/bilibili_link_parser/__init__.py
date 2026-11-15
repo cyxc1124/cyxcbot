@@ -19,6 +19,7 @@ from nonebot.adapters.onebot.v11.exception import ActionFailed
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
+from nonebot_plugin_apscheduler import scheduler
 
 from shared.adapter.bots import is_official_qq_bot
 from shared.adapter.inbound import (
@@ -54,6 +55,8 @@ from .config import Config, get_config, reload_config
 from .message_text import collect_message_text
 from .page_selection import (
     SelectionKey,
+    cleanup_expired_videos,
+    clear_pending_videos,
     forget_video,
     pending_video,
     remember_video,
@@ -84,6 +87,7 @@ private_link_parser = on_message(priority=4, block=False)
 _PIPELINE_LIMIT = 2
 _PIPELINE_SEM = asyncio.Semaphore(_PIPELINE_LIMIT)
 _ENCODE_SEND_SEM = asyncio.Semaphore(1)
+_PAGE_SELECTION_CLEANUP_JOB_ID = "bilibili_link_parser_page_selection_cleanup"
 
 
 @dataclass
@@ -335,10 +339,25 @@ async def _handle_link_message(bot: Bot, event: Event) -> None:
         logger.debug("B 站链接解析：未提取到文本/链接 user={}", user_id)
         return
 
-    if re.fullmatch(r"[0-9]+", message_text) and (
-        not scope.video_enabled or pending_video(selection_key(bot, event)) is None
-    ):
-        return
+    key = selection_key(bot, event)
+    selection = None
+    if re.fullmatch(r"[0-9]+", message_text):
+        if not scope.video_enabled or (
+            is_official_qq_bot(bot) and not official_reply_remaining(event)
+        ):
+            return
+        video = pending_video(key)
+        if video is None:
+            return
+        page = int(message_text) if len(message_text) <= 9 else 0
+        try:
+            video = video.select_page(page)
+        except ValueError as exc:
+            selection = _ResolvedReply(message=Message(MessageSegment.text(str(exc))))
+        else:
+            # 接收时消费并绑定选择，后续排队和清理不再影响这次请求。
+            forget_video(key)
+            selection = _ResolvedReply(video=video)
 
     logger.info(
         "B 站链接解析：收到消息 user={} text={!r}",
@@ -347,8 +366,12 @@ async def _handle_link_message(bot: Bot, event: Event) -> None:
     )
 
     # 先按用户串行，再占下载名额，避免旧请求恢复已被新链接替换的选择。
-    async with selection_lock(selection_key(bot, event)):
-        if scope.video_enabled and scope.send_video_enabled:
+    async with selection_lock(key):
+        if (
+            scope.video_enabled
+            and scope.send_video_enabled
+            and (selection is None or selection.video is not None)
+        ):
             if _PIPELINE_SEM.locked():
                 logger.info("B 站链接解析：等待流水线名额 user={}", user_id)
             async with _PIPELINE_SEM:
@@ -359,6 +382,7 @@ async def _handle_link_message(bot: Bot, event: Event) -> None:
                     message_text,
                     scope,
                     enable_dynamic_screenshot=snap.dynamic_enable_screenshot,
+                    selection=selection,
                 )
             return
 
@@ -369,6 +393,7 @@ async def _handle_link_message(bot: Bot, event: Event) -> None:
             message_text,
             scope,
             enable_dynamic_screenshot=snap.dynamic_enable_screenshot,
+            selection=selection,
         )
 
 
@@ -380,6 +405,7 @@ async def _resolve_and_reply(
     scope: LinkParserScopePolicy,
     *,
     enable_dynamic_screenshot: bool,
+    selection: _ResolvedReply | None = None,
 ) -> None:
     if is_official_qq_bot(bot):
         remaining = official_reply_remaining(event)
@@ -388,26 +414,15 @@ async def _resolve_and_reply(
         if remaining == 1:
             scope = replace(scope, send_video_enabled=False)
             enable_dynamic_screenshot = False
-    resolved = _ResolvedReply()
+    resolved = selection or _ResolvedReply()
     user_id = user_id_of(event)
     key = selection_key(bot, event)
     try:
-        if re.fullmatch(r"[0-9]+", message_text):
-            video = pending_video(key) if scope.video_enabled else None
-            if video is None:
-                return
-            page = int(message_text) if len(message_text) <= 9 else 0
-            try:
-                video = video.select_page(page)
-            except ValueError as exc:
-                resolved = _ResolvedReply(
-                    message=Message(MessageSegment.text(str(exc)))
-                )
-            else:
-                forget_video(key)
+        if selection is not None:
+            if resolved.video is not None:
                 if scope.send_video_enabled:
                     await video_api_manager.init(config.bilibili_cookie or None)
-                resolved = await _video_reply(video, config, scope)
+                resolved = await _video_reply(resolved.video, config, scope)
         else:
             resolved = await _resolve_reply(
                 config,
@@ -511,10 +526,31 @@ def _register_config_reload() -> None:
 driver = get_driver()
 
 
+async def _cleanup_page_selections() -> None:
+    # 协程回调让 APScheduler 在事件循环内清理，避免线程并发访问缓存。
+    cleanup_expired_videos()
+
+
 @driver.on_startup
 async def _link_parser_startup() -> None:
     _register_config_reload()
+    scheduler.add_job(
+        _cleanup_page_selections,
+        "interval",
+        seconds=30,
+        id=_PAGE_SELECTION_CLEANUP_JOB_ID,
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=30,
+    )
     config = get_config()
     logger.info("B 站链接解析插件已就绪")
     if not config.bilibili_cookie:
         logger.warning("B 站链接解析: 未登录 B 站，api接口可能返回 -352 或解析失败")
+
+
+@driver.on_shutdown
+async def _link_parser_shutdown() -> None:
+    if scheduler.get_job(_PAGE_SELECTION_CLEANUP_JOB_ID) is not None:
+        scheduler.remove_job(_PAGE_SELECTION_CLEANUP_JOB_ID)
+    clear_pending_videos()

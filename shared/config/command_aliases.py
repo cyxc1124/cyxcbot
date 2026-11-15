@@ -14,6 +14,7 @@ affects every command consistently.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List
@@ -166,10 +167,33 @@ def merge_partial_command_aliases(current: dict, patch: Dict[str, dict]) -> dict
     return merged
 
 
+_EVENT_CACHE_ATTR = "_command_aliases_cache"
+
+
 async def command_aliases_for_event(
     snapshot: AppConfigSnapshot, bot: object, event: object
 ) -> Dict[str, CommandAliasEntry]:
-    """Limit arbitration to commands enabled for this actor and chat scope."""
+    """Limit arbitration to commands enabled for this actor and chat scope.
+
+    同一条消息会被多个 ``on_message`` 处理器各调用一次，结果只取决于
+    (snapshot, bot, event)，因此挂在 event 上复用；配置热重载换了 snapshot
+    即失效。返回值为共享对象，调用方不得修改。
+    """
+    cached = getattr(event, _EVENT_CACHE_ATTR, None)
+    if isinstance(cached, tuple) and cached[0] is snapshot and cached[1] is bot:
+        return await asyncio.shield(cached[2])
+    task = asyncio.ensure_future(_scope_command_aliases(snapshot, bot, event))
+    try:
+        setattr(event, _EVENT_CACHE_ATTR, (snapshot, bot, task))
+    except AttributeError, TypeError:
+        return await task
+    # shield：某个处理器被取消时不连带取消其它处理器共享的计算。
+    return await asyncio.shield(task)
+
+
+async def _scope_command_aliases(
+    snapshot: AppConfigSnapshot, bot: object, event: object
+) -> Dict[str, CommandAliasEntry]:
     from nonebot.adapters.onebot.v11 import GroupMessageEvent
 
     from shared.adapter.inbound import (

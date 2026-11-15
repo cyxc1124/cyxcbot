@@ -4,8 +4,8 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
   title: '机器草',
-  tagline: 'B 站与 X 监控、链接解析，支持 OneBot 与官方 QQ Bot',
-  favicon: 'img/favicon.svg',
+  tagline: 'B 站动态与直播推送、X 推文监控、多平台链接解析，支持 OneBot 与官方 QQ\u00a0Bot，自带 Web 管理面板',
+  favicon: 'img/brand-avatar.png',
 
   future: {
     v4: true,
@@ -30,7 +30,7 @@ const config: Config = {
       {
         docs: {
           sidebarPath: './sidebars.ts',
-          editUrl: 'https://github.com/cyxc1124/cyxcbot/tree/main/docs/',
+          editUrl: 'https://github.com/cyxc1124/cyxcbot/tree/develop/docs/',
         },
         blog: false,
         theme: {
@@ -48,7 +48,7 @@ const config: Config = {
       title: '机器草',
       logo: {
         alt: '机器草',
-        src: 'img/favicon.svg',
+        src: 'img/brand-avatar.png',
       },
       items: [
         {
@@ -72,7 +72,7 @@ const config: Config = {
             {label: '快速开始', to: '/docs/getting-started/quick-start'},
             {label: '环境变量', to: '/docs/configuration/env-vars'},
             {label: 'Web Admin', to: '/docs/web-admin/overview'},
-            {label: '插件', to: '/docs/plugins/dynamic-monitor'},
+            {label: '插件', to: '/docs/category/插件'},
           ],
         },
         {

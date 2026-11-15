@@ -28,3 +28,8 @@ class QrcodeLoginResponse(BaseModel):
 class LogoutResponse(BaseModel):
     success: bool
     message: str
+
+
+class BilibiliAccountResponse(BaseModel):
+    uid: str
+    username: str | None = None

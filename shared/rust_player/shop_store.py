@@ -32,6 +32,7 @@ class ShopListPage:
 
 
 async def _detach_shop_item(session, row: RustShopItem) -> RustShopItem:
+    """写入后重载服务端默认值再脱离会话；纯读取直接用 session.expunge。"""
     await session.refresh(row)
     session.expunge(row)
     return row
@@ -45,8 +46,9 @@ async def list_shop_items(*, enabled_only: bool = False) -> list[RustShopItem]:
             )
             if enabled_only:
                 stmt = stmt.where(RustShopItem.enabled.is_(True))
-            rows = (await session.scalars(stmt)).all()
-            return [await _detach_shop_item(session, row) for row in rows]
+            rows = list((await session.scalars(stmt)).all())
+            session.expunge_all()
+            return rows
 
 
 async def get_shop_list_page(page: int, *, enabled_only: bool = True) -> ShopListPage:
@@ -58,7 +60,8 @@ async def get_shop_list_page(page: int, *, enabled_only: bool = True) -> ShopLis
             )
             if enabled_only:
                 stmt = stmt.where(RustShopItem.enabled.is_(True))
-            rows = (await session.scalars(stmt)).all()
+            rows = list((await session.scalars(stmt)).all())
+            session.expunge_all()
             total_items = len(rows)
             total_pages = max(1, math.ceil(total_items / SHOP_LIST_PAGE_SIZE))
             if page > total_pages:
@@ -67,7 +70,7 @@ async def get_shop_list_page(page: int, *, enabled_only: bool = True) -> ShopLis
             end = start + SHOP_LIST_PAGE_SIZE
             page_rows = rows[start:end]
             return ShopListPage(
-                items=[await _detach_shop_item(session, row) for row in page_rows],
+                items=page_rows,
                 page=page,
                 total_pages=total_pages,
                 total_items=total_items,
@@ -80,7 +83,8 @@ async def get_shop_item(shop_id: int) -> RustShopItem | None:
             row = await session.get(RustShopItem, int(shop_id))
             if row is None:
                 return None
-            return await _detach_shop_item(session, row)
+            session.expunge(row)
+            return row
 
 
 async def find_shop_item_by_identifier(identifier: str) -> RustShopItem | None:
@@ -96,7 +100,8 @@ async def find_shop_item_by_identifier(identifier: str) -> RustShopItem | None:
                 )
             )
             if by_item_id is not None:
-                return await _detach_shop_item(session, by_item_id)
+                session.expunge(by_item_id)
+                return by_item_id
             by_name_rows = (
                 await session.scalars(
                     select(RustShopItem).where(
@@ -108,7 +113,8 @@ async def find_shop_item_by_identifier(identifier: str) -> RustShopItem | None:
             if len(by_name_rows) > 1:
                 raise ValueError("存在多个同名商品，请使用物品 ID 兑换")
             if len(by_name_rows) == 1:
-                return await _detach_shop_item(session, by_name_rows[0])
+                session.expunge(by_name_rows[0])
+                return by_name_rows[0]
             return None
 
 

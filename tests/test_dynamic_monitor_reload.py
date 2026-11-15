@@ -230,6 +230,52 @@ async def test_terminal_rejection_only_retries_transient_failed_targets(
     assert not monitor._pending_targets
 
 
+@pytest.mark.asyncio
+async def test_persistently_failing_target_is_dropped_after_max_age(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """失效目标超过重试上限后放弃，游标推进，不再阻塞后续动态。"""
+    from shared.notify.delivery import (
+        PENDING_DELIVERY_MAX_AGE_SECONDS,
+        DeliveryResult,
+        TargetDelivery,
+    )
+
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    dynamic = SimpleNamespace(id=200, uid="111", get_type_description=lambda: "text")
+    monitor._resolve_author_name = AsyncMock(return_value="author")
+    monitor._fetch_dynamic_screenshot = AsyncMock(return_value=None)
+    monitor._persist_state = AsyncMock()
+    monitor.sender = SimpleNamespace(
+        build_dynamic_message=MagicMock(return_value="msg"),
+        send_message=AsyncMock(
+            return_value=DeliveryResult(
+                targets=[TargetDelivery("group", "1001", False, "kicked")]
+            )
+        ),
+    )
+
+    assert await monitor._send_dynamic_notification("111", dynamic) is False
+    pending = monitor._pending_targets[("111", 200, False)]
+    assert pending.groups == ["1001"]
+
+    pending.created_at -= PENDING_DELIVERY_MAX_AGE_SECONDS + 1
+    assert await monitor._send_dynamic_notification("111", dynamic) is True
+    assert (pending.groups, pending.users) == ([], [])
+
+
+def test_pending_delivery_created_at_round_trips_and_defaults_for_old_state() -> None:
+    from shared.notify.delivery import PendingDelivery
+
+    pending = PendingDelivery(message=[], groups=["1"], users=[], created_at=123.0)
+    data = pending.to_data()
+    assert PendingDelivery.from_data(data).created_at == 123.0
+
+    del data["created_at"]
+    assert not PendingDelivery.from_data(data).expired()
+
+
 def _make_monitor(
     Config: Any,
     DynamicMonitor: Any,
@@ -731,6 +777,7 @@ async def test_reenabled_uid_reset_after_stale_inflight_check_repollutes_memory(
         ) as check_user,
     ):
         await monitor.reload_config()
+        await monitor.drain_reload_tasks()
 
     assert monitor.last_dynamic_ids["111"] == 0
     assert monitor.initialized_uids["111"] is False
@@ -1051,3 +1098,66 @@ async def test_image_mode_reload_switches_browser_lifecycle(dynamic_monitor_modu
         await monitor.reload_config()
         init.assert_awaited_once()
         close.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reload_config_does_not_block_on_new_uid_initial_check(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    """新增 UID 的首次检查在后台跑，保存配置的请求不应等它。"""
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    release = asyncio.Event()
+
+    async def slow_check(uid: str) -> bool:
+        await release.wait()
+        return True
+
+    new_config = Config(dynamic_monitor_mapping={"111": ["1001"], "222": ["1001"]})
+    with (
+        patch(
+            "plugins.dynamic_monitor.dynamic_monitor.Config.from_service",
+            return_value=new_config,
+        ),
+        patch.object(monitor, "_delete_persisted_state", new_callable=AsyncMock),
+        patch.object(
+            monitor, "_check_user_dynamic", side_effect=slow_check
+        ) as check_user,
+    ):
+        await asyncio.wait_for(monitor.reload_config(), timeout=1)
+        assert monitor._reload_tasks
+        release.set()
+        await monitor.drain_reload_tasks()
+
+    check_user.assert_called_once_with("222")
+    assert not monitor._reload_tasks
+
+
+@pytest.mark.asyncio
+async def test_stop_monitoring_cancels_pending_reload_tasks(
+    dynamic_monitor_modules: tuple[Any, Any],
+) -> None:
+    Config, DynamicMonitor = dynamic_monitor_modules
+    monitor = _make_monitor(Config, DynamicMonitor, ["111"])
+    started = asyncio.Event()
+
+    async def hang(uid: str) -> bool:
+        started.set()
+        await asyncio.Event().wait()
+        return True
+
+    new_config = Config(dynamic_monitor_mapping={"111": ["1001"], "222": ["1001"]})
+    with (
+        patch(
+            "plugins.dynamic_monitor.dynamic_monitor.Config.from_service",
+            return_value=new_config,
+        ),
+        patch.object(monitor, "_delete_persisted_state", new_callable=AsyncMock),
+        patch.object(monitor, "_check_user_dynamic", side_effect=hang),
+        patch("plugins.dynamic_monitor.dynamic_monitor.remove_poll_job"),
+    ):
+        await monitor.reload_config()
+        await asyncio.wait_for(started.wait(), timeout=1)
+        await asyncio.wait_for(monitor.stop_monitoring(), timeout=1)
+
+    assert not monitor._reload_tasks

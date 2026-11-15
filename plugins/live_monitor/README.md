@@ -1,5 +1,7 @@
 # B 站直播监控
 
+直播信息 HTTP 查询（含 HTML 回退）共用 B 站多账号轮换；弹幕 WebSocket 长连接使用首账号。在 Web Admin → **B 站 → 账号** 中扫码添加、验证或移除；轮换不能保证避免风控。详见 [账号配置](../../docs/docs/configuration/web-admin-setup.md#4-配置-b-站账号)。
+
 主动监控直播间开播/下播并推送通知，采用 WebSocket 弹幕 + API 轮询双重机制。
 
 > **2.0 配置**：在 Web Admin → **B 站 → 直播订阅** 与 **B 站 → 订阅参数** 中管理房间映射、轮询间隔、WebSocket 开关等，不再使用 `LIVE_MONITOR_*` 环境变量。B 站账号在 **B 站 → 账号** 中配置。
@@ -17,10 +19,12 @@
 
 ## 监控原理
 
-1. **WebSocket 弹幕**（默认启用）：监听 `LIVE` / `PREPARING` 命令，秒级响应
+1. **WebSocket 弹幕**（默认启用）：监听 `LIVE` / `PREPARING` 命令，秒级响应；断线后每次重连前重新获取弹幕 token，失败按 3→10→20→40→60 秒退避
 2. **API 轮询**（备用）：WebSocket 启用时间隔约 5 分钟；禁用时作为主要方式
 
 支持 OneBot 数字 QQ 目标与官方 QQ Bot 的官方群/C2C OpenID。开播/下播消息快照、失败目标与官方分段进度持久化到数据库，重启后继续未完成投递；首次订阅只记录基线，不补发当前场次。官方主动能力以平台权限和回执为准，`@全体` 使用文字提示。确定性平台拒绝结束对应目标，临时错误保留重试；未收到回执的网络超时无法保证严格去重。
+
+消息快照中的大块截图/卡片图保存在 `data/pending_media/`（按内容哈希去重，超过 12 小时自动清理），数据库只存引用；请随 `data/` 一起持久化。未持久化时，重启或 Pod 重建后尚未投递的通知会丢失这些图片，降级为仅文字推送。
 
 ## 文件结构
 
@@ -29,7 +33,7 @@ plugins/live_monitor/
 ├── __init__.py        # 插件入口、命令处理
 ├── config.py          # 从 ConfigService 加载配置
 ├── models.py          # 监控状态模型
-├── live_monitor.py    # 监控核心逻辑
+├── live_monitor.py    # 监控核心逻辑（批量/手动检查骨架见 shared/monitor/base.py）
 ├── danmaku_client.py  # WebSocket 弹幕客户端
 ├── card_generator.py  # 开播/下播卡片
 ├── sender.py          # 通知发送

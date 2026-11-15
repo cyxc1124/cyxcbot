@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Any, Optional
 
-from jose import JWTError, jwt
+import jwt
 
 from admin.config import get_access_token_expires, get_jwt_algorithm, get_jwt_secret
 
@@ -28,5 +28,5 @@ def create_access_token(
 def decode_access_token(token: str) -> Optional[dict[str, Any]]:
     try:
         return jwt.decode(token, get_jwt_secret(), algorithms=[get_jwt_algorithm()])
-    except JWTError:
+    except jwt.InvalidTokenError:
         return None

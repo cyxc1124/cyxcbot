@@ -170,17 +170,18 @@ helm install cyxcbot ./deploy/helm -f my-values.yaml
 
 ## PostgreSQL（可选）
 
-默认依赖和镜像只安装 SQLite 数据库驱动；镜像中的 `libpq-dev` 不等于 Python PostgreSQL 驱动。使用外部 PostgreSQL 时，需先在自建镜像中通过 `scripts/secure_pip.py` 安装与连接串匹配的驱动（下例为 `psycopg`），并验证迁移和启动，再设置 `database.url`：
+默认依赖和镜像只安装 SQLite 数据库驱动；镜像自带 PostgreSQL 客户端运行库 `libpq5`，但不含 Python PostgreSQL 驱动和编译工具。使用外部 PostgreSQL 时，需先在自建镜像中通过 `scripts/secure_pip.py` 安装与连接串匹配的驱动（下例为 `psycopg`；需要编译的驱动还须自行安装 `build-essential`、`libpq-dev` 等构建依赖），并验证迁移和启动，再设置 `database.url`：
 
 ```yaml
 database:
   url: "postgresql+psycopg://user:password@postgres:5432/cyxcbot"
 ```
 
-`database.url` 由 ConfigMap 注入，勿将含真实密码的 values 文件提交 Git。仅修改 URL 不会迁移已有 SQLite 数据。确认不需要保留本地日志、缓存等文件后才关闭 PVC（`persistence.enabled: false`）；关闭后 `/app/data` 使用 `emptyDir`，Pod 删除后数据丢失。
+`database.url` 由 ConfigMap 注入，勿将含真实密码的 values 文件提交 Git。仅修改 URL 不会迁移已有 SQLite 数据。确认不需要保留本地日志、缓存等文件后才关闭 PVC（`persistence.enabled: false`）；关闭后 `/app/data` 使用 `emptyDir`，Pod 删除后数据丢失。待投递通知快照里的大块截图/卡片图保存在 `data/pending_media/`，数据库只存引用；关闭 PVC 后 Pod 重建时，尚未投递完成的通知会丢失这些图片，降级为仅文字推送。
 
 ## 版本历史
 
+- **0.2.11 / v3.3.0**：支持 B 站多账号登录与 HTTP 查询轮换，运行环境升级到 Python 3.15；修复推送目标持续失败阻塞后续通知、浏览器崩溃后截图持续失败和弹幕 token 过期后无法重连。
 - **0.2.10 / v3.2.0**：新增引用图片的 AI 来源检测、本地 C2PA 校验与 OpenAI C2PA / SynthID 接口，检测回复引用原图消息，并兼容 QQNT 图片 CDN。
 - **0.2.9 / v3.1.4**：B 站多 P 视频支持数字选择，修复并发选择覆盖及命令测试配置隔离。
 - **0.2.0**：适配 2.0+ Web Admin 架构，移除旧版业务环境变量，增加 Secret / PVC / 双端口 Service

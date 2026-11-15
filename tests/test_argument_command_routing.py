@@ -1,5 +1,6 @@
 """Whole aliases own inputs; explicit argument grammar owns its free tail."""
 
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -139,16 +140,20 @@ async def test_rcon_prefix_remainder_collisions_use_concrete_group_inputs(
     for index, (prefixes, expected) in enumerate(
         ((old_prefixes, old_rcon), (new_prefixes, new_rcon))
     ):
-        snap.command_extra_prefixes = prefixes
+        # 热重载会替换整个 snapshot；命令仲裁结果按 snapshot 缓存在事件上。
+        snap = replace(snap, command_extra_prefixes=prefixes)
         if edit_alias:
-            snap.command_aliases = normalize_command_aliases(
-                {
-                    cid: {
-                        "enabled": cid == "live_status",
-                        "triggers": ["live" if index == 0 else "!server"],
+            snap = replace(
+                snap,
+                command_aliases=normalize_command_aliases(
+                    {
+                        cid: {
+                            "enabled": cid == "live_status",
+                            "triggers": ["live" if index == 0 else "!server"],
+                        }
+                        for cid in COMMAND_DEFAULTS
                     }
-                    for cid in COMMAND_DEFAULTS
-                }
+                ),
             )
         status_finish.reset_mock()
         rcon_finish.reset_mock()

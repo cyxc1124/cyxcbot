@@ -51,8 +51,15 @@ def get_jwt_secret() -> str:
     return require_web_secret_key()
 
 
+_JWT_ALGORITHMS = ("HS256", "HS384", "HS512")
+
+
 def get_jwt_algorithm() -> str:
-    return os.getenv("JWT_ALGORITHM", "HS256")
+    # 密钥是对称的，只允许 HMAC；避免误配成 none 或非对称算法。
+    value = os.getenv("JWT_ALGORITHM", "HS256").strip().upper()
+    if value not in _JWT_ALGORITHMS:
+        raise ValueError(f"JWT_ALGORITHM must be one of {', '.join(_JWT_ALGORITHMS)}")
+    return value
 
 
 def get_jwt_expire_minutes() -> int:

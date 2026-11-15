@@ -1381,3 +1381,75 @@ async def test_x_target_skipped_then_readded_during_send_is_retried(
     assert await monitor._send_tweet_notification("author", tweet)
     assert sent == ["3003", "2002", "1001"]
     assert monitor.last_tweet_ids["author"] == "200"
+
+
+def _failing_x_monitor():
+    from unittest.mock import AsyncMock, MagicMock
+
+    from plugins.x_monitor.config import Config
+    from plugins.x_monitor.x_monitor import XMonitor
+    from shared.notify.delivery import DeliveryResult, TargetDelivery
+
+    monitor = XMonitor(
+        Config(
+            x_monitor_mapping={"author": ["1001"]},
+            x_monitor_user_mapping={"author": []},
+        )
+    )
+    monitor.last_tweet_ids["author"] = "100"
+    monitor.initialized_usernames["author"] = True
+    monitor._persist_state = AsyncMock()
+    monitor.sender = MagicMock()
+    monitor.sender.build_tweet_message.return_value = []
+    monitor.sender.plan_fingerprint.return_value = "fp"
+    monitor.sender.send_message = AsyncMock(
+        return_value=DeliveryResult(
+            targets=[TargetDelivery("group", "1001", False, "kicked")]
+        )
+    )
+    return monitor
+
+
+def _x_tweet(tweet_id: str):
+    from utils.x_api.models import TweetItem
+
+    return TweetItem(
+        id=tweet_id, text="", created_at="", username="author", name="A", url=""
+    )
+
+
+async def test_x_failing_tweet_is_dropped_after_max_age(db_context):
+    from shared.notify.delivery import PENDING_DELIVERY_MAX_AGE_SECONDS
+
+    monitor = _failing_x_monitor()
+    tweet = _x_tweet("200")
+
+    assert await monitor._send_tweet_notification("author", tweet) is False
+    assert monitor.last_tweet_ids["author"] == "100"
+    assert "author" in monitor._pending_tweet_delivery
+
+    tweet_id, started = monitor._failing_since["author"]
+    monitor._failing_since["author"] = (
+        tweet_id,
+        started - PENDING_DELIVERY_MAX_AGE_SECONDS - 1,
+    )
+    assert await monitor._send_tweet_notification("author", tweet) is True
+    assert monitor.last_tweet_ids["author"] == "200"
+    assert "author" not in monitor._pending_tweet_delivery
+    assert "author" not in monitor._failing_since
+
+
+async def test_x_failure_clock_restarts_for_a_new_tweet(db_context):
+    from shared.notify.delivery import PENDING_DELIVERY_MAX_AGE_SECONDS
+
+    monitor = _failing_x_monitor()
+
+    assert await monitor._send_tweet_notification("author", _x_tweet("200")) is False
+    tweet_id, started = monitor._failing_since["author"]
+    monitor._failing_since["author"] = (
+        tweet_id,
+        started - PENDING_DELIVERY_MAX_AGE_SECONDS - 1,
+    )
+
+    assert await monitor._send_tweet_notification("author", _x_tweet("201")) is False
+    assert monitor.last_tweet_ids["author"] == "100"
