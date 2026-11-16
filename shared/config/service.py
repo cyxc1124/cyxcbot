@@ -186,7 +186,7 @@ class ConfigService:
         self._reload_task: asyncio.Task[AppConfigSnapshot] | None = None
         self._reload_pending = False
         self._bilibili_accounts_lock = asyncio.Lock()
-        # 代理与视觉模型的读改写共用一把锁，删除代理时的引用检查才可靠。
+        # 代理、视觉模型与各功能代理选择的写入共用一把锁，删除代理时的引用检查才可靠。
         self._proxy_lock = asyncio.Lock()
 
     @classmethod
@@ -621,6 +621,17 @@ class ConfigService:
                 )
             await self.set_settings({PROXIES_KEY: stored})
         await self.reload()
+
+    async def set_settings_with_proxy_check(self, values: dict[str, str]) -> None:
+        """Write settings; feature proxy ids in ``values`` must exist when written."""
+        async with self._proxy_lock:
+            known = proxy_ids(await self.get_setting(PROXIES_KEY))
+            if any(
+                values.get(key) and values[key] not in known
+                for key in FEATURE_PROXY_KEYS
+            ):
+                raise ValueError("所选代理不存在，请刷新页面后重新选择")
+            await self.set_settings(values)
 
     async def _load_settings(self, session) -> dict:
         result: dict = {}

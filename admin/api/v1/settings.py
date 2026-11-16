@@ -104,17 +104,10 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         value = getattr(body, key)
         if value is not None:
             updates[key] = str(value).lower()
-    known_proxies = {proxy.id for proxy in svc.get_snapshot().proxies}
     for key in FEATURE_PROXY_KEYS:
         proxy_id = getattr(body, key)
-        if proxy_id is None:
-            continue
-        proxy_id = proxy_id.strip()
-        if proxy_id and proxy_id not in known_proxies:
-            raise HTTPException(
-                status_code=400, detail="所选代理不存在，请刷新页面后重新选择"
-            )
-        updates[key] = proxy_id
+        if proxy_id is not None:
+            updates[key] = proxy_id.strip()
     for key in ("status_check_allowed_qq", "nonebot_superusers"):
         values = getattr(body, key)
         if values is not None:
@@ -186,7 +179,10 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         updates["link_parser_shared_media_dir"] = raw
 
     if updates:
-        await svc.set_settings(updates)
+        try:
+            await svc.set_settings_with_proxy_check(updates)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
         await svc.reload()
 
     return SettingsResponse(**svc.settings_for_api())

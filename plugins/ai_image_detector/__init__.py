@@ -58,11 +58,12 @@ async def is_ai_image_command(bot: Bot, event: MessageEvent) -> bool:
             enabled=True, triggers=[trigger.casefold() for trigger in entry.triggers]
         ),
     }
+    # 只在引用消息时放宽为开头/结尾匹配；「ai吗」是常见句尾，「@机器人 你是ai吗」不应触发。
     return match_plain(
         plaintext_of(event).casefold(),
         COMMAND_ID,
         folded,
-        is_tome=is_group_event(event) and is_tome(event),
+        is_tome=event.reply is not None and is_group_event(event) and is_tome(event),
     )
 
 

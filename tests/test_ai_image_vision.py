@@ -50,6 +50,14 @@ def test_negative_or_split_votes_never_prove_human_creation():
     assert "本地 C2PA" not in split
 
 
+def test_uncertain_answers_are_not_reported_as_disagreement():
+    report = build_report(
+        None, None, openai_kinds=frozenset(), vision=[VisionResult("A", "uncertain")]
+    )
+    assert "结论：无法判断是否为 AI 图片。" in report
+    assert "意见不一致" not in report
+
+
 def test_trusted_provenance_outranks_vision_votes():
     report = build_report(
         C2PAResult("present", True, "Trusted"),

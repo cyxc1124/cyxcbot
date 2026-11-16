@@ -52,7 +52,9 @@ def _vision_conclusion(vision: Sequence[VisionResult], prefix: str) -> str:
         return f"结论：{prefix}{ai}/{total} 个视觉模型倾向 AI 生成，仅供参考。"
     if not_ai * 2 > total:
         return f"结论：{prefix}{not_ai}/{total} 个视觉模型倾向非 AI 生成，仅供参考，不能证明非 AI。"
-    return f"结论：{prefix}视觉模型意见不一致，无法判断是否为 AI 图片。"
+    if ai and not_ai:
+        return f"结论：{prefix}视觉模型意见不一致，无法判断是否为 AI 图片。"
+    return f"结论：{prefix}无法判断是否为 AI 图片。"
 
 
 def build_report(

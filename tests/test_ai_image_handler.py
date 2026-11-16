@@ -112,6 +112,22 @@ async def test_other_conversation_does_not_trigger(detector, text):
     assert not await plugin.is_ai_image_command(detector.bot, image_event(text))
 
 
+@pytest.mark.parametrize(
+    ("text", "quoted", "expected"),
+    [
+        ("你是ai吗？", None, False),
+        ("ai吗", None, True),
+        ("这张是AI吗？", MessageSegment.image("https://gchat.qpic.cn/a"), True),
+    ],
+)
+async def test_mentions_match_loosely_only_when_quoting(
+    detector, text, quoted, expected
+):
+    event = image_event(text, quoted=quoted)
+    event.to_me = True
+    assert await plugin.is_ai_image_command(detector.bot, event) is expected
+
+
 @pytest.mark.parametrize("scope", ["official-group", "official-c2c"])
 async def test_official_qq_messages_never_own_the_command(detector, scope):
     from test_live_monitor_command_handlers import _scoped_event

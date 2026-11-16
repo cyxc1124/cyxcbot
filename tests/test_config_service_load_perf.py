@@ -917,6 +917,45 @@ async def test_concurrent_vision_provider_saves_keep_each_other(
 
 
 @pytest.mark.asyncio
+async def test_proxy_selection_cannot_slip_past_proxy_deletion(db_context, monkeypatch):
+    from shared.config.ai_image import VISION_PROVIDERS_KEY
+    from shared.config.proxies import X_PROXY_KEY
+
+    _, factory, ConfigService, *_ = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    await service.load()
+    proxy_id = await service.upsert_proxy(
+        None, {"name": "待删", "scheme": "http", "host": "127.0.0.1", "port": 7890}
+    )
+
+    # 让删除停在功能引用检查之后、真正删除之前，此时另一请求选用该代理。
+    reached, release = asyncio.Event(), asyncio.Event()
+    read_setting = service.get_setting
+
+    async def paused_read(key):
+        if key == VISION_PROVIDERS_KEY:
+            reached.set()
+            await release.wait()
+        return await read_setting(key)
+
+    monkeypatch.setattr(service, "get_setting", paused_read)
+    removal = asyncio.create_task(service.remove_proxy(proxy_id))
+    await reached.wait()
+    selection = asyncio.create_task(
+        service.set_settings_with_proxy_check({X_PROXY_KEY: proxy_id})
+    )
+    done, _ = await asyncio.wait({selection}, timeout=0.2)
+    assert not done
+    release.set()
+    await removal
+    with pytest.raises(ValueError, match="所选代理不存在"):
+        await selection
+    assert service.get_snapshot().proxies == ()
+    assert await read_setting(X_PROXY_KEY) != proxy_id
+
+
+@pytest.mark.asyncio
 async def test_official_settings_permissions_and_friend_cache_round_trip(
     db_context, monkeypatch
 ):
