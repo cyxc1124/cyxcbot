@@ -229,6 +229,8 @@ export interface Settings {
   ai_image_cache_enabled?: boolean
   /** 检测缓存最多保留的未修改记录，1–10000 */
   ai_image_cache_max_entries?: number
+  /** 视觉模型总开关；关闭时不调用任何模型，各模型的 enabled 保留 */
+  ai_image_vision_enabled?: boolean
   ai_image_vision_providers?: AiImageVisionProvider[]
   /** 系统 → 网络代理；各功能按 id 选用，空字符串表示直接连接 */
   proxies: ProxyEntry[]

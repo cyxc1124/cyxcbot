@@ -101,6 +101,7 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         "ai_image_openai_c2pa_enabled",
         "ai_image_openai_synthid_enabled",
         "ai_image_cache_enabled",
+        "ai_image_vision_enabled",
     ):
         value = getattr(body, key)
         if value is not None:

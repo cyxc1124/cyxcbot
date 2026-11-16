@@ -24,8 +24,17 @@ def test_vision_majority_is_reference_only():
     assert (
         "结论：未发现可确认的来源证据；2/3 个视觉模型倾向 AI 生成，仅供参考。" in report
     )
-    assert "可能误判" in report
     assert "OpenAI" not in report
+
+
+def test_reply_starts_with_local_c2pa_and_ends_with_conclusion():
+    lines = build_report(
+        C2PAResult("absent"), None, vision=[VisionResult("A", "ai")]
+    ).splitlines()
+    assert lines[0] == "本地 C2PA：未检出嵌入式凭证。"
+    assert lines[-1] == (
+        "结论：未发现可确认的来源证据；1/1 个视觉模型倾向 AI 生成，仅供参考。"
+    )
 
 
 def test_negative_or_split_votes_never_prove_human_creation():

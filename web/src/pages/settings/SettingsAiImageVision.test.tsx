@@ -36,6 +36,7 @@ let settings: Settings
 const setSettings = vi.fn((next: unknown) => {
   settings = typeof next === 'function' ? (next as (value: Settings) => Settings)(settings) : next as Settings
 })
+const savePartial = vi.fn()
 
 function renderPage() { stateIndex = 0; return SettingsAiImageVisionPage() }
 
@@ -52,6 +53,7 @@ describe('AI image vision providers page', () => {
     state = []
     settings = { ai_image_vision_providers: providers } as Settings
     setSettings.mockClear()
+    savePartial.mockClear()
     vi.mocked(useState).mockImplementation(((initial: unknown) => {
       const index = stateIndex++
       if (!(index in state)) state[index] = typeof initial === 'function' ? (initial as () => unknown)() : initial
@@ -60,7 +62,7 @@ describe('AI image vision providers page', () => {
       }]
     }) as typeof useState)
     vi.mocked(useSettingsForm).mockImplementation(() => ({
-      settings, setSettings, formDisabled: false,
+      settings, setSettings, formDisabled: false, saving: false, savePartial,
     }) as unknown as ReturnType<typeof useSettingsForm>)
   })
 
@@ -94,6 +96,16 @@ describe('AI image vision providers page', () => {
     expect(settings.ai_image_vision_providers?.[0].enabled).toBe(false)
     expect(cards().filter((card) => card.initialDraft)).toHaveLength(1)
     expect(renderToStaticMarkup(<MemoryRouter>{renderPage()}</MemoryRouter>)).toContain('已保存 2 个，启用 0 个')
+  })
+
+  it('saves the master switch immediately and notes that nothing is called while it is off', () => {
+    const toggle = elements(renderPage()).find((item) => item.ariaLabelledBy === 'ai-image-vision-enabled')!
+    expect(toggle.checked).toBe(true)
+    ;(toggle.onChange as (enabled: boolean) => void)(false)
+    expect(savePartial).toHaveBeenCalledWith({ ai_image_vision_enabled: false })
+
+    settings = { ...settings, ai_image_vision_enabled: false }
+    expect(renderToStaticMarkup(<MemoryRouter>{renderPage()}</MemoryRouter>)).toContain('总开关已关闭，检测时都不调用')
   })
 
   it('shows an empty state before anything is added', () => {
