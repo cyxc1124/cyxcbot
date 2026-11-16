@@ -17,6 +17,15 @@ from shared.bilibili.accounts import (
     encrypt_accounts,
     load_accounts,
 )
+from shared.config.ai_image import (
+    CACHE_MAX_ENTRIES_DEFAULT,
+    CACHE_MAX_ENTRIES_LIMIT,
+    VISION_PROVIDERS_KEY,
+    apply_vision_provider,
+    drop_vision_provider,
+    load_vision_providers,
+    vision_providers_for_api,
+)
 from shared.config.command_aliases import (
     DEFAULT_EXTRA_PREFIXES,
     command_prefixes,
@@ -42,7 +51,19 @@ from shared.config.message_templates import (
     x_templates_from_settings,
 )
 from shared.config.nonebot_superusers import apply_nonebot_superusers
-from shared.config.proxy import ProxyConfig
+from shared.config.proxies import (
+    AI_IMAGE_OPENAI_PROXY_KEY,
+    FEATURE_PROXY_KEYS,
+    PROXIES_KEY,
+    X_PROXY_KEY,
+    ProxyInUseError,
+    apply_proxy,
+    drop_proxy,
+    load_proxies,
+    proxies_for_api,
+    proxy_ids,
+    resolve_proxy,
+)
 from shared.config.rust_player import MAX_RUST_PLAYER_POINTS
 from shared.config.rust_rcon import (
     RustRconBindingRecord,
@@ -133,12 +154,16 @@ SETTING_KEYS = {
     "x_monitor_use_stagger": ("true", bool),
     "x_api_bearer_encrypted": ("", str),
     "ai_image_openai_api_key_encrypted": ("", str),
-    "x_proxy_enabled": ("false", bool),
-    "x_proxy_scheme": ("http", str),
-    "x_proxy_host": ("", str),
-    "x_proxy_port": ("7890", int),
-    "x_proxy_username": ("", str),
-    "x_proxy_password_encrypted": ("", str),
+    "ai_image_local_c2pa_enabled": ("true", bool),
+    "ai_image_openai_c2pa_enabled": ("true", bool),
+    "ai_image_openai_synthid_enabled": ("true", bool),
+    "ai_image_cache_enabled": ("true", bool),
+    "ai_image_cache_max_entries": (str(CACHE_MAX_ENTRIES_DEFAULT), int),
+    VISION_PROVIDERS_KEY: ("[]", str),
+    # 旧版 x_proxy_* 由迁移 c9d0e1f2g3h4 转为下列代理列表与选择，运行时不再读取。
+    PROXIES_KEY: ("[]", str),
+    X_PROXY_KEY: ("", str),
+    AI_IMAGE_OPENAI_PROXY_KEY: ("", str),
     "official_qq_app_id": ("", str),
     "official_qq_app_secret_encrypted": ("", str),
     "official_qq_is_sandbox": ("false", bool),
@@ -165,6 +190,8 @@ class ConfigService:
         self._reload_task: asyncio.Task[AppConfigSnapshot] | None = None
         self._reload_pending = False
         self._bilibili_accounts_lock = asyncio.Lock()
+        # 代理、视觉模型与各功能代理选择的写入共用一把锁，删除代理时的引用检查才可靠。
+        self._proxy_lock = asyncio.Lock()
 
     @classmethod
     def get_instance(cls) -> "ConfigService":
@@ -293,15 +320,25 @@ class ConfigService:
             except ValueError as exc:
                 logger.error("官方 Bot AppSecret 解密失败: {}", exc)
 
-        x_proxy_password_encrypted = settings.get("x_proxy_password_encrypted", "")
-        x_proxy_password = ""
-        if x_proxy_password_encrypted:
-            try:
-                x_proxy_password = decrypt_value(x_proxy_password_encrypted)
-            except ValueError as exc:
-                logger.error("X 代理密码解密失败: {}", exc)
-        settings["x_proxy_password"] = x_proxy_password
-        x_proxy = ProxyConfig.from_settings(settings)
+        proxies = load_proxies(settings.get(PROXIES_KEY, "[]"))
+        vision_providers = load_vision_providers(
+            settings.get(VISION_PROVIDERS_KEY, "[]")
+        )
+        known_proxies = {proxy.id for proxy in proxies}
+        dangling = [
+            label
+            for key, label in FEATURE_PROXY_KEYS.items()
+            if settings.get(key) and settings.get(key) not in known_proxies
+        ] + [
+            f"视觉模型「{provider.name}」"
+            for provider in vision_providers
+            if provider.proxy_id and provider.proxy_id not in known_proxies
+        ]
+        if dangling:
+            logger.warning(
+                "{} 选择的代理已不存在，暂时直接连接，请在 Web Admin 重新选择",
+                "、".join(dangling),
+            )
 
         default_log_level, default_file_level = default_log_levels()
         self._snapshot = AppConfigSnapshot(
@@ -412,7 +449,27 @@ class ConfigService:
             x_api_bearer_set=bool(x_api_bearer_encrypted),
             ai_image_openai_api_key=ai_image_key,
             ai_image_openai_api_key_set=bool(ai_image_key_encrypted),
-            x_proxy=x_proxy,
+            ai_image_local_c2pa_enabled=settings.get(
+                "ai_image_local_c2pa_enabled", True
+            ),
+            ai_image_openai_c2pa_enabled=settings.get(
+                "ai_image_openai_c2pa_enabled", True
+            ),
+            ai_image_openai_synthid_enabled=settings.get(
+                "ai_image_openai_synthid_enabled", True
+            ),
+            ai_image_cache_enabled=settings.get("ai_image_cache_enabled", True),
+            ai_image_cache_max_entries=settings.get(
+                "ai_image_cache_max_entries", CACHE_MAX_ENTRIES_DEFAULT
+            ),
+            ai_image_vision_providers=vision_providers,
+            proxies=proxies,
+            x_proxy_id=settings.get(X_PROXY_KEY, ""),
+            x_proxy=resolve_proxy(proxies, settings.get(X_PROXY_KEY, "")),
+            ai_image_openai_proxy_id=settings.get(AI_IMAGE_OPENAI_PROXY_KEY, ""),
+            ai_image_openai_proxy=resolve_proxy(
+                proxies, settings.get(AI_IMAGE_OPENAI_PROXY_KEY, "")
+            ),
             official_qq_app_id=str(settings.get("official_qq_app_id", "") or ""),
             official_qq_app_secret=official_qq_app_secret,
             official_qq_app_secret_set=bool(official_qq_secret_encrypted),
@@ -517,6 +574,73 @@ class ConfigService:
             )
         await self.reload()
 
+    async def upsert_vision_provider(
+        self, provider_id: str | None, changes: dict
+    ) -> str:
+        """Save one AI image vision provider without touching the others."""
+        async with self._proxy_lock:
+            stored, saved_id = apply_vision_provider(
+                await self.get_setting(VISION_PROVIDERS_KEY),
+                provider_id,
+                changes,
+                proxy_ids(await self.get_setting(PROXIES_KEY)),
+            )
+            await self.set_settings({VISION_PROVIDERS_KEY: stored})
+        await self.reload()
+        return saved_id
+
+    async def remove_vision_provider(self, provider_id: str) -> None:
+        async with self._proxy_lock:
+            stored = drop_vision_provider(
+                await self.get_setting(VISION_PROVIDERS_KEY), provider_id
+            )
+            await self.set_settings({VISION_PROVIDERS_KEY: stored})
+        await self.reload()
+
+    async def upsert_proxy(self, proxy_id: str | None, changes: dict) -> str:
+        """Save one outbound proxy without touching the others."""
+        async with self._proxy_lock:
+            stored, saved_id = apply_proxy(
+                await self.get_setting(PROXIES_KEY), proxy_id, changes
+            )
+            await self.set_settings({PROXIES_KEY: stored})
+        await self.reload()
+        return saved_id
+
+    async def remove_proxy(self, proxy_id: str) -> None:
+        """Delete an unused proxy; in-use proxies raise ProxyInUseError."""
+        async with self._proxy_lock:
+            stored = drop_proxy(await self.get_setting(PROXIES_KEY), proxy_id)
+            usages = [
+                label
+                for key, label in FEATURE_PROXY_KEYS.items()
+                if (await self.get_setting(key) or "") == proxy_id
+            ] + [
+                f"视觉模型「{provider.name}」"
+                for provider in load_vision_providers(
+                    await self.get_setting(VISION_PROVIDERS_KEY)
+                )
+                if provider.proxy_id == proxy_id
+            ]
+            if usages:
+                raise ProxyInUseError(
+                    f"该代理正在被{'、'.join(usages)}使用，"
+                    "请先在这些功能中改选其他代理或直接连接"
+                )
+            await self.set_settings({PROXIES_KEY: stored})
+        await self.reload()
+
+    async def set_settings_with_proxy_check(self, values: dict[str, str]) -> None:
+        """Write settings; feature proxy ids in ``values`` must exist when written."""
+        async with self._proxy_lock:
+            known = proxy_ids(await self.get_setting(PROXIES_KEY))
+            if any(
+                values.get(key) and values[key] not in known
+                for key in FEATURE_PROXY_KEYS
+            ):
+                raise ValueError("所选代理不存在，请刷新页面后重新选择")
+            await self.set_settings(values)
+
     async def _load_settings(self, session) -> dict:
         result: dict = {}
         rows = (await session.scalars(select(SystemSetting))).all()
@@ -531,8 +655,6 @@ class ConfigService:
                     parsed = int(default)
                 if "retention" in key:
                     result[key] = max(0, min(3650, parsed))
-                elif key == "x_proxy_port":
-                    result[key] = max(1, min(65535, parsed))
                 elif key.startswith("dynamic") or key.startswith("x_"):
                     result[key] = max(10, min(3600, parsed))
                 elif key == "group_special_title_daily_limit":
@@ -545,6 +667,8 @@ class ConfigService:
                     result[key] = max(0, min(MAX_RUST_PLAYER_POINTS, parsed))
                 elif key == "rust_checkin_rcon_binding_id":
                     result[key] = max(0, parsed)
+                elif key == "ai_image_cache_max_entries":
+                    result[key] = max(1, min(CACHE_MAX_ENTRIES_LIMIT, parsed))
                 else:
                     result[key] = max(30, min(3600, parsed))
             elif typ is bool:
@@ -1156,7 +1280,6 @@ class ConfigService:
         douyin_link = snap.douyin_link_message_templates
         x_link = snap.x_link_message_templates
         xt = snap.x_message_templates
-        xp = snap.x_proxy
         return {
             "log_level": snap.log_level,
             "log_file_level": snap.log_file_level,
@@ -1213,14 +1336,17 @@ class ConfigService:
                 "configured": snap.ai_image_openai_api_key_set,
                 "preview": None,
             },
-            "x_proxy": {
-                "enabled": xp.enabled,
-                "scheme": xp.scheme,
-                "host": xp.host,
-                "port": xp.port,
-                "username": xp.username,
-                "password_configured": bool(xp.password),
-            },
+            "ai_image_local_c2pa_enabled": snap.ai_image_local_c2pa_enabled,
+            "ai_image_openai_c2pa_enabled": snap.ai_image_openai_c2pa_enabled,
+            "ai_image_openai_synthid_enabled": snap.ai_image_openai_synthid_enabled,
+            "ai_image_cache_enabled": snap.ai_image_cache_enabled,
+            "ai_image_cache_max_entries": snap.ai_image_cache_max_entries,
+            "ai_image_vision_providers": vision_providers_for_api(
+                snap.ai_image_vision_providers
+            ),
+            "proxies": proxies_for_api(snap.proxies),
+            "x_proxy_id": snap.x_proxy_id,
+            "ai_image_openai_proxy_id": snap.ai_image_openai_proxy_id,
             "official_qq": {
                 "app_id": snap.official_qq_app_id,
                 "secret": {

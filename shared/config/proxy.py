@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 from urllib.parse import quote
 
@@ -11,33 +11,14 @@ _ALLOWED_SCHEMES = frozenset({"http", "https", "socks5"})
 
 @dataclass
 class ProxyConfig:
-    """Proxy settings used by outbound HTTP clients (e.g. X API)."""
+    """Resolved proxy for one outbound client; disabled means connect directly."""
 
     enabled: bool = False
     scheme: str = "http"
     host: str = ""
     port: int = 7890
     username: str = ""
-    password: str = ""
-
-    @classmethod
-    def from_settings(cls, settings: dict) -> "ProxyConfig":
-        scheme = str(settings.get("x_proxy_scheme", "http") or "http").strip().lower()
-        if scheme not in _ALLOWED_SCHEMES:
-            scheme = "http"
-        try:
-            port = int(settings.get("x_proxy_port", 7890))
-        except TypeError, ValueError:
-            port = 7890
-        port = max(1, min(65535, port))
-        return cls(
-            enabled=bool(settings.get("x_proxy_enabled", False)),
-            scheme=scheme,
-            host=str(settings.get("x_proxy_host", "") or "").strip(),
-            port=port,
-            username=str(settings.get("x_proxy_username", "") or ""),
-            password=str(settings.get("x_proxy_password", "") or ""),
-        )
+    password: str = field(default="", repr=False)
 
     @property
     def is_configured(self) -> bool:

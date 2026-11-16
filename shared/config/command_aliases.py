@@ -49,6 +49,8 @@ COMMAND_DEFAULTS: Dict[str, List[str]] = {
     "rust_player_points": ["我的积分", "积分"],
     "rust_player_shop_list": ["商品列表"],
     "rust_player_shop_redeem": ["兑换商品"],
+    # 该命令匹配时不区分英文大小写，默认无需列出 AI吗 等变体。
+    "ai_image_detect": ["ai吗？", "ai吗?", "ai吗"],
 }
 
 COMMAND_LABELS: Dict[str, str] = {
@@ -65,6 +67,7 @@ COMMAND_LABELS: Dict[str, str] = {
     "rust_player_points": "Rust 积分查询",
     "rust_player_shop_list": "Rust 商品列表",
     "rust_player_shop_redeem": "Rust 商品兑换",
+    "ai_image_detect": "AI 图片检测",
 }
 
 
@@ -194,7 +197,7 @@ async def command_aliases_for_event(
 async def _scope_command_aliases(
     snapshot: AppConfigSnapshot, bot: object, event: object
 ) -> Dict[str, CommandAliasEntry]:
-    from nonebot.adapters.onebot.v11 import GroupMessageEvent
+    from nonebot.adapters.onebot.v11 import GroupMessageEvent, PrivateMessageEvent
 
     from shared.adapter.inbound import (
         group_id_of,
@@ -242,6 +245,9 @@ async def _scope_command_aliases(
         user_id_of(event), snapshot
     ):
         allowed.add("dynamic_extract")
+    # 引用图片依赖 OneBot 的 reply 与 get_image，官方 Bot 暂不支持。
+    if isinstance(event, GroupMessageEvent | PrivateMessageEvent):
+        allowed.add("ai_image_detect")
     scoped = {
         cid: entry
         if cid in allowed

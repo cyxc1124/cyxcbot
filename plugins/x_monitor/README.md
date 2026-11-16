@@ -2,9 +2,9 @@
 
 监控 X 博主新推文，向配置的群/好友自动推送。v1 不含置顶、截图与群查询命令。
 
-> 配置走 Web Admin + 数据库：Bearer Token（加密）、代理（http/https/socks5）、博主 username 与推送映射。
+> 配置走 Web Admin + 数据库：Bearer Token（加密）、选用的代理、博主 username 与推送映射。
 
-出站代理同时供 OpenAI 图片 AI 检测使用；修改代理配置会影响这两项外部请求，不影响本地 C2PA 校验和 QQ 图片下载。
+代理在 Web Admin → 系统 → 网络代理中统一添加（可多个，http/https/socks5），X 在「X → 账号与代理」中选择其中一个或直接连接；X 链接解析与后台查询 X 用户使用同一选择。修改代理或选择后立即对后续请求生效。
 
 ## 文件结构
 

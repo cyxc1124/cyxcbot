@@ -35,13 +35,49 @@ export interface CommandAliasEntry {
   triggers: string[]
 }
 
-export interface XProxySettings {
-  enabled: boolean
-  scheme: string
+export type ProxyScheme = 'http' | 'https' | 'socks5'
+
+/** 系统 → 网络代理中的一条代理；密码只写不读 */
+export interface ProxyEntry {
+  id: string
+  name: string
+  scheme: ProxyScheme
   host: string
   port: number
   username: string
   password_configured: boolean
+}
+
+export interface ProxyInput {
+  name: string
+  scheme: ProxyScheme
+  host: string
+  port: number
+  username: string
+  /** undefined=保留；""=清除；修改主机时须重新填写 */
+  password?: string
+}
+
+/** 单个代理保存或删除后的完整列表；id 为本次新增或修改的代理 */
+export interface ProxiesResult {
+  id: string | null
+  proxies: ProxyEntry[]
+}
+
+/** 测试连接使用未保存的表单值；password 省略时沿用已保存密码 */
+export interface ProxyTestRequest {
+  id?: string
+  scheme: ProxyScheme
+  host: string
+  port: number
+  username: string
+  password?: string
+}
+
+export interface ProxyTestResult {
+  success: boolean
+  message: string
+  targets: { name: string; url: string; reachable: boolean; message: string; status_code: number | null; latency_ms: number | null }[]
 }
 
 export interface OfficialQQSettings {
@@ -50,6 +86,107 @@ export interface OfficialQQSettings {
   /** @deprecated 官方 QQ 已统一 API，固定为 false */
   is_sandbox: boolean
   use_websocket: boolean
+}
+
+export type VisionApiType = 'openai' | 'anthropic'
+
+export interface AiImageVisionProvider {
+  id: string
+  name: string
+  api_type: VisionApiType
+  /** 空字符串表示使用官方地址 */
+  base_url: string
+  model: string
+  enabled: boolean
+  /** 选用的代理 id，空字符串表示直接连接 */
+  proxy_id: string
+  api_key_configured: boolean
+}
+
+export interface AiImageVisionProviderInput {
+  name: string
+  api_type: VisionApiType
+  base_url: string
+  model: string
+  enabled: boolean
+  /** 选用的代理 id，空字符串表示直接连接 */
+  proxy_id: string
+  /** undefined=保留；""=清除；修改类型或地址时须重新填写 */
+  api_key?: string
+}
+
+/** 单个供应商保存或删除后的完整列表；id 为本次新增或修改的供应商 */
+export interface VisionProvidersResult {
+  id: string | null
+  providers: AiImageVisionProvider[]
+}
+
+/** 获取模型 / 测试 / 余额使用的未保存表单值；api_key 省略时沿用已保存密钥 */
+export interface VisionProbeRequest {
+  id?: string
+  api_type: VisionApiType
+  base_url: string
+  model: string
+  /** 选用的代理 id，空字符串表示直接连接 */
+  proxy_id: string
+  api_key?: string
+}
+
+export interface VisionModelInfo {
+  id: string
+  name: string
+  /** 接口声明了图片输入能力时为 true/false，否则为 null */
+  vision: boolean | null
+}
+
+export interface VisionModelsResult {
+  success: boolean
+  message: string
+  models: VisionModelInfo[]
+}
+
+export interface VisionTestResult {
+  success: boolean
+  message: string
+  latency_ms: number | null
+  verdict: 'ai' | 'not_ai' | 'uncertain' | null
+  confidence: number | null
+  reason: string
+  input_tokens: number | null
+  output_tokens: number | null
+}
+
+export interface VisionBalanceResult {
+  success: boolean
+  message: string
+  provider: string
+  /** 供应商是否表示当前仍可调用；null 表示未说明 */
+  available: boolean | null
+  balances: { currency: string; total: string; items: { label: string; amount: string }[] }[]
+}
+
+/** AI 图片检测缓存中的一条记录；预览图另行读取 */
+export interface AiImageCacheEntry {
+  id: number
+  sha256: string
+  media_type: string
+  size_bytes: number
+  has_preview: boolean
+  result: string
+  edited: boolean
+  /** 未修改且检测配置已变化：下次询问会重新检测 */
+  stale: boolean
+  hit_count: number
+  created_at: string
+  used_at: string
+  edited_at: string | null
+}
+
+export interface AiImageCachePage {
+  items: AiImageCacheEntry[]
+  total: number
+  page: number
+  page_size: number
 }
 
 export type LogLevel = 'TRACE' | 'DEBUG' | 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' | 'CRITICAL'
@@ -86,7 +223,17 @@ export interface Settings {
   douyin_cookie: CookieStatus
   x_api_bearer: CookieStatus
   ai_image_openai_api_key?: CookieStatus
-  x_proxy: XProxySettings
+  ai_image_local_c2pa_enabled?: boolean
+  ai_image_openai_c2pa_enabled?: boolean
+  ai_image_openai_synthid_enabled?: boolean
+  ai_image_cache_enabled?: boolean
+  /** 检测缓存最多保留的未修改记录，1–10000 */
+  ai_image_cache_max_entries?: number
+  ai_image_vision_providers?: AiImageVisionProvider[]
+  /** 系统 → 网络代理；各功能按 id 选用，空字符串表示直接连接 */
+  proxies: ProxyEntry[]
+  x_proxy_id: string
+  ai_image_openai_proxy_id: string
   official_qq: OfficialQQSettings
   status_check_allowed_qq: string[]
   nonebot_superusers: string[]
@@ -110,7 +257,8 @@ export type SettingsUpdate = Partial<
     | 'douyin_cookie'
     | 'x_api_bearer'
     | 'ai_image_openai_api_key'
-    | 'x_proxy'
+    | 'ai_image_vision_providers'
+    | 'proxies'
     | 'official_qq'
     | 'command_prefixes'
     | 'link_parser_shared_media_dir_default'
@@ -119,13 +267,6 @@ export type SettingsUpdate = Partial<
 > & {
   x_api_bearer?: string
   ai_image_openai_api_key?: string
-  x_proxy_enabled?: boolean
-  x_proxy_scheme?: string
-  x_proxy_host?: string
-  x_proxy_port?: number
-  x_proxy_username?: string
-  /** 明文；undefined=不改；""=清除 */
-  x_proxy_password?: string
   official_qq_app_id?: string
   official_qq_app_secret?: string
   /** @deprecated 兼容旧客户端，仅接受 false */

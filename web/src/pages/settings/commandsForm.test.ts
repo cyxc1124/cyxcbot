@@ -33,14 +33,9 @@ function baseSettings(commandAliases: Settings['command_aliases']): Settings {
     bilibili_cookie: { configured: false, preview: null },
     douyin_cookie: { configured: false, preview: null },
     x_api_bearer: { configured: false, preview: null },
-    x_proxy: {
-      enabled: false,
-      scheme: 'http',
-      host: '',
-      port: 7890,
-      username: '',
-      password_configured: false,
-    },
+    proxies: [],
+    x_proxy_id: '',
+    ai_image_openai_proxy_id: '',
     official_qq: {
       app_id: '',
       secret: { configured: false, preview: null },

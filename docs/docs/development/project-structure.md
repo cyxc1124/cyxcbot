@@ -58,6 +58,7 @@ FastAPI 应用，提供 Web Admin REST API 与 SSE 日志推送。启动逻辑�
 - `utils/bilibili_api/` — B 站 HTTP API 封装
 - `utils/douyin_api/` — 抖音解析与下载链路
 - `utils/x_api/` — X API 与媒体获取
+- `utils/vision_api/` — AI 图片检测的视觉模型接口（OpenAI / Anthropic 兼容判断、模型列表、余额、图片预处理）
 - `utils/rust_rcon/` — WebRCON 客户端、`status` / `giveto` 辅助
 
 ### `plugins/`
