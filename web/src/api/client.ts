@@ -46,6 +46,8 @@ import type {
   MonitorStatus,
   RecentLogsResponse,
   RuntimeLogEntry,
+  AiImageCacheEntry,
+  AiImageCachePage,
   AiImageVisionProviderInput,
   ProxiesResult,
   ProxyInput,
@@ -779,6 +781,26 @@ export const getVisionBalance = (data: VisionProbeRequest) =>
     method: 'POST',
     body: JSON.stringify(data),
   })
+
+// AI 图片检测缓存
+export const getAiImageCache = (page: number, pageSize: number) =>
+  request<AiImageCachePage>(`/ai-image/cache${buildQuery({ page, page_size: pageSize })}`)
+
+/** 预览图需要会话头，不能直接用作 <img src>，取回 Blob 后再显示。 */
+export const getAiImageCachePreview = async (id: number, signal?: AbortSignal) =>
+  (await requestResponse(`/ai-image/cache/${id}/preview`, { signal })).blob()
+
+export const updateAiImageCacheEntry = (id: number, result: string) =>
+  request<AiImageCacheEntry>(`/ai-image/cache/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ result }),
+  })
+
+export const deleteAiImageCacheEntry = (id: number) =>
+  request<void>(`/ai-image/cache/${id}`, { method: 'DELETE' })
+
+export const clearAiImageCache = () =>
+  request<{ deleted: number }>('/ai-image/cache', { method: 'DELETE' })
 
 // Monitors
 export const getMonitorStatus = () => request<MonitorStatus>('/monitors/status')

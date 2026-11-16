@@ -23,12 +23,19 @@ OneBot V11 群聊或私聊中，引用一条只包含一张图片的消息，发
 - Web Admin 可按未保存的表单值获取模型列表（标注接口声明的图片输入能力）、用生成的测试图测试响应（耗时、判断与 token 用量），并查询 DeepSeek 与 Kimi 官方接口的余额。这些请求由 `admin/api/v1/ai_image.py` 发起，上游错误说明只在管理面板显示。
 - 发送前不重新编码 PNG / JPEG / WebP 小图；GIF、动图及超过 2048 像素或约 3.5 MB 的图片转为不超过 2048 像素的首帧 JPEG。单个模型请求超时 60 秒，失败只影响该模型的结果；不展示上游错误详情。
 
+## 检测缓存（AI 图片检测 → 检测缓存）
+
+- 完整的检测结果按图片原始字节的 SHA-256 存入表 `shared_db_aiimagecache`（`cache.py`）。同一图片再次询问时直接回复保存的结果并注明来自此前检测，不再请求 OpenAI 或视觉模型；有来源或模型失败时不保存。
+- 每条记录带检测配置指纹（`shared/config/ai_image.py` 的 `detection_fingerprint()`：来源开关、是否配置 OpenAI 密钥、启用的视觉模型、回复格式版本）。配置变化后，未修改的结果下次询问时重新检测并覆盖。
+- Web Admin 列表查看预览图、回复与哈希，可修改或删除（`admin/api/v1/ai_image_cache.py`）。修改过的结果始终沿用、不被覆盖或自动清理，回复注明为管理员复核后的结果。
+- 只保存最长边 512 像素的 JPEG 预览图，不保存原图；未修改的记录最多 500 条，超出时删除最久没被询问的。缓存读写失败不影响检测。
+
 ## 限制
 
-- 支持 PNG / JPEG / WebP / GIF，单图最多 20 MiB、2500 万像素。仅下载 QQ 图片 CDN，包括 NapCat 等协议端使用的 `multimedia.nt.qq.com.cn`；禁止跳转和本地文件路径，不持久化图片。
+- 支持 PNG / JPEG / WebP / GIF，单图最多 20 MiB、2500 万像素。仅下载 QQ 图片 CDN，包括 NapCat 等协议端使用的 `multimedia.nt.qq.com.cn`；禁止跳转和本地文件路径，不保存原图（检测缓存只保存缩小的预览图）。
 - 一个进程同时处理一条检测请求；繁忙时直接提示重试。外部请求不自动重试，不进行批量识别。
 - 官方 QQ Bot 的引用图片未接入；本次只支持现有 OneBot 引用消息机制。
 
-入口在 `__init__.py`；下载、C2PA、OpenAI 接口和回复分别位于同目录模块。视觉模型的 HTTP 封装（判断、模型列表、余额、图片预处理）在 `utils/vision_api/`，供插件和 Web Admin 共用；供应商配置解析在 `shared/config/ai_image.py`。配置复用 SystemSetting，无需修改表结构。
+入口在 `__init__.py`；下载、C2PA、OpenAI 接口、回复和检测缓存分别位于同目录模块。视觉模型的 HTTP 封装（判断、模型列表、余额、图片预处理）在 `utils/vision_api/`，供插件和 Web Admin 共用；供应商配置解析在 `shared/config/ai_image.py`。配置复用 SystemSetting；检测缓存使用独立的 `shared_db_aiimagecache` 表，启动时由迁移自动创建。
 
 完整使用说明、限制与其他服务价格调研见 [文档站页面](../../docs/docs/plugins/ai-image-detector.md)。

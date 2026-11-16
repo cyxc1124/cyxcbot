@@ -1,6 +1,7 @@
 """Quoted-image command routing, failure isolation, and concurrent request limits."""
 
 import asyncio
+import hashlib
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -14,7 +15,7 @@ from nonebot.adapters.onebot.v11.bot import _check_reply
 import plugins.ai_image_detector as plugin
 from plugins.ai_image_detector.c2pa_check import C2PAResult
 from plugins.ai_image_detector.image import ImageDetectionError
-from shared.config.ai_image import VisionProviderRecord
+from shared.config.ai_image import VisionProviderRecord, detection_fingerprint
 from shared.config.command_aliases import normalize_command_aliases
 from shared.config.proxies import ProxyRecord
 from shared.config.proxy import ProxyConfig
@@ -58,6 +59,10 @@ def detector(monkeypatch):
     monkeypatch.setattr(plugin, "check_openai", remote)
     monkeypatch.setattr(plugin, "judge_image", vision)
     monkeypatch.setattr(plugin, "prepare_vision_image", lambda data: PREPARED)
+    cached = AsyncMock(return_value=None)
+    store = AsyncMock()
+    monkeypatch.setattr(plugin, "cached_result", cached)
+    monkeypatch.setattr(plugin, "store_result", store)
     state = SimpleNamespace(
         snapshot=AppConfigSnapshot(
             command_aliases=normalize_command_aliases({}),
@@ -89,6 +94,9 @@ def detector(monkeypatch):
         local=local,
         remote=remote,
         vision=vision,
+        cached=cached,
+        store=store,
+        state=state,
         configure=configure,
     )
 
@@ -334,6 +342,49 @@ async def test_native_failure_releases_lock_and_returns_safe_message(detector):
     assert not plugin._detection_lock.locked()
     assert "sensitive" not in str(reply)
     assert reply[0] == MessageSegment.reply(1)
+
+
+async def test_cached_reply_skips_every_check_and_says_so(detector):
+    detector.configure(ai_image_vision_providers=(_provider("视觉"),))
+    detector.cached.return_value = ("图片 AI 检测\n结论：管理员复核为 AI 生成。", True)
+    text = (await _detect(detector)).extract_plain_text()
+    detector.cached.assert_awaited_once_with(
+        hashlib.sha256(b"original-image").hexdigest(),
+        detection_fingerprint(detector.state.snapshot),
+    )
+    detector.local.assert_not_called()
+    detector.remote.assert_not_awaited()
+    detector.vision.assert_not_awaited()
+    detector.store.assert_not_awaited()
+    assert text.startswith("图片 AI 检测\n结论：管理员复核为 AI 生成。\n")
+    assert "管理员复核后的结果" in text
+
+
+async def test_only_complete_results_are_cached(detector):
+    detector.configure(ai_image_vision_providers=(_provider("视觉"),))
+    report = (await _detect(detector)).extract_plain_text()
+    detector.store.assert_awaited_once_with(
+        hashlib.sha256(b"original-image").hexdigest(),
+        b"original-image",
+        "image/png",
+        report,
+        detection_fingerprint(detector.state.snapshot),
+    )
+    detector.store.reset_mock()
+    detector.vision.side_effect = VisionAPIError("请求受限，请稍后重试。")
+    await _detect(detector)
+    detector.vision.side_effect = None
+    detector.remote.side_effect = ImageDetectionError("请求受限")
+    await _detect(detector)
+    detector.store.assert_not_awaited()
+
+
+async def test_cache_failures_never_block_detection(detector):
+    detector.cached.side_effect = RuntimeError("database is locked")
+    detector.store.side_effect = RuntimeError("database is locked")
+    text = (await _detect(detector)).extract_plain_text()
+    assert "SynthID（OpenAI）：检出水印" in text
+    detector.store.assert_awaited_once()
 
 
 async def test_get_image_url_fallback_never_reads_local_file(detector):

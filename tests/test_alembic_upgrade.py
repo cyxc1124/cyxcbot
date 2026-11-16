@@ -67,12 +67,14 @@ def test_sqlite_upgrades_from_empty_to_head(tmp_path: Path) -> None:
             live_cols = {
                 col["name"] for col in inspector.get_columns("shared_db_livetarget")
             }
+            tables = set(inspector.get_table_names())
     finally:
         engine.dispose()
 
     assert version == head
     assert "at_all" in dynamic_cols
     assert "at_all" in live_cols
+    assert "shared_db_aiimagecache" in tables
 
 
 def _settings_after_proxy_migration(tmp_path: Path, rows: dict[str, str]) -> dict:

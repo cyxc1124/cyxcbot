@@ -34,10 +34,10 @@ describe('navigation destinations', () => {
     expect(navigationSections.find((section) => section.section === '游戏')?.groups.flatMap((group) => group.items)).toHaveLength(7)
   })
 
-  it('gives AI image detection its own section with sources, vision models and command', () => {
+  it('gives AI image detection its own section with sources, vision models, command and cache', () => {
     const section = navigationSections.find((entry) => entry.section === 'AI 图片检测')!
     expect(section.groups.flatMap((group) => group.items.map((item) => item.to))).toEqual([
-      '/ai-image/sources', '/ai-image/vision', '/ai-image/command',
+      '/ai-image/sources', '/ai-image/vision', '/ai-image/command', '/ai-image/cache',
     ])
     expect(findNavigation('/ai-image/vision')).toMatchObject({ section: 'AI 图片检测', item: { label: '视觉模型' } })
     const system = navigationSections.find((entry) => entry.section === '系统')!.groups.flatMap((group) => group.items)

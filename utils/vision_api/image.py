@@ -22,6 +22,24 @@ def _encode(data: bytes, media_type: str) -> VisionImage:
     return VisionImage(media_type, base64.b64encode(data).decode("ascii"))
 
 
+def _first_frame(image: Image.Image, edge: int) -> Image.Image:
+    image.seek(0)
+    # 先缩小再转 RGBA，避免 2500 万像素原图整张展开成 RGBA。
+    frame = image if image.mode in _RESIZABLE_MODES else image.convert("RGBA")
+    frame.thumbnail((edge, edge))
+    return frame.convert("RGBA")
+
+
+def _jpeg(frame: Image.Image, edge: int, quality: int) -> bytes:
+    resized = frame.copy()
+    resized.thumbnail((edge, edge))
+    canvas = Image.new("RGB", resized.size, (255, 255, 255))
+    canvas.paste(resized, mask=resized.getchannel("A"))
+    buffer = BytesIO()
+    canvas.save(buffer, format="JPEG", quality=quality)
+    return buffer.getvalue()
+
+
 def prepare_vision_image(data: bytes) -> VisionImage:
     """Send small PNG/JPEG/WebP as-is; otherwise the first frame as bounded JPEG."""
     try:
@@ -34,20 +52,11 @@ def prepare_vision_image(data: bytes) -> VisionImage:
                 and len(data) <= MAX_DIRECT_BYTES
             ):
                 return _encode(data, media_type)
-            image.seek(0)
-            # 先缩小再转 RGBA，避免 2500 万像素原图整张展开成 RGBA。
-            frame = image if image.mode in _RESIZABLE_MODES else image.convert("RGBA")
-            frame.thumbnail((MAX_EDGE, MAX_EDGE))
-            frame = frame.convert("RGBA")
+            frame = _first_frame(image, MAX_EDGE)
         for edge, quality in _RESIZE_STEPS:
-            resized = frame.copy()
-            resized.thumbnail((edge, edge))
-            canvas = Image.new("RGB", resized.size, (255, 255, 255))
-            canvas.paste(resized, mask=resized.getchannel("A"))
-            buffer = BytesIO()
-            canvas.save(buffer, format="JPEG", quality=quality)
-            if buffer.tell() <= MAX_DIRECT_BYTES:
-                return _encode(buffer.getvalue(), "image/jpeg")
+            encoded = _jpeg(frame, edge, quality)
+            if len(encoded) <= MAX_DIRECT_BYTES:
+                return _encode(encoded, "image/jpeg")
     except (
         UnidentifiedImageError,
         OSError,
@@ -56,6 +65,13 @@ def prepare_vision_image(data: bytes) -> VisionImage:
     ):
         pass
     raise VisionAPIError("图片无法转换为视觉模型可读取的格式。")
+
+
+def preview_jpeg(data: bytes, edge: int, quality: int) -> bytes:
+    """Small first-frame JPEG for showing a checked image; PIL errors propagate."""
+    with Image.open(BytesIO(data)) as image:
+        frame = _first_frame(image, edge)
+    return _jpeg(frame, edge, quality)
 
 
 @cache

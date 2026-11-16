@@ -82,6 +82,7 @@ export const navigationSections: NavigationSection[] = [
       { to: '/ai-image/sources', label: '检测来源', title: '图片检测来源', icon: 'settings', description: '本地 C2PA、OpenAI C2PA 与 SynthID（OpenAI）开关及 OpenAI 密钥' },
       { to: '/ai-image/vision', label: '视觉模型', title: '视觉模型共同识别', icon: 'eye', description: '接入多个 OpenAI / Anthropic 兼容的视觉模型，与来源检测一起给出参考判断' },
       { to: '/ai-image/command', label: '触发命令', title: '图片检测触发命令', icon: 'command', description: '自定义触发词与命令开关' },
+      { to: '/ai-image/cache', label: '检测缓存', title: '图片检测缓存', icon: 'photo', description: '同一图片再次询问时直接复用结果；查看检测过的图片与回复，修改或删除' },
     ] }],
   },
   { section: '运行日志', icon: 'document', groups: [{ items: [{ to: '/logs', label: '运行日志', icon: 'document' }] }] },

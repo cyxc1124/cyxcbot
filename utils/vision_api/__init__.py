@@ -16,7 +16,7 @@ from .client import (
     list_models,
     parse_verdict,
 )
-from .image import prepare_vision_image, sample_image
+from .image import prepare_vision_image, preview_jpeg, sample_image
 
 __all__ = [
     "Balance",
@@ -31,6 +31,7 @@ __all__ = [
     "list_models",
     "parse_verdict",
     "prepare_vision_image",
+    "preview_jpeg",
     "query_balance",
     "sample_image",
 ]

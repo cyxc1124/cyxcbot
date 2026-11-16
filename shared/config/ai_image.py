@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 import unicodedata
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from nonebot.log import logger
 
 from shared.security.crypto import decrypt_value, encrypt_value
+
+if TYPE_CHECKING:
+    from shared.config.types import AppConfigSnapshot
 
 VISION_PROVIDERS_KEY = "ai_image_vision_providers"
 VISION_API_TYPES = ("openai", "anthropic")
@@ -23,6 +28,8 @@ MAX_PROVIDER_NAME_LENGTH = 32
 MAX_MODEL_LENGTH = 128
 MAX_BASE_URL_LENGTH = 256
 MAX_API_KEY_LENGTH = 512
+# 回复格式变化时递增，让已缓存的旧格式结果重新检测。
+REPORT_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -316,3 +323,21 @@ def probe_provider(
         api_key=key,
         api_key_set=bool(key),
     )
+
+
+def detection_fingerprint(snapshot: AppConfigSnapshot) -> str:
+    """Hash of everything that shapes a detection reply; cached replies must match it."""
+    setup = {
+        "version": REPORT_VERSION,
+        "local_c2pa": snapshot.ai_image_local_c2pa_enabled,
+        "openai_c2pa": snapshot.ai_image_openai_c2pa_enabled,
+        "openai_synthid": snapshot.ai_image_openai_synthid_enabled,
+        "openai_key": bool(snapshot.ai_image_openai_api_key),
+        "vision": [
+            [provider.name, provider.api_type, provider.endpoint, provider.model]
+            for provider in snapshot.ai_image_vision_providers
+            if provider.enabled
+        ],
+    }
+    encoded = json.dumps(setup, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

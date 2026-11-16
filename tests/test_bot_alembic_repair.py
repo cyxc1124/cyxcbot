@@ -434,6 +434,19 @@ def test_infer_revision_detects_official_qq_session() -> None:
     engine.dispose()
 
 
+def test_infer_revision_detects_ai_image_cache() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE shared_db_aiimagecache ("
+                "id INTEGER PRIMARY KEY, sha256 VARCHAR(64) NOT NULL UNIQUE)"
+            )
+        )
+    assert infer_alembic_revision(_InspectorProbe(inspect(engine))) == "d0e1f2g3h4i5"
+    engine.dispose()
+
+
 def test_live_pending_migration_and_revision_repair():
     import runpy
 

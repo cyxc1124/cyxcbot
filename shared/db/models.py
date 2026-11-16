@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -605,3 +606,30 @@ class GroupSpecialTitleUsage(Model):
     user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     usage_date: Mapped[str] = mapped_column(String(10), primary_key=True)
     count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class AiImageCache(Model):
+    """AI 图片检测结果缓存：按图片原始字节的 SHA-256 复用结果，管理员可修改或删除。"""
+
+    __tablename__ = "shared_db_aiimagecache"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sha256: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    media_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 缩小后的 JPEG，只用于管理面板查看，不保存原图。
+    preview: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    result: Mapped[str] = mapped_column(Text, nullable=False)
+    # 产生结果时的检测配置；配置变化后未修改的结果会重新检测。
+    config_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    hit_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    used_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    # 管理员修改结果的时间；修改过的结果始终沿用，也不会被自动清理。
+    edited_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

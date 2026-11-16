@@ -1,6 +1,7 @@
 """Reply to a quoted image with a configurable trigger to inspect its provenance."""
 
 import asyncio
+import hashlib
 
 import aiohttp
 from nonebot import on_message
@@ -11,7 +12,7 @@ from nonebot.rule import Rule
 
 from shared.adapter.inbound import is_group_event, is_tome, plaintext_of
 from shared.adapter.outbound import send_event_message
-from shared.config.ai_image import VisionProviderRecord
+from shared.config.ai_image import VisionProviderRecord, detection_fingerprint
 from shared.config.command_aliases import (
     CommandAliasEntry,
     command_aliases_for_event,
@@ -28,6 +29,7 @@ from utils.vision_api import (
 )
 
 from .c2pa_check import inspect_c2pa
+from .cache import cached_result, store_result
 from .image import ImageDetectionError, download_image, image_media_type
 from .openai_check import check_openai
 from .report import VisionResult, build_report
@@ -42,6 +44,10 @@ __plugin_meta__ = PluginMetadata(
 
 COMMAND_ID = "ai_image_detect"
 _detection_lock = asyncio.Lock()
+_CACHED_NOTES = {
+    False: "（同一图片此前已检测过，本次直接返回保存的结果。）",
+    True: "（同一图片此前已检测过，本次返回管理员复核后的结果。）",
+}
 
 
 async def is_ai_image_command(bot: Bot, event: MessageEvent) -> bool:
@@ -130,6 +136,27 @@ async def _vision_outcomes(
     )
 
 
+async def _cached_reply(digest: str, fingerprint: str) -> str | None:
+    try:
+        cached = await cached_result(digest, fingerprint)
+    except Exception:
+        logger.opt(exception=True).warning("读取 AI 图片检测缓存失败，本次重新检测")
+        return None
+    if cached is None:
+        return None
+    result, edited = cached
+    return f"{result}\n{_CACHED_NOTES[edited]}"
+
+
+async def _remember(
+    digest: str, data: bytes, media_type: str, report: str, fingerprint: str
+) -> None:
+    try:
+        await store_result(digest, data, media_type, report, fingerprint)
+    except Exception:
+        logger.opt(exception=True).warning("保存 AI 图片检测缓存失败")
+
+
 async def detect_quoted_image(bot: Bot, event: MessageEvent) -> str:
     snapshot = get_config_service().get_snapshot()
     openai_kinds = frozenset(
@@ -166,6 +193,11 @@ async def detect_quoted_image(bot: Bot, event: MessageEvent) -> str:
         return "引用的图片没有可下载地址，请重新发送原图。"
     data = await download_image(url)
     media_type = await asyncio.to_thread(image_media_type, data)
+    digest = hashlib.sha256(data).hexdigest()
+    fingerprint = detection_fingerprint(snapshot)
+    cached = await _cached_reply(digest, fingerprint)
+    if cached is not None:
+        return cached
     local = (
         await asyncio.to_thread(inspect_c2pa, data)
         if snapshot.ai_image_local_c2pa_enabled
@@ -175,9 +207,13 @@ async def detect_quoted_image(bot: Bot, event: MessageEvent) -> str:
         _openai_outcome(data, media_type, snapshot, openai_kinds),
         _vision_outcomes(data, providers, snapshot),
     )
-    return build_report(
+    report = build_report(
         local, remote, remote_error, openai_kinds=openai_kinds, vision=vision
     )
+    # 只缓存完整结果，超时、限流等临时失败下次重新检测。
+    if not remote_error and all(result.verdict for result in vision):
+        await _remember(digest, data, media_type, report, fingerprint)
+    return report
 
 
 @ai_image_command.handle()

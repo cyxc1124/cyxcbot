@@ -17,6 +17,7 @@ import { SettingsLayout } from './pages/settings/SettingsLayout'
 import { SettingsAccountPage } from './pages/settings/SettingsAccount'
 import { SettingsBotPage } from './pages/settings/SettingsBot'
 import { SettingsAdvancedPage } from './pages/settings/SettingsAdvanced'
+import { SettingsAiImageCachePage } from './pages/settings/SettingsAiImageCache'
 import { SettingsAiImageCommandPage } from './pages/settings/SettingsAiImageCommand'
 import { SettingsAiImageSourcesPage } from './pages/settings/SettingsAiImageSources'
 import { SettingsAiImageVisionPage } from './pages/settings/SettingsAiImageVision'
@@ -74,6 +75,7 @@ export default function App() {
                   <Route path="ai-image/sources" element={<SettingsAiImageSourcesPage />} />
                   <Route path="ai-image/vision" element={<SettingsAiImageVisionPage />} />
                   <Route path="ai-image/command" element={<SettingsAiImageCommandPage />} />
+                  <Route path="ai-image/cache" element={<SettingsAiImageCachePage />} />
                   <Route path="system/connections" element={<SettingsOfficialQQPage />} />
                   <Route path="system/permissions" element={<SettingsBotPage />} />
                   <Route path="system/commands" element={<SettingsCommandsPage />} />

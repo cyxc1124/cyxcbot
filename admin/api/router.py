@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from admin.api.v1 import (
     about,
     ai_image,
+    ai_image_cache,
     auth,
     bilibili,
     connections,
@@ -35,6 +36,7 @@ api_router.include_router(auth.router)
 api_router.include_router(about.router)
 api_router.include_router(settings.router)
 api_router.include_router(ai_image.router)
+api_router.include_router(ai_image_cache.router)
 api_router.include_router(proxies.router)
 api_router.include_router(bilibili.router)
 api_router.include_router(douyin.router)

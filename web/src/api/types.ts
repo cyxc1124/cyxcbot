@@ -165,6 +165,30 @@ export interface VisionBalanceResult {
   balances: { currency: string; total: string; items: { label: string; amount: string }[] }[]
 }
 
+/** AI 图片检测缓存中的一条记录；预览图另行读取 */
+export interface AiImageCacheEntry {
+  id: number
+  sha256: string
+  media_type: string
+  size_bytes: number
+  has_preview: boolean
+  result: string
+  edited: boolean
+  /** 未修改且检测配置已变化：下次询问会重新检测 */
+  stale: boolean
+  hit_count: number
+  created_at: string
+  used_at: string
+  edited_at: string | null
+}
+
+export interface AiImageCachePage {
+  items: AiImageCacheEntry[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export type LogLevel = 'TRACE' | 'DEBUG' | 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' | 'CRITICAL'
 
 export interface Settings {
