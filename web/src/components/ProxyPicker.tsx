@@ -13,9 +13,11 @@ export function ProxyPicker({ id, value, proxies, disabled, onChange }: {
   const missing = value !== '' && !proxies.some((proxy) => proxy.id === value)
   return (
     <div className="space-y-2">
-      <select id={id} className="input" value={missing ? '' : value} disabled={disabled}
+      <select id={id} className="input" value={value} disabled={disabled}
         onChange={(event) => onChange(event.target.value)}>
         <option value="">不使用代理（直接连接）</option>
+        {/* 保留失效的选择作为当前值：否则「不使用代理」已被选中，再选它不会触发 change。 */}
+        {missing && <option value={value} disabled>已删除的代理（当前直接连接）</option>}
         {proxies.map((proxy) => (
           <option key={proxy.id} value={proxy.id}>{proxy.name}（{proxyAddress(proxy)}）</option>
         ))}

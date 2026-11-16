@@ -68,4 +68,12 @@ describe('proxy picker guidance', () => {
     )
     expect(deleted).toContain('之前选择的代理已被删除，当前直接连接')
   })
+
+  it('keeps a deleted choice selected so choosing direct connection is a real change', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter><ProxyPicker id="p" value="gone" proxies={[]} disabled={false} onChange={vi.fn()} /></MemoryRouter>,
+    )
+    expect(html).toContain('<option value="gone" disabled="" selected="">已删除的代理（当前直接连接）</option>')
+    expect(html).toContain('<option value="">不使用代理（直接连接）</option>')
+  })
 })

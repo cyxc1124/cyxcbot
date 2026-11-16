@@ -18,7 +18,7 @@ ANTHROPIC_VERSION = "2023-06-01"
 VERDICTS = ("ai", "not_ai", "uncertain")
 _MAX_MODEL_PAGES = 5
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.S | re.I)
-_JSON_OBJECT = re.compile(r"\{[^{}]*\}")
+_JSON_DECODER = json.JSONDecoder()
 _STATUS_MESSAGES = {
     400: "请求被拒绝，请确认模型名称正确且支持图片输入。",
     401: "API Key 无效，请管理员检查配置。",
@@ -154,9 +154,11 @@ async def request_json(
 
 def parse_verdict(text: str) -> tuple[str, int | None, str]:
     cleaned = _THINK_BLOCK.sub("", text)
-    for candidate in reversed(_JSON_OBJECT.findall(cleaned)):
+    # 从最后一个 { 往前逐个尝试，理由里的花括号不会打断解析。
+    starts = [index for index, char in enumerate(cleaned) if char == "{"]
+    for start in reversed(starts):
         try:
-            data = json.loads(candidate)
+            data, _ = _JSON_DECODER.raw_decode(cleaned, start)
         except ValueError:
             continue
         verdict = data.get("verdict") if isinstance(data, dict) else None
@@ -169,6 +171,9 @@ def parse_verdict(text: str) -> tuple[str, int | None, str]:
             or not 0 <= confidence <= 100
         ):
             confidence = None
+        elif isinstance(confidence, float) and confidence <= 1:
+            # 部分模型按 0–1 的概率作答。
+            confidence *= 100
         reason = " ".join(str(data.get("reason") or "").split())[:80]
         return (
             verdict.strip().lower(),

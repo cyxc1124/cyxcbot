@@ -209,6 +209,19 @@ def test_parse_verdict_skips_reasoning_and_keeps_raw_text_for_admins():
     assert error.value.detail == "我认为这是 AI 生成的"
 
 
+def test_parse_verdict_reads_probabilities_and_braces_in_reasons():
+    assert parse_verdict(
+        '{"verdict": "ai", "confidence": 0.92, "reason": "背景{重复}纹理"}'
+    ) == ("ai", 92, "背景{重复}纹理")
+    assert parse_verdict('{"result": {"verdict": "uncertain", "confidence": 1.0}}') == (
+        "uncertain",
+        100,
+        "",
+    )
+    # 整数仍按百分数理解。
+    assert parse_verdict('{"verdict": "not_ai", "confidence": 1}')[1] == 1
+
+
 async def test_openai_model_list_reports_declared_image_input(monkeypatch):
     def handle(request):
         assert str(request.url) == "https://api.deepseek.com/models"
