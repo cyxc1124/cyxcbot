@@ -25,12 +25,7 @@ const savePartial = vi.fn()
 
 function renderPage() { stateIndex = 0; return SettingsAdvancedPage() }
 
-function submit() {
-  const form = elements(renderPage()).find((props) => props.onSubmit)!
-  ;(form.onSubmit as (event: unknown) => void)({ preventDefault: vi.fn() })
-}
-
-describe('AI image detection settings', () => {
+describe('advanced settings', () => {
   beforeEach(() => {
     state = []
     savePartial.mockReset()
@@ -44,27 +39,12 @@ describe('AI image detection settings', () => {
     } as unknown as ReturnType<typeof useSettingsForm>)
   })
 
-  it('explains image uploads and preserves the stored key when the field is blank', () => {
+  it('only saves the shared media directory and points AI detection to its own section', () => {
     const html = renderToStaticMarkup(<MemoryRouter>{renderPage()}</MemoryRouter>)
-    expect(html).toContain('原图还会上传 OpenAI')
-    expect(html).toContain('已配置，留空保留原密钥')
-    expect(html).toContain('type="password"')
-    submit()
+    expect(html).toContain('href="/ai-image/sources"')
+    expect(html).not.toContain('type="password"')
+    const form = elements(renderPage()).find((props) => props.onSubmit)!
+    ;(form.onSubmit as (event: unknown) => void)({ preventDefault: vi.fn() })
     expect(savePartial).toHaveBeenCalledWith({ link_parser_shared_media_dir: '/media' })
-  })
-
-  it('only sends a replacement key after it is entered', () => {
-    const input = elements(renderPage()).find((props) => props.id === 'ai_image_openai_api_key')!
-    ;(input.onChange as (event: unknown) => void)({ target: { value: '  sk-test-only  ' } })
-    submit()
-    expect(savePartial).toHaveBeenCalledWith({
-      link_parser_shared_media_dir: '/media', ai_image_openai_api_key: 'sk-test-only',
-    })
-  })
-
-  it('clears the key explicitly without changing another setting', () => {
-    const button = elements(renderPage()).find((props) => props.type === 'button')!
-    ;(button.onClick as () => void)()
-    expect(savePartial).toHaveBeenCalledWith({ ai_image_openai_api_key: '' })
   })
 })

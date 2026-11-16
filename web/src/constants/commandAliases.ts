@@ -18,7 +18,9 @@ export type RustPlayerCommandId =
   | 'rust_player_shop_list'
   | 'rust_player_shop_redeem'
 
-export type CommandId = CoreCommandId | RustPlayerCommandId
+export type AiImageCommandId = 'ai_image_detect'
+
+export type CommandId = CoreCommandId | RustPlayerCommandId | AiImageCommandId
 
 export type CommandField = {
   id: CommandId
@@ -115,5 +117,15 @@ export const RUST_PLAYER_COMMAND_FIELDS: CommandField[] = [
     description: '消耗积分兑换游戏内物品（仅群聊，需已绑定 SteamID）。',
     defaultTriggers: ['兑换商品'],
     hint: '示例：@机器人 兑换商品 wood 5 或 @机器人 兑换商品 木头',
+  },
+]
+
+export const AI_IMAGE_COMMAND_FIELDS: CommandField[] = [
+  {
+    id: 'ai_image_detect',
+    label: 'AI 图片检测',
+    description: '引用一张图片发送触发词，检查来源信号并汇总视觉模型判断（仅 OneBot 群聊与私聊）。',
+    defaultTriggers: ['ai吗？', 'ai吗?', 'ai吗'],
+    hint: '匹配不区分英文大小写，例如 ai吗 / AI吗 / Ai吗 都会触发。',
   },
 ]

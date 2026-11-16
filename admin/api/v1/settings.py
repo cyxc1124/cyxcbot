@@ -26,6 +26,7 @@ from shared.config.command_aliases import (
 )
 from shared.config.command_conflicts import new_rcon_command_conflict
 from shared.config.message_templates import MESSAGE_TEMPLATE_KEYS
+from shared.config.proxies import FEATURE_PROXY_KEYS
 from shared.config.service import get_config_service
 from shared.security.crypto import encrypt_value
 
@@ -95,26 +96,25 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
                 status_code=400, detail="OpenAI API Key 不得含空白或非 ASCII 字符"
             )
         updates["ai_image_openai_api_key_encrypted"] = encrypt_value(key) if key else ""
-    if body.x_proxy_enabled is not None:
-        updates["x_proxy_enabled"] = str(body.x_proxy_enabled).lower()
-    if body.x_proxy_scheme is not None:
-        scheme = body.x_proxy_scheme.strip().lower()
-        if scheme not in ("http", "https", "socks5"):
+    for key in (
+        "ai_image_local_c2pa_enabled",
+        "ai_image_openai_c2pa_enabled",
+        "ai_image_openai_synthid_enabled",
+    ):
+        value = getattr(body, key)
+        if value is not None:
+            updates[key] = str(value).lower()
+    known_proxies = {proxy.id for proxy in svc.get_snapshot().proxies}
+    for key in FEATURE_PROXY_KEYS:
+        proxy_id = getattr(body, key)
+        if proxy_id is None:
+            continue
+        proxy_id = proxy_id.strip()
+        if proxy_id and proxy_id not in known_proxies:
             raise HTTPException(
-                status_code=400, detail="代理协议仅支持 http/https/socks5"
+                status_code=400, detail="所选代理不存在，请刷新页面后重新选择"
             )
-        updates["x_proxy_scheme"] = scheme
-    if body.x_proxy_host is not None:
-        updates["x_proxy_host"] = body.x_proxy_host.strip()
-    if body.x_proxy_port is not None:
-        updates["x_proxy_port"] = str(body.x_proxy_port)
-    if body.x_proxy_username is not None:
-        updates["x_proxy_username"] = body.x_proxy_username.strip()
-    if body.x_proxy_password is not None:
-        password = body.x_proxy_password
-        updates["x_proxy_password_encrypted"] = (
-            encrypt_value(password) if password else ""
-        )
+        updates[key] = proxy_id
     for key in ("status_check_allowed_qq", "nonebot_superusers"):
         values = getattr(body, key)
         if values is not None:

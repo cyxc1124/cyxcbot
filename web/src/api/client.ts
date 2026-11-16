@@ -46,6 +46,16 @@ import type {
   MonitorStatus,
   RecentLogsResponse,
   RuntimeLogEntry,
+  AiImageVisionProviderInput,
+  ProxiesResult,
+  ProxyInput,
+  ProxyTestRequest,
+  ProxyTestResult,
+  VisionBalanceResult,
+  VisionModelsResult,
+  VisionProbeRequest,
+  VisionProvidersResult,
+  VisionTestResult,
   XBearerStatus,
   XBearerTestResult,
   XMonitorStatus,
@@ -716,6 +726,58 @@ export const testXBearer = (username = 'X') =>
   request<XBearerTestResult>('/x/bearer/test', {
     method: 'POST',
     body: JSON.stringify({ username }),
+  })
+
+// 系统 → 网络代理（每个代理单独保存）
+export const createProxy = (data: ProxyInput) =>
+  request<ProxiesResult>('/proxies', { method: 'POST', body: JSON.stringify(data) })
+
+export const updateProxy = (id: string, data: Partial<ProxyInput>) =>
+  request<ProxiesResult>(`/proxies/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+
+export const deleteProxy = (id: string) =>
+  request<ProxiesResult>(`/proxies/${encodeURIComponent(id)}`, { method: 'DELETE' })
+
+export const testProxy = (data: ProxyTestRequest) =>
+  request<ProxyTestResult>('/proxies/test', { method: 'POST', body: JSON.stringify(data) })
+
+// AI image detection vision providers（每个供应商单独保存）
+export const createVisionProvider = (data: AiImageVisionProviderInput) =>
+  request<VisionProvidersResult>('/ai-image/vision/providers', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const updateVisionProvider = (id: string, data: Partial<AiImageVisionProviderInput>) =>
+  request<VisionProvidersResult>(`/ai-image/vision/providers/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+
+export const deleteVisionProvider = (id: string) =>
+  request<VisionProvidersResult>(`/ai-image/vision/providers/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+
+export const listVisionModels = (data: VisionProbeRequest) =>
+  request<VisionModelsResult>('/ai-image/vision/models', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const testVisionProvider = (data: VisionProbeRequest) =>
+  request<VisionTestResult>('/ai-image/vision/test', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const getVisionBalance = (data: VisionProbeRequest) =>
+  request<VisionBalanceResult>('/ai-image/vision/balance', {
+    method: 'POST',
+    body: JSON.stringify(data),
   })
 
 // Monitors

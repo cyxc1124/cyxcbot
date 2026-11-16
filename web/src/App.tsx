@@ -17,6 +17,9 @@ import { SettingsLayout } from './pages/settings/SettingsLayout'
 import { SettingsAccountPage } from './pages/settings/SettingsAccount'
 import { SettingsBotPage } from './pages/settings/SettingsBot'
 import { SettingsAdvancedPage } from './pages/settings/SettingsAdvanced'
+import { SettingsAiImageCommandPage } from './pages/settings/SettingsAiImageCommand'
+import { SettingsAiImageSourcesPage } from './pages/settings/SettingsAiImageSources'
+import { SettingsAiImageVisionPage } from './pages/settings/SettingsAiImageVision'
 import { SettingsCommandsPage } from './pages/settings/SettingsCommands'
 import { SettingsDouyinAccountPage } from './pages/settings/SettingsDouyinAccount'
 import {
@@ -24,6 +27,7 @@ import {
   SettingsXMonitorPage,
 } from './pages/settings/SettingsMonitor'
 import { SettingsOfficialQQPage } from './pages/settings/SettingsOfficialQQ'
+import { SettingsProxiesPage } from './pages/settings/SettingsProxies'
 import { SettingsXAccountPage } from './pages/settings/SettingsXAccount'
 import { XMonitorPage } from './pages/XMonitor'
 import { RustRconPage } from './pages/RustRcon'
@@ -67,9 +71,13 @@ export default function App() {
                   <Route path="bilibili/account" element={<SettingsAccountPage />} />
                   <Route path="douyin/account" element={<SettingsDouyinAccountPage />} />
                   <Route path="x/account" element={<SettingsXAccountPage />} />
+                  <Route path="ai-image/sources" element={<SettingsAiImageSourcesPage />} />
+                  <Route path="ai-image/vision" element={<SettingsAiImageVisionPage />} />
+                  <Route path="ai-image/command" element={<SettingsAiImageCommandPage />} />
                   <Route path="system/connections" element={<SettingsOfficialQQPage />} />
                   <Route path="system/permissions" element={<SettingsBotPage />} />
                   <Route path="system/commands" element={<SettingsCommandsPage />} />
+                  <Route path="system/proxies" element={<SettingsProxiesPage />} />
                   <Route path="system/advanced" element={<SettingsAdvancedPage />} />
                 </Route>
                 <Route path="logs" element={<LogsPage />} />

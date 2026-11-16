@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from admin.api.v1 import (
     about,
+    ai_image,
     auth,
     bilibili,
     connections,
@@ -14,6 +15,7 @@ from admin.api.v1 import (
     logs,
     monitors,
     private,
+    proxies,
     rust_players,
     rust_rcon,
     rust_rcon_custom,
@@ -32,6 +34,8 @@ api_router.include_router(setup.router)
 api_router.include_router(auth.router)
 api_router.include_router(about.router)
 api_router.include_router(settings.router)
+api_router.include_router(ai_image.router)
+api_router.include_router(proxies.router)
 api_router.include_router(bilibili.router)
 api_router.include_router(douyin.router)
 api_router.include_router(x.router)

@@ -37,7 +37,7 @@ export const navigationSections: NavigationSection[] = [
       { to: '/x/parser', label: '链接解析', icon: 'globe' },
       { to: '/x/templates', label: '消息模板', icon: 'messages' },
       { to: '/x/settings', label: '订阅参数', icon: 'settings', description: '推文检查间隔与分散检查' },
-      { to: '/x/account', label: '账号与代理', icon: 'user', description: 'Bearer Token 与出站代理' },
+      { to: '/x/account', label: '账号与代理', icon: 'user', description: 'Bearer Token 与 X 选用的出站代理' },
     ] }],
   },
   {
@@ -75,6 +75,15 @@ export const navigationSections: NavigationSection[] = [
       ] },
     ],
   },
+  {
+    section: 'AI 图片检测',
+    icon: 'photo',
+    groups: [{ items: [
+      { to: '/ai-image/sources', label: '检测来源', title: '图片检测来源', icon: 'settings', description: '本地 C2PA、OpenAI C2PA 与 SynthID（OpenAI）开关及 OpenAI 密钥' },
+      { to: '/ai-image/vision', label: '视觉模型', title: '视觉模型共同识别', icon: 'eye', description: '接入多个 OpenAI / Anthropic 兼容的视觉模型，与来源检测一起给出参考判断' },
+      { to: '/ai-image/command', label: '触发命令', title: '图片检测触发命令', icon: 'command', description: '自定义触发词与命令开关' },
+    ] }],
+  },
   { section: '运行日志', icon: 'document', groups: [{ items: [{ to: '/logs', label: '运行日志', icon: 'document' }] }] },
   {
     section: '系统',
@@ -83,7 +92,8 @@ export const navigationSections: NavigationSection[] = [
       { to: '/system/connections', label: '机器人接入', icon: 'settings', description: '官方 QQ Bot 凭证、接入方式与 OneBot 连接说明' },
       { to: '/system/permissions', label: '权限', title: '权限管理', icon: 'settings', description: '配置超级用户与状态查询的额外授权' },
       { to: '/system/commands', label: '命令', icon: 'command', description: '通用命令触发词、开关与习惯性前缀' },
-      { to: '/system/advanced', label: '高级配置', icon: 'settings', description: 'AI 图片检测与链接解析共享媒体目录' },
+      { to: '/system/proxies', label: '网络代理', icon: 'globe', description: '添加多个出站代理，供 X、AI 图片检测等功能分别选用' },
+      { to: '/system/advanced', label: '高级配置', icon: 'settings', description: '链接解析共享媒体目录' },
       { to: '/about', label: '关于', icon: 'info' },
     ] }],
   },

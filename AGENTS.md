@@ -151,6 +151,8 @@ gh release edit vX.Y.Z --notes-file /tmp/release.md
 | Web API | `admin/api/v1/` |
 | B 站 HTTP 封装 | `utils/bilibili_api/` |
 | X HTTP 封装 | `utils/x_api/` |
+| 视觉模型 HTTP 封装（AI 图片检测） | `utils/vision_api/` |
+| 出站代理（多代理存储与校验、各功能按 id 选用） | `shared/config/proxies.py`；管理接口 `admin/api/v1/proxies.py` |
 | 截图 | `utils/screenshot/` |
 | 前端页面 | `web/src/pages/` |
 | Helm（仓内） | `deploy/helm/` |

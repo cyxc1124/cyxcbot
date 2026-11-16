@@ -31,11 +31,12 @@ class OfficialQQSettingsResponse(BaseModel):
     use_websocket: bool = False
 
 
-class XProxySettingsResponse(BaseModel):
-    enabled: bool = False
-    scheme: str = "http"
-    host: str = ""
-    port: int = 7890
+class ProxyResponse(BaseModel):
+    id: str
+    name: str
+    scheme: Literal["http", "https", "socks5"]
+    host: str
+    port: int
     username: str = ""
     password_configured: bool = False
 
@@ -43,6 +44,17 @@ class XProxySettingsResponse(BaseModel):
 class CommandAliasEntryModel(BaseModel):
     enabled: bool = True
     triggers: list[str] = Field(default_factory=list)
+
+
+class AiImageVisionProviderResponse(BaseModel):
+    id: str
+    name: str
+    api_type: Literal["openai", "anthropic"]
+    base_url: str = ""
+    model: str
+    enabled: bool = True
+    proxy_id: str = ""
+    api_key_configured: bool = False
 
 
 class SettingsResponse(BaseModel):
@@ -97,7 +109,15 @@ class SettingsResponse(BaseModel):
     ai_image_openai_api_key: CookieStatusResponse = Field(
         default_factory=lambda: CookieStatusResponse(configured=False)
     )
-    x_proxy: XProxySettingsResponse
+    ai_image_local_c2pa_enabled: bool = True
+    ai_image_openai_c2pa_enabled: bool = True
+    ai_image_openai_synthid_enabled: bool = True
+    ai_image_vision_providers: list[AiImageVisionProviderResponse] = Field(
+        default_factory=list
+    )
+    proxies: list[ProxyResponse] = Field(default_factory=list)
+    x_proxy_id: str = ""
+    ai_image_openai_proxy_id: str = ""
     official_qq: OfficialQQSettingsResponse = Field(
         default_factory=lambda: OfficialQQSettingsResponse(
             secret=CookieStatusResponse(configured=False)
@@ -155,12 +175,12 @@ class SettingsUpdateRequest(BaseModel):
     ai_image_openai_api_key: Optional[str] = Field(
         default=None, max_length=512, repr=False
     )
-    x_proxy_enabled: Optional[bool] = None
-    x_proxy_scheme: Optional[str] = Field(default=None, max_length=16)
-    x_proxy_host: Optional[str] = Field(default=None, max_length=255)
-    x_proxy_port: Optional[int] = Field(default=None, ge=1, le=65535)
-    x_proxy_username: Optional[str] = Field(default=None, max_length=128)
-    x_proxy_password: Optional[str] = None
+    ai_image_local_c2pa_enabled: Optional[bool] = None
+    ai_image_openai_c2pa_enabled: Optional[bool] = None
+    ai_image_openai_synthid_enabled: Optional[bool] = None
+    # 选用「系统 → 网络代理」中的代理 id；空字符串表示直接连接。
+    x_proxy_id: Optional[str] = Field(default=None, max_length=32)
+    ai_image_openai_proxy_id: Optional[str] = Field(default=None, max_length=32)
     status_check_allowed_qq: Optional[list[str]] = None
     nonebot_superusers: Optional[list[str]] = None
     command_aliases: Optional[dict[str, CommandAliasEntryModel]] = None

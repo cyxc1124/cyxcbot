@@ -34,6 +34,22 @@ describe('navigation destinations', () => {
     expect(navigationSections.find((section) => section.section === '游戏')?.groups.flatMap((group) => group.items)).toHaveLength(7)
   })
 
+  it('gives AI image detection its own section with sources, vision models and command', () => {
+    const section = navigationSections.find((entry) => entry.section === 'AI 图片检测')!
+    expect(section.groups.flatMap((group) => group.items.map((item) => item.to))).toEqual([
+      '/ai-image/sources', '/ai-image/vision', '/ai-image/command',
+    ])
+    expect(findNavigation('/ai-image/vision')).toMatchObject({ section: 'AI 图片检测', item: { label: '视觉模型' } })
+    const system = navigationSections.find((entry) => entry.section === '系统')!.groups.flatMap((group) => group.items)
+    expect(system.some((item) => item.to.startsWith('/ai-image'))).toBe(false)
+    expect(system.find((item) => item.to === '/system/advanced')?.description).not.toContain('AI')
+  })
+
+  it('keeps shared proxies under system instead of the X section', () => {
+    expect(findNavigation('/system/proxies')).toMatchObject({ section: '系统', item: { label: '网络代理' } })
+    expect(findNavigation('/x/account')?.item.description).toContain('选用')
+  })
+
   it('places runtime logs directly before system as a standalone destination', () => {
     const systemIndex = navigationSections.findIndex((section) => section.section === '系统')
     expect(navigationSections[systemIndex - 1]?.section).toBe('运行日志')

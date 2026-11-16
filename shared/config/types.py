@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List
 
 from shared.bilibili.accounts import BilibiliAccount
+from shared.config.ai_image import VisionProviderRecord
 from shared.config.command_aliases import DEFAULT_EXTRA_PREFIXES, CommandAliasEntry
 from shared.config.douyin_link_parser_policy import (
     DouyinLinkParserGroupPolicyRecord,
@@ -23,6 +24,7 @@ from shared.config.message_templates import (
     XLinkMessageTemplates,
     XMessageTemplates,
 )
+from shared.config.proxies import ProxyRecord, resolve_proxy
 from shared.config.proxy import ProxyConfig
 from shared.config.rust_rcon import RustRconBindingRecord
 from shared.config.rust_rcon_custom import RustRconCustomCommandRecord
@@ -149,9 +151,22 @@ class AppConfigSnapshot:
     x_api_bearer_set: bool = False
     ai_image_openai_api_key: str = field(default="", repr=False)
     ai_image_openai_api_key_set: bool = False
+    ai_image_local_c2pa_enabled: bool = True
+    ai_image_openai_c2pa_enabled: bool = True
+    ai_image_openai_synthid_enabled: bool = True
+    ai_image_vision_providers: tuple[VisionProviderRecord, ...] = ()
+    proxies: tuple[ProxyRecord, ...] = ()
+    # 各功能选用的代理 id（空=直接连接），x_proxy 等为按 id 解析后的结果。
+    x_proxy_id: str = ""
     x_proxy: ProxyConfig = field(default_factory=ProxyConfig)
+    ai_image_openai_proxy_id: str = ""
+    ai_image_openai_proxy: ProxyConfig = field(default_factory=ProxyConfig)
     official_qq_app_id: str = ""
     official_qq_app_secret: str = ""
     official_qq_app_secret_set: bool = False
     official_qq_is_sandbox: bool = False
     official_qq_use_websocket: bool = False
+
+    def proxy(self, proxy_id: str) -> ProxyConfig:
+        """Resolve a proxy id chosen by a feature; empty or unknown ids connect directly."""
+        return resolve_proxy(self.proxies, proxy_id)
