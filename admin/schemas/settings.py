@@ -6,6 +6,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from shared.config.ai_image import CACHE_MAX_ENTRIES_DEFAULT, CACHE_MAX_ENTRIES_LIMIT
 from shared.config.message_templates import (
     DOUYIN_LINK_TEMPLATE_KEYS,
     DYNAMIC_TEMPLATE_KEYS,
@@ -112,6 +113,8 @@ class SettingsResponse(BaseModel):
     ai_image_local_c2pa_enabled: bool = True
     ai_image_openai_c2pa_enabled: bool = True
     ai_image_openai_synthid_enabled: bool = True
+    ai_image_cache_enabled: bool = True
+    ai_image_cache_max_entries: int = CACHE_MAX_ENTRIES_DEFAULT
     ai_image_vision_providers: list[AiImageVisionProviderResponse] = Field(
         default_factory=list
     )
@@ -178,6 +181,10 @@ class SettingsUpdateRequest(BaseModel):
     ai_image_local_c2pa_enabled: Optional[bool] = None
     ai_image_openai_c2pa_enabled: Optional[bool] = None
     ai_image_openai_synthid_enabled: Optional[bool] = None
+    ai_image_cache_enabled: Optional[bool] = None
+    ai_image_cache_max_entries: Optional[int] = Field(
+        default=None, ge=1, le=CACHE_MAX_ENTRIES_LIMIT
+    )
     # 选用「系统 → 网络代理」中的代理 id；空字符串表示直接连接。
     x_proxy_id: Optional[str] = Field(default=None, max_length=32)
     ai_image_openai_proxy_id: Optional[str] = Field(default=None, max_length=32)

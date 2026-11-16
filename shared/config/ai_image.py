@@ -30,6 +30,9 @@ MAX_BASE_URL_LENGTH = 256
 MAX_API_KEY_LENGTH = 512
 # 回复格式变化时递增，让已缓存的旧格式结果重新检测。
 REPORT_VERSION = 1
+# 检测缓存最多保留的未修改记录条数（Web Admin 可改）。
+CACHE_MAX_ENTRIES_DEFAULT = 500
+CACHE_MAX_ENTRIES_LIMIT = 10000
 
 
 @dataclass(frozen=True)

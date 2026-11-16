@@ -38,9 +38,20 @@ def stored(db_context, monkeypatch):
         lambda: SimpleNamespace(get_snapshot=lambda: snapshot),
     )
 
-    async def save(digest: str, result: str, fingerprint: str = CURRENT, data=None):
+    async def save(
+        digest: str,
+        result: str,
+        fingerprint: str = CURRENT,
+        data=None,
+        max_entries: int = 500,
+    ):
         await cache.store_result(
-            digest, _png() if data is None else data, "image/png", result, fingerprint
+            digest,
+            _png() if data is None else data,
+            "image/png",
+            result,
+            fingerprint,
+            max_entries,
         )
 
     return save
@@ -65,10 +76,9 @@ async def test_results_are_reused_until_the_detection_setup_changes(stored):
 
 
 @pytest.mark.asyncio
-async def test_admin_edits_win_and_are_never_pruned(stored, monkeypatch):
-    monkeypatch.setattr(cache, "MAX_UNEDITED_ENTRIES", 2)
+async def test_admin_edits_win_and_are_never_pruned(stored):
     for index in range(3):
-        await stored(f"{index:064x}", f"结论：{index}")
+        await stored(f"{index:064x}", f"结论：{index}", max_entries=2)
     entries = await _entries()
     assert [entry.result for entry in entries] == ["结论：2", "结论：1"]
 
@@ -82,15 +92,21 @@ async def test_admin_edits_win_and_are_never_pruned(stored, monkeypatch):
         False,
     )
     # 重新检测与配置变化都不覆盖管理员的修改。
-    await stored(target.sha256, "结论：新检测", "other-setup")
+    await stored(target.sha256, "结论：新检测", "other-setup", max_entries=2)
     assert await cache.cached_result(target.sha256, "other-setup") == (
         "结论：管理员复核\n已确认",
         True,
     )
     for index in range(3, 6):
-        await stored(f"{index:064x}", f"结论：{index}")
+        await stored(f"{index:064x}", f"结论：{index}", max_entries=2)
     assert sorted(entry.result for entry in await _entries()) == [
         "结论：4",
+        "结论：5",
+        "结论：管理员复核\n已确认",
+    ]
+    # 调低上限后立即生效，修改过的仍保留。
+    await cache.prune(1)
+    assert sorted(entry.result for entry in await _entries()) == [
         "结论：5",
         "结论：管理员复核\n已确认",
     ]

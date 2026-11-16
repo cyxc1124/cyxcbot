@@ -369,6 +369,7 @@ async def test_only_complete_results_are_cached(detector):
         "image/png",
         report,
         detection_fingerprint(detector.state.snapshot),
+        500,
     )
     detector.store.reset_mock()
     detector.vision.side_effect = VisionAPIError("请求受限，请稍后重试。")
@@ -377,6 +378,24 @@ async def test_only_complete_results_are_cached(detector):
     detector.remote.side_effect = ImageDetectionError("请求受限")
     await _detect(detector)
     detector.store.assert_not_awaited()
+
+
+async def test_disabled_cache_is_neither_read_nor_written(detector):
+    detector.configure(ai_image_cache_enabled=False)
+    text = (await _detect(detector)).extract_plain_text()
+    assert "SynthID（OpenAI）：检出水印" in text
+    detector.cached.assert_not_awaited()
+    detector.store.assert_not_awaited()
+
+
+async def test_lowered_cache_limit_applies_on_config_reload(detector, monkeypatch):
+    prune = AsyncMock()
+    monkeypatch.setattr(plugin, "prune", prune)
+    snapshot = replace(detector.state.snapshot, ai_image_cache_max_entries=7)
+    await plugin._apply_cache_limit(snapshot)
+    prune.assert_awaited_once_with(7)
+    prune.side_effect = RuntimeError("database is locked")
+    await plugin._apply_cache_limit(snapshot)
 
 
 async def test_cache_failures_never_block_detection(detector):

@@ -18,6 +18,7 @@ vi.mock('../../api/client', async (importOriginal) => ({
 }))
 vi.mock('../../hooks/useMountAsync', () => ({ useMountAsync: vi.fn() }))
 vi.mock('./AiImageCacheCard', () => ({ AiImageCacheCard: () => null }))
+vi.mock('./AiImageCacheSettingsCard', () => ({ AiImageCacheSettingsCard: () => null }))
 const showToast = vi.fn()
 vi.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ showToast }) }))
 
@@ -80,6 +81,14 @@ describe('AI image cache page', () => {
     cards[1]!.onSaved({ ...entry(2), result: '结论：已复核', edited: true })
     expect((state[DATA] as AiImageCachePage).items[1]!.result).toBe('结论：已复核')
     expect(renderToStaticMarkup(renderPage())).toContain('共 21 条')
+  })
+
+  it('reloads the list after the cache settings are saved', async () => {
+    vi.mocked(getAiImageCache).mockResolvedValue(pageOf([entry(1)], 1))
+    await load()
+    const settingsCard = elements(renderPage()).find((item) => typeof item.onSaved === 'function' && !item.entry)!
+    ;(settingsCard.onSaved as () => void)()
+    await vi.waitFor(() => expect(getAiImageCache).toHaveBeenCalledTimes(2))
   })
 
   it('steps back when the current page becomes empty', async () => {

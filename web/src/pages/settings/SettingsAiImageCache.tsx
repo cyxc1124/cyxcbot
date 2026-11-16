@@ -9,6 +9,7 @@ import { useToast } from '../../contexts/ToastContext'
 import { useMountAsync } from '../../hooks/useMountAsync'
 import { formatApiError } from '../../utils/apiError'
 import { AiImageCacheCard } from './AiImageCacheCard'
+import { AiImageCacheSettingsCard } from './AiImageCacheSettingsCard'
 
 const PAGE_SIZE = 20
 
@@ -72,9 +73,11 @@ export function SettingsAiImageCachePage() {
           并注明为管理员复核后的结果；删除一条记录后，下次询问会重新检测。
         </p>
         <p>
-          每条记录只保存一张最长边 512 像素的预览图，不保存原图。最多保留 500 条未修改的记录，超出时删除最久没有被询问的；修改过的记录不会被自动删除。
+          每条记录只保存一张最长边 512 像素的预览图，不保存原图。未修改的记录超过下方设置的上限时，删除最久没有被询问的；修改过的记录不会被自动删除。
         </p>
       </div>
+
+      <AiImageCacheSettingsCard onSaved={() => void load()} />
 
       {error && <LoadErrorBanner message={error} onRetry={() => void load()} />}
 

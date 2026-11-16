@@ -88,7 +88,7 @@ TLS 代理应保留浏览器原始 Host。若代理改写 Host，请设置启动
 | `/ai-image/sources` | AI 图片检测来源开关（本地 C2PA、OpenAI C2PA、SynthID）与 OpenAI 密钥（加密保存、只读配置状态） |
 | `/ai-image/vision` | 视觉模型供应商（OpenAI 兼容 / Anthropic，逐条加密密钥）：默认收起为一行摘要，点击展开编辑；每个模型单独保存、放弃修改或删除，标题栏开关立即启停；获取模型列表、测试响应、DeepSeek / Kimi 余额 |
 | `/ai-image/command` | AI 图片检测触发词与开关 |
-| `/ai-image/cache` | AI 图片检测缓存：预览图、回复与 SHA-256 列表，修改或删除结果、清空全部（预览图经会话请求取回后以 Blob 显示） |
+| `/ai-image/cache` | AI 图片检测缓存：缓存开关与保留上限（经设置接口保存），预览图、回复与 SHA-256 列表，修改或删除结果、清空全部（预览图经会话请求取回后以 Blob 显示） |
 | `/bilibili/parser`、`/x/parser`、`/douyin/parser` | 对应平台的群组 / 好友解析策略 |
 | `/rust/remote/servers`、`groups`、`friends`、`commands`、`custom` | Rust 远控与权限下的服务器、会话权限、命令 |
 | `/rust/players/accounts`、`/rust/players/shop` | Rust 玩家积分与绑定、积分商城 |

@@ -18,6 +18,8 @@ from shared.bilibili.accounts import (
     load_accounts,
 )
 from shared.config.ai_image import (
+    CACHE_MAX_ENTRIES_DEFAULT,
+    CACHE_MAX_ENTRIES_LIMIT,
     VISION_PROVIDERS_KEY,
     apply_vision_provider,
     drop_vision_provider,
@@ -155,6 +157,8 @@ SETTING_KEYS = {
     "ai_image_local_c2pa_enabled": ("true", bool),
     "ai_image_openai_c2pa_enabled": ("true", bool),
     "ai_image_openai_synthid_enabled": ("true", bool),
+    "ai_image_cache_enabled": ("true", bool),
+    "ai_image_cache_max_entries": (str(CACHE_MAX_ENTRIES_DEFAULT), int),
     VISION_PROVIDERS_KEY: ("[]", str),
     # 旧版 x_proxy_* 由迁移 c9d0e1f2g3h4 转为下列代理列表与选择，运行时不再读取。
     PROXIES_KEY: ("[]", str),
@@ -454,6 +458,10 @@ class ConfigService:
             ai_image_openai_synthid_enabled=settings.get(
                 "ai_image_openai_synthid_enabled", True
             ),
+            ai_image_cache_enabled=settings.get("ai_image_cache_enabled", True),
+            ai_image_cache_max_entries=settings.get(
+                "ai_image_cache_max_entries", CACHE_MAX_ENTRIES_DEFAULT
+            ),
             ai_image_vision_providers=vision_providers,
             proxies=proxies,
             x_proxy_id=settings.get(X_PROXY_KEY, ""),
@@ -659,6 +667,8 @@ class ConfigService:
                     result[key] = max(0, min(MAX_RUST_PLAYER_POINTS, parsed))
                 elif key == "rust_checkin_rcon_binding_id":
                     result[key] = max(0, parsed)
+                elif key == "ai_image_cache_max_entries":
+                    result[key] = max(1, min(CACHE_MAX_ENTRIES_LIMIT, parsed))
                 else:
                     result[key] = max(30, min(3600, parsed))
             elif typ is bool:
@@ -1329,6 +1339,8 @@ class ConfigService:
             "ai_image_local_c2pa_enabled": snap.ai_image_local_c2pa_enabled,
             "ai_image_openai_c2pa_enabled": snap.ai_image_openai_c2pa_enabled,
             "ai_image_openai_synthid_enabled": snap.ai_image_openai_synthid_enabled,
+            "ai_image_cache_enabled": snap.ai_image_cache_enabled,
+            "ai_image_cache_max_entries": snap.ai_image_cache_max_entries,
             "ai_image_vision_providers": vision_providers_for_api(
                 snap.ai_image_vision_providers
             ),

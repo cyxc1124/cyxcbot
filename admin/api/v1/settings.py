@@ -100,10 +100,13 @@ async def update_settings(body: SettingsUpdateRequest, _: AdminUser):
         "ai_image_local_c2pa_enabled",
         "ai_image_openai_c2pa_enabled",
         "ai_image_openai_synthid_enabled",
+        "ai_image_cache_enabled",
     ):
         value = getattr(body, key)
         if value is not None:
             updates[key] = str(value).lower()
+    if body.ai_image_cache_max_entries is not None:
+        updates["ai_image_cache_max_entries"] = str(body.ai_image_cache_max_entries)
     for key in FEATURE_PROXY_KEYS:
         proxy_id = getattr(body, key)
         if proxy_id is not None:

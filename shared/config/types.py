@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List
 
 from shared.bilibili.accounts import BilibiliAccount
-from shared.config.ai_image import VisionProviderRecord
+from shared.config.ai_image import CACHE_MAX_ENTRIES_DEFAULT, VisionProviderRecord
 from shared.config.command_aliases import DEFAULT_EXTRA_PREFIXES, CommandAliasEntry
 from shared.config.douyin_link_parser_policy import (
     DouyinLinkParserGroupPolicyRecord,
@@ -154,6 +154,8 @@ class AppConfigSnapshot:
     ai_image_local_c2pa_enabled: bool = True
     ai_image_openai_c2pa_enabled: bool = True
     ai_image_openai_synthid_enabled: bool = True
+    ai_image_cache_enabled: bool = True
+    ai_image_cache_max_entries: int = CACHE_MAX_ENTRIES_DEFAULT
     ai_image_vision_providers: tuple[VisionProviderRecord, ...] = ()
     proxies: tuple[ProxyRecord, ...] = ()
     # 各功能选用的代理 id（空=直接连接），x_proxy 等为按 id 解析后的结果。

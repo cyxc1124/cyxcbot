@@ -29,7 +29,7 @@ from utils.vision_api import (
 )
 
 from .c2pa_check import inspect_c2pa
-from .cache import cached_result, store_result
+from .cache import cached_result, prune, store_result
 from .image import ImageDetectionError, download_image, image_media_type
 from .openai_check import check_openai
 from .report import VisionResult, build_report
@@ -149,12 +149,35 @@ async def _cached_reply(digest: str, fingerprint: str) -> str | None:
 
 
 async def _remember(
-    digest: str, data: bytes, media_type: str, report: str, fingerprint: str
+    digest: str,
+    data: bytes,
+    media_type: str,
+    report: str,
+    fingerprint: str,
+    max_entries: int,
 ) -> None:
     try:
-        await store_result(digest, data, media_type, report, fingerprint)
+        await store_result(digest, data, media_type, report, fingerprint, max_entries)
     except Exception:
         logger.opt(exception=True).warning("保存 AI 图片检测缓存失败")
+
+
+async def _apply_cache_limit(snapshot: AppConfigSnapshot) -> None:
+    # 调低上限后立即清理，不必等下一次保存新结果。
+    try:
+        await prune(snapshot.ai_image_cache_max_entries)
+    except Exception:
+        logger.opt(exception=True).warning("按上限清理 AI 图片检测缓存失败")
+
+
+def _register_config_reload() -> None:
+    try:
+        get_config_service().register_reload_callback(_apply_cache_limit)
+    except Exception as exc:
+        logger.warning("AI 图片检测: 配置热重载注册失败: {}", exc)
+
+
+_register_config_reload()
 
 
 async def detect_quoted_image(bot: Bot, event: MessageEvent) -> str:
@@ -195,7 +218,8 @@ async def detect_quoted_image(bot: Bot, event: MessageEvent) -> str:
     media_type = await asyncio.to_thread(image_media_type, data)
     digest = hashlib.sha256(data).hexdigest()
     fingerprint = detection_fingerprint(snapshot)
-    cached = await _cached_reply(digest, fingerprint)
+    use_cache = snapshot.ai_image_cache_enabled
+    cached = await _cached_reply(digest, fingerprint) if use_cache else None
     if cached is not None:
         return cached
     local = (
@@ -211,8 +235,15 @@ async def detect_quoted_image(bot: Bot, event: MessageEvent) -> str:
         local, remote, remote_error, openai_kinds=openai_kinds, vision=vision
     )
     # 只缓存完整结果，超时、限流等临时失败下次重新检测。
-    if not remote_error and all(result.verdict for result in vision):
-        await _remember(digest, data, media_type, report, fingerprint)
+    if use_cache and not remote_error and all(result.verdict for result in vision):
+        await _remember(
+            digest,
+            data,
+            media_type,
+            report,
+            fingerprint,
+            snapshot.ai_image_cache_max_entries,
+        )
     return report
 
 

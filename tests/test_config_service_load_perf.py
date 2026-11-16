@@ -677,16 +677,32 @@ async def test_ai_image_sources_and_vision_providers_round_trip(
     assert defaults.ai_image_openai_c2pa_enabled
     assert defaults.ai_image_openai_synthid_enabled
     assert defaults.ai_image_vision_providers == []
+    assert (defaults.ai_image_cache_enabled, defaults.ai_image_cache_max_entries) == (
+        True,
+        500,
+    )
 
     sources = await settings_api.update_settings(
         SettingsUpdateRequest(
-            ai_image_local_c2pa_enabled=False, ai_image_openai_synthid_enabled=False
+            ai_image_local_c2pa_enabled=False,
+            ai_image_openai_synthid_enabled=False,
+            ai_image_cache_enabled=False,
+            ai_image_cache_max_entries=120,
         ),
         None,
     )
     assert not sources.ai_image_local_c2pa_enabled
     assert sources.ai_image_openai_c2pa_enabled
     assert not sources.ai_image_openai_synthid_enabled
+    snapshot = service.get_snapshot()
+    assert (snapshot.ai_image_cache_enabled, snapshot.ai_image_cache_max_entries) == (
+        False,
+        120,
+    )
+    # 库中的越界值读取时收回到 1–10000，非数字回到默认值。
+    for stored, loaded in (("0", 1), ("999999", 10000), ("abc", 500)):
+        await service.set_settings({"ai_image_cache_max_entries": stored})
+        assert (await service.load()).ai_image_cache_max_entries == loaded
 
     async def create(**fields):
         return await ai_image_api.create_vision_provider(

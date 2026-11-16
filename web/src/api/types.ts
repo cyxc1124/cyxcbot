@@ -226,6 +226,9 @@ export interface Settings {
   ai_image_local_c2pa_enabled?: boolean
   ai_image_openai_c2pa_enabled?: boolean
   ai_image_openai_synthid_enabled?: boolean
+  ai_image_cache_enabled?: boolean
+  /** 检测缓存最多保留的未修改记录，1–10000 */
+  ai_image_cache_max_entries?: number
   ai_image_vision_providers?: AiImageVisionProvider[]
   /** 系统 → 网络代理；各功能按 id 选用，空字符串表示直接连接 */
   proxies: ProxyEntry[]
