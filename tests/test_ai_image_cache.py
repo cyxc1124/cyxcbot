@@ -97,6 +97,22 @@ async def test_admin_edits_win_and_are_never_pruned(stored, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_deleted_ids_are_never_given_to_another_image(stored):
+    await stored("d" * 64, "结论：旧图")
+    (old,) = await _entries()
+    await cache_api.delete_cache_entry(None, old.id)
+    await stored("f" * 64, "结论：新图")
+    (new,) = await _entries()
+    assert new.id != old.id
+    with pytest.raises(HTTPException) as error:
+        await cache_api.update_cache_entry(
+            AiImageCacheUpdate(result="结论：改错"), None, old.id
+        )
+    assert error.value.status_code == 404
+    assert (await _entries())[0].result == "结论：新图"
+
+
+@pytest.mark.asyncio
 async def test_admin_can_view_previews_and_delete_entries(stored):
     await stored("b" * 64, "结论：有图", data=_png("blue"))
     await stored("c" * 64, "结论：无图", data=b"not an image")

@@ -612,6 +612,8 @@ class AiImageCache(Model):
     """AI 图片检测结果缓存：按图片原始字节的 SHA-256 复用结果，管理员可修改或删除。"""
 
     __tablename__ = "shared_db_aiimagecache"
+    # SQLite 默认会复用删除后的最大 ID；旧页面按 ID 修改时不能改到另一张图。
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     sha256: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)

@@ -37,6 +37,8 @@ def upgrade(name: str = "") -> None:
         sa.Column("edited_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("sha256", name="uq_shared_db_aiimagecache_sha256"),
+        # SQLite 默认会复用删除后的最大 ID，旧页面按 ID 修改时可能改到另一张图。
+        sqlite_autoincrement=True,
     )
 
 

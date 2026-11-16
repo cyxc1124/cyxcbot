@@ -68,6 +68,11 @@ def test_sqlite_upgrades_from_empty_to_head(tmp_path: Path) -> None:
                 col["name"] for col in inspector.get_columns("shared_db_livetarget")
             }
             tables = set(inspector.get_table_names())
+            cache_ddl = conn.execute(
+                text(
+                    "SELECT sql FROM sqlite_master WHERE name = 'shared_db_aiimagecache'"
+                )
+            ).scalar_one()
     finally:
         engine.dispose()
 
@@ -75,6 +80,7 @@ def test_sqlite_upgrades_from_empty_to_head(tmp_path: Path) -> None:
     assert "at_all" in dynamic_cols
     assert "at_all" in live_cols
     assert "shared_db_aiimagecache" in tables
+    assert "AUTOINCREMENT" in cache_ddl
 
 
 def _settings_after_proxy_migration(tmp_path: Path, rows: dict[str, str]) -> dict:

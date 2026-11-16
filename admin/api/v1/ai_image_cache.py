@@ -83,7 +83,7 @@ async def get_cache_preview(_: AdminUser, entry_id: int = EntryId):
         )
     if preview is None:
         raise HTTPException(status_code=404, detail="这条记录没有可显示的图片")
-    # 删除后 id 可能被复用，且图片来自群聊，不让浏览器缓存。
+    # 图片来自群聊，不留在浏览器缓存里。
     return Response(
         preview, media_type="image/jpeg", headers={"Cache-Control": "no-store"}
     )
