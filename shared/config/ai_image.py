@@ -29,7 +29,7 @@ MAX_MODEL_LENGTH = 128
 MAX_BASE_URL_LENGTH = 256
 MAX_API_KEY_LENGTH = 512
 # 回复格式变化时递增，让已缓存的旧格式结果重新检测。
-REPORT_VERSION = 1
+REPORT_VERSION = 2
 # 检测缓存最多保留的未修改记录条数（Web Admin 可改）。
 CACHE_MAX_ENTRIES_DEFAULT = 500
 CACHE_MAX_ENTRIES_LIMIT = 10000
@@ -339,7 +339,7 @@ def detection_fingerprint(snapshot: AppConfigSnapshot) -> str:
         "vision": [
             [provider.name, provider.api_type, provider.endpoint, provider.model]
             for provider in snapshot.ai_image_vision_providers
-            if provider.enabled
+            if snapshot.ai_image_vision_enabled and provider.enabled
         ],
     }
     encoded = json.dumps(setup, ensure_ascii=False, sort_keys=True)

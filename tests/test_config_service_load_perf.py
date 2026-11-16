@@ -676,6 +676,7 @@ async def test_ai_image_sources_and_vision_providers_round_trip(
     assert defaults.ai_image_local_c2pa_enabled
     assert defaults.ai_image_openai_c2pa_enabled
     assert defaults.ai_image_openai_synthid_enabled
+    assert defaults.ai_image_vision_enabled
     assert defaults.ai_image_vision_providers == []
     assert (defaults.ai_image_cache_enabled, defaults.ai_image_cache_max_entries) == (
         True,
@@ -688,10 +689,13 @@ async def test_ai_image_sources_and_vision_providers_round_trip(
             ai_image_openai_synthid_enabled=False,
             ai_image_cache_enabled=False,
             ai_image_cache_max_entries=120,
+            ai_image_vision_enabled=False,
         ),
         None,
     )
     assert not sources.ai_image_local_c2pa_enabled
+    assert not sources.ai_image_vision_enabled
+    assert not service.get_snapshot().ai_image_vision_enabled
     assert sources.ai_image_openai_c2pa_enabled
     assert not sources.ai_image_openai_synthid_enabled
     snapshot = service.get_snapshot()

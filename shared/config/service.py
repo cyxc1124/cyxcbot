@@ -159,6 +159,7 @@ SETTING_KEYS = {
     "ai_image_openai_synthid_enabled": ("true", bool),
     "ai_image_cache_enabled": ("true", bool),
     "ai_image_cache_max_entries": (str(CACHE_MAX_ENTRIES_DEFAULT), int),
+    "ai_image_vision_enabled": ("true", bool),
     VISION_PROVIDERS_KEY: ("[]", str),
     # 旧版 x_proxy_* 由迁移 c9d0e1f2g3h4 转为下列代理列表与选择，运行时不再读取。
     PROXIES_KEY: ("[]", str),
@@ -462,6 +463,7 @@ class ConfigService:
             ai_image_cache_max_entries=settings.get(
                 "ai_image_cache_max_entries", CACHE_MAX_ENTRIES_DEFAULT
             ),
+            ai_image_vision_enabled=settings.get("ai_image_vision_enabled", True),
             ai_image_vision_providers=vision_providers,
             proxies=proxies,
             x_proxy_id=settings.get(X_PROXY_KEY, ""),
@@ -1341,6 +1343,7 @@ class ConfigService:
             "ai_image_openai_synthid_enabled": snap.ai_image_openai_synthid_enabled,
             "ai_image_cache_enabled": snap.ai_image_cache_enabled,
             "ai_image_cache_max_entries": snap.ai_image_cache_max_entries,
+            "ai_image_vision_enabled": snap.ai_image_vision_enabled,
             "ai_image_vision_providers": vision_providers_for_api(
                 snap.ai_image_vision_providers
             ),

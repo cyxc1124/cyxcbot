@@ -117,7 +117,6 @@ def test_no_evidence_never_means_human_created():
     payload["results"][1]["outcome"] = "not_detected"
     report = build_report(C2PAResult("absent"), openai_check.parse_result(payload))
     assert "无法判断是否为 AI 图片" in report
-    assert "未检出不代表非 AI" in report
 
 
 def test_synthid_detection_is_positive_with_openai_scope():

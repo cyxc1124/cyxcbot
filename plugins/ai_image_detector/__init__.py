@@ -191,7 +191,9 @@ async def detect_quoted_image(bot: Bot, event: MessageEvent) -> str:
         if enabled
     )
     providers = [
-        provider for provider in snapshot.ai_image_vision_providers if provider.enabled
+        provider
+        for provider in snapshot.ai_image_vision_providers
+        if snapshot.ai_image_vision_enabled and provider.enabled
     ]
     if not (snapshot.ai_image_local_c2pa_enabled or openai_kinds or providers):
         return "管理员尚未启用任何图片检测方式。"

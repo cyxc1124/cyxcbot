@@ -156,6 +156,8 @@ class AppConfigSnapshot:
     ai_image_openai_synthid_enabled: bool = True
     ai_image_cache_enabled: bool = True
     ai_image_cache_max_entries: int = CACHE_MAX_ENTRIES_DEFAULT
+    # 视觉模型总开关；关闭时不调用任何模型，各模型自己的 enabled 保留。
+    ai_image_vision_enabled: bool = True
     ai_image_vision_providers: tuple[VisionProviderRecord, ...] = ()
     proxies: tuple[ProxyRecord, ...] = ()
     # 各功能选用的代理 id（空=直接连接），x_proxy 等为按 id 解析后的结果。

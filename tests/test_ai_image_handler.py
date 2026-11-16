@@ -256,16 +256,44 @@ async def test_single_openai_switch_still_uses_one_request_but_hides_other_signa
     assert "检测到 AI 生成/编辑的来源证据" not in text
 
 
-async def test_nothing_enabled_never_downloads(detector):
+@pytest.mark.parametrize(
+    "vision",
+    [
+        {"ai_image_vision_providers": (_provider("停用", enabled=False),)},
+        {
+            "ai_image_vision_enabled": False,
+            "ai_image_vision_providers": (_provider("启用"),),
+        },
+    ],
+)
+async def test_nothing_enabled_never_downloads(detector, vision):
     detector.configure(
         ai_image_local_c2pa_enabled=False,
         ai_image_openai_c2pa_enabled=False,
         ai_image_openai_synthid_enabled=False,
-        ai_image_vision_providers=(_provider("停用", enabled=False),),
+        **vision,
     )
     text = (await _detect(detector)).extract_plain_text()
     detector.fetch.assert_not_awaited()
     assert "尚未启用任何图片检测方式" in text
+
+
+async def test_vision_switch_off_calls_no_model_and_caches_as_no_model(detector):
+    detector.configure(
+        ai_image_vision_enabled=False,
+        ai_image_vision_providers=(_provider("视觉"),),
+    )
+    text = (await _detect(detector)).extract_plain_text()
+    detector.vision.assert_not_awaited()
+    assert "视觉模型" not in text
+    assert "SynthID（OpenAI）：检出水印" in text
+    assert detector.store.await_args.args[4] == detection_fingerprint(
+        replace(
+            detector.state.snapshot,
+            ai_image_vision_enabled=True,
+            ai_image_vision_providers=(),
+        )
+    )
 
 
 async def test_vision_providers_run_with_their_own_proxy_and_isolate_failures(

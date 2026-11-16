@@ -66,7 +66,7 @@ def build_report(
     vision: Sequence[VisionResult] = (),
 ) -> str:
     """Disabled sources (local=None, kinds not listed) are omitted from the reply."""
-    lines = ["图片 AI 检测"]
+    lines: list[str] = []
     local_positive = False
     if local is not None:
         local_status = {
@@ -133,14 +133,4 @@ def build_report(
         lines.append(
             _vision_conclusion(vision, "未发现可确认的来源证据；" if checked else "")
         )
-
-    notes = []
-    if openai_kinds:
-        notes.append("OpenAI 接口仅识别其支持的来源信号")
-    if local is not None or openai_kinds:
-        notes.append("未检出不代表非 AI")
-    if vision:
-        notes.append("视觉模型仅根据画面推测，可能误判，不能作为来源证据")
-    notes.append("QQ 压缩、截图或转存可能丢失元数据或削弱水印，请尽量使用原图")
-    lines.append("；".join(notes) + "。")
     return "\n".join(lines)
