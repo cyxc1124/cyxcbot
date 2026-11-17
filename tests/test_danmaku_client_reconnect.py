@@ -1,9 +1,10 @@
-"""Tests for DanmakuClient reconnect deduplication."""
+"""Tests for DanmakuClient device identity and reconnects."""
 
 from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import sys
 import types
 from collections.abc import Iterator
@@ -75,6 +76,147 @@ def _make_client(module: Any) -> Any:
     client = module.DanmakuClient(session, room_id=123)
     client._running = True
     return client
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cookie", [None, "DedeUserID=123; buvid3=existing"])
+async def test_ensure_buvid_preserves_existing_or_anonymous_cookie(
+    danmaku_client_module: Any, cookie: str | None
+) -> None:
+    session = MagicMock()
+    client = danmaku_client_module.DanmakuClient(session, 123, cookie=cookie)
+
+    await client._ensure_buvid()
+
+    session.get.assert_not_called()
+    assert client.cookie == cookie
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("suffix", ["", "; buvid3="])
+async def test_missing_buvid_is_reused_in_cookie_token_request_and_auth(
+    danmaku_client_module: Any, suffix: str
+) -> None:
+    module = danmaku_client_module
+    session = MagicMock()
+    spi_response = MagicMock()
+    spi_response.json = AsyncMock(
+        return_value={"code": 0, "data": {"b_3": "device-id"}}
+    )
+    info_response = MagicMock(status=200)
+    info_response.json = AsyncMock(
+        return_value={"code": 0, "data": {"token": "fresh", "host_list": []}}
+    )
+    session.get.return_value.__aenter__.side_effect = [
+        spi_response,
+        info_response,
+        info_response,
+    ]
+    client = module.DanmakuClient(
+        session, 123, cookie=f"DedeUserID=123; SESSDATA=session{suffix}"
+    )
+    client._ws = AsyncMock()
+
+    with patch.object(module.wbi, "sign_params", new_callable=AsyncMock) as sign:
+        sign.return_value = "id=123&signed=1"
+        await client._update_danmu_info()
+        await client._update_danmu_info()
+
+    assert client.cookie == "DedeUserID=123; SESSDATA=session; buvid3=device-id"
+    assert session.get.call_count == 3
+    spi_response.raise_for_status.assert_called_once()
+    for call in session.get.call_args_list[1:]:
+        assert call.kwargs["headers"]["Cookie"] == "SESSDATA=session; buvid3=device-id"
+    assert all(call.args[2] == client.cookie for call in sign.await_args_list)
+    await client._send_auth()
+    frame = client._ws.send_bytes.call_args.args[0]
+    auth = json.loads(frame[module.WS.PACKAGE_HEADER_TOTAL_LENGTH :])
+    assert (auth["uid"], auth["buvid"], auth["key"]) == (123, "device-id", "fresh")
+    assert client._get_headers()["Cookie"] == client.cookie
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("signed_query", [None, "id=123&signed=1"])
+async def test_token_request_omits_only_uid_cookie_and_keeps_login_session(
+    danmaku_client_module: Any, signed_query: str | None
+) -> None:
+    module = danmaku_client_module
+    session = MagicMock()
+    response = MagicMock(status=200)
+    response.json = AsyncMock(
+        return_value={"code": 0, "data": {"token": "fresh", "host_list": []}}
+    )
+    session.get.return_value.__aenter__.return_value = response
+    cookie = (
+        "DedeUserID=123; SESSDATA=session; bili_jct=csrf; "
+        "DedeUserID__ckMd5=checksum; sid=legacy; buvid3=device-id"
+    )
+    client = module.DanmakuClient(session, 123, cookie=cookie)
+
+    with patch.object(module.wbi, "sign_params", new_callable=AsyncMock) as sign:
+        sign.return_value = signed_query
+        await client._update_danmu_info()
+
+    assert session.get.call_count == 1
+    assert session.get.call_args.kwargs["headers"]["Cookie"] == (
+        "SESSDATA=session; bili_jct=csrf; DedeUserID__ckMd5=checksum; "
+        "sid=legacy; buvid3=device-id"
+    )
+    assert client.cookie == cookie
+    assert client._uid == 123
+    assert client._get_headers()["Cookie"] == cookie
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"code": -352},
+        {"code": 0, "data": {}},
+        {"code": 0, "data": {"b_3": ""}},
+        {"code": 0, "data": {"b_3": 123}},
+        {"code": 0, "data": {"b_3": "bad; injected=cookie"}},
+        {"code": 0, "data": {"b_3": "bad\r\nheader"}},
+    ],
+)
+async def test_buvid_failure_stops_before_token_request_or_connection(
+    danmaku_client_module: Any, payload: dict
+) -> None:
+    session = MagicMock()
+    response = session.get.return_value.__aenter__.return_value
+    response.raise_for_status = MagicMock()
+    response.json = AsyncMock(return_value=payload)
+    client = danmaku_client_module.DanmakuClient(session, 123, cookie="DedeUserID=123")
+
+    with patch.object(client, "_connect", new_callable=AsyncMock) as connect:
+        with pytest.raises(ConnectionError, match="获取弹幕 buvid 失败"):
+            await client.start()
+
+    connect.assert_not_called()
+    assert session.get.call_count == 1
+    assert client.cookie == "DedeUserID=123"
+    assert not client._buvid
+    assert not client._running
+
+
+@pytest.mark.asyncio
+async def test_buvid_request_can_retry_after_network_failure(
+    danmaku_client_module: Any,
+) -> None:
+    session = MagicMock()
+    response = MagicMock()
+    response.json = AsyncMock(return_value={"code": 0, "data": {"b_3": "device-id"}})
+    session.get.return_value.__aenter__.side_effect = [TimeoutError(), response]
+    client = danmaku_client_module.DanmakuClient(session, 123, cookie="DedeUserID=123")
+
+    with pytest.raises(TimeoutError):
+        await client._ensure_buvid()
+    assert client.cookie == "DedeUserID=123"
+    assert not client._buvid
+
+    await client._ensure_buvid()
+    assert client._buvid == "device-id"
+    assert client.cookie == "DedeUserID=123; buvid3=device-id"
 
 
 @pytest.mark.asyncio

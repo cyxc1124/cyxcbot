@@ -25,7 +25,7 @@
 
 ## 功能
 
-- **B 站动态与直播推送**：新动态、置顶变化、新投稿和开播 / 下播通知，可推送到群聊或私聊；支持多账号扫码登录，查询请求轮换使用。见 [动态监控](docs/docs/plugins/dynamic-monitor.md)、[直播监控](docs/docs/plugins/live-monitor.md)、[账号配置](docs/docs/configuration/web-admin-setup.md#4-配置-b-站账号)。
+- **B 站动态与直播推送**：新动态、置顶变化、新投稿和开播 / 下播通知，可推送到群聊或私聊；支持多账号扫码登录，查询请求轮换使用。直播弹幕连接自动补齐缺失的 buvid3，兼容扫码登录 Cookie 并保留账号身份。见 [动态监控](docs/docs/plugins/dynamic-monitor.md)、[直播监控](docs/docs/plugins/live-monitor.md)、[账号配置](docs/docs/configuration/web-admin-setup.md#4-配置-b-站账号)。
 - **X 推文监控**：订阅博主，推送正文和媒体；需要 X API Bearer Token，可选用「系统 → 网络代理」中的代理。见 [X 推文监控](docs/docs/plugins/x-monitor.md)。
 - **链接解析**：[B 站](docs/docs/plugins/link-parser.md)（多 P 视频回复数字选择分 P，可直接发送视频）、[抖音](docs/docs/plugins/douyin-link-parser.md)（视频、图集、Live 图）、[X](docs/docs/plugins/x-link-parser.md) 推文，按会话设置策略。
 - **AI 图片检测**：引用一张图片发送触发词（默认 `ai吗？`，可自定义），本地校验 C2PA 凭证、按开关检查 OpenAI 支持的 C2PA 与 SynthID 信号，还可接入多个 OpenAI / Anthropic 兼容视觉模型共同判断；同一图片再次询问时复用保存的结果，可在 Web Admin 查看、修改或删除。见 [AI 图片检测](docs/docs/plugins/ai-image-detector.md)。
