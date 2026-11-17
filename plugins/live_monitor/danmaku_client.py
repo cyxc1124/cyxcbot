@@ -186,7 +186,7 @@ class DanmakuClient:
             for item in cookie.split(";"):
                 item = item.strip()
                 if item.startswith("buvid3="):
-                    return item.split("=")[1]
+                    return item.split("=", 1)[1]
         except IndexError:
             pass
         return ""
@@ -200,6 +200,37 @@ class DanmakuClient:
         if self.cookie:
             headers["Cookie"] = self.cookie
         return headers
+
+    async def _ensure_buvid(self) -> None:
+        """扫码登录 Cookie 可能缺少设备标识，获取 token 前补齐并保持一致。"""
+        if self._buvid or not self.cookie:
+            return
+
+        async with self.session.get(
+            "https://api.bilibili.com/x/frontend/finger/spi",
+            headers=self._get_headers(),
+            timeout=10,
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+
+        buvid = (data.get("data") or {}).get("b_3")
+        if (
+            data.get("code") != 0
+            or not isinstance(buvid, str)
+            or not buvid.strip()
+            or any(char in buvid for char in ";\r\n")
+        ):
+            raise ConnectionError(f"房间 {self.room_id} 获取弹幕 buvid 失败")
+
+        parts = [
+            item.strip()
+            for item in self.cookie.split(";")
+            if item.strip() and not item.strip().startswith("buvid3=")
+        ]
+        self.cookie = "; ".join([*parts, f"buvid3={buvid}"])
+        self._buvid = buvid
+        logger.debug("房间 {} 已补齐弹幕 buvid", self.room_id)
 
     async def start(self) -> None:
         """启动弹幕客户端"""
@@ -258,6 +289,7 @@ class DanmakuClient:
 
     async def _update_danmu_info(self) -> None:
         """获取弹幕服务器信息（带 WBI 签名）"""
+        await self._ensure_buvid()
         try:
             base_url = (
                 "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo"
@@ -267,6 +299,13 @@ class DanmakuClient:
                 "type": 0,
             }
             headers = self._get_headers()
+            if self.cookie:
+                # token 接口由 SESSDATA 识别账号，附带 DedeUserID 可能触发 -352。
+                headers["Cookie"] = "; ".join(
+                    item.strip()
+                    for item in self.cookie.split(";")
+                    if item.strip() and not item.strip().startswith("DedeUserID=")
+                )
 
             logger.debug("房间 {} 正在获取弹幕服务器信息...", self.room_id)
 
@@ -314,16 +353,11 @@ class DanmakuClient:
             if data.get("code") == 0:
                 self._danmu_info = data["data"]
                 host_list = self._danmu_info.get("host_list", [])
-                token = (
-                    self._danmu_info.get("token", "")[:20] + "..."
-                    if self._danmu_info.get("token")
-                    else "None"
-                )
                 logger.debug(
-                    "房间 {} 获取弹幕服务器信息成功，服务器数量: {}, token: {}",
+                    "房间 {} 获取弹幕服务器信息成功，服务器数量: {}, token已配置: {}",
                     self.room_id,
                     len(host_list),
-                    token,
+                    bool(self._danmu_info.get("token")),
                 )
                 return
             else:
@@ -483,12 +517,12 @@ class DanmakuClient:
 
         # 打印认证参数（隐藏敏感信息）
         logger.debug(
-            "房间 {} 认证参数: uid={}, roomid={}, buvid={}, token={}",
+            "房间 {} 认证参数: uid={}, roomid={}, buvid已配置={}, token已配置={}",
             self.room_id,
             self._uid,
             self.room_id,
-            self._buvid[:10] + "..." if self._buvid else "None",
-            token[:20] + "..." if token else "None",
+            bool(self._buvid),
+            bool(token),
         )
 
         data = Frame.encode(WS.OP_USER_AUTHENTICATION, json.dumps(auth_data))
