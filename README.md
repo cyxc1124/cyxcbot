@@ -97,6 +97,8 @@ Windows 包在 [Releases](https://github.com/cyxc1124/cyxcbot/releases) 下载 `
 
 完整列表见 [`env.example`](env.example) 和 [环境变量](docs/docs/configuration/env-vars.md)。升级前备份数据库和 `.env`，并保留原有 `WEB_SECRET_KEY`。从 1.x 升级见 [2.0 迁移说明](docs/docs/configuration/migration-2.0.md)。
 
+从 v3.3.0 升级到 v3.3.1 时，启动会自动迁移原 X 代理并新增 AI 图片检测缓存表。检测缓存默认开启，会保存缩小的预览图与结果；可在 **AI 图片检测 → 检测缓存** 中关闭或调整，原有 OpenAI 密钥继续生效。详见 [AI 图片检测](docs/docs/plugins/ai-image-detector.md)。
+
 ## 本地开发
 
 技术栈：NoneBot2（OneBot V11 / 官方 QQ 适配器）、FastAPI、SQLAlchemy + Alembic、React + TypeScript + Tailwind CSS + Vite、Playwright（Chromium）。
