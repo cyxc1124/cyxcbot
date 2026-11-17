@@ -42,7 +42,7 @@ slug: /intro
 - **B 站链接解析**（`bilibili_link_parser`）：群内/好友 B 站链接自动解析（视频、直播、动态等）
 - **抖音链接解析**（`douyin_link_parser`）：群内/好友抖音分享链接解析，回传无水印视频 / 图集 / Live 图（默认关闭，需在面板按会话开启）
 - **动态图片提取**：`#提取` / `#获取` 命令，按动态 ID 或引用机器人发出的动态消息拉取图片
-- **AI 图片检测**（`ai_image_detector`）：引用一张图片回复 `ai吗？`，本地校验 C2PA 凭证；配置 OpenAI API Key 后还会检查其支持的 C2PA 与 SynthID 信号（仅 OneBot）
+- **AI 图片检测**（`ai_image_detector`）：引用一张图片发送触发词（默认 `ai吗？`，可自定义），本地 C2PA、OpenAI C2PA 与 SynthID 可分别开关，并可接入多个 OpenAI / Anthropic 兼容视觉模型共同判断；同一图片的结果会缓存复用（仅 OneBot）
 - **主动查询**：群内发送 `最新动态` / `置顶动态` / `最新视频` 等命令
 - **消息模板**：按平台（B 站 / X / 抖音）自定义推送与链接解析文案
 
@@ -77,8 +77,9 @@ slug: /intro
 | `/groups`、`/friends` | 会话策略（消息守卫、状态查询、B 站/抖音/X 链接等） |
 | `/bilibili/templates` 等 | 各平台下的消息模板 |
 | `/rust/remote/servers`、`/rust/players/accounts` | Rust 远控与权限、玩家与积分两个分组 |
+| `/ai-image/sources`、`/ai-image/vision`、`/ai-image/command`、`/ai-image/cache` | AI 图片检测的检测来源、视觉模型、触发命令与检测缓存 |
 | `/bilibili/settings`、`/x/settings` | 各平台订阅参数；账号和解析同在平台分组 |
-| `/system/connections`、`/system/permissions`、`/system/commands`、`/system/advanced` | 机器人接入、权限、命令与高级配置 |
+| `/system/connections`、`/system/permissions`、`/system/commands`、`/system/proxies`、`/system/advanced` | 机器人接入、权限、命令、网络代理与高级配置 |
 | `/logs` | 实时运行日志（持久化见 [日志配置](./configuration/logging)） |
 | `/about` | 版本与构建信息 |
 

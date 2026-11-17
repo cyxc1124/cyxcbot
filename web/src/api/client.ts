@@ -46,6 +46,18 @@ import type {
   MonitorStatus,
   RecentLogsResponse,
   RuntimeLogEntry,
+  AiImageCacheEntry,
+  AiImageCachePage,
+  AiImageVisionProviderInput,
+  ProxiesResult,
+  ProxyInput,
+  ProxyTestRequest,
+  ProxyTestResult,
+  VisionBalanceResult,
+  VisionModelsResult,
+  VisionProbeRequest,
+  VisionProvidersResult,
+  VisionTestResult,
   XBearerStatus,
   XBearerTestResult,
   XMonitorStatus,
@@ -717,6 +729,78 @@ export const testXBearer = (username = 'X') =>
     method: 'POST',
     body: JSON.stringify({ username }),
   })
+
+// 系统 → 网络代理（每个代理单独保存）
+export const createProxy = (data: ProxyInput) =>
+  request<ProxiesResult>('/proxies', { method: 'POST', body: JSON.stringify(data) })
+
+export const updateProxy = (id: string, data: Partial<ProxyInput>) =>
+  request<ProxiesResult>(`/proxies/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+
+export const deleteProxy = (id: string) =>
+  request<ProxiesResult>(`/proxies/${encodeURIComponent(id)}`, { method: 'DELETE' })
+
+export const testProxy = (data: ProxyTestRequest) =>
+  request<ProxyTestResult>('/proxies/test', { method: 'POST', body: JSON.stringify(data) })
+
+// AI image detection vision providers（每个供应商单独保存）
+export const createVisionProvider = (data: AiImageVisionProviderInput) =>
+  request<VisionProvidersResult>('/ai-image/vision/providers', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const updateVisionProvider = (id: string, data: Partial<AiImageVisionProviderInput>) =>
+  request<VisionProvidersResult>(`/ai-image/vision/providers/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+
+export const deleteVisionProvider = (id: string) =>
+  request<VisionProvidersResult>(`/ai-image/vision/providers/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+
+export const listVisionModels = (data: VisionProbeRequest) =>
+  request<VisionModelsResult>('/ai-image/vision/models', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const testVisionProvider = (data: VisionProbeRequest) =>
+  request<VisionTestResult>('/ai-image/vision/test', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const getVisionBalance = (data: VisionProbeRequest) =>
+  request<VisionBalanceResult>('/ai-image/vision/balance', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+// AI 图片检测缓存
+export const getAiImageCache = (page: number, pageSize: number) =>
+  request<AiImageCachePage>(`/ai-image/cache${buildQuery({ page, page_size: pageSize })}`)
+
+/** 预览图需要会话头，不能直接用作 <img src>，取回 Blob 后再显示。 */
+export const getAiImageCachePreview = async (id: number, signal?: AbortSignal) =>
+  (await requestResponse(`/ai-image/cache/${id}/preview`, { signal })).blob()
+
+export const updateAiImageCacheEntry = (id: number, result: string) =>
+  request<AiImageCacheEntry>(`/ai-image/cache/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ result }),
+  })
+
+export const deleteAiImageCacheEntry = (id: number) =>
+  request<void>(`/ai-image/cache/${id}`, { method: 'DELETE' })
+
+export const clearAiImageCache = () =>
+  request<{ deleted: number }>('/ai-image/cache', { method: 'DELETE' })
 
 // Monitors
 export const getMonitorStatus = () => request<MonitorStatus>('/monitors/status')

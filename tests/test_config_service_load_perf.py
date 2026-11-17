@@ -656,6 +656,326 @@ async def test_ai_image_key_is_encrypted_write_only_and_clearable(
 
 
 @pytest.mark.asyncio
+async def test_ai_image_sources_and_vision_providers_round_trip(
+    db_context, monkeypatch
+):
+    from fastapi import HTTPException
+
+    from admin.api.v1 import ai_image as ai_image_api
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.ai_image import VisionProviderCreate, VisionProviderPatch
+    from admin.schemas.settings import SettingsUpdateRequest
+
+    _, factory, ConfigService, *_, SystemSetting = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    monkeypatch.setattr(settings_api, "get_config_service", lambda: service)
+    monkeypatch.setattr(ai_image_api, "get_config_service", lambda: service)
+    await service.load()
+    defaults = await settings_api.get_settings(None)
+    assert defaults.ai_image_local_c2pa_enabled
+    assert defaults.ai_image_openai_c2pa_enabled
+    assert defaults.ai_image_openai_synthid_enabled
+    assert defaults.ai_image_vision_enabled
+    assert defaults.ai_image_vision_providers == []
+    assert (defaults.ai_image_cache_enabled, defaults.ai_image_cache_max_entries) == (
+        True,
+        500,
+    )
+
+    sources = await settings_api.update_settings(
+        SettingsUpdateRequest(
+            ai_image_local_c2pa_enabled=False,
+            ai_image_openai_synthid_enabled=False,
+            ai_image_cache_enabled=False,
+            ai_image_cache_max_entries=120,
+            ai_image_vision_enabled=False,
+        ),
+        None,
+    )
+    assert not sources.ai_image_local_c2pa_enabled
+    assert not sources.ai_image_vision_enabled
+    assert not service.get_snapshot().ai_image_vision_enabled
+    assert sources.ai_image_openai_c2pa_enabled
+    assert not sources.ai_image_openai_synthid_enabled
+    snapshot = service.get_snapshot()
+    assert (snapshot.ai_image_cache_enabled, snapshot.ai_image_cache_max_entries) == (
+        False,
+        120,
+    )
+    # 库中的越界值读取时收回到 1–10000，非数字回到默认值。
+    for stored, loaded in (("0", 1), ("999999", 10000), ("abc", 500)):
+        await service.set_settings({"ai_image_cache_max_entries": stored})
+        assert (await service.load()).ai_image_cache_max_entries == loaded
+
+    async def create(**fields):
+        return await ai_image_api.create_vision_provider(
+            VisionProviderCreate(**fields), None
+        )
+
+    async def update(provider_id, **fields):
+        return await ai_image_api.update_vision_provider(
+            VisionProviderPatch(**fields), None, provider_id
+        )
+
+    key = "sk-vision-test-only-never-a-real-key"
+    created = await create(name="GPT", api_type="openai", model="gpt-test", api_key=key)
+    gpt_id = created.id
+    claude = await create(
+        name="Claude",
+        api_type="anthropic",
+        base_url=" https://gateway.test/anthropic/ ",
+        model="claude-test",
+    )
+    assert [p.name for p in claude.providers] == ["GPT", "Claude"]
+    gpt, saved_claude = claude.providers
+    assert gpt.api_key_configured and not saved_claude.api_key_configured
+    assert (saved_claude.base_url, saved_claude.proxy_id) == (
+        "https://gateway.test/anthropic",
+        "",
+    )
+    assert key not in claude.model_dump_json()
+    snapshot = service.get_snapshot()
+    assert snapshot.ai_image_vision_providers[0].api_key == key
+    assert snapshot.ai_image_vision_providers[0].endpoint == "https://api.openai.com/v1"
+    assert key not in repr(snapshot)
+    async with factory() as session:
+        row = await session.get(SystemSetting, "ai_image_vision_providers")
+        assert key not in row.value
+
+    # 单独保存一个供应商：只改传入的字段，其他供应商与密钥保持不变。
+    renamed = await update(gpt_id, name="GPT-4o", enabled=False, api_key=None)
+    assert [(p.name, p.enabled) for p in renamed.providers] == [
+        ("GPT-4o", False),
+        ("Claude", True),
+    ]
+    assert renamed.id == gpt_id
+    assert service.get_snapshot().ai_image_vision_providers[0].api_key == key
+
+    # 已存密钥不可读回，换地址或类型时必须重填，避免被发往新地址。
+    for change in (
+        {"base_url": "https://other.test/v1"},
+        {"api_type": "anthropic"},
+    ):
+        with pytest.raises(HTTPException) as error:
+            await update(gpt_id, **change)
+        assert error.value.status_code == 400
+        assert "重新填写 API Key" in error.value.detail
+    moved = await update(
+        gpt_id, base_url="https://other.test/v1", api_key="sk-new-test-only"
+    )
+    assert moved.providers[0].base_url == "https://other.test/v1"
+    assert service.get_snapshot().ai_image_vision_providers[0].api_key == (
+        "sk-new-test-only"
+    )
+    cleared_key = await update(gpt_id, api_key="")
+    assert not cleared_key.providers[0].api_key_configured
+
+    for invalid in (
+        {"base_url": "ftp://gateway.test"},
+        {"base_url": "https://user:pass@gateway.test"},
+        {"base_url": "https://gateway.test/v1?key=1"},
+        {"name": "claude"},
+        {"name": " "},
+        {"model": "bad model"},
+        {"api_key": "bad key"},
+    ):
+        with pytest.raises(HTTPException) as error:
+            await update(gpt_id, **invalid)
+        assert error.value.status_code == 400
+    with pytest.raises(HTTPException) as error:
+        await update("missing", name="X")
+    assert error.value.status_code == 404
+    assert service.get_snapshot().ai_image_vision_providers[0].name == "GPT-4o"
+
+    # 不限制供应商数量；费用和耗时只随启用的数量增长。
+    for index in range(10):
+        await create(name=f"P{index}", api_type="openai", model="m")
+    assert len(service.get_snapshot().ai_image_vision_providers) == 12
+
+    remaining = await ai_image_api.delete_vision_provider(None, gpt_id)
+    assert gpt_id not in [p.id for p in remaining.providers]
+    assert len(remaining.providers) == 11
+    with pytest.raises(HTTPException) as error:
+        await ai_image_api.delete_vision_provider(None, gpt_id)
+    assert error.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_shared_proxies_are_chosen_per_feature_and_protected_from_deletion(
+    db_context, monkeypatch
+):
+    from fastapi import HTTPException
+
+    from admin.api.v1 import ai_image as ai_image_api
+    from admin.api.v1 import proxies as proxies_api
+    from admin.api.v1 import settings as settings_api
+    from admin.schemas.ai_image import VisionProviderCreate, VisionProviderPatch
+    from admin.schemas.proxies import ProxyCreate, ProxyPatch
+    from admin.schemas.settings import SettingsUpdateRequest
+
+    _, factory, ConfigService, *_, SystemSetting = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    for module in (ai_image_api, proxies_api, settings_api):
+        monkeypatch.setattr(module, "get_config_service", lambda: service)
+    await service.load()
+    assert (await settings_api.get_settings(None)).proxies == []
+    assert service.get_snapshot().x_proxy.to_url() is None
+
+    password = "proxy-pass-test-only"
+    created = await proxies_api.create_proxy(
+        ProxyCreate(
+            name="香港",
+            scheme="socks5",
+            host=" hk.proxy.test ",
+            port=1080,
+            username="user",
+            password=password,
+        ),
+        None,
+    )
+    hk_id = created.id
+    (hk,) = created.proxies
+    assert (hk.host, hk.port, hk.password_configured) == ("hk.proxy.test", 1080, True)
+    assert password not in created.model_dump_json()
+    async with factory() as session:
+        row = await session.get(SystemSetting, "proxies")
+        assert password not in row.value
+    second = await proxies_api.create_proxy(
+        ProxyCreate(name="本地", scheme="http", host="127.0.0.1", port=7890), None
+    )
+    local_id = second.id
+
+    # 各功能分别选择代理；未知代理被拒绝。
+    chosen = await settings_api.update_settings(
+        SettingsUpdateRequest(x_proxy_id=hk_id, ai_image_openai_proxy_id=local_id),
+        None,
+    )
+    assert (chosen.x_proxy_id, chosen.ai_image_openai_proxy_id) == (hk_id, local_id)
+    snapshot = service.get_snapshot()
+    assert snapshot.x_proxy.to_url() == (f"socks5://user:{password}@hk.proxy.test:1080")
+    assert snapshot.ai_image_openai_proxy.to_url() == "http://127.0.0.1:7890"
+    assert password not in repr(snapshot)
+    with pytest.raises(HTTPException) as error:
+        await settings_api.update_settings(
+            SettingsUpdateRequest(x_proxy_id="missing"), None
+        )
+    assert error.value.status_code == 400
+
+    vision = await ai_image_api.create_vision_provider(
+        VisionProviderCreate(
+            name="GPT", api_type="openai", model="gpt-test", proxy_id=hk_id
+        ),
+        None,
+    )
+    provider = service.get_snapshot().ai_image_vision_providers[0]
+    assert service.get_snapshot().proxy(provider.proxy_id).host == "hk.proxy.test"
+    with pytest.raises(HTTPException) as error:
+        await ai_image_api.update_vision_provider(
+            VisionProviderPatch(proxy_id="missing"), None, vision.id
+        )
+    assert error.value.status_code == 400
+
+    # 保留密码只适用于原主机；换主机必须重填，避免把密码发往新地址。
+    renamed = await proxies_api.update_proxy(
+        ProxyPatch(name="香港 2", port=1081), None, hk_id
+    )
+    assert renamed.proxies[0].password_configured
+    with pytest.raises(HTTPException) as error:
+        await proxies_api.update_proxy(ProxyPatch(host="other.test"), None, hk_id)
+    assert "重新填写密码" in error.value.detail
+    for invalid in (
+        {"name": "本地"},
+        {"host": "socks5://hk.proxy.test"},
+        {"host": "::1"},
+        {"port": 0},
+        {"port": 70000},
+    ):
+        with pytest.raises(HTTPException) as error:
+            await proxies_api.update_proxy(ProxyPatch(**invalid), None, hk_id)
+        assert error.value.status_code == 400
+
+    # 仍被使用的代理不能删除，提示列出所有使用者。
+    with pytest.raises(HTTPException) as error:
+        await proxies_api.delete_proxy(None, hk_id)
+    assert error.value.status_code == 409
+    assert "X（推文订阅、链接解析）" in error.value.detail
+    assert "视觉模型「GPT」" in error.value.detail
+    await settings_api.update_settings(SettingsUpdateRequest(x_proxy_id=""), None)
+    await ai_image_api.update_vision_provider(
+        VisionProviderPatch(proxy_id=""), None, vision.id
+    )
+    remaining = await proxies_api.delete_proxy(None, hk_id)
+    assert [proxy.id for proxy in remaining.proxies] == [local_id]
+    assert service.get_snapshot().x_proxy.to_url() is None
+    with pytest.raises(HTTPException) as error:
+        await proxies_api.delete_proxy(None, hk_id)
+    assert error.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_concurrent_vision_provider_saves_keep_each_other(
+    db_context, monkeypatch
+):
+    _, factory, ConfigService, *_ = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    await service.load()
+
+    ids = await asyncio.gather(
+        *(
+            service.upsert_vision_provider(
+                None, {"name": f"并发{index}", "api_type": "openai", "model": "m"}
+            )
+            for index in range(5)
+        )
+    )
+    saved = service.get_snapshot().ai_image_vision_providers
+    assert sorted(provider.id for provider in saved) == sorted(ids)
+    assert len({provider.name for provider in saved}) == 5
+
+
+@pytest.mark.asyncio
+async def test_proxy_selection_cannot_slip_past_proxy_deletion(db_context, monkeypatch):
+    from shared.config.ai_image import VISION_PROVIDERS_KEY
+    from shared.config.proxies import X_PROXY_KEY
+
+    _, factory, ConfigService, *_ = db_context
+    service = ConfigService()
+    monkeypatch.setattr("shared.config.service.get_session", lambda: factory())
+    await service.load()
+    proxy_id = await service.upsert_proxy(
+        None, {"name": "待删", "scheme": "http", "host": "127.0.0.1", "port": 7890}
+    )
+
+    # 让删除停在功能引用检查之后、真正删除之前，此时另一请求选用该代理。
+    reached, release = asyncio.Event(), asyncio.Event()
+    read_setting = service.get_setting
+
+    async def paused_read(key):
+        if key == VISION_PROVIDERS_KEY:
+            reached.set()
+            await release.wait()
+        return await read_setting(key)
+
+    monkeypatch.setattr(service, "get_setting", paused_read)
+    removal = asyncio.create_task(service.remove_proxy(proxy_id))
+    await reached.wait()
+    selection = asyncio.create_task(
+        service.set_settings_with_proxy_check({X_PROXY_KEY: proxy_id})
+    )
+    done, _ = await asyncio.wait({selection}, timeout=0.2)
+    assert not done
+    release.set()
+    await removal
+    with pytest.raises(ValueError, match="所选代理不存在"):
+        await selection
+    assert service.get_snapshot().proxies == ()
+    assert await read_setting(X_PROXY_KEY) != proxy_id
+
+
+@pytest.mark.asyncio
 async def test_official_settings_permissions_and_friend_cache_round_trip(
     db_context, monkeypatch
 ):

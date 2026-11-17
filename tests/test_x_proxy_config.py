@@ -28,29 +28,30 @@ def test_to_url_socks5_with_auth():
     assert cfg.to_url() == "socks5://user:p%40ss@proxy.example:1080"
 
 
-def test_from_settings_rejects_unknown_scheme():
-    cfg = ProxyConfig.from_settings(
-        {
-            "x_proxy_enabled": True,
-            "x_proxy_scheme": "ftp",
-            "x_proxy_host": "127.0.0.1",
-            "x_proxy_port": 1080,
-        }
+def test_feature_proxy_id_resolves_to_a_connection_or_direct():
+    from shared.config.proxies import ProxyRecord, resolve_proxy
+
+    records = (
+        ProxyRecord(
+            id="p1",
+            name="代理",
+            scheme="socks5",
+            host="proxy.example",
+            port=1080,
+            username="user",
+            password="p@ss",
+        ),
     )
-    assert cfg.scheme == "http"
-    assert cfg.to_url() == "http://127.0.0.1:1080"
+    assert resolve_proxy(records, "p1").to_url() == (
+        "socks5://user:p%40ss@proxy.example:1080"
+    )
+    assert resolve_proxy(records, "").to_url() is None
+    assert resolve_proxy(records, "deleted").to_url() is None
 
 
-def test_from_settings_clamps_port():
-    cfg = ProxyConfig.from_settings(
-        {
-            "x_proxy_enabled": True,
-            "x_proxy_scheme": "socks5",
-            "x_proxy_host": "h",
-            "x_proxy_port": 99999,
-        }
-    )
-    assert cfg.port == 65535
+def test_proxy_password_is_not_in_repr():
+    cfg = ProxyConfig(enabled=True, host="h", password="secret-test-only")
+    assert "secret-test-only" not in repr(cfg)
 
 
 def test_create_session_uses_proxy_connector_for_http_and_socks5():

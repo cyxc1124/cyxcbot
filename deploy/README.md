@@ -58,6 +58,8 @@ git push gitlab refs/tags/v2.11.8:refs/tags/v2.11.8
 
 GitHub Release 创建后补中文手写说明，下方接自动生成的 PR 列表（可删改条目）；模板、可写和不可写内容见 [AGENTS.md「Release 文案」](../AGENTS.md#release-文案)。
 
+不等待 Windows 打包时，可以先创建 Release 并填写完整说明；后续 Windows 构建会上传附件并保留已有正文，不再追加自动 PR 列表。仅当 Release 尚不存在时，构建流程才自动生成说明。
+
 发版变更必须同步两份 Helm chart 的 `appVersion` / `image.tag` 与 Compose 默认镜像 tag，与发行 tag 使用同一版本号：
 
 | 位置 | 路径（相对仓库根目录） | 镜像 repository |

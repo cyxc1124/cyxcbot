@@ -25,10 +25,10 @@
 
 ## 功能
 
-- **B 站动态与直播推送**：新动态、置顶变化、新投稿和开播 / 下播通知，可推送到群聊或私聊；支持多账号扫码登录，查询请求轮换使用。见 [动态监控](docs/docs/plugins/dynamic-monitor.md)、[直播监控](docs/docs/plugins/live-monitor.md)、[账号配置](docs/docs/configuration/web-admin-setup.md#4-配置-b-站账号)。
-- **X 推文监控**：订阅博主，推送正文和媒体；需要 X API Bearer Token，可配置出站代理。见 [X 推文监控](docs/docs/plugins/x-monitor.md)。
+- **B 站动态与直播推送**：新动态、置顶变化、新投稿和开播 / 下播通知，可推送到群聊或私聊；支持多账号扫码登录，查询请求轮换使用。直播弹幕连接自动补齐缺失的 buvid3，兼容扫码登录 Cookie 并保留账号身份。见 [动态监控](docs/docs/plugins/dynamic-monitor.md)、[直播监控](docs/docs/plugins/live-monitor.md)、[账号配置](docs/docs/configuration/web-admin-setup.md#4-配置-b-站账号)。
+- **X 推文监控**：订阅博主，推送正文和媒体；需要 X API Bearer Token，可选用「系统 → 网络代理」中的代理。见 [X 推文监控](docs/docs/plugins/x-monitor.md)。
 - **链接解析**：[B 站](docs/docs/plugins/link-parser.md)（多 P 视频回复数字选择分 P，可直接发送视频）、[抖音](docs/docs/plugins/douyin-link-parser.md)（视频、图集、Live 图）、[X](docs/docs/plugins/x-link-parser.md) 推文，按会话设置策略。
-- **AI 图片检测**：引用一张图片回复 `ai吗？`，本地校验 C2PA 凭证；配置 OpenAI API Key 后还会检查其支持的 C2PA 与 SynthID 信号。见 [AI 图片检测](docs/docs/plugins/ai-image-detector.md)。
+- **AI 图片检测**：引用一张图片发送触发词（默认 `ai吗？`，可自定义），本地校验 C2PA 凭证、按开关检查 OpenAI 支持的 C2PA 与 SynthID 信号，还可接入多个 OpenAI / Anthropic 兼容视觉模型共同判断；同一图片再次询问时复用保存的结果，可在 Web Admin 查看、修改或删除。见 [AI 图片检测](docs/docs/plugins/ai-image-detector.md)。
 - **命令与会话管理**：最新动态与[最新视频](docs/docs/plugins/video-monitor.md)查询、动态图片提取、[状态查询](docs/docs/plugins/status-check.md)、[群聊](docs/docs/plugins/group-guard.md) / [私聊](docs/docs/plugins/private-guard.md)白名单，以及自定义触发词和消息模板。
 - **Rust 服务器与群管理**：[RCON 远控](docs/docs/plugins/rust-rcon.md)、[签到积分与积分商城](docs/docs/plugins/rust-player.md)、[群专属头衔](docs/docs/plugins/group-special-title.md)。
 - **Web Admin**：在浏览器中管理订阅、账号、权限、模板、运行日志和连接状态；业务配置存入数据库，保存后热更新。见 [Web Admin](docs/docs/web-admin/overview.md)。
@@ -96,6 +96,8 @@ Windows 包在 [Releases](https://github.com/cyxc1124/cyxcbot/releases) 下载 `
 | `LOG_LEVEL` | 日志级别（默认 `INFO`） |
 
 完整列表见 [`env.example`](env.example) 和 [环境变量](docs/docs/configuration/env-vars.md)。升级前备份数据库和 `.env`，并保留原有 `WEB_SECRET_KEY`。从 1.x 升级见 [2.0 迁移说明](docs/docs/configuration/migration-2.0.md)。
+
+从 v3.3.0 升级到 v3.3.1 时，启动会自动迁移原 X 代理并新增 AI 图片检测缓存表。检测缓存默认开启，会保存缩小的预览图与结果；可在 **AI 图片检测 → 检测缓存** 中关闭或调整，原有 OpenAI 密钥继续生效。详见 [AI 图片检测](docs/docs/plugins/ai-image-detector.md)。
 
 ## 本地开发
 

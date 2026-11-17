@@ -29,6 +29,10 @@ sidebar_position: 1
 
 断线后会在每次重连前重新获取弹幕 token，连续失败时按 3 → 10 → 20 → 40 → 60 秒退避（上限 60 秒）。
 
+登录 Cookie 缺少 `buvid3` 设备标识时，连接前自动从 B 站获取并补齐。获取 token 和 WebSocket 鉴权使用同一设备标识，重连时继续复用；已有 `buvid3` 不会被替换。补齐只保存在当前弹幕客户端中，不修改数据库账号 Cookie，无需重新扫码。获取失败时会停止本次连接并记录错误；已连接客户端的重连按既有退避策略重试，API 轮询继续作为备用。B 站风控或账号限制仍可能导致获取 token 或鉴权失败。
+
+获取 token 时，HTTP 请求保留 `SESSDATA` 等会话 Cookie，仅省略可能触发 `-352` 的 `DedeUserID` Cookie；WebSocket 鉴权包仍使用原账号 UID。此处理仅作用于 token 请求，不修改数据库中的账号 Cookie，也不会自动降级为游客连接。
+
 ### 2. API 轮询（备用）
 
 定时调用 `getInfoByRoom` 接口：

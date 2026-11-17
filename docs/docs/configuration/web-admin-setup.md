@@ -63,7 +63,7 @@ Cookie 与账号列表通过现有 `WEB_SECRET_KEY` 加密保存到数据库，�
 
 若需 [抖音链接解析](../plugins/douyin-link-parser)，在 **抖音 → 账号** 中扫码登录或粘贴 Cookie（与 B 站账号相互独立）。未配置时仍会尝试游客态解析，登录态更稳。
 
-若需 [X 推文监控](../plugins/x-monitor) 或 [X 链接解析](../plugins/x-link-parser)，在 **X → 账号与代理** 中填写 Bearer Token，并按部署网络配置出站代理；两项功能共用该配置。
+若需 [X 推文监控](../plugins/x-monitor) 或 [X 链接解析](../plugins/x-link-parser)，在 **X → 账号与代理** 中填写 Bearer Token。服务器无法直接访问 X 时，先在 **系统 → 网络代理** 添加代理并点「测试连接」，再回到 **X → 账号与代理** 的「出站代理」中选择它；两项功能共用该选择。
 
 ## 6. 添加监控映射
 

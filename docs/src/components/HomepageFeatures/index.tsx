@@ -22,7 +22,7 @@ const FeatureList: FeatureItem[] = [
     Icon: IconMonitor,
     description: (
       <>
-        B 站动态、直播与 X 推文推送，B 站 / 抖音 / X 链接解析和图片 AI 来源检测，通过 OneBot 或官方 QQ Bot 收发消息。
+        B 站动态、直播与 X 推文推送，B 站 / 抖音 / X 链接解析和 AI 图片检测，通过 OneBot 或官方 QQ Bot 收发消息。
       </>
     ),
   },
