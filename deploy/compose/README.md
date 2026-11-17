@@ -2,6 +2,8 @@
 
 使用 GHCR 预构建镜像，在单机 / NAS 上快速部署 [机器草 cyxcbot](https://github.com/cyxc1124/cyxcbot)。
 
+默认镜像版本为 `v3.3.1`。从 v3.3.0 升级时，启动会自动迁移原 X 代理并新增 AI 图片检测缓存表；缓存默认开启，可在 **AI 图片检测 → 检测缓存** 中关闭或调整。
+
 业务配置（监控、B 站 Cookie、官方 Bot 凭证等）在 Web Admin 面板中管理；启动前必须设置足够长的随机 `WEB_SECRET_KEY`（Compose 未设置会直接失败）。官方 Bot 默认使用 Webhook：公网 HTTPS `/qq/webhook` 须转发到机器人端口 8080，而非管理面板 8081。`DRIVER` 默认带 `httpx`+`websockets`，用于官方 API 并兼容旧版 WebSocket。
 
 ## 快速开始

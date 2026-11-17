@@ -1,6 +1,6 @@
 services:
   cyxcbot:
-    image: ghcr.io/cyxc1124/cyxcbot:v3.3.0
+    image: ghcr.io/cyxc1124/cyxcbot:v3.3.1
     container_name: cyxcbot
     restart: unless-stopped
     ports:
